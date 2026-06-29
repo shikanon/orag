@@ -78,6 +78,16 @@ Content-Type: multipart/form-data
 
 该入口用于上传文件。当前实现会复用同一套 parser、chunker、store 和 ingestion job 记录逻辑。
 
+解析方法由服务端环境变量 `INGEST_PARSER_METHOD` 决定：
+
+| 方法 | 行为 | 适用格式 |
+| --- | --- | --- |
+| `basic` | 本进程内抽取文本；PDF、图片和 DOCX 内嵌图片会调用 `ARK_MULTIMODAL_MODEL` 生成 Markdown 描述。 | txt、md、csv、json、html、docx、pptx、xlsx、pdf、图片 |
+| `mineru` | 调用 MinerU 兼容 `/file_parse` 服务，读取返回的 `content_list.json` 并归一化为 Markdown。 | pdf |
+| `docling` | 调用 Docling Serve `/v1/convert/source` 或 `/v1alpha/convert/source`，读取 `md_content`、`text_content` 或 chunk 结果。 | pdf、docx |
+
+`mineru` 需要配置 `MINERU_APISERVER`；`docling` 需要配置 `DOCLING_SERVER_URL`。如果上传格式不属于远程解析器支持范围，服务会回退到 `basic` 解析。
+
 ## 查询入库任务
 
 ```http

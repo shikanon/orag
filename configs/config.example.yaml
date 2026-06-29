@@ -53,6 +53,18 @@ ingestion:
   chunk_size_tokens: 800
   chunk_overlap_tokens: 120
   max_document_bytes: 26214400
+  parser_method: basic
+  mineru:
+    api_url: ""
+    server_url: ""
+    backend: pipeline
+    parse_method: auto
+    lang: English
+    formula_enable: true
+    table_enable: true
+  docling:
+    server_url: ""
+    timeout: 10m
 
 object_storage:
   provider: local

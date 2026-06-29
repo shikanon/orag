@@ -24,6 +24,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Ark.EmbeddingModel != "doubao-embedding-vision-251215" {
 		t.Fatalf("default embedding model = %q", cfg.Ark.EmbeddingModel)
 	}
+	if cfg.Ingestion.ParserMethod != "basic" {
+		t.Fatalf("default parser method = %q", cfg.Ingestion.ParserMethod)
+	}
 }
 
 func TestRedactedEnv(t *testing.T) {
@@ -69,5 +72,78 @@ func TestInvalidRerankProvider(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected invalid rerank provider error")
+	}
+}
+
+func TestLoadMinerUParserConfig(t *testing.T) {
+	t.Setenv("INGEST_PARSER_METHOD", "mineru")
+	t.Setenv("MINERU_APISERVER", "http://mineru:8000")
+	t.Setenv("MINERU_SERVER_URL", "http://mineru-vlm:30000")
+	t.Setenv("MINERU_BACKEND", "vlm-http-client")
+	t.Setenv("MINERU_PARSE_METHOD", "ocr")
+	t.Setenv("MINERU_LANG", "English")
+	t.Setenv("MINERU_FORMULA_ENABLE", "false")
+	t.Setenv("MINERU_TABLE_ENABLE", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Ingestion.ParserMethod != "mineru" {
+		t.Fatalf("parser method = %q", cfg.Ingestion.ParserMethod)
+	}
+	if cfg.Ingestion.MinerU.APIURL != "http://mineru:8000" {
+		t.Fatalf("mineru api url = %q", cfg.Ingestion.MinerU.APIURL)
+	}
+	if cfg.Ingestion.MinerU.ServerURL != "http://mineru-vlm:30000" {
+		t.Fatalf("mineru server url = %q", cfg.Ingestion.MinerU.ServerURL)
+	}
+	if cfg.Ingestion.MinerU.Backend != "vlm-http-client" || cfg.Ingestion.MinerU.ParseMethod != "ocr" {
+		t.Fatalf("mineru config = %#v", cfg.Ingestion.MinerU)
+	}
+	if cfg.Ingestion.MinerU.Formula || !cfg.Ingestion.MinerU.Table {
+		t.Fatalf("mineru toggles = %#v", cfg.Ingestion.MinerU)
+	}
+}
+
+func TestLoadDoclingParserConfig(t *testing.T) {
+	t.Setenv("INGEST_PARSER_METHOD", "docling")
+	t.Setenv("DOCLING_SERVER_URL", "http://docling:5001")
+	t.Setenv("DOCLING_TIMEOUT", "45s")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Ingestion.ParserMethod != "docling" {
+		t.Fatalf("parser method = %q", cfg.Ingestion.ParserMethod)
+	}
+	if cfg.Ingestion.Docling.ServerURL != "http://docling:5001" {
+		t.Fatalf("docling server url = %q", cfg.Ingestion.Docling.ServerURL)
+	}
+	if cfg.Ingestion.Docling.Timeout.String() != "45s" {
+		t.Fatalf("docling timeout = %s", cfg.Ingestion.Docling.Timeout)
+	}
+}
+
+func TestInvalidParserMethod(t *testing.T) {
+	t.Setenv("INGEST_PARSER_METHOD", "unknown")
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected invalid parser method error")
+	}
+}
+
+func TestRemoteParserRequiresEndpoint(t *testing.T) {
+	t.Setenv("INGEST_PARSER_METHOD", "mineru")
+	t.Setenv("MINERU_APISERVER", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected missing MinerU endpoint error")
+	}
+
+	t.Setenv("INGEST_PARSER_METHOD", "docling")
+	t.Setenv("DOCLING_SERVER_URL", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected missing Docling endpoint error")
 	}
 }
