@@ -83,10 +83,11 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-func (s *MemoryStore) PutKnowledgeBase(kb KnowledgeBase) {
+func (s *MemoryStore) PutKnowledgeBase(kb KnowledgeBase) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.kbs[kb.ID] = kb
+	return nil
 }
 
 func (s *MemoryStore) ListKnowledgeBases(tenantID string) []KnowledgeBase {

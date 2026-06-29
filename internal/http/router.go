@@ -130,7 +130,10 @@ func (s *Server) createKnowledgeBase(_ context.Context, c *app.RequestContext) {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	s.App.KBStore.PutKnowledgeBase(item)
+	if err := s.App.KBStore.PutKnowledgeBase(item); err != nil {
+		writeError(c, consts.StatusInternalServerError, "knowledge_base_write_failed", "failed to create knowledge base")
+		return
+	}
 	c.JSON(consts.StatusCreated, item)
 }
 

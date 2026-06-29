@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shikanon/orag/internal/kb"
 )
@@ -13,10 +14,11 @@ import (
 type Repository struct {
 	Pool        *pgxpool.Pool
 	traceReader traceQueryer
+	kbWriter    knowledgeBaseExecer
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{Pool: pool, traceReader: pgxTraceQueryer{pool: pool}}
+	return &Repository{Pool: pool, traceReader: pgxTraceQueryer{pool: pool}, kbWriter: pool}
 }
 
 type pgxTraceQueryer struct {
@@ -31,10 +33,17 @@ func (q pgxTraceQueryer) Query(ctx context.Context, sql string, args ...any) (tr
 	return q.pool.Query(ctx, sql, args...)
 }
 
-func (r *Repository) PutKnowledgeBase(item kb.KnowledgeBase) {
-	ctx := context.Background()
+type knowledgeBaseExecer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+func (r *Repository) PutKnowledgeBase(item kb.KnowledgeBase) error {
+	return r.putKnowledgeBase(context.Background(), item)
+}
+
+func (r *Repository) putKnowledgeBase(ctx context.Context, item kb.KnowledgeBase) error {
 	meta := mustJSON(item.Metadata)
-	_, _ = r.Pool.Exec(ctx, `
+	_, err := r.knowledgeBaseExecer().Exec(ctx, `
 		INSERT INTO knowledge_bases(id, tenant_id, name, description, metadata, created_at, updated_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7)
 		ON CONFLICT (id) DO UPDATE SET
@@ -43,6 +52,14 @@ func (r *Repository) PutKnowledgeBase(item kb.KnowledgeBase) {
 			metadata=EXCLUDED.metadata,
 			updated_at=EXCLUDED.updated_at`,
 		item.ID, item.TenantID, item.Name, item.Description, meta, item.CreatedAt, item.UpdatedAt)
+	return err
+}
+
+func (r *Repository) knowledgeBaseExecer() knowledgeBaseExecer {
+	if r.kbWriter != nil {
+		return r.kbWriter
+	}
+	return r.Pool
 }
 
 func (r *Repository) ListKnowledgeBases(tenantID string) []kb.KnowledgeBase {
@@ -155,7 +172,7 @@ func (r *Repository) BootstrapDefaults(ctx context.Context, tenantID, kbID strin
 		ON CONFLICT (id) DO NOTHING`, tenantID, tenantID, now); err != nil {
 		return err
 	}
-	r.PutKnowledgeBase(kb.KnowledgeBase{
+	return r.putKnowledgeBase(ctx, kb.KnowledgeBase{
 		ID:          kbID,
 		TenantID:    tenantID,
 		Name:        "Default Knowledge Base",
@@ -164,7 +181,6 @@ func (r *Repository) BootstrapDefaults(ctx context.Context, tenantID, kbID strin
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	})
-	return nil
 }
 
 type kbScanner interface {

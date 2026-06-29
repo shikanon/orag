@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"os"
 	"reflect"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
 )
 
@@ -33,6 +36,27 @@ func TestStringMapRoundTrip(t *testing.T) {
 	got := stringMap(body)
 	if got["source"] != "test" {
 		t.Fatalf("stringMap() = %#v", got)
+	}
+}
+
+func TestRepositoryPutKnowledgeBaseReturnsExecError(t *testing.T) {
+	want := errors.New("exec failed")
+	writer := &fakeKnowledgeBaseWriter{err: want}
+	repo := &Repository{kbWriter: writer}
+
+	err := repo.PutKnowledgeBase(kb.KnowledgeBase{
+		ID:        "kb_test",
+		TenantID:  "tenant_test",
+		Name:      "Test KB",
+		CreatedAt: time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC),
+	})
+
+	if err != want {
+		t.Fatalf("PutKnowledgeBase() error = %v, want %v", err, want)
+	}
+	if !writer.called {
+		t.Fatal("PutKnowledgeBase() did not execute write")
 	}
 }
 
@@ -95,6 +119,16 @@ func TestRepositoryGetTraceNotFound(t *testing.T) {
 	if reader.queriedSpans {
 		t.Fatal("GetTrace() queried spans for missing trace")
 	}
+}
+
+type fakeKnowledgeBaseWriter struct {
+	called bool
+	err    error
+}
+
+func (f *fakeKnowledgeBaseWriter) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
+	f.called = true
+	return pgconn.CommandTag{}, f.err
 }
 
 type fakeTraceReader struct {

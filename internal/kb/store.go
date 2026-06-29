@@ -1,7 +1,7 @@
 package kb
 
 type KnowledgeBaseRepository interface {
-	PutKnowledgeBase(kb KnowledgeBase)
+	PutKnowledgeBase(kb KnowledgeBase) error
 	ListKnowledgeBases(tenantID string) []KnowledgeBase
 	GetKnowledgeBase(tenantID, id string) (KnowledgeBase, bool)
 }

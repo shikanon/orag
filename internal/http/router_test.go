@@ -13,6 +13,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/route"
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/config"
+	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/platform/logger"
 	"github.com/shikanon/orag/internal/rag"
@@ -116,6 +117,46 @@ func TestQueryUsesRequestTraceID(t *testing.T) {
 	}
 	if body.TraceID != "trace_query_success" {
 		t.Fatalf("query trace_id = %q, want trace_query_success", body.TraceID)
+	}
+}
+
+func TestCreateKnowledgeBaseReturnsCreated(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"docs","description":"team docs"}`, token)
+	if resp.Code != 201 {
+		t.Fatalf("create knowledge base status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
+func TestCreateKnowledgeBaseWriteFailureReturnsStructuredError(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	app.KBStore = failingKnowledgeBaseRepository{err: errors.New("database write exploded")}
+
+	resp := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"docs"}`, token)
+	if resp.Code != 500 {
+		t.Fatalf("create knowledge base status = %d body=%s", resp.Code, resp.Body)
+	}
+	var body ErrorResponse
+	if err := json.Unmarshal([]byte(resp.Body), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != "knowledge_base_write_failed" {
+		t.Fatalf("error code = %q body=%s", body.Error.Code, resp.Body)
+	}
+	if body.Error.Message != "failed to create knowledge base" {
+		t.Fatalf("error message = %q body=%s", body.Error.Message, resp.Body)
+	}
+	if body.Error.TraceID == "" {
+		t.Fatalf("error response missing trace_id: %s", resp.Body)
+	}
+	if strings.Contains(resp.Body, "database write exploded") {
+		t.Fatalf("error response leaked repository error: %s", resp.Body)
 	}
 }
 
@@ -320,4 +361,20 @@ type failingPipeline struct {
 
 func (p failingPipeline) Invoke(context.Context, rag.QueryRequest) (rag.QueryResponse, error) {
 	return rag.QueryResponse{}, p.err
+}
+
+type failingKnowledgeBaseRepository struct {
+	err error
+}
+
+func (r failingKnowledgeBaseRepository) PutKnowledgeBase(kb.KnowledgeBase) error {
+	return r.err
+}
+
+func (r failingKnowledgeBaseRepository) ListKnowledgeBases(string) []kb.KnowledgeBase {
+	return nil
+}
+
+func (r failingKnowledgeBaseRepository) GetKnowledgeBase(string, string) (kb.KnowledgeBase, bool) {
+	return kb.KnowledgeBase{}, false
 }

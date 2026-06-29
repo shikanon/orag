@@ -235,7 +235,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 
 func bootstrapMemory(store *kb.MemoryStore, tenantID string) {
 	now := time.Now().UTC()
-	store.PutKnowledgeBase(kb.KnowledgeBase{
+	_ = store.PutKnowledgeBase(kb.KnowledgeBase{
 		ID:          "kb_default",
 		TenantID:    tenantID,
 		Name:        "Default Knowledge Base",
