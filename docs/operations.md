@@ -8,6 +8,7 @@
 - Qdrant：向量检索使用 gRPC 端口 `6334`，Docker Compose 同时暴露 REST 端口 `6333` 供 Qdrant 自身 healthcheck 使用。默认主 collection 为 `orag_chunks`，语义缓存 collection 为 `orag_semantic_cache`。
 - Ark/豆包模型接口：由 `ARK_API_KEY`、`ARK_BASE_URL`、`ARK_CHAT_MODEL`、`ARK_EMBEDDING_MODEL`、`ARK_MULTIMODAL_MODEL`、`ARK_TIMEOUT` 和 `ARK_RETRY_TIMES` 配置。默认 embedding 模型为火山 `doubao-embedding-vision-251215`，调用 `/embeddings/multimodal`。
 - Rerank 接口：由 `RERANK_PROVIDER` 选择 `volcengine` 或 `aliyun`。火山/方舟使用 `ARK_RERANK_BASE_URL`、`ARK_RERANK_MODEL`；阿里云百炼使用 `ALIYUN_RERANK_API_KEY`、`ALIYUN_RERANK_BASE_URL`、`ALIYUN_RERANK_MODEL`。未配置模型 key 时会使用 deterministic mock，只适合本地调试和无外部依赖测试。
+- 文档解析：默认 `INGEST_PARSER_METHOD=basic` 不依赖额外解析服务；PDF、图片和 DOCX 内嵌图片会通过 Ark 多模态模型生成描述。`mineru` 需要 `MINERU_APISERVER`，可选 `MINERU_SERVER_URL` 用于 VLM HTTP backend；`docling` 需要 `DOCLING_SERVER_URL`。
 - 对象存储和观测平台：默认 `OBJECT_STORAGE_PROVIDER=local`、`OBJECT_STORAGE_MOCK_UPLOAD=true`，`OTEL_EXPORTER_OTLP_ENDPOINT`、`LANGFUSE_*` 为空时不启用外部 exporter 或 LangFuse。
 
 系统默认不依赖 ES/Neo4j。`STORAGE_BACKEND=memory` 仅用于本地无依赖调试或单元测试，不作为生产配置。

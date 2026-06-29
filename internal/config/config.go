@@ -97,6 +97,24 @@ type IngestionConfig struct {
 	ChunkSizeTokens    int
 	ChunkOverlapTokens int
 	MaxDocumentBytes   int64
+	ParserMethod       string
+	MinerU             MinerUConfig
+	Docling            DoclingConfig
+}
+
+type MinerUConfig struct {
+	APIURL      string
+	ServerURL   string
+	Backend     string
+	ParseMethod string
+	Lang        string
+	Formula     bool
+	Table       bool
+}
+
+type DoclingConfig struct {
+	ServerURL string
+	Timeout   time.Duration
 }
 
 type ObjectStorageConfig struct {
@@ -184,6 +202,20 @@ func Load() (Config, error) {
 			ChunkSizeTokens:    getenvInt("INGEST_CHUNK_SIZE_TOKENS", 800),
 			ChunkOverlapTokens: getenvInt("INGEST_CHUNK_OVERLAP_TOKENS", 120),
 			MaxDocumentBytes:   int64(getenvInt("INGEST_MAX_DOCUMENT_BYTES", 25*1024*1024)),
+			ParserMethod:       strings.ToLower(strings.TrimSpace(getenv("INGEST_PARSER_METHOD", "basic"))),
+			MinerU: MinerUConfig{
+				APIURL:      getenv("MINERU_API_URL", getenv("MINERU_APISERVER", "")),
+				ServerURL:   getenv("MINERU_SERVER_URL", ""),
+				Backend:     getenv("MINERU_BACKEND", "pipeline"),
+				ParseMethod: getenv("MINERU_PARSE_METHOD", "auto"),
+				Lang:        getenv("MINERU_LANG", "English"),
+				Formula:     getenvBool("MINERU_FORMULA_ENABLE", true),
+				Table:       getenvBool("MINERU_TABLE_ENABLE", true),
+			},
+			Docling: DoclingConfig{
+				ServerURL: getenv("DOCLING_SERVER_URL", ""),
+				Timeout:   getenvDuration("DOCLING_TIMEOUT", 10*time.Minute),
+			},
 		},
 		ObjectStorage: ObjectStorageConfig{
 			Provider:        getenv("OBJECT_STORAGE_PROVIDER", "local"),
@@ -224,6 +256,15 @@ func (c Config) Validate() error {
 	if c.Storage.Backend != "qdrant_postgres" && c.Storage.Backend != "memory" {
 		return errors.New("STORAGE_BACKEND must be qdrant_postgres or memory")
 	}
+	if c.Ingestion.ParserMethod != "basic" && c.Ingestion.ParserMethod != "mineru" && c.Ingestion.ParserMethod != "docling" {
+		return errors.New("INGEST_PARSER_METHOD must be basic, mineru, or docling")
+	}
+	if c.Ingestion.ParserMethod == "mineru" && strings.TrimSpace(c.Ingestion.MinerU.APIURL) == "" {
+		return errors.New("MINERU_APISERVER or MINERU_API_URL is required when INGEST_PARSER_METHOD=mineru")
+	}
+	if c.Ingestion.ParserMethod == "docling" && strings.TrimSpace(c.Ingestion.Docling.ServerURL) == "" {
+		return errors.New("DOCLING_SERVER_URL is required when INGEST_PARSER_METHOD=docling")
+	}
 	if c.Ark.RerankProvider != "volcengine" && c.Ark.RerankProvider != "aliyun" {
 		return errors.New("RERANK_PROVIDER must be volcengine or aliyun")
 	}
@@ -256,6 +297,12 @@ func (c Config) RedactedEnv() map[string]string {
 		"ARK_API_KEY":                      redact(c.Ark.APIKey),
 		"ARK_CHAT_MODEL":                   c.Ark.ChatModel,
 		"ARK_EMBEDDING_MODEL":              c.Ark.EmbeddingModel,
+		"INGEST_PARSER_METHOD":             c.Ingestion.ParserMethod,
+		"MINERU_APISERVER":                 c.Ingestion.MinerU.APIURL,
+		"MINERU_SERVER_URL":                c.Ingestion.MinerU.ServerURL,
+		"MINERU_BACKEND":                   c.Ingestion.MinerU.Backend,
+		"MINERU_PARSE_METHOD":              c.Ingestion.MinerU.ParseMethod,
+		"DOCLING_SERVER_URL":               c.Ingestion.Docling.ServerURL,
 		"RERANK_PROVIDER":                  c.Ark.RerankProvider,
 		"ARK_RERANK_MODEL":                 c.Ark.RerankModel,
 		"ALIYUN_RERANK_API_KEY":            redact(c.Ark.RerankAPIKey),

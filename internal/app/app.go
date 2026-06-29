@@ -97,7 +97,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	graphRunner.TraceStore = backend.traceStore
 	ragSvc.Pipeline = graphRunner
 	ingestSvc := &ingest.Service{
-		Parser:           parser.BasicParser{Multimodal: model},
+		Parser:           buildDocumentParser(cfg, model),
 		Splitter:         chunker.Recursive{SizeTokens: cfg.Ingestion.ChunkSizeTokens, OverlapTokens: cfg.Ingestion.ChunkOverlapTokens},
 		Embedder:         model,
 		Indexer:          backend.indexer,
@@ -119,6 +119,28 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Qdrant:   backend.qdrant,
 		closers:  backend.closers,
 	}, nil
+}
+
+func buildDocumentParser(cfg config.Config, model ark.MultimodalParser) parser.Parser {
+	return parser.New(parser.Config{
+		Method:     cfg.Ingestion.ParserMethod,
+		Multimodal: model,
+		HTTPClient: httpclient.New(cfg.Ingestion.Docling.Timeout),
+		MinerU: parser.MinerUConfig{
+			APIURL:        cfg.Ingestion.MinerU.APIURL,
+			ServerURL:     cfg.Ingestion.MinerU.ServerURL,
+			Backend:       cfg.Ingestion.MinerU.Backend,
+			ParseMethod:   cfg.Ingestion.MinerU.ParseMethod,
+			Lang:          cfg.Ingestion.MinerU.Lang,
+			Formula:       cfg.Ingestion.MinerU.Formula,
+			Table:         cfg.Ingestion.MinerU.Table,
+			RequestZipOut: true,
+		},
+		Docling: parser.DoclingConfig{
+			ServerURL: cfg.Ingestion.Docling.ServerURL,
+			Timeout:   cfg.Ingestion.Docling.Timeout,
+		},
+	})
 }
 
 type knowledgeBackend struct {
