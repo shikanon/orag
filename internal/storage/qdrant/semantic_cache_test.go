@@ -14,6 +14,8 @@ func TestSemanticCachePayloadRoundTrip(t *testing.T) {
 		TenantID:        "tenant_default",
 		KnowledgeBaseID: "kb_default",
 		Query:           "qdrant cache",
+		Profile:         rag.ProfileRealtime,
+		TopK:            8,
 		CreatedAt:       now,
 		Response: rag.QueryResponse{
 			Answer:  "cached answer",
@@ -39,6 +41,15 @@ func TestSemanticCachePayloadRoundTrip(t *testing.T) {
 	}
 
 	payload := semanticCachePayload(entry)
+	if got := payloadString(payload, "cache_key_version"); got != semanticCachePayloadVersion {
+		t.Fatalf("cache_key_version = %q", got)
+	}
+	if got := payloadString(payload, "profile"); got != string(entry.Profile) {
+		t.Fatalf("payload profile = %q", got)
+	}
+	if got := payload["top_k"].GetIntegerValue(); got != int64(entry.TopK) {
+		t.Fatalf("payload top_k = %d", got)
+	}
 	resp := semanticCacheResponseFromPayload(payload)
 	if resp.Answer != entry.Response.Answer {
 		t.Fatalf("answer = %q", resp.Answer)

@@ -16,6 +16,8 @@ type SemanticCache struct {
 	Threshold  float64
 }
 
+const semanticCachePayloadVersion = "v2"
+
 func (s SemanticCache) Lookup(ctx context.Context, req rag.SemanticCacheLookupRequest) (rag.QueryResponse, bool, error) {
 	if len(req.Vector) == 0 {
 		return rag.QueryResponse{}, false, nil
@@ -34,6 +36,9 @@ func (s SemanticCache) Lookup(ctx context.Context, req rag.SemanticCacheLookupRe
 		Filter: &qdrant.Filter{Must: []*qdrant.Condition{
 			matchKeyword("tenant_id", req.TenantID),
 			matchKeyword("knowledge_base_id", req.KnowledgeBaseID),
+			matchKeyword("cache_key_version", semanticCachePayloadVersion),
+			matchKeyword("profile", string(semanticCacheProfile(req.Profile))),
+			matchInteger("top_k", int64(req.TopK)),
 		}},
 		WithPayload: &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
 	})
@@ -55,6 +60,7 @@ func (s SemanticCache) Store(ctx context.Context, entry rag.SemanticCacheEntry) 
 		return nil
 	}
 	wait := true
+	profile := semanticCacheEntryProfile(entry)
 	_, err := s.Client.Points.Upsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: s.Collection,
 		Wait:           &wait,
@@ -63,6 +69,8 @@ func (s SemanticCache) Store(ctx context.Context, entry rag.SemanticCacheEntry) 
 				TenantID:        entry.TenantID,
 				KnowledgeBaseID: entry.KnowledgeBaseID,
 				Query:           entry.Query,
+				Profile:         profile,
+				TopK:            entry.TopK,
 			})),
 			Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{
 				Data: float32Vector(entry.Vector),
@@ -79,14 +87,17 @@ func semanticCachePayload(entry rag.SemanticCacheEntry) map[string]*qdrant.Value
 		createdAt = time.Now().UTC()
 	}
 	resp := entry.Response
+	profile := semanticCacheEntryProfile(entry)
 	return map[string]*qdrant.Value{
 		"tenant_id":         stringValue(entry.TenantID),
 		"knowledge_base_id": stringValue(entry.KnowledgeBaseID),
 		"query":             stringValue(entry.Query),
+		"cache_key_version": stringValue(semanticCachePayloadVersion),
+		"profile":           stringValue(string(profile)),
+		"top_k":             integerValue(int64(entry.TopK)),
 		"answer":            stringValue(resp.Answer),
 		"citations_json":    stringValue(mustMarshalString(resp.Citations)),
 		"retrieved_json":    stringValue(mustMarshalString(resp.RetrievedChunks)),
-		"profile":           stringValue(string(resp.Profile)),
 		"created_at":        stringValue(createdAt.UTC().Format(time.RFC3339Nano)),
 	}
 }
@@ -112,4 +123,27 @@ func mustMarshalString(v any) string {
 		return "null"
 	}
 	return string(body)
+}
+
+func semanticCacheProfile(profile rag.Profile) rag.Profile {
+	if profile == "" {
+		return rag.ProfileRealtime
+	}
+	return profile
+}
+
+func semanticCacheEntryProfile(entry rag.SemanticCacheEntry) rag.Profile {
+	if entry.Profile != "" {
+		return entry.Profile
+	}
+	return semanticCacheProfile(entry.Response.Profile)
+}
+
+func matchInteger(key string, value int64) *qdrant.Condition {
+	return &qdrant.Condition{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{
+		Key: key,
+		Match: &qdrant.Match{MatchValue: &qdrant.Match_Integer{
+			Integer: value,
+		}},
+	}}}
 }

@@ -51,7 +51,7 @@ func (n NodeSet) SemanticCacheLookup(ctx context.Context, st State) (State, erro
 			return fmt.Errorf("embedding response is empty")
 		}
 		st.Embedding = embeddings[0]
-		if cached, ok, warning := n.Service.LookupSemanticCache(ctx, st.Request, st.Embedding, st.TraceID, st.Profile, st.Start); ok {
+		if cached, ok, warning := n.Service.LookupSemanticCache(ctx, st.Request, st.Embedding, st.TraceID, st.Profile, st.TopK, st.Start); ok {
 			st.Response = cached
 			st.Cached = true
 		} else if warning != "" {
@@ -226,7 +226,7 @@ func (n NodeSet) SemanticCacheWrite(ctx context.Context, st State) (State, error
 		if st.Cached || n.Service.Cache == nil || len(st.Response.Citations) == 0 {
 			return nil
 		}
-		if warning := n.Service.StoreSemanticCache(ctx, st.Request, st.Embedding, st.Response); warning != "" {
+		if warning := n.Service.StoreSemanticCache(ctx, st.Request, st.Embedding, st.Profile, st.TopK, st.Response); warning != "" {
 			st.Response.Warnings = append(st.Response.Warnings, warning)
 		}
 		return nil

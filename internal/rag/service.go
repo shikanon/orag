@@ -70,7 +70,7 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		return QueryResponse{}, err
 	}
 	var warnings []string
-	if cached, ok, warning := s.LookupSemanticCache(ctx, req, embeddings[0], traceID, profile, start); ok {
+	if cached, ok, warning := s.LookupSemanticCache(ctx, req, embeddings[0], traceID, profile, topK, start); ok {
 		return cached, nil
 	} else if warning != "" {
 		warnings = append(warnings, warning)
@@ -140,7 +140,7 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		CreatedAt:       time.Now().UTC(),
 		LatencyMS:       time.Since(start).Milliseconds(),
 	}
-	if warning := s.StoreSemanticCache(ctx, req, embeddings[0], resp); warning != "" {
+	if warning := s.StoreSemanticCache(ctx, req, embeddings[0], profile, topK, resp); warning != "" {
 		resp.Warnings = append(resp.Warnings, warning)
 	}
 	return resp, nil
@@ -169,7 +169,7 @@ func ensureRequestTrace(ctx context.Context, req QueryRequest) (context.Context,
 	return observability.WithTraceID(ctx, traceID), req, traceID
 }
 
-func (s *Service) LookupSemanticCache(ctx context.Context, req QueryRequest, vector []float64, traceID string, profile Profile, start time.Time) (QueryResponse, bool, string) {
+func (s *Service) LookupSemanticCache(ctx context.Context, req QueryRequest, vector []float64, traceID string, profile Profile, topK int, start time.Time) (QueryResponse, bool, string) {
 	if s.Cache == nil || strings.TrimSpace(req.Query) == "" {
 		return QueryResponse{}, false, ""
 	}
@@ -180,6 +180,7 @@ func (s *Service) LookupSemanticCache(ctx context.Context, req QueryRequest, vec
 		Vector:          vector,
 		Threshold:       s.SemanticCacheThreshold,
 		Profile:         profile,
+		TopK:            topK,
 	})
 	if err != nil {
 		return QueryResponse{}, false, "semantic cache lookup failed: " + err.Error()
@@ -195,7 +196,7 @@ func (s *Service) LookupSemanticCache(ctx context.Context, req QueryRequest, vec
 	return cached, true, ""
 }
 
-func (s *Service) StoreSemanticCache(ctx context.Context, req QueryRequest, vector []float64, resp QueryResponse) string {
+func (s *Service) StoreSemanticCache(ctx context.Context, req QueryRequest, vector []float64, profile Profile, topK int, resp QueryResponse) string {
 	if s.Cache == nil || len(resp.Citations) == 0 {
 		return ""
 	}
@@ -204,6 +205,8 @@ func (s *Service) StoreSemanticCache(ctx context.Context, req QueryRequest, vect
 		KnowledgeBaseID: req.KnowledgeBaseID,
 		Query:           req.Query,
 		Vector:          vector,
+		Profile:         profile,
+		TopK:            topK,
 		Response:        resp,
 		CreatedAt:       time.Now().UTC(),
 	}); err != nil {
@@ -243,10 +246,6 @@ func (s *Service) ApplyRerank(ctx context.Context, query string, results []kb.Se
 		out = append(out, result)
 	}
 	return out
-}
-
-func CacheKey(req QueryRequest) string {
-	return cacheKey(req.TenantID, req.KnowledgeBaseID, strings.ToLower(strings.TrimSpace(req.Query)))
 }
 
 func EnsureCitationHint(answer string, citations []Citation) string {
