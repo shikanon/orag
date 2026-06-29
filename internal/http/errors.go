@@ -2,9 +2,10 @@ package http
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/shikanon/orag/internal/platform/id"
+	"github.com/shikanon/orag/internal/observability"
 )
 
 type ErrorResponse struct {
@@ -19,6 +20,7 @@ type ErrorBody struct {
 
 func writeError(c *app.RequestContext, status int, code, message string) {
 	traceID := requestTraceID(c)
+	c.Set("error_code", code)
 	c.JSON(status, ErrorResponse{Error: ErrorBody{
 		Code:    code,
 		Message: message,
@@ -32,8 +34,12 @@ func requestTraceID(c *app.RequestContext) string {
 			return traceID
 		}
 	}
-	traceID := id.New("trace")
+	traceID := strings.TrimSpace(string(c.GetHeader(observability.TraceIDHeader)))
+	if traceID == "" {
+		traceID = observability.NewTraceID()
+	}
 	c.Set("trace_id", traceID)
+	c.Header(observability.TraceIDHeader, traceID)
 	return traceID
 }
 

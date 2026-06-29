@@ -11,11 +11,24 @@ import (
 )
 
 type Repository struct {
-	Pool *pgxpool.Pool
+	Pool        *pgxpool.Pool
+	traceReader traceQueryer
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{Pool: pool}
+	return &Repository{Pool: pool, traceReader: pgxTraceQueryer{pool: pool}}
+}
+
+type pgxTraceQueryer struct {
+	pool *pgxpool.Pool
+}
+
+func (q pgxTraceQueryer) QueryRow(ctx context.Context, sql string, args ...any) traceRow {
+	return q.pool.QueryRow(ctx, sql, args...)
+}
+
+func (q pgxTraceQueryer) Query(ctx context.Context, sql string, args ...any) (traceRows, error) {
+	return q.pool.Query(ctx, sql, args...)
 }
 
 func (r *Repository) PutKnowledgeBase(item kb.KnowledgeBase) {

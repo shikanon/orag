@@ -3,12 +3,13 @@ package graph
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/llm/ark"
-	"github.com/shikanon/orag/internal/platform/id"
+	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/prompt"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -17,10 +18,14 @@ type NodeSet struct {
 	Service *rag.Service
 }
 
-func (n NodeSet) Init(_ context.Context, st State) (State, error) {
+func (n NodeSet) Init(ctx context.Context, st State) (State, error) {
 	return n.withSpan("init", st, func(st *State) error {
 		st.Start = time.Now()
-		st.TraceID = id.New("trace")
+		st.TraceID = strings.TrimSpace(st.Request.TraceID)
+		if st.TraceID == "" {
+			st.TraceID = observability.EnsureTraceID(ctx)
+		}
+		st.Request.TraceID = st.TraceID
 		st.Profile = n.Service.Profile(st.Request.Profile)
 		st.TopK = st.Request.TopK
 		if st.TopK <= 0 {
@@ -239,10 +244,26 @@ func (n NodeSet) systemPrompt(profile rag.Profile) string {
 func (n NodeSet) withSpan(name string, st State, fn func(*State) error) (State, error) {
 	start := time.Now()
 	err := fn(&st)
-	span := NodeSpan{NodeName: name, LatencyMS: time.Since(start).Milliseconds()}
+	latencyMS := time.Since(start).Milliseconds()
+	span := NodeSpan{NodeName: name, LatencyMS: latencyMS}
 	if err != nil {
 		span.Error = err.Error()
+		n.logNodeFailure(st, name, latencyMS, err)
 	}
 	st.Spans = append(st.Spans, span)
 	return st, err
+}
+
+func (n NodeSet) logNodeFailure(st State, node string, latencyMS int64, err error) {
+	if n.Service == nil || n.Service.Logger == nil || err == nil {
+		return
+	}
+	n.Service.Logger.LogAttrs(context.Background(), slog.LevelError, "rag_graph_node_failed",
+		slog.String("trace_id", st.TraceID),
+		slog.String("tenant", st.Request.TenantID),
+		slog.String("profile", string(st.Profile)),
+		slog.String("node", node),
+		slog.Int64("latency", latencyMS),
+		slog.String("error", err.Error()),
+	)
 }

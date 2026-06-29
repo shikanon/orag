@@ -24,16 +24,67 @@
 
 ## Metrics
 
-| 指标 | 类型 | 含义 |
-| --- | --- | --- |
-| `orag_up` | gauge | metrics endpoint 可渲染时固定为 `1`。 |
-| `orag_http_requests_total` | counter | HTTP 请求总数。 |
-| `orag_rag_queries_total` | counter | RAG 查询总数。 |
-| `orag_rag_cache_hits_total` | counter | 语义缓存命中的 RAG 查询总数。 |
-| `orag_rag_cache_misses_total` | counter | 未命中语义缓存的 RAG 查询总数。 |
-| `orag_rag_query_latency_ms_sum` | counter | RAG 查询耗时累计值，单位毫秒。 |
+| 指标 | 类型 | 关键 label | 含义 |
+| --- | --- | --- | --- |
+| `orag_up` | gauge | 无 | metrics endpoint 可渲染时固定为 `1`。 |
+| `orag_http_requests_total` | counter | `method`、`route`、`status`、`status_class` | HTTP 请求总数；同时保留无 label 兼容总量。 |
+| `orag_http_errors_total` | counter | `method`、`route`、`status`、`status_class` | HTTP 4xx/5xx 错误响应总数。 |
+| `orag_rag_queries_total` | counter | `profile`、`cache_status`、`outcome` | RAG 查询总数；同时保留无 label 兼容总量。 |
+| `orag_rag_errors_total` | counter | `profile`、`error_code` | RAG 查询失败总数。 |
+| `orag_rag_cache_hits_total` | counter | 无 | 语义缓存命中的 RAG 查询总数。 |
+| `orag_rag_cache_misses_total` | counter | 无 | 未命中语义缓存的 RAG 查询总数。 |
+| `orag_rag_query_latency_ms` | histogram | `profile`、`cache_status`、`outcome`、`le` | RAG 查询耗时分桶，单位毫秒。 |
+| `orag_rag_query_latency_ms_sum` | counter | 无或 `profile`、`cache_status`、`outcome` | RAG 查询耗时累计值，单位毫秒。 |
 
-当前指标是进程内 counter，服务重启后从零开始；当前没有 label、histogram、分位数、持久化或 OTel exporter。
+metrics label 只使用受控低基数字段。不要把 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本作为 Prometheus label；排查单次请求应使用日志和 trace 查询。
+
+当前指标是进程内 counter/histogram，服务重启后从零开始；当前没有分位数预聚合、持久化或 OTel exporter。
+
+## 日志字段
+
+HTTP 请求完成日志统一使用 `http_request_completed`，主要字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `method` | HTTP method。 |
+| `route` | Hertz route 模板，优先用于聚合。 |
+| `path` | 实际请求路径，仅用于定位单次请求。 |
+| `status` | HTTP 状态码。 |
+| `latency` | 请求耗时，单位毫秒。 |
+| `trace_id` | 请求级 trace ID。 |
+| `error_code` | 统一错误码，只有错误响应时出现。 |
+
+RAG/Graph 失败日志会携带 `trace_id`、tenant、profile、node、latency 和 error 字段中的一部分。日志不应输出 token、原始 prompt、文档内容或模型响应；如果需要关联业务失败，优先用 `trace_id` 串联 HTTP 日志、RAG 日志和 PostgreSQL trace。
+
+## Trace 查询
+
+RAG 查询成功响应、SSE `trace`/`error` 事件和 JSON 错误响应都会返回 `trace_id`。查询持久化 trace：
+
+```bash
+oragctl trace --trace-id trace_xxx
+```
+
+输出说明：
+
+| 字段 | 含义 |
+| --- | --- |
+| `found` | 是否在 PostgreSQL 找到该 trace。 |
+| `trace.trace_id` | RAG trace 主记录 ID。 |
+| `trace.tenant_id` | token 解析出的租户。 |
+| `trace.profile` | 查询使用的 profile。 |
+| `trace.latency_ms` | RAG pipeline 总耗时。 |
+| `trace.has_error`、`trace.error_count` | node span 是否包含错误及错误数量。 |
+| `trace.node_spans` | 按时间排序的节点 span，包含 `node_name`、`latency_ms`、`error` 和 `created_at`。 |
+
+当前只支持按单个 `trace_id` 精确查询 PostgreSQL，不支持 HTTP trace 查询入口、trace 列表、采样、跨服务拓扑或外部 APM 跳转。
+
+## OTel 与 LangFuse 边界
+
+| 能力 | 当前状态 | 后续可选增强 |
+| --- | --- | --- |
+| OpenTelemetry | 只保留 `OTEL_EXPORTER_OTLP_ENDPOINT` 等配置边界，当前未创建 OTel tracer/provider，也不导出 OTel spans 或 metrics。 | 接入 OTLP exporter，把 request trace、RAG trace 和 node span 映射为标准 span。 |
+| LangFuse | 只保留 `LANGFUSE_*` 配置边界，当前没有 LangFuse client，也不上传 prompt、completion、score 或 trace。 | 在合规和脱敏策略明确后，将 RAG query、retrieval、rerank、generation 映射到 LangFuse trace/observation。 |
+| Prompt 记录 | 生产默认保持 `OBSERVABILITY_RECORD_PROMPTS=false`。 | 仅在明确授权、脱敏和留存策略后开启。 |
 
 ## 部署检查清单
 
@@ -76,5 +127,6 @@ QDRANT_GRPC_PORT=6334
 | --- | --- |
 | `/readyz` 失败 | `troubleshooting.md` |
 | 查询失败或无上下文 | `../architecture/rag-pipeline.md` |
+| 已知 `trace_id` 需要定位 RAG 节点 | `oragctl trace --trace-id <trace_id>` |
 | API smoke 失败 | `../getting-started/api-smoke.md` |
 | 镜像拉取或构建超时 | `../operations.md` |

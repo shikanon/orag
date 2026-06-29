@@ -2,8 +2,10 @@ package graph
 
 import (
 	"context"
+	"strings"
 
 	"github.com/cloudwego/eino/compose"
+	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/rag"
 )
 
@@ -65,6 +67,12 @@ func NewRAGGraph(ctx context.Context, svc *rag.Service) (*RAGGraph, error) {
 }
 
 func (g *RAGGraph) Invoke(ctx context.Context, req rag.QueryRequest) (rag.QueryResponse, error) {
+	traceID := strings.TrimSpace(req.TraceID)
+	if traceID == "" {
+		traceID = observability.EnsureTraceID(ctx)
+	}
+	req.TraceID = traceID
+	ctx = observability.WithTraceID(ctx, traceID)
 	out, err := g.runner.Invoke(ctx, State{Request: req})
 	if err != nil {
 		return rag.QueryResponse{}, err

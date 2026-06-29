@@ -43,5 +43,7 @@ orag-api
 
 - 系统默认不依赖 ES/Neo4j。
 - `/readyz` 不主动调用 Ark 外部接口，只根据 key 配置状态报告 `mock` 或 `configured`。
-- 当前 metrics 是进程内 Prometheus 文本指标，没有 histogram、label 维度或持久化。
+- 当前 metrics 是进程内 Prometheus 文本指标，已包含 HTTP/RAG counter、受控低基数 label、cache hit/miss 和 RAG latency histogram；仍不提供指标持久化、分位数预聚合或外部 exporter。
+- metrics label 不包含 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本；单次请求排查应使用结构化日志和 `oragctl trace --trace-id <trace_id>`。
+- 当前持久化的是应用内 RAG trace，不是 OpenTelemetry span 或 LangFuse trace；`OTEL_EXPORTER_OTLP_ENDPOINT` 与 `LANGFUSE_*` 仅保留配置边界。
 - 当前评估是 deterministic rule-based metrics，完整 LLM-as-Judge 仍是后续增强方向。

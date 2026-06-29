@@ -67,7 +67,17 @@ curl -fsS http://localhost:8080/v1/knowledge-bases \
 }
 ```
 
-`trace_id` 用于排查同一次请求链路。SSE 查询在 RAG 查询阶段失败时，响应仍是 `text/event-stream`，事件名为 `error`，事件数据中包含 `code`、`message` 和 `trace_id`。
+`trace_id` 用于排查同一次请求链路。服务会优先使用请求头 `X-Trace-ID`；未传入时自动生成新的 ID，并把同一个值写入响应头 `X-Trace-ID`、JSON 错误体、SSE 事件、结构化日志和 RAG trace 持久化记录。调用方应把错误响应中的 `trace_id` 原样反馈给运维或研发，不需要解析其中含义。
+
+SSE 查询在 RAG 查询阶段失败时，响应仍是 `text/event-stream`，事件名为 `error`，事件数据中包含 `code`、`message` 和 `trace_id`。SSE 的 `trace` 事件、后续 `chunk`/`citations`/`done` 事件和失败时的 `error` 事件使用同一个 `trace_id`。
+
+排查持久化 RAG trace 时使用 CLI，而不是 HTTP API：
+
+```bash
+oragctl trace --trace-id trace_xxx
+```
+
+该命令按 `trace_id` 查询 PostgreSQL 的 `rag_traces` 和 `rag_node_spans`，返回查询元数据、profile、总耗时、错误状态和 node span 列表。当前 API 契约中没有 `/v1/traces` 这类管理端点。
 
 ## 常见错误码
 

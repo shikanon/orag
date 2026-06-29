@@ -116,6 +116,14 @@ Content-Type: application/json
 | `cache_status` | 语义缓存状态，例如 `hit` 或非命中状态。 |
 | `warnings` | 查询过程中的非致命提醒。 |
 
+`trace_id` 会贯穿本次 HTTP 请求、RAG pipeline、结构化日志和 PostgreSQL trace 记录。需要查看持久化 trace 时运行：
+
+```bash
+oragctl trace --trace-id trace_xxx
+```
+
+命中结果会包含 `node_spans`，用于判断失败或耗时集中在哪个 RAG 节点。
+
 ## SSE 流式查询
 
 ```http
@@ -125,7 +133,7 @@ Content-Type: application/json
 Accept: text/event-stream
 ```
 
-SSE 查询用于逐步返回生成过程。RAG 查询阶段失败时会发送 `error` 事件，事件数据仍包含统一错误模型中的 `code`、`message` 和 `trace_id`。
+SSE 查询用于逐步返回生成过程。服务会先发送 `trace` 事件告知本次 `trace_id`；RAG 查询阶段失败时会发送 `error` 事件，事件数据仍包含统一错误模型中的 `code`、`message` 和同一个 `trace_id`。
 
 ## Profile 与 top_k
 

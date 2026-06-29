@@ -81,7 +81,15 @@ Content-Type: application/json
 | `413` | `payload_too_large` | 入库内容超过 `INGEST_MAX_DOCUMENT_BYTES`。 |
 | `500` | `ingest_failed`、`query_failed`、`evaluation_failed`、`optimization_failed` | 后端入库、查询、评估或优化链路失败。 |
 
-`trace_id` 由服务生成，可用于排查同一次失败。`POST /v1/query:stream` 在 RAG 查询阶段失败时返回 `text/event-stream`，事件名为 `error`，事件数据仍包含 `code`、`message`、`trace_id`。
+`trace_id` 用于排查同一次请求链路。服务优先复用请求头 `X-Trace-ID`；未传入时自动生成，并把同一个值写入响应头 `X-Trace-ID`、JSON 错误体、SSE 事件、结构化日志和 RAG trace 持久化记录。`POST /v1/query:stream` 在 RAG 查询阶段失败时返回 `text/event-stream`，事件名为 `error`，事件数据仍包含 `code`、`message`、`trace_id`。
+
+当前 HTTP API 不提供 trace 查询端点。排查 RAG trace 时使用 CLI 查询 PostgreSQL：
+
+```bash
+oragctl trace --trace-id trace_xxx
+```
+
+命中时返回 `found=true` 和 `trace` 对象，包含 `tenant_id`、`profile`、`latency_ms`、`has_error`、`error_count` 和按时间排序的 `node_spans`；未命中时返回 `found=false` 和查询的 `trace_id`。
 
 ## 认证
 

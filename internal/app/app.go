@@ -88,6 +88,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		QueryRewriteEnabled: cfg.RAG.QueryRewriteEnabled,
 		MultiQueryCount:     cfg.RAG.MultiQueryCount,
 		HyDEEnabled:         cfg.RAG.HyDEEnabled,
+		Logger:              logger,
 	}
 	graphRunner, err := raggraph.NewRAGGraph(ctx, ragSvc)
 	if err != nil {

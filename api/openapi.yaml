@@ -239,6 +239,12 @@ paths:
     post:
       tags: [Query]
       operationId: query
+      description: |
+        Executes a RAG query. The response includes `trace_id`, which is the
+        same request trace propagated through logs and persisted PostgreSQL
+        RAG trace records. Use `oragctl trace --trace-id <trace_id>` to inspect
+        persisted trace metadata and node spans; there is no HTTP trace lookup
+        endpoint in the current API surface.
       security:
         - bearerAuth: []
       requestBody:
@@ -266,7 +272,9 @@ paths:
       operationId: queryStream
       description: |
         Server-Sent Events stream. Events are emitted as `trace`, `chunk`,
-        `citations`, `done`, or `error`.
+        `citations`, `done`, or `error`. The first `trace` event carries the
+        request `trace_id`; if the RAG phase fails, the `error` event uses the
+        same `trace_id` as JSON error responses and service logs.
       security:
         - bearerAuth: []
       requestBody:
@@ -417,7 +425,10 @@ components:
       bearerFormat: JWT
   responses:
     Error:
-      description: Unified error response.
+      description: |
+        Unified error response. The `trace_id` is always present, is echoed from
+        the incoming `X-Trace-ID` header when supplied, and is also returned in
+        the `X-Trace-ID` response header for log and persisted trace correlation.
       content:
         application/json:
           schema:
@@ -449,6 +460,7 @@ components:
           type: string
         trace_id:
           type: string
+          description: Request trace identifier used for logs and trace lookup.
     LoginRequest:
       type: object
       required: [username, password]
@@ -683,6 +695,7 @@ components:
             $ref: "#/components/schemas/SearchResult"
         trace_id:
           type: string
+          description: Request trace identifier. Query traces can be inspected with `oragctl trace --trace-id <trace_id>`.
         cache_status:
           type: string
           enum: [hit, miss, error]

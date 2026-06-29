@@ -1,7 +1,11 @@
 package graph
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/shikanon/orag/internal/kb"
@@ -46,6 +50,80 @@ func TestRAGGraphInvokeAndCacheHit(t *testing.T) {
 	}
 }
 
+func TestRAGGraphInvokeUsesRequestTraceIDInPersistence(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+	g, err := NewRAGGraph(ctx, svc)
+	if err != nil {
+		t.Fatalf("NewRAGGraph() error = %v", err)
+	}
+	store := &capturingTraceStore{}
+	g.TraceStore = store
+
+	resp, err := g.Invoke(ctx, rag.QueryRequest{
+		TenantID:        "tenant_default",
+		TraceID:         "trace_graph_request",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+	})
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	if resp.TraceID != "trace_graph_request" {
+		t.Fatalf("response trace_id = %q, want trace_graph_request", resp.TraceID)
+	}
+	if store.traceID != "trace_graph_request" {
+		t.Fatalf("stored trace_id = %q, want trace_graph_request", store.traceID)
+	}
+	if len(store.spans) == 0 {
+		t.Fatalf("expected persisted node spans")
+	}
+}
+
+func TestRAGGraphFailureLogIncludesCorrelationFieldsWithoutSensitiveContent(t *testing.T) {
+	var logs bytes.Buffer
+	ctx := context.Background()
+	svc := newTestService(t)
+	svc.Cache = nil
+	svc.Retriever = failingRetriever{err: errors.New("retrieval unavailable")}
+	svc.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	g, err := NewRAGGraph(ctx, svc)
+	if err != nil {
+		t.Fatalf("NewRAGGraph() error = %v", err)
+	}
+
+	_, err = g.Invoke(ctx, rag.QueryRequest{
+		TenantID:        "tenant_default",
+		TraceID:         "trace_graph_failure",
+		KnowledgeBaseID: "kb_default",
+		Query:           "raw prompt should stay out of logs",
+		Profile:         rag.ProfileHighPrecision,
+	})
+	if err == nil {
+		t.Fatalf("Invoke() expected error")
+	}
+
+	line := logs.String()
+	for _, want := range []string{
+		`"msg":"rag_graph_node_failed"`,
+		`"trace_id":"trace_graph_failure"`,
+		`"tenant":"tenant_default"`,
+		`"profile":"high_precision"`,
+		`"node":"hybrid_retrieve"`,
+		`"latency":`,
+		`"error":"retrieval unavailable"`,
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("graph failure log missing %s: %s", want, line)
+		}
+	}
+	for _, forbidden := range []string{"raw prompt", "document content", "model response"} {
+		if strings.Contains(line, forbidden) {
+			t.Fatalf("graph failure log leaked %q: %s", forbidden, line)
+		}
+	}
+}
+
 func TestHighPrecisionRewriteNodeRuns(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestService(t)
@@ -69,6 +147,25 @@ func TestHighPrecisionRewriteNodeRuns(t *testing.T) {
 	if got := st.Spans[len(st.Spans)-1].NodeName; got != "query_rewrite" {
 		t.Fatalf("last span = %q, want query_rewrite", got)
 	}
+}
+
+type capturingTraceStore struct {
+	traceID string
+	spans   []NodeSpan
+}
+
+func (s *capturingTraceStore) StoreTrace(_ context.Context, _, traceID, _ string, _ rag.Profile, _ int64, spans []NodeSpan) error {
+	s.traceID = traceID
+	s.spans = spans
+	return nil
+}
+
+type failingRetriever struct {
+	err error
+}
+
+func (r failingRetriever) Retrieve(context.Context, kb.SearchRequest) ([]kb.SearchResult, error) {
+	return nil, r.err
 }
 
 func newTestService(t *testing.T) *rag.Service {

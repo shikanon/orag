@@ -17,6 +17,7 @@ import (
 	"github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
+	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -31,6 +32,7 @@ func NewServer(app *core.App) *Server {
 
 func (s *Server) Hertz() *server.Hertz {
 	h := server.Default(server.WithHostPorts(s.App.Config.Server.Addr()))
+	h.Use(s.traceMiddleware)
 	h.Use(s.metricsMiddleware)
 	h.GET("/healthz", s.health)
 	h.GET("/readyz", s.ready)
@@ -238,13 +240,18 @@ func (s *Server) query(ctx context.Context, c *app.RequestContext) {
 	if !bindJSON(c, &req) {
 		return
 	}
+	start := time.Now()
+	traceID := requestTraceID(c)
+	ctx = observability.WithTraceID(ctx, traceID)
 	req.TenantID = tenantID(c)
+	req.TraceID = traceID
 	resp, err := s.App.RAG.Query(ctx, req)
 	if err != nil {
+		s.observeRAGError(req.Profile, "query_failed", time.Since(start).Milliseconds())
 		writeError(c, consts.StatusInternalServerError, "query_failed", err.Error())
 		return
 	}
-	s.App.Metrics.IncRAGQuery(resp.CacheStatus, resp.LatencyMS)
+	s.observeRAGSuccess(resp.Profile, resp.CacheStatus, resp.LatencyMS)
 	c.JSON(consts.StatusOK, resp)
 }
 
@@ -253,20 +260,41 @@ func (s *Server) queryStream(ctx context.Context, c *app.RequestContext) {
 	if !bindJSON(c, &req) {
 		return
 	}
+	start := time.Now()
+	traceID := requestTraceID(c)
+	ctx = observability.WithTraceID(ctx, traceID)
 	req.TenantID = tenantID(c)
+	req.TraceID = traceID
 	resp, err := s.App.RAG.Query(ctx, req)
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache")
 	if err != nil {
+		c.Set("error_code", "query_failed")
+		s.observeRAGError(req.Profile, "query_failed", time.Since(start).Milliseconds())
 		c.Response.SetStatusCode(consts.StatusInternalServerError)
 		c.Response.Header.SetContentType("text/event-stream; charset=utf-8")
-		c.Response.SetBodyString(errorSSE("query_failed", err.Error(), id.New("trace")))
+		c.Response.SetBodyString(errorSSE("query_failed", err.Error(), traceID))
 		return
 	}
-	s.App.Metrics.IncRAGQuery(resp.CacheStatus, resp.LatencyMS)
+	s.observeRAGSuccess(resp.Profile, resp.CacheStatus, resp.LatencyMS)
 	c.Response.SetStatusCode(consts.StatusOK)
 	c.Response.Header.SetContentType("text/event-stream; charset=utf-8")
 	c.Response.SetBodyString(querySSE(resp))
+}
+
+func (s *Server) observeRAGSuccess(profile rag.Profile, cacheStatus string, latencyMS int64) {
+	if s.App == nil || s.App.Metrics == nil {
+		return
+	}
+	s.App.Metrics.ObserveRAGQuery(string(profile), cacheStatus, "success", latencyMS)
+}
+
+func (s *Server) observeRAGError(profile rag.Profile, errorCode string, latencyMS int64) {
+	if s.App == nil || s.App.Metrics == nil {
+		return
+	}
+	s.App.Metrics.ObserveRAGQuery(string(profile), "unknown", "error", latencyMS)
+	s.App.Metrics.IncRAGError(string(profile), errorCode)
 }
 
 func (s *Server) createDataset(ctx context.Context, c *app.RequestContext) {

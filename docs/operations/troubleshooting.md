@@ -5,7 +5,7 @@
 ## 快速定位顺序
 
 ```text
-process -> healthz -> readyz -> auth -> ingestion -> retrieval -> generation -> metrics
+process -> healthz -> readyz -> auth -> ingestion -> retrieval -> generation -> metrics/logs/trace
 ```
 
 建议先确认 API 是否启动，再确认依赖是否就绪，最后进入业务链路。
@@ -65,20 +65,42 @@ curl -fsS http://localhost:8080/readyz
 
 | 现象 | 优先检查 |
 | --- | --- |
-| 查询 500 | 模型接口、rerank 接口、Qdrant 或 PostgreSQL 访问是否失败。 |
+| 查询 500 | 从错误响应或 SSE `error` 事件取 `trace_id`，再检查模型接口、rerank 接口、Qdrant 或 PostgreSQL 访问是否失败。 |
 | 答案无引用 | 文档是否成功入库，Qdrant 主 collection 是否有向量，PostgreSQL FTS 是否有 chunk。 |
 | 结果不稳定 | profile、top_k、rerank provider 和 mock/真实 Ark 配置是否一致。 |
 | 延迟过高 | top-k 候选规模、rerank 超时、Ark timeout 和上下文 token 预算。 |
+
+已知 `trace_id` 时先查询持久化 RAG trace：
+
+```bash
+oragctl trace --trace-id trace_xxx
+```
+
+排查顺序：
+
+| 步骤 | 操作 | 目的 |
+| --- | --- | --- |
+| 1 | 在 HTTP 日志中搜索 `trace_id`。 | 确认请求 `route`、`status`、`latency` 和 `error_code`。 |
+| 2 | 运行 `oragctl trace --trace-id <trace_id>`。 | 查看 `profile`、RAG 总耗时和 `node_spans`。 |
+| 3 | 检查 `node_spans[].error`。 | 判断失败发生在检索、重排、打包、生成还是引用阶段。 |
+| 4 | 对照 `node_spans[].latency_ms` 和 metrics histogram。 | 判断是单次异常还是整体延迟升高。 |
+| 5 | 回到依赖日志或配置。 | 针对 Qdrant、PostgreSQL、Ark、rerank provider 或 token/tenant 问题处理。 |
 
 ## Metrics 没变化
 
 | 指标 | 说明 |
 | --- | --- |
 | `orag_up` | 只表示 metrics endpoint 可渲染，不代表依赖健康。 |
-| `orag_rag_queries_total` | 只有发生 RAG 查询后才增长。 |
+| `orag_http_requests_total{method,route,status,status_class}` | 经过 HTTP middleware 的请求才增长；无 label 总量用于兼容。 |
+| `orag_http_errors_total{method,route,status,status_class}` | 只有 4xx/5xx 响应增长。 |
+| `orag_rag_queries_total{profile,cache_status,outcome}` | 只有发生 RAG 查询后才增长；失败时 `outcome="error"`。 |
+| `orag_rag_errors_total{profile,error_code}` | 只有 RAG 查询失败后增长。 |
+| `orag_rag_query_latency_ms_bucket` | 只有 RAG 查询后按延迟分桶增长。 |
 | cache hit/miss | 只有查询链路经过语义缓存后才增长。 |
 
 进程重启后，当前 in-process counter 会从零开始。
+
+metrics 不包含 `trace_id`、tenant、用户输入、prompt、文档内容或模型响应等高基数字段。单次请求排查请使用结构化日志中的 `trace_id` 和 `oragctl trace`。
 
 ## Docker 网络问题
 

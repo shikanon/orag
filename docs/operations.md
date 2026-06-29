@@ -50,13 +50,30 @@ Ark 状态只可能报告为：
 | 指标 | 类型 | 含义 |
 | --- | --- | --- |
 | `orag_up` | gauge | 进程可渲染 metrics 时固定为 `1`，不代表 PostgreSQL、Qdrant 或 Ark 已就绪。 |
-| `orag_http_requests_total` | counter | 服务处理过的 HTTP 请求总数。 |
-| `orag_rag_queries_total` | counter | RAG 查询总数。 |
+| `orag_http_requests_total` | counter | 服务处理过的 HTTP 请求总数；同时输出带 `method`、`route`、`status`、`status_class` 的低基数 label 版本。 |
+| `orag_http_errors_total` | counter | HTTP 4xx/5xx 错误响应总数，label 同 HTTP 请求计数。 |
+| `orag_rag_queries_total` | counter | RAG 查询总数；同时输出带 `profile`、`cache_status`、`outcome` 的低基数 label 版本。 |
+| `orag_rag_errors_total` | counter | RAG 查询失败总数，label 为 `profile` 和受控 `error_code`。 |
 | `orag_rag_cache_hits_total` | counter | 语义缓存命中的 RAG 查询总数。 |
 | `orag_rag_cache_misses_total` | counter | 未命中语义缓存的 RAG 查询总数；非 `hit` 的 cache 状态都会计为 miss。 |
+| `orag_rag_query_latency_ms` | histogram | RAG 查询耗时分桶，单位毫秒，label 为 `profile`、`cache_status`、`outcome`。 |
 | `orag_rag_query_latency_ms_sum` | counter | RAG 查询耗时累计值，单位毫秒。可与 `orag_rag_queries_total` 粗略计算平均耗时。 |
 
-这些指标是进程内 counter，服务重启后会从零开始；当前没有 label、histogram、分位数、持久化或 OTel exporter。需要更细粒度的路由、租户、状态码、延迟分桶或 LangFuse trace 时，可在 `internal/observability` 层扩展。
+这些指标是进程内 counter/histogram，服务重启后会从零开始；当前没有分位数预聚合、持久化或 OTel exporter。metrics label 不包含 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本，单次请求排查请使用日志和 trace 查询。
+
+## 日志、Trace 与外部观测边界
+
+HTTP 请求完成日志使用 `http_request_completed`，包含 `method`、`route`、`path`、`status`、`latency`、`trace_id`，错误响应会额外包含 `error_code`。RAG/Graph 失败日志会携带 `trace_id`、tenant、profile、node、latency 和 error 字段中的一部分；日志不应输出 token、原始 prompt、文档内容或模型响应。
+
+RAG 查询响应、SSE `trace`/`error` 事件和统一错误响应都会返回 `trace_id`。查询 PostgreSQL 中的持久化 trace：
+
+```bash
+oragctl trace --trace-id trace_xxx
+```
+
+命中时输出 `trace` 对象，包含 `tenant_id`、`profile`、`latency_ms`、`has_error`、`error_count` 和按时间排序的 `node_spans`；未命中时输出 `found=false` 和查询的 `trace_id`。当前只支持 CLI 按单个 `trace_id` 精确查询，不支持 HTTP trace 查询、列表、时间范围过滤或跨服务拓扑。
+
+`OTEL_EXPORTER_OTLP_ENDPOINT` 和 `LANGFUSE_*` 当前只是配置边界：服务未创建 OTel tracer/provider，不导出 OTel spans 或 metrics；也未创建 LangFuse client，不上传 prompt、completion、score 或 trace。后续如需接入，应先明确脱敏、采样、留存和 `OBSERVABILITY_RECORD_PROMPTS` 策略。
 
 ## 本地部署检查
 
@@ -140,6 +157,7 @@ QDRANT_GRPC_PORT=6334
 - 入库或查询返回外部模型错误：检查 `ARK_BASE_URL`、`ARK_RERANK_BASE_URL`、`ALIYUN_RERANK_BASE_URL`、模型名、超时和重试配置；用真实外部模型前应确保网络出口、账号额度和模型权限可用。
 - 查询结果总是无上下文：检查文档是否成功入库、PostgreSQL 元数据是否存在、Qdrant 主 collection 是否有向量，以及 `RAG_CONTEXT_TOP_N`、`RAG_MAX_CONTEXT_TOKENS` 是否被设置得过低。
 - 语义缓存命中异常：查看 `orag_rag_cache_hits_total`、`orag_rag_cache_misses_total` 和 `RAG_SEMANTIC_CACHE_THRESHOLD`；collection 缺失会在 `/readyz` 暴露。
+- 已知错误响应或 SSE `error` 事件中的 `trace_id`：先在 HTTP 日志中搜索该值，再运行 `oragctl trace --trace-id <trace_id>` 查看 `node_spans[].error` 和节点耗时。
 
 ### Docker Compose 依赖异常
 

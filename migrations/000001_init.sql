@@ -152,7 +152,8 @@ CREATE TABLE IF NOT EXISTS rag_node_spans (
     trace_id TEXT NOT NULL REFERENCES rag_traces(id),
     node_name TEXT NOT NULL,
     latency_ms BIGINT NOT NULL,
-    error TEXT NOT NULL DEFAULT ''
+    error TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- +goose Down

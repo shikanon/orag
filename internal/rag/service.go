@@ -3,12 +3,13 @@ package rag
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/llm/ark"
-	"github.com/shikanon/orag/internal/platform/id"
+	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/prompt"
 )
 
@@ -31,18 +32,25 @@ type Service struct {
 	QueryRewriteEnabled bool
 	MultiQueryCount     int
 	HyDEEnabled         bool
+	Logger              *slog.Logger
 }
 
 func (s *Service) Query(ctx context.Context, req QueryRequest) (QueryResponse, error) {
+	start := time.Now()
+	ctx, req, traceID := ensureRequestTrace(ctx, req)
 	if s.Pipeline != nil {
-		return s.Pipeline.Invoke(ctx, req)
+		resp, err := s.Pipeline.Invoke(ctx, req)
+		if err != nil {
+			s.logFailure(ctx, req, s.Profile(req.Profile), traceID, "rag_pipeline", start, err)
+		}
+		return resp, err
 	}
 	return s.Execute(ctx, req)
 }
 
 func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse, error) {
 	start := time.Now()
-	traceID := id.New("trace")
+	ctx, req, traceID := ensureRequestTrace(ctx, req)
 	profile := s.Profile(req.Profile)
 	topK := req.TopK
 	if topK <= 0 {
@@ -53,10 +61,13 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 	}
 	embeddings, err := s.Model.Embed(ctx, []string{req.Query})
 	if err != nil {
+		s.logFailure(ctx, req, profile, traceID, "ark_embed", start, err)
 		return QueryResponse{}, err
 	}
 	if len(embeddings) == 0 {
-		return QueryResponse{}, fmt.Errorf("embedding response is empty")
+		err := fmt.Errorf("embedding response is empty")
+		s.logFailure(ctx, req, profile, traceID, "ark_embed", start, err)
+		return QueryResponse{}, err
 	}
 	var warnings []string
 	if cached, ok, warning := s.LookupSemanticCache(ctx, req, embeddings[0], traceID, profile, start); ok {
@@ -82,6 +93,7 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		results, err = s.Retriever.Retrieve(ctx, searchReq)
 	}
 	if err != nil {
+		s.logFailure(ctx, req, profile, traceID, "hybrid_retrieve", start, err)
 		return QueryResponse{}, err
 	}
 	if len(results) == 0 {
@@ -112,6 +124,7 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		{Role: "user", Content: user + "\n\n缓存稳定前缀：\n" + promptText},
 	})
 	if err != nil {
+		s.logFailure(ctx, req, profile, traceID, "ark_generate", start, err)
 		return QueryResponse{}, err
 	}
 	citations, validationWarnings := ValidateCitations(citations, results)
@@ -131,6 +144,29 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		resp.Warnings = append(resp.Warnings, warning)
 	}
 	return resp, nil
+}
+
+func (s *Service) logFailure(ctx context.Context, req QueryRequest, profile Profile, traceID, node string, start time.Time, err error) {
+	if s.Logger == nil || err == nil {
+		return
+	}
+	s.Logger.LogAttrs(ctx, slog.LevelError, "rag_failure",
+		slog.String("trace_id", traceID),
+		slog.String("tenant", req.TenantID),
+		slog.String("profile", string(profile)),
+		slog.String("node", node),
+		slog.Int64("latency", time.Since(start).Milliseconds()),
+		slog.String("error", err.Error()),
+	)
+}
+
+func ensureRequestTrace(ctx context.Context, req QueryRequest) (context.Context, QueryRequest, string) {
+	traceID := strings.TrimSpace(req.TraceID)
+	if traceID == "" {
+		traceID = observability.EnsureTraceID(ctx)
+	}
+	req.TraceID = traceID
+	return observability.WithTraceID(ctx, traceID), req, traceID
 }
 
 func (s *Service) LookupSemanticCache(ctx context.Context, req QueryRequest, vector []float64, traceID string, profile Profile, start time.Time) (QueryResponse, bool, string) {

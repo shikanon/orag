@@ -15,6 +15,7 @@ const (
 
 type QueryRequest struct {
 	TenantID        string  `json:"-"`
+	TraceID         string  `json:"-"`
 	KnowledgeBaseID string  `json:"knowledge_base_id"`
 	Query           string  `json:"query"`
 	Profile         Profile `json:"profile,omitempty"`

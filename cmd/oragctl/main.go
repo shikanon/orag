@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -47,6 +48,10 @@ func main() {
 			}
 		}()
 		fmt.Println(app.BootstrapToken())
+	case "trace":
+		if err := traceCmd(cfg, os.Args[2:], os.Stdout); err != nil {
+			log.Fatalf("trace: %v", err)
+		}
 	default:
 		usage()
 	}
@@ -92,6 +97,52 @@ func evalCmd(app *core.App, args []string) {
 	fmt.Println(string(body))
 }
 
+type traceGetter interface {
+	GetTrace(ctx context.Context, traceID string) (postgres.TraceRecord, bool, error)
+}
+
+type traceLookupResult struct {
+	Found   bool                  `json:"found"`
+	TraceID string                `json:"trace_id,omitempty"`
+	Trace   *postgres.TraceRecord `json:"trace,omitempty"`
+}
+
+func traceCmd(cfg config.Config, args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("trace", flag.ExitOnError)
+	traceID := fs.String("trace-id", "", "trace id")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *traceID == "" && fs.NArg() > 0 {
+		*traceID = fs.Arg(0)
+	}
+	if *traceID == "" {
+		return fmt.Errorf("trace id required")
+	}
+
+	pool, err := postgres.Open(context.Background(), cfg.Database.URL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	return runTraceLookup(context.Background(), postgres.NewRepository(pool), *traceID, out)
+}
+
+func runTraceLookup(ctx context.Context, getter traceGetter, traceID string, out io.Writer) error {
+	trace, found, err := getter.GetTrace(ctx, traceID)
+	if err != nil {
+		return err
+	}
+	result := traceLookupResult{Found: found, TraceID: traceID}
+	if found {
+		result.TraceID = ""
+		result.Trace = &trace
+	}
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	return enc.Encode(result)
+}
+
 func usage() {
-	fmt.Println("usage: oragctl [migrate|eval|token]")
+	fmt.Println("usage: oragctl [migrate|eval|token|trace]")
 }
