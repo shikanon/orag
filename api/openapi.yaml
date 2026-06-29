@@ -1,0 +1,835 @@
+openapi: 3.0.3
+info:
+  title: ORAG API
+  version: 0.1.0
+  description: Go RAG framework API backed by Hertz, Eino Graph, Ark/Doubao, Qdrant, and PostgreSQL.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: System
+  - name: Auth
+  - name: KnowledgeBases
+  - name: Ingestion
+  - name: Query
+  - name: Evaluation
+paths:
+  /healthz:
+    get:
+      tags: [System]
+      operationId: healthz
+      responses:
+        "200":
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /readyz:
+    get:
+      tags: [System]
+      operationId: readyz
+      responses:
+        "200":
+          description: Service dependencies are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: One or more dependencies are not ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+  /metrics:
+    get:
+      tags: [System]
+      operationId: metrics
+      responses:
+        "200":
+          description: Prometheus text metrics.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /docs:
+    get:
+      tags: [System]
+      operationId: docs
+      responses:
+        "200":
+          description: Minimal API documentation landing page.
+          content:
+            text/html:
+              schema:
+                type: string
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/knowledge-bases:
+    get:
+      tags: [KnowledgeBases]
+      operationId: listKnowledgeBases
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Knowledge base list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseListResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [KnowledgeBases]
+      operationId: createKnowledgeBase
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKnowledgeBaseRequest"
+      responses:
+        "201":
+          description: Created knowledge base.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBase"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/knowledge-bases/{id}:
+    get:
+      tags: [KnowledgeBases]
+      operationId: getKnowledgeBase
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Knowledge base.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBase"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [KnowledgeBases]
+      operationId: deleteKnowledgeBase
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "204":
+          description: Delete request accepted by the current handler.
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/knowledge-bases/{id}/documents:
+    post:
+      tags: [Ingestion]
+      operationId: uploadDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "202":
+          description: Document ingestion accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+  "/v1/knowledge-bases/{id}/documents:import":
+    post:
+      tags: [Ingestion]
+      operationId: importDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportDocumentRequest"
+      responses:
+        "202":
+          description: Document ingestion accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+  /v1/ingestion-jobs/{id}:
+    get:
+      tags: [Ingestion]
+      operationId: getIngestionJob
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Ingestion job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionJob"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/query:
+    post:
+      tags: [Query]
+      operationId: query
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryRequest"
+      responses:
+        "200":
+          description: RAG query response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  "/v1/query:stream":
+    post:
+      tags: [Query]
+      operationId: queryStream
+      description: |
+        Server-Sent Events stream. Events are emitted as `trace`, `chunk`,
+        `citations`, `done`, or `error`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryRequest"
+      responses:
+        "200":
+          description: SSE query stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "500":
+          description: SSE error event.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /v1/datasets:
+    post:
+      tags: [Evaluation]
+      operationId: createDataset
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDatasetRequest"
+      responses:
+        "201":
+          description: Dataset.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dataset"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/datasets/{id}/items:
+    post:
+      tags: [Evaluation]
+      operationId: addDatasetItem
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDatasetItemRequest"
+      responses:
+        "201":
+          description: Dataset item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetItem"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/evaluations:
+    post:
+      tags: [Evaluation]
+      operationId: runEvaluation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunEvaluationRequest"
+      responses:
+        "202":
+          description: Evaluation run result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunEvaluationResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/evaluations/{id}:
+    get:
+      tags: [Evaluation]
+      operationId: getEvaluation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Evaluation run result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunEvaluationResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/optimizations:
+    post:
+      tags: [Evaluation]
+      operationId: optimize
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptimizeRequest"
+      responses:
+        "202":
+          description: Optimization result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizeResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Error:
+      description: Unified error response.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    Profile:
+      type: string
+      enum: [realtime, high_precision]
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorBody"
+    ErrorBody:
+      type: object
+      required: [code, message, trace_id]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        trace_id:
+          type: string
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+    LoginResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+    ReadinessResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ReadinessCheck"
+    ReadinessCheck:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+        error:
+          type: string
+    CreateKnowledgeBaseRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    KnowledgeBase:
+      type: object
+      required: [id, tenant_id, name, description, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    KnowledgeBaseListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgeBase"
+    ImportDocumentRequest:
+      type: object
+      required: [content]
+      properties:
+        source_uri:
+          type: string
+        name:
+          type: string
+        content:
+          type: string
+    IngestionResponse:
+      type: object
+      required: [document, chunks, job]
+      properties:
+        document:
+          $ref: "#/components/schemas/Document"
+        chunks:
+          type: integer
+        job:
+          $ref: "#/components/schemas/IngestionJob"
+    IngestionJob:
+      type: object
+      required: [id, tenant_id, knowledge_base_id, status, source_uri, chunk_count, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        knowledge_base_id:
+          type: string
+        status:
+          type: string
+          enum: [running, succeeded, failed]
+        source_uri:
+          type: string
+        document_id:
+          type: string
+        chunk_count:
+          type: integer
+        error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Document:
+      type: object
+      required: [id, tenant_id, knowledge_base_id, source_uri, title, content_hash, created_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        knowledge_base_id:
+          type: string
+        source_uri:
+          type: string
+        title:
+          type: string
+        content_hash:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+    Chunk:
+      type: object
+      required: [id, tenant_id, knowledge_base_id, document_id, content, source_uri]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        knowledge_base_id:
+          type: string
+        document_id:
+          type: string
+        content:
+          type: string
+        source_uri:
+          type: string
+        page:
+          type: integer
+        section:
+          type: string
+        offset:
+          type: integer
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    SearchResult:
+      type: object
+      required: [chunk, score, rank, from]
+      properties:
+        chunk:
+          $ref: "#/components/schemas/Chunk"
+        score:
+          type: number
+          format: double
+        rank:
+          type: integer
+        from:
+          type: string
+    Citation:
+      type: object
+      required: [chunk_id, document_id, source_uri]
+      properties:
+        chunk_id:
+          type: string
+        document_id:
+          type: string
+        source_uri:
+          type: string
+        section:
+          type: string
+        quote:
+          type: string
+    QueryRequest:
+      type: object
+      required: [knowledge_base_id, query]
+      properties:
+        knowledge_base_id:
+          type: string
+        query:
+          type: string
+        profile:
+          $ref: "#/components/schemas/Profile"
+        session_id:
+          type: string
+        top_k:
+          type: integer
+    QueryResponse:
+      type: object
+      required: [answer, citations, retrieved_chunks, trace_id, cache_status, profile, latency_ms, created_at]
+      properties:
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Citation"
+        retrieved_chunks:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchResult"
+        trace_id:
+          type: string
+        cache_status:
+          type: string
+          enum: [hit, miss, error]
+        profile:
+          $ref: "#/components/schemas/Profile"
+        warnings:
+          type: array
+          items:
+            type: string
+        latency_ms:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+    CreateDatasetRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          default: golden
+    Dataset:
+      type: object
+      required: [id, tenant_id, name, kind, version, created_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        version:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreateDatasetItemRequest:
+      type: object
+      required: [query, ground_truth]
+      properties:
+        query:
+          type: string
+        ground_truth:
+          type: string
+        relevant_doc_ids:
+          type: array
+          items:
+            type: string
+    DatasetItem:
+      type: object
+      required: [id, dataset_id, query, ground_truth, relevant_doc_ids]
+      properties:
+        id:
+          type: string
+        dataset_id:
+          type: string
+        query:
+          type: string
+        ground_truth:
+          type: string
+        relevant_doc_ids:
+          type: array
+          items:
+            type: string
+    RunEvaluationRequest:
+      type: object
+      required: [dataset_id, knowledge_base_id]
+      properties:
+        dataset_id:
+          type: string
+        knowledge_base_id:
+          type: string
+        profile:
+          $ref: "#/components/schemas/Profile"
+        top_k:
+          type: integer
+    RunEvaluationResponse:
+      type: object
+      required: [id, dataset_id, profile, total, hit_rate, accuracy, created_at]
+      properties:
+        id:
+          type: string
+        dataset_id:
+          type: string
+        profile:
+          type: string
+        total:
+          type: integer
+        hit_rate:
+          type: number
+          format: double
+        accuracy:
+          type: number
+          format: double
+        metrics:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+        created_at:
+          type: string
+          format: date-time
+    OptimizeRequest:
+      type: object
+      required: [dataset_id, knowledge_base_id]
+      properties:
+        dataset_id:
+          type: string
+        knowledge_base_id:
+          type: string
+        profiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Profile"
+        top_ks:
+          type: array
+          items:
+            type: integer
+    CandidateResult:
+      type: object
+      required: [profile, top_k, score, run_id]
+      properties:
+        profile:
+          $ref: "#/components/schemas/Profile"
+        top_k:
+          type: integer
+        score:
+          type: number
+          format: double
+        run_id:
+          type: string
+    OptimizeResult:
+      type: object
+      required: [id, status, best, candidates]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        best:
+          $ref: "#/components/schemas/CandidateResult"
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/CandidateResult"

@@ -27,6 +27,15 @@ go.work.sum
 # env file
 .env
 
+# local API smoke state
+.orag-demo/
+
+# local agent/spec workspace
+.trae/
+
+# macOS
+.DS_Store
+
 # Editor/IDE
 # .idea/
 # .vscode/

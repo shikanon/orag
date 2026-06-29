@@ -1,0 +1,62 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  public_base_url: http://localhost:8080
+  debug: false
+
+storage:
+  backend: qdrant_postgres
+
+database:
+  url: postgres://orag:orag@localhost:5432/orag?sslmode=disable
+
+qdrant:
+  host: localhost
+  grpc_port: 6334
+  use_tls: false
+  collection: orag_chunks
+  semantic_cache_collection: orag_semantic_cache
+  auto_create_collections: true
+
+ark:
+  base_url: https://ark.cn-beijing.volces.com/api/v3
+  chat_model: doubao-seed-2-1-pro-260628
+  embedding_model: doubao-embedding-vision-251215
+  embedding_dimensions: 1024
+  rerank_provider: volcengine
+  rerank_base_url: https://ark.cn-beijing.volces.com/api/v3
+  rerank_model: m3-v2-rerank
+  aliyun_rerank_base_url: https://dashscope.aliyuncs.com/compatible-api/v1
+  aliyun_rerank_model: qwen3-rerank
+  multimodal_model: doubao-seed-2-1-pro-260628
+  timeout: 60s
+  retry_times: 2
+
+rag:
+  default_profile: realtime
+  dense_top_k: 50
+  sparse_top_k: 50
+  rrf_k: 60
+  rerank_top_n: 8
+  context_top_n: 8
+  max_context_tokens: 6000
+  semantic_cache_threshold: 0.92
+  semantic_cache_max_entries: 10000
+  query_rewrite_enabled: true
+  multi_query_count: 3
+  hyde_enabled: true
+  no_context_answer: 未在知识库中检索到足够依据，无法基于上下文回答。
+  prompt_cache_mode: auto
+  require_external_providers: false
+
+ingestion:
+  chunk_size_tokens: 800
+  chunk_overlap_tokens: 120
+  max_document_bytes: 26214400
+
+object_storage:
+  provider: local
+  mock_upload: true
+
+observability:
+  record_prompts: false
