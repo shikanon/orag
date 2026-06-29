@@ -3,6 +3,8 @@ package graph
 import (
 	"context"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/shikanon/orag/internal/observability"
@@ -17,6 +19,33 @@ type RAGGraph struct {
 
 type TraceStore interface {
 	StoreTrace(ctx context.Context, tenantID, traceID, query string, profile rag.Profile, latencyMS int64, spans []NodeSpan) error
+}
+
+type spanCollectorKey struct{}
+
+type spanCollector struct {
+	mu    sync.Mutex
+	spans []NodeSpan
+}
+
+func (c *spanCollector) add(span NodeSpan) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spans = append(c.spans, span)
+}
+
+func (c *spanCollector) snapshot() []NodeSpan {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]NodeSpan(nil), c.spans...)
+}
+
+func collectSpan(ctx context.Context, span NodeSpan) {
+	collector, ok := ctx.Value(spanCollectorKey{}).(*spanCollector)
+	if !ok || collector == nil {
+		return
+	}
+	collector.add(span)
 }
 
 func NewRAGGraph(ctx context.Context, svc *rag.Service) (*RAGGraph, error) {
@@ -67,21 +96,41 @@ func NewRAGGraph(ctx context.Context, svc *rag.Service) (*RAGGraph, error) {
 }
 
 func (g *RAGGraph) Invoke(ctx context.Context, req rag.QueryRequest) (rag.QueryResponse, error) {
+	start := time.Now()
 	traceID := strings.TrimSpace(req.TraceID)
 	if traceID == "" {
 		traceID = observability.EnsureTraceID(ctx)
 	}
 	req.TraceID = traceID
 	ctx = observability.WithTraceID(ctx, traceID)
+	collector := &spanCollector{}
+	ctx = context.WithValue(ctx, spanCollectorKey{}, collector)
 	out, err := g.runner.Invoke(ctx, State{Request: req})
 	if err != nil {
+		spans := out.Spans
+		if len(spans) == 0 {
+			spans = collector.snapshot()
+		}
+		_ = g.storeTrace(ctx, req, traceID, g.profile(req.Profile), time.Since(start).Milliseconds(), spans)
 		return rag.QueryResponse{}, err
 	}
 	resp := out.Response
-	if g.TraceStore != nil && resp.TraceID != "" {
-		if err := g.TraceStore.StoreTrace(ctx, req.TenantID, resp.TraceID, req.Query, resp.Profile, resp.LatencyMS, out.Spans); err != nil {
-			resp.Warnings = append(resp.Warnings, "trace store failed: "+err.Error())
-		}
+	if err := g.storeTrace(ctx, req, resp.TraceID, resp.Profile, resp.LatencyMS, out.Spans); err != nil {
+		resp.Warnings = append(resp.Warnings, "trace store failed: "+err.Error())
 	}
 	return resp, nil
+}
+
+func (g *RAGGraph) storeTrace(ctx context.Context, req rag.QueryRequest, traceID string, profile rag.Profile, latencyMS int64, spans []NodeSpan) error {
+	if g.TraceStore == nil || traceID == "" {
+		return nil
+	}
+	return g.TraceStore.StoreTrace(ctx, req.TenantID, traceID, req.Query, profile, latencyMS, spans)
+}
+
+func (g *RAGGraph) profile(requested rag.Profile) rag.Profile {
+	if g.Service == nil {
+		return requested
+	}
+	return g.Service.Profile(requested)
 }
