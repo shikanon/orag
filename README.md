@@ -1,19 +1,73 @@
+<div align="center">
+
 # ORAG
 
-ORAG 是一个 Go 语言 RAG 服务框架，面向知识库入库、混合检索、问答生成、评估和参数优化的本地开发与 API 验证场景。服务基于 Hertz 暴露 HTTP API，使用 Eino Graph 编排 RAG 链路，默认以 Qdrant + PostgreSQL 作为真实依赖。
+**A Go-native RAG service framework for ingestion, hybrid retrieval, generation, evaluation, and optimization.**
+
+<p>
+  <a href="./README.md"><img alt="README in Chinese" src="https://img.shields.io/badge/简体中文-DBEDFA"></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/shikanon/orag?color=4e6b99"></a>
+  <a href="https://github.com/shikanon/orag/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/shikanon/orag/ci.yml?branch=main&label=CI"></a>
+  <a href="./go.mod"><img alt="Go Version" src="https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white"></a>
+  <a href="./api/openapi.yaml"><img alt="OpenAPI" src="https://img.shields.io/badge/OpenAPI-3.x-6BA539?logo=openapiinitiative&logoColor=white"></a>
+</p>
+
+<p>
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#核心能力">核心能力</a> ·
+  <a href="#架构概览">架构概览</a> ·
+  <a href="./docs/README.md">文档中心</a> ·
+  <a href="./api/openapi.yaml">OpenAPI</a>
+</p>
+
+</div>
+
+ORAG 是一个面向本地开发、API 验证和 RAG 工程落地的 Go 服务框架。它基于 Hertz 暴露 HTTP API，使用 Eino Graph 编排 RAG 链路，并以 Qdrant + PostgreSQL 作为默认真实依赖，覆盖从知识库入库到混合检索、问答生成、评估回归和参数优化的完整闭环。
 
 项目默认不要求真实 Ark Key。未配置 `ARK_API_KEY` 时，Ark/豆包适配层会使用 deterministic mock，便于本地开发、CI 和文档 smoke；需要真实模型调用或 live smoke 时再显式配置 Ark 环境变量和测试开关。
 
+## 为什么是 ORAG
+
+| 目标 | ORAG 的取舍 |
+| --- | --- |
+| Go-native RAG 服务 | 用 Go/Hertz/Eino 组织 API、Graph、存储和观测，便于接入现有后端工程体系。 |
+| 真实依赖优先 | 默认走 `qdrant_postgres`，用 Qdrant 承载 dense retrieval 和 semantic cache，用 PostgreSQL 承载元数据与 FTS sparse retrieval。 |
+| 本地可无 key 验证 | 未配置 Ark 时使用 deterministic mock，保证单测、契约测试和 smoke 流程稳定可跑。 |
+| API 契约清晰 | OpenAPI、curl 示例、契约测试和内置 `/docs` 对齐，降低集成成本。 |
+| 评估闭环内建 | 数据集、评估运行、结果持久化和 optimizer 都复用线上 RAG 查询路径，减少线上线下漂移。 |
+
 ## 核心能力
 
-- 知识库与文档入库：创建知识库，导入文本或上传文件，并写入检索索引。
-- 混合检索：Qdrant dense vector retrieval、PostgreSQL FTS sparse retrieval、RRF 融合、Ark rerank 和 semantic cache。
-- RAG 查询：支持普通 JSON 查询和 `POST /v1/query:stream` SSE 查询，返回答案、引用、trace、cache 状态和 warnings。
-- 数据集与评估：支持数据集、样本、评估运行和评估结果持久化，当前指标为 deterministic rule-based metrics。
-- 参数优化：`POST /v1/optimizations` 对候选 `profiles` 和 `top_ks` 做确定性网格搜索。
-- 运维入口：提供 `GET /healthz`、`GET /readyz`、`GET /metrics` 和内置 `GET /docs`。
+| 能力 | 当前实现 | 入口 |
+| --- | --- | --- |
+| 认证与租户上下文 | 管理员登录换取 Bearer token，业务请求从 token 获取默认 tenant。 | `POST /v1/auth/login` |
+| 知识库管理 | 创建、列表、详情、删除知识库，支持 metadata。 | `/v1/knowledge-bases` |
+| 文档入库 | 支持 JSON 文本导入和 multipart 文件上传，记录 ingestion job 结果。 | `/documents:import`、`/documents`、`/ingestion-jobs/{id}` |
+| 混合检索 | Qdrant dense retrieval、PostgreSQL FTS sparse retrieval、RRF 融合、Ark rerank。 | `internal/kb`、`internal/rag` |
+| RAG 查询 | JSON 查询和 SSE 流式查询，返回答案、引用、trace、cache 状态和 warnings。 | `POST /v1/query`、`POST /v1/query:stream` |
+| 评估与优化 | 数据集、评估运行、rule-based metrics、profile/top-k 网格搜索。 | `/v1/datasets`、`/v1/evaluations`、`/v1/optimizations` |
+| 运维观测 | 存活检查、就绪检查、Prometheus 文本指标、结构化日志。 | `/healthz`、`/readyz`、`/metrics` |
 
-## 默认技术栈
+## 架构概览
+
+```text
+Client / curl / SDK
+        |
+        v
+Hertz HTTP API  ---->  Auth / Tenant / Error Model
+        |
+        v
+Eino RAG Graph
+        |
+        +--> Parser / Chunker / Loader
+        +--> Qdrant dense retrieval + semantic cache
+        +--> PostgreSQL metadata + FTS sparse retrieval
+        +--> RRF fusion + rerank
+        +--> Ark/Doubao chat, embedding, multimodal adapters
+        |
+        v
+Answer + Citations + Trace + Metrics
+```
 
 | 层级 | 默认实现 | 说明 |
 | --- | --- | --- |
@@ -28,7 +82,7 @@ ORAG 是一个 Go 语言 RAG 服务框架，面向知识库入库、混合检索
 
 ## 快速开始
 
-准备本机 Go 环境和 Docker Compose 后：
+准备本机 Go 1.22、Docker Desktop 和 `docker compose` 后：
 
 ```bash
 cp .env.example .env
@@ -50,26 +104,11 @@ curl -fsS http://localhost:8080/readyz
 STORAGE_BACKEND=memory make run
 ```
 
-完成本地验证后可停止依赖：
+完成本地验证后停止依赖：
 
 ```bash
 make dev-down
 ```
-
-## 配置与模型策略
-
-`.env.example` 是本地配置模板，常用变量包括：
-
-- 服务入口：`HOST`、`PORT`、`PUBLIC_BASE_URL`。
-- 存储后端：`STORAGE_BACKEND`、`DATABASE_URL`。
-- Qdrant：`QDRANT_HOST`、`QDRANT_GRPC_PORT`、`QDRANT_COLLECTION`、`QDRANT_SEMANTIC_CACHE_COLLECTION`、`QDRANT_AUTO_CREATE_COLLECTIONS`。
-- 认证：`JWT_SECRET`、`ADMIN_DEFAULT_USERNAME`、`ADMIN_DEFAULT_PASSWORD`、`AUTH_TOKEN_TTL`。
-- Ark/豆包：`ARK_API_KEY`、`ARK_BASE_URL`、`ARK_CHAT_MODEL`、`ARK_EMBEDDING_MODEL`、`ARK_MULTIMODAL_MODEL`。
-- Rerank：`RERANK_PROVIDER` 可选 `volcengine` 或 `aliyun`；火山/方舟使用 `ARK_RERANK_BASE_URL`、`ARK_RERANK_MODEL`，阿里云百炼使用 `ALIYUN_RERANK_API_KEY`、`ALIYUN_RERANK_BASE_URL`、`ALIYUN_RERANK_MODEL`。
-
-默认 `.env.example` 中 `ARK_API_KEY` 为空、`REQUIRE_EXTERNAL_PROVIDERS=false`。此时本地测试和 API smoke 会走 deterministic mock；`/readyz` 只报告 Ark 状态为 `mock` 或 `configured`，不会主动调用外部 Ark 服务。
-
-需要真实模型调用时，在 `.env` 或运行环境中配置 `ARK_API_KEY` 和对应模型变量。默认 embedding 模型为火山 `doubao-embedding-vision-251215`，真实 Ark smoke test 还需要显式设置 `LIVE_ARK_TESTS=1`，否则默认跳过。
 
 ## API Smoke
 
@@ -85,9 +124,26 @@ examples/curl/40_eval.sh
 
 脚本默认请求 `BASE_URL=http://localhost:8080`，可通过 `BASE_URL` 覆盖。登录默认账号来自 `.env.example` 中的 `ADMIN_DEFAULT_USERNAME=admin` 和 `ADMIN_DEFAULT_PASSWORD=admin`。
 
-脚本运行状态保存在 `.orag-demo/`，包括本地 token、知识库 ID、文档 ID 和数据集 ID，不应提交。
+脚本运行状态保存在 `.orag-demo/`，包括本地 token、知识库 ID、文档 ID、数据集 ID 和入库 job ID，不应提交。
 
 OpenAPI 源文件为 `api/openapi.yaml`，服务内置文档入口为 `GET /docs`。
+
+## 配置与模型策略
+
+`.env.example` 是本地配置模板，常用变量包括：
+
+| 分类 | 变量 |
+| --- | --- |
+| 服务入口 | `HOST`、`PORT`、`PUBLIC_BASE_URL` |
+| 存储后端 | `STORAGE_BACKEND`、`DATABASE_URL` |
+| Qdrant | `QDRANT_HOST`、`QDRANT_GRPC_PORT`、`QDRANT_COLLECTION`、`QDRANT_SEMANTIC_CACHE_COLLECTION`、`QDRANT_AUTO_CREATE_COLLECTIONS` |
+| 认证 | `JWT_SECRET`、`ADMIN_DEFAULT_USERNAME`、`ADMIN_DEFAULT_PASSWORD`、`AUTH_TOKEN_TTL` |
+| Ark/豆包 | `ARK_API_KEY`、`ARK_BASE_URL`、`ARK_CHAT_MODEL`、`ARK_EMBEDDING_MODEL`、`ARK_MULTIMODAL_MODEL` |
+| Rerank | `RERANK_PROVIDER`、`ARK_RERANK_BASE_URL`、`ARK_RERANK_MODEL`、`ALIYUN_RERANK_API_KEY`、`ALIYUN_RERANK_BASE_URL`、`ALIYUN_RERANK_MODEL` |
+
+默认 `.env.example` 中 `ARK_API_KEY` 为空、`REQUIRE_EXTERNAL_PROVIDERS=false`。此时本地测试和 API smoke 会走 deterministic mock；`/readyz` 只报告 Ark 状态为 `mock` 或 `configured`，不会主动调用外部 Ark 服务。
+
+需要真实模型调用时，在 `.env` 或运行环境中配置 `ARK_API_KEY` 和对应模型变量。默认 embedding 模型为火山 `doubao-embedding-vision-251215`，真实 Ark smoke test 还需要显式设置 `LIVE_ARK_TESTS=1`，否则默认跳过。
 
 ## 验证
 
@@ -114,18 +170,26 @@ make test-integration
 make test-integration-down
 ```
 
-`make test-integration` 会设置 `ORAG_INTEGRATION_TESTS=1`，并使用 `deployments/docker-compose.test.yml` 的测试端口和 collection。
-
 真实 Ark smoke test 默认跳过，只在显式开启时运行：
 
 ```bash
 LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./tests/live -v
 ```
 
-## 文档索引
+## 文档中心
 
-- `docs/Go-RAG-框架技术方案.md`：整体技术方案。
-- `docs/api.md`：认证、知识库、入库、查询、SSE、数据集、评估、优化和错误响应。
-- `docs/development.md`：本地开发、依赖启动、测试矩阵、集成测试和 live Ark 测试。
-- `docs/evaluation.md`：数据集结构、当前 rule-based metrics、optimizer 和后续增强边界。
-- `docs/operations.md`：部署依赖、健康检查、metrics、配置安全和故障排查。
+| 文档 | 适合读者 | 内容 |
+| --- | --- | --- |
+| `docs/README.md` | 第一次进入项目的开发者 | 文档地图、推荐阅读路径和维护规则。 |
+| `docs/getting-started/` | 新开发者、API smoke 使用者 | 本地启动、依赖说明、API smoke 和状态目录。 |
+| `docs/api/` | API 调用方、SDK/前端开发者 | 认证、错误模型、知识库、入库、查询和 SSE。 |
+| `docs/architecture/` | 后端开发者、架构评审者 | 模块地图、运行时依赖和 RAG pipeline。 |
+| `docs/evaluation/` | 评估/算法/质量负责人 | 数据集结构、rule-based metrics、optimizer 和 LLM-as-Judge 增强边界。 |
+| `docs/operations/` | 运维、SRE、部署负责人 | 部署依赖、健康检查、metrics、配置安全和故障排查。 |
+
+## 当前边界
+
+- 默认不启动 ES/Neo4j；当前真实后端是 PostgreSQL + Qdrant。
+- 当前评估指标是 deterministic rule-based metrics，不等价于完整 LLM-as-Judge。
+- `/readyz` 不主动调用 Ark 外部服务，`ark=configured` 只表示 key 已注入。
+- `STORAGE_BACKEND=memory` 只用于本地调试和单测，不作为生产配置。
