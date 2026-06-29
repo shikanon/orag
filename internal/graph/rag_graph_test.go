@@ -176,6 +176,61 @@ func TestRAGGraphFailureLogIncludesCorrelationFieldsWithoutSensitiveContent(t *t
 	}
 }
 
+func TestRAGGraphInvokePersistsFailureSpans(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+	svc.Cache = nil
+	retrieverErr := errors.New("retrieval unavailable")
+	svc.Retriever = failingRetriever{err: retrieverErr}
+	g, err := NewRAGGraph(ctx, svc)
+	if err != nil {
+		t.Fatalf("NewRAGGraph() error = %v", err)
+	}
+	store := &capturingTraceStore{}
+	g.TraceStore = store
+
+	rawQuery := "raw prompt should stay out of persisted spans"
+	_, err = g.Invoke(ctx, rag.QueryRequest{
+		TenantID:        "tenant_default",
+		TraceID:         "trace_graph_failure_persisted",
+		KnowledgeBaseID: "kb_default",
+		Query:           rawQuery,
+		Profile:         rag.ProfileHighPrecision,
+	})
+	if !errors.Is(err, retrieverErr) {
+		t.Fatalf("Invoke() error = %v, want %v", err, retrieverErr)
+	}
+	if store.calls != 1 {
+		t.Fatalf("StoreTrace() calls = %d, want 1", store.calls)
+	}
+	if store.traceID != "trace_graph_failure_persisted" {
+		t.Fatalf("stored trace_id = %q, want trace_graph_failure_persisted", store.traceID)
+	}
+	if len(store.spans) == 0 {
+		t.Fatalf("expected persisted failure spans")
+	}
+
+	foundRetrieveSpan := false
+	for _, span := range store.spans {
+		if strings.Contains(span.NodeName, rawQuery) || strings.Contains(span.Error, rawQuery) {
+			t.Fatalf("persisted span leaked raw query: %+v", span)
+		}
+		if span.NodeName != "hybrid_retrieve" {
+			continue
+		}
+		foundRetrieveSpan = true
+		if span.LatencyMS < 0 {
+			t.Fatalf("hybrid_retrieve latency = %d, want non-negative", span.LatencyMS)
+		}
+		if span.Error != "retrieval unavailable" {
+			t.Fatalf("hybrid_retrieve error = %q, want retrieval unavailable", span.Error)
+		}
+	}
+	if !foundRetrieveSpan {
+		t.Fatalf("persisted spans missing hybrid_retrieve: %+v", store.spans)
+	}
+}
+
 func TestHighPrecisionRewriteNodeRuns(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestService(t)
@@ -204,11 +259,13 @@ func TestHighPrecisionRewriteNodeRuns(t *testing.T) {
 type capturingTraceStore struct {
 	traceID string
 	spans   []NodeSpan
+	calls   int
 }
 
 func (s *capturingTraceStore) StoreTrace(_ context.Context, _, traceID, _ string, _ rag.Profile, _ int64, spans []NodeSpan) error {
+	s.calls++
 	s.traceID = traceID
-	s.spans = spans
+	s.spans = append([]NodeSpan(nil), spans...)
 	return nil
 }
 
