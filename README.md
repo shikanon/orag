@@ -8,7 +8,7 @@
   <a href="./README.md"><img alt="README in Chinese" src="https://img.shields.io/badge/简体中文-DBEDFA"></a>
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/shikanon/orag?color=4e6b99"></a>
   <a href="https://github.com/shikanon/orag/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/shikanon/orag/ci.yml?branch=main&label=CI"></a>
-  <a href="./go.mod"><img alt="Go Version" src="https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white"></a>
+  <a href="./go.mod"><img alt="Go Version" src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white"></a>
   <a href="./api/openapi.yaml"><img alt="OpenAPI" src="https://img.shields.io/badge/OpenAPI-3.x-6BA539?logo=openapiinitiative&logoColor=white"></a>
 </p>
 
@@ -82,7 +82,7 @@ Answer + Citations + Trace + Metrics
 
 ## 快速开始
 
-准备本机 Go 1.22、Docker Desktop 和 `docker compose` 后：
+准备本机 Go 1.26、Docker Desktop 和 `docker compose` 后：
 
 ```bash
 cp .env.example .env
@@ -156,10 +156,10 @@ make test
 make openapi-validate
 ```
 
-`Makefile` 默认为 Go 命令注入 `CGO_ENABLED=0` 和 `GOFLAGS=-tags=stdjson,gjson`，用于规避 Mac amd64 + Go 1.22 下 Hertz/Sonic native 与本地 cgo 链接产物的问题。直接运行原生命令时可显式带上：
+`Makefile` 默认为 Go 命令注入 `CGO_ENABLED=0` 和 `GOFLAGS=-tags=stdjson,gjson`，用于规避 Mac amd64 + Go 1.26 下 Hertz/Sonic native 与本地 cgo 链接产物的问题。直接运行原生命令时可显式带上：
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./...
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./...
 ```
 
 真实 PostgreSQL + Qdrant 集成测试默认跳过，显式运行：
@@ -173,7 +173,7 @@ make test-integration-down
 真实 Ark smoke test 默认跳过，只在显式开启时运行：
 
 ```bash
-LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./tests/live -v
+LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/live -v
 ```
 
 ## 文档中心

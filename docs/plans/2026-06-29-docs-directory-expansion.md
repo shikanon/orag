@@ -6,7 +6,7 @@
 
 **Architecture:** 保留现有顶层文档作为兼容和长文入口，新增 `getting-started/`、`api/`、`architecture/`、`evaluation/`、`operations/` 子目录承载更细粒度文档。`docs/README.md` 作为总目录，仓库根 `README.md` 只保留高层导航。
 
-**Tech Stack:** Markdown、Go 1.22、Hertz、Eino Graph、Qdrant、PostgreSQL、Ark/豆包、Docker Compose、OpenAPI。
+**Tech Stack:** Markdown、Go 1.26、Hertz、Eino Graph、Qdrant、PostgreSQL、Ark/豆包、Docker Compose、OpenAPI。
 
 ---
 

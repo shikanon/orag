@@ -7,7 +7,7 @@
 本机需要准备：
 
 - macOS + Docker Desktop，并确保 `docker compose` 可用。
-- Go 1.22，仓库 `go.mod` 声明 `go 1.22`。
+- Go 1.26，仓库 `go.mod` 声明 `go 1.26`。
 - `make`、`curl`，用于执行 Makefile 目标和健康检查。
 
 初始化本地配置模板：
@@ -128,7 +128,7 @@ make docker-build
 make docker-run
 ```
 
-`make docker-build` 使用 `deployments/Dockerfile`，构建阶段基于 `golang:1.22-alpine`，运行阶段基于 `alpine:3.20`。
+`make docker-build` 使用 `deployments/Dockerfile`，构建阶段基于 `golang:1.26-alpine`，运行阶段基于 `alpine:3.20`。
 
 ## 测试矩阵
 
@@ -145,7 +145,7 @@ make test
 直接运行原生命令时建议显式带上与 Makefile 一致的参数：
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./...
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./...
 ```
 
 ### 契约测试
@@ -159,7 +159,7 @@ make openapi-validate
 等价原生命令：
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./tests/contract -run TestOpenAPI -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/contract -run TestOpenAPI -v
 ```
 
 该测试读取 `api/openapi.yaml`，用于验证 OpenAPI 文档结构和关键安全约束，不会启动外部服务。
@@ -188,7 +188,7 @@ make test-integration-down
 
 ```bash
 docker compose -f deployments/docker-compose.test.yml up -d
-ORAG_INTEGRATION_TESTS=1 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./tests/integration -v
+ORAG_INTEGRATION_TESTS=1 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/integration -v
 docker compose -f deployments/docker-compose.test.yml down -v
 ```
 
@@ -201,7 +201,7 @@ QDRANT_HOST="localhost" \
 QDRANT_GRPC_PORT="6634" \
 QDRANT_COLLECTION="orag_chunks_test" \
 QDRANT_SEMANTIC_CACHE_COLLECTION="orag_semantic_cache_test" \
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local \
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 \
 go test ./tests/integration -v
 ```
 
@@ -212,7 +212,7 @@ go test ./tests/integration -v
 真实 Ark smoke test 默认跳过，只在显式开启时运行：
 
 ```bash
-LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./tests/live -v
+LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/live -v
 ```
 
 当前 `tests/live/ark_live_test.go` 仍要求已开通的模型 endpoint 配置；没有补齐真实 endpoint 时，即使设置 `LIVE_ARK_TESTS=1` 也会按测试内逻辑 skip。不要把真实 `ARK_API_KEY` 提交到仓库。
@@ -231,12 +231,12 @@ examples/curl/40_eval.sh
 
 脚本会把临时 token、KB ID、dataset ID 写入 `.orag-demo/`，该目录不应提交。
 
-## Mac、Go 1.22 和 Hertz 构建注意事项
+## Mac、Go 1.26 和 Hertz 构建注意事项
 
-本仓库使用 Hertz，间接依赖 Sonic。Mac 本地，尤其是 amd64 + Go 1.22 环境下，直接走 Sonic native/JIT 或本地 cgo 产物可能带来构建和链接问题。仓库统一约定：
+本仓库使用 Hertz，间接依赖 Sonic。Mac 本地，尤其是 amd64 + Go 1.26 环境下，直接走 Sonic native/JIT 或本地 cgo 产物可能带来构建和链接问题。仓库统一约定：
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4
 ```
 
 Makefile 已默认设置：
@@ -249,8 +249,8 @@ CGO_ENABLED ?= 0
 因此优先使用 `make run`、`make test`、`make openapi-validate`、`make test-integration` 等目标。若直接执行 `go run`、`go test` 或 `go build`，请显式带上相同参数：
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go run ./cmd/orag-api
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go build ./cmd/orag-api
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go run ./cmd/orag-api
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go build ./cmd/orag-api
 ```
 
 Docker 构建同样使用 `CGO_ENABLED=0` 和 `GOFLAGS=-tags=stdjson,gjson`：
@@ -265,7 +265,7 @@ docker build -f deployments/Dockerfile -t orag-api:local .
 
 - `postgres:16-alpine`
 - `qdrant/qdrant:v1.11.5`
-- `golang:1.22-alpine`
+- `golang:1.26-alpine`
 - `alpine:3.20`
 
 如果首次执行 `make dev-up`、`make test-integration-up` 或 `make docker-build` 时拉取超时，先单独预拉取镜像，便于定位网络问题：
@@ -273,7 +273,7 @@ docker build -f deployments/Dockerfile -t orag-api:local .
 ```bash
 docker pull postgres:16-alpine
 docker pull qdrant/qdrant:v1.11.5
-docker pull golang:1.22-alpine
+docker pull golang:1.26-alpine
 docker pull alpine:3.20
 ```
 

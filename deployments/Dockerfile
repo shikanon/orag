@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 ARG GOFLAGS=-tags=stdjson,gjson
 COPY go.mod go.sum* ./

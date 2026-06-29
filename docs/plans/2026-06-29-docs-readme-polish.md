@@ -6,7 +6,7 @@
 
 **Architecture:** README 负责产品化总览、能力矩阵、快速开始和文档导航；`docs/README.md` 作为文档中心，承接 API、开发、评估和运维深水区。现有专题文档保持细节，不重复堆叠到首页。
 
-**Tech Stack:** Markdown、GitHub Shields、Go 1.22、Hertz、Eino Graph、Qdrant、PostgreSQL、Ark/豆包。
+**Tech Stack:** Markdown、GitHub Shields、Go 1.26、Hertz、Eino Graph、Qdrant、PostgreSQL、Ark/豆包。
 
 ---
 

@@ -7,12 +7,12 @@
 | 依赖 | 要求 | 检查方式 |
 | --- | --- | --- |
 | macOS | 当前开发默认环境 | `sw_vers` |
-| Go | `go.mod` 声明 Go 1.22 | `go version` |
+| Go | `go.mod` 声明 Go 1.26 | `go version` |
 | Docker Desktop | 需要支持 `docker compose` | `docker compose version` |
 | make | 执行项目封装命令 | `make -v` |
 | curl | 调用健康检查和 smoke 脚本 | `curl --version` |
 
-当前项目的 Go 命令建议带上 `CGO_ENABLED=0` 和 `GOFLAGS=-tags=stdjson,gjson`。`Makefile` 已默认注入这些参数，用于规避 Mac amd64 + Go 1.22 下 Hertz/Sonic native 与本地 cgo 链接产物的问题。
+当前项目的 Go 命令建议带上 `CGO_ENABLED=0` 和 `GOFLAGS=-tags=stdjson,gjson`。`Makefile` 已默认注入这些参数，用于规避 Mac amd64 + Go 1.26 下 Hertz/Sonic native 与本地 cgo 链接产物的问题。
 
 ## 5 分钟启动路径
 
