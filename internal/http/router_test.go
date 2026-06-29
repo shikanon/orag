@@ -13,6 +13,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/route"
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/config"
+	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/platform/logger"
 	"github.com/shikanon/orag/internal/rag"
@@ -229,6 +230,74 @@ func TestIngestionJobLookupReturnsResultSummary(t *testing.T) {
 	}
 	if job.ID != imported.Job.ID || job.Status != "succeeded" || job.DocumentID != imported.Document.ID || job.ChunkCount == 0 {
 		t.Fatalf("unexpected job response: %#v", job)
+	}
+}
+
+func TestDeleteKnowledgeBaseRemovesItFromGetListAndMemoryChunks(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"delete me","description":"temporary"}`, token)
+	if resp.Code != 201 {
+		t.Fatalf("create status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" {
+		t.Fatalf("create response missing id: %s", resp.Body)
+	}
+
+	resp = performJSON(h, "POST", "/v1/knowledge-bases/"+created.ID+"/documents:import", `{"name":"delete.md","source_uri":"example://delete","content":"This document should be removed with the knowledge base."}`, token)
+	if resp.Code != 202 {
+		t.Fatalf("import status = %d body=%s", resp.Code, resp.Body)
+	}
+	chunkSource, ok := app.KBStore.(interface {
+		Chunks(tenantID, kbID string) []kb.Chunk
+	})
+	if !ok {
+		t.Fatal("test KB store does not expose chunks")
+	}
+	if chunks := chunkSource.Chunks("tenant_default", created.ID); len(chunks) == 0 {
+		t.Fatal("expected imported chunks before delete")
+	}
+
+	resp = performJSON(h, "DELETE", "/v1/knowledge-bases/"+created.ID, "", token)
+	if resp.Code != 204 {
+		t.Fatalf("delete status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "GET", "/v1/knowledge-bases/"+created.ID, "", token)
+	if resp.Code != 404 {
+		t.Fatalf("get after delete status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "GET", "/v1/knowledge-bases", "", token)
+	if resp.Code != 200 {
+		t.Fatalf("list status = %d body=%s", resp.Code, resp.Body)
+	}
+	var listed struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &listed); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range listed.Items {
+		if item.ID == created.ID {
+			t.Fatalf("deleted knowledge base still listed: %s", resp.Body)
+		}
+	}
+	if chunks := chunkSource.Chunks("tenant_default", created.ID); len(chunks) != 0 {
+		t.Fatalf("deleted knowledge base still has chunks: %#v", chunks)
+	}
+
+	resp = performJSON(h, "DELETE", "/v1/knowledge-bases/"+created.ID, "", token)
+	if resp.Code != 404 {
+		t.Fatalf("delete missing status = %d body=%s", resp.Code, resp.Body)
 	}
 }
 

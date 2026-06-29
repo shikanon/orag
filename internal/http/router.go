@@ -147,7 +147,16 @@ func (s *Server) getKnowledgeBase(_ context.Context, c *app.RequestContext) {
 	c.JSON(consts.StatusOK, item)
 }
 
-func (s *Server) deleteKnowledgeBase(_ context.Context, c *app.RequestContext) {
+func (s *Server) deleteKnowledgeBase(ctx context.Context, c *app.RequestContext) {
+	deleted, err := s.App.KBStore.DeleteKnowledgeBase(ctx, tenantID(c), c.Param("id"))
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "knowledge_base_delete_failed", err.Error())
+		return
+	}
+	if !deleted {
+		writeError(c, consts.StatusNotFound, "knowledge_base_not_found", "knowledge base not found")
+		return
+	}
 	c.Status(consts.StatusNoContent)
 }
 

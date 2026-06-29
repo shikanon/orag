@@ -42,7 +42,7 @@ Content-Type: application/json
 - `200 OK`：查询、列表、详情类响应。
 - `201 Created`：创建知识库、创建数据集、添加数据集样本。
 - `202 Accepted`：文档入库、运行评估、运行优化。
-- `204 No Content`：删除知识库接口当前返回空响应。
+- `204 No Content`：删除知识库成功，响应体为空。
 
 可选的 RAG profile 目前只有两个枚举值：
 
@@ -197,7 +197,7 @@ GET /v1/knowledge-bases/{id}
 DELETE /v1/knowledge-bases/{id}
 ```
 
-当前处理器返回 `204 No Content`，不返回 JSON body。OpenAPI 描述为 “Delete request accepted by the current handler”。
+删除成功返回 `204 No Content`，不返回 JSON body；找不到知识库时返回 `404 knowledge_base_not_found`。
 
 ## 文档入库
 

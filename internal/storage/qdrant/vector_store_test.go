@@ -55,6 +55,21 @@ func TestMatchKeywordBuildsFieldCondition(t *testing.T) {
 	}
 }
 
+func TestKnowledgeBaseFilterIncludesTenantAndKnowledgeBase(t *testing.T) {
+	filter := knowledgeBaseFilter("tenant_1", "kb_1")
+	if len(filter.GetMust()) != 2 {
+		t.Fatalf("filter must conditions = %d", len(filter.GetMust()))
+	}
+	got := map[string]string{}
+	for _, cond := range filter.GetMust() {
+		field := cond.GetField()
+		got[field.GetKey()] = field.GetMatch().GetKeyword()
+	}
+	if got["tenant_id"] != "tenant_1" || got["knowledge_base_id"] != "kb_1" {
+		t.Fatalf("unexpected filter: %#v", got)
+	}
+}
+
 func TestPayloadIntegerStringFallback(t *testing.T) {
 	payload := map[string]*qdrant.Value{"offset": integerValue(12)}
 	if got := payloadString(payload, "offset"); got != "12" {
