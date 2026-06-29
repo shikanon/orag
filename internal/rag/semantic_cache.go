@@ -2,10 +2,13 @@ package rag
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+const semanticCacheKeyVersion = "v2"
 
 type SemanticCacheStore interface {
 	Lookup(ctx context.Context, req SemanticCacheLookupRequest) (QueryResponse, bool, error)
@@ -19,6 +22,7 @@ type SemanticCacheLookupRequest struct {
 	Vector          []float64
 	Threshold       float64
 	Profile         Profile
+	TopK            int
 }
 
 type SemanticCacheEntry struct {
@@ -26,6 +30,8 @@ type SemanticCacheEntry struct {
 	KnowledgeBaseID string
 	Query           string
 	Vector          []float64
+	Profile         Profile
+	TopK            int
 	Response        QueryResponse
 	CreatedAt       time.Time
 }
@@ -50,12 +56,24 @@ func NewSemanticCache(max int) *InMemorySemanticCache {
 }
 
 func (c *InMemorySemanticCache) Lookup(_ context.Context, req SemanticCacheLookupRequest) (QueryResponse, bool, error) {
-	resp, ok := c.Get(cacheKey(req.TenantID, req.KnowledgeBaseID, req.Query))
+	resp, ok := c.Get(CacheKey(QueryRequest{
+		TenantID:        req.TenantID,
+		KnowledgeBaseID: req.KnowledgeBaseID,
+		Query:           req.Query,
+		Profile:         req.Profile,
+		TopK:            req.TopK,
+	}))
 	return resp, ok, nil
 }
 
 func (c *InMemorySemanticCache) Store(_ context.Context, entry SemanticCacheEntry) error {
-	c.Put(cacheKey(entry.TenantID, entry.KnowledgeBaseID, entry.Query), entry.Response)
+	c.Put(CacheKey(QueryRequest{
+		TenantID:        entry.TenantID,
+		KnowledgeBaseID: entry.KnowledgeBaseID,
+		Query:           entry.Query,
+		Profile:         entry.Profile,
+		TopK:            entry.TopK,
+	}), entry.Response)
 	return nil
 }
 
@@ -78,10 +96,25 @@ func (c *InMemorySemanticCache) Put(query string, resp QueryResponse) {
 	c.entries[key(query)] = CacheEntry{Query: query, Response: resp, CreatedAt: time.Now().UTC()}
 }
 
-func cacheKey(tenantID, knowledgeBaseID, query string) string {
-	return tenantID + "/" + knowledgeBaseID + "/" + query
+func CacheKey(req QueryRequest) string {
+	profile := req.Profile
+	if profile == "" {
+		profile = ProfileRealtime
+	}
+	return strings.Join([]string{
+		semanticCacheKeyVersion,
+		req.TenantID,
+		req.KnowledgeBaseID,
+		string(profile),
+		strconv.Itoa(req.TopK),
+		normalizeCacheQuery(req.Query),
+	}, "\x1f")
 }
 
 func key(query string) string {
-	return strings.Join(strings.Fields(strings.ToLower(query)), " ")
+	return normalizeCacheQuery(query)
+}
+
+func normalizeCacheQuery(query string) string {
+	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(query))), " ")
 }

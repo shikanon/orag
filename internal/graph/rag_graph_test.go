@@ -50,6 +50,58 @@ func TestRAGGraphInvokeAndCacheHit(t *testing.T) {
 	}
 }
 
+func TestRAGGraphSemanticCacheIsolatesProfileAndTopK(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+	g, err := NewRAGGraph(ctx, svc)
+	if err != nil {
+		t.Fatalf("NewRAGGraph() error = %v", err)
+	}
+
+	req := rag.QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+		Profile:         rag.ProfileRealtime,
+		TopK:            8,
+	}
+	resp, err := g.Invoke(ctx, req)
+	if err != nil {
+		t.Fatalf("Invoke() realtime error = %v", err)
+	}
+	if resp.CacheStatus != "miss" {
+		t.Fatalf("realtime first cache_status = %q, want miss", resp.CacheStatus)
+	}
+
+	cached, err := g.Invoke(ctx, req)
+	if err != nil {
+		t.Fatalf("Invoke() realtime cached error = %v", err)
+	}
+	if cached.CacheStatus != "hit" {
+		t.Fatalf("same profile/top_k cache_status = %q, want hit", cached.CacheStatus)
+	}
+
+	highPrecision := req
+	highPrecision.Profile = rag.ProfileHighPrecision
+	resp, err = g.Invoke(ctx, highPrecision)
+	if err != nil {
+		t.Fatalf("Invoke() high_precision error = %v", err)
+	}
+	if resp.CacheStatus != "miss" {
+		t.Fatalf("high_precision cache_status = %q, want miss", resp.CacheStatus)
+	}
+
+	differentTopK := req
+	differentTopK.TopK = 16
+	resp, err = g.Invoke(ctx, differentTopK)
+	if err != nil {
+		t.Fatalf("Invoke() different top_k error = %v", err)
+	}
+	if resp.CacheStatus != "miss" {
+		t.Fatalf("different top_k cache_status = %q, want miss", resp.CacheStatus)
+	}
+}
+
 func TestRAGGraphInvokeUsesRequestTraceIDInPersistence(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestService(t)
