@@ -18,6 +18,7 @@ import (
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
+	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -321,9 +322,9 @@ func (s *Server) addDatasetItem(ctx context.Context, c *app.RequestContext) {
 	if !bindJSON(c, &item) {
 		return
 	}
-	created, err := s.App.Datasets.AddItem(ctx, c.Param("id"), item)
+	created, err := s.App.Datasets.AddItem(ctx, tenantID(c), c.Param("id"), item)
 	if err != nil {
-		writeError(c, consts.StatusInternalServerError, "dataset_item_create_failed", err.Error())
+		writeDatasetError(c, "dataset_item_create_failed", err)
 		return
 	}
 	c.JSON(consts.StatusCreated, created)
@@ -337,7 +338,7 @@ func (s *Server) runEvaluation(ctx context.Context, c *app.RequestContext) {
 	req.TenantID = tenantID(c)
 	resp, err := s.App.Eval.Run(ctx, req)
 	if err != nil {
-		writeError(c, consts.StatusInternalServerError, "evaluation_failed", err.Error())
+		writeDatasetError(c, "evaluation_failed", err)
 		return
 	}
 	c.JSON(consts.StatusAccepted, resp)
@@ -364,10 +365,18 @@ func (s *Server) optimize(ctx context.Context, c *app.RequestContext) {
 	req.TenantID = tenantID(c)
 	result, err := eval.Optimizer{Runner: s.App.Eval}.Optimize(ctx, req)
 	if err != nil {
-		writeError(c, consts.StatusInternalServerError, "optimization_failed", err.Error())
+		writeDatasetError(c, "optimization_failed", err)
 		return
 	}
 	c.JSON(consts.StatusAccepted, result)
+}
+
+func writeDatasetError(c *app.RequestContext, fallbackCode string, err error) {
+	if apperrors.IsCode(err, apperrors.CodeNotFound) {
+		writeError(c, consts.StatusNotFound, "dataset_not_found", "dataset not found")
+		return
+	}
+	writeError(c, consts.StatusInternalServerError, fallbackCode, err.Error())
 }
 
 func bindJSON(c *app.RequestContext, dst any) bool {

@@ -6,17 +6,19 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shikanon/orag/internal/kb"
 )
 
 type Repository struct {
-	Pool        *pgxpool.Pool
-	traceReader traceQueryer
+	Pool          *pgxpool.Pool
+	traceReader   traceQueryer
+	datasetRunner datasetQueryer
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{Pool: pool, traceReader: pgxTraceQueryer{pool: pool}}
+	return &Repository{Pool: pool, traceReader: pgxTraceQueryer{pool: pool}, datasetRunner: pgxDatasetQueryer{pool: pool}}
 }
 
 type pgxTraceQueryer struct {
@@ -29,6 +31,28 @@ func (q pgxTraceQueryer) QueryRow(ctx context.Context, sql string, args ...any) 
 
 func (q pgxTraceQueryer) Query(ctx context.Context, sql string, args ...any) (traceRows, error) {
 	return q.pool.Query(ctx, sql, args...)
+}
+
+type datasetQueryer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+type pgxDatasetQueryer struct {
+	pool *pgxpool.Pool
+}
+
+func (q pgxDatasetQueryer) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	return q.pool.Exec(ctx, sql, args...)
+}
+
+func (q pgxDatasetQueryer) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return q.pool.Query(ctx, sql, args...)
+}
+
+func (q pgxDatasetQueryer) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	return q.pool.QueryRow(ctx, sql, args...)
 }
 
 func (r *Repository) PutKnowledgeBase(item kb.KnowledgeBase) {
