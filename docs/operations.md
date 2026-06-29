@@ -131,9 +131,9 @@ QDRANT_GRPC_PORT=6334
 
 镜像拉取或构建超时的处理建议：
 
-- 先单独拉取基础镜像和依赖镜像，定位是哪个 registry 超时：`docker pull postgres:16-alpine`、`docker pull qdrant/qdrant:v1.11.5`、`docker pull golang:1.22-alpine`、`docker pull alpine:3.20`。
+- 先单独拉取基础镜像和依赖镜像，定位是哪个 registry 超时：`docker pull postgres:16-alpine`、`docker pull qdrant/qdrant:v1.11.5`、`docker pull golang:1.26-alpine`、`docker pull alpine:3.20`。
 - 如果出现 `i/o timeout`、`TLS handshake timeout`、`context deadline exceeded`，优先检查 Docker Desktop 代理、公司网络策略和 registry mirror 配置，再重试 `docker compose pull` 或 `docker build`。
-- 如果 CI/CD 网络无法稳定访问 Docker Hub，建议在内部镜像仓库缓存 `postgres:16-alpine`、`qdrant/qdrant:v1.11.5`、`golang:1.22-alpine` 和 `alpine:3.20`，并在部署清单中替换为内部镜像地址。
+- 如果 CI/CD 网络无法稳定访问 Docker Hub，建议在内部镜像仓库缓存 `postgres:16-alpine`、`qdrant/qdrant:v1.11.5`、`golang:1.26-alpine` 和 `alpine:3.20`，并在部署清单中替换为内部镜像地址。
 - 如果 `go mod download` 在 Docker build 阶段超时，确认构建环境能访问 Go module proxy，或在 CI 中配置可用的 Go proxy 和网络代理。
 - 如果 compose 中 `orag-api` 启动后连接依赖失败，先确认 `.env` 使用的是容器服务名而不是 `localhost`，再检查 `postgres`、`qdrant` healthcheck 是否 healthy。
 
