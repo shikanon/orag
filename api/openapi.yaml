@@ -153,10 +153,14 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ID"
       responses:
-        "204":
-          description: Delete request accepted by the current handler.
         "401":
           $ref: "#/components/responses/Error"
+        "501":
+          description: Knowledge base deletion is not implemented.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/knowledge-bases/{id}/documents:
     post:
       tags: [Ingestion]

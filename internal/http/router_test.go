@@ -190,6 +190,30 @@ func TestHealthReadyAndMetrics(t *testing.T) {
 	}
 }
 
+func TestDeleteKnowledgeBaseNotImplementedDoesNotDelete(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "GET", "/v1/knowledge-bases/kb_default", "", token)
+	if resp.Code != 200 {
+		t.Fatalf("initial knowledge base lookup status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	resp = performJSON(h, "DELETE", "/v1/knowledge-bases/kb_default", "", token)
+	if resp.Code != 501 {
+		t.Fatalf("delete knowledge base status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"code":"knowledge_base_delete_not_supported"`) {
+		t.Fatalf("unexpected delete knowledge base body: %s", resp.Body)
+	}
+
+	resp = performJSON(h, "GET", "/v1/knowledge-bases/kb_default", "", token)
+	if resp.Code != 200 {
+		t.Fatalf("knowledge base lookup after delete status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
 func TestIngestionJobLookupReturnsResultSummary(t *testing.T) {
 	h, closeApp := newTestHertz(t)
 	defer closeApp()

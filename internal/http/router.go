@@ -148,7 +148,7 @@ func (s *Server) getKnowledgeBase(_ context.Context, c *app.RequestContext) {
 }
 
 func (s *Server) deleteKnowledgeBase(_ context.Context, c *app.RequestContext) {
-	c.Status(consts.StatusNoContent)
+	writeError(c, http.StatusNotImplemented, "knowledge_base_delete_not_supported", "knowledge base deletion is not implemented")
 }
 
 func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
