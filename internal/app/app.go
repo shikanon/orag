@@ -100,6 +100,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Parser:           buildDocumentParser(cfg, model),
 		Splitter:         chunker.Recursive{SizeTokens: cfg.Ingestion.ChunkSizeTokens, OverlapTokens: cfg.Ingestion.ChunkOverlapTokens},
 		Embedder:         model,
+		KnowledgeBases:   backend.store,
 		Indexer:          backend.indexer,
 		Jobs:             backend.jobs,
 		MaxDocumentBytes: cfg.Ingestion.MaxDocumentBytes,

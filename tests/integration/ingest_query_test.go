@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -69,6 +70,26 @@ func TestIngestQueryWithPostgresQdrant(t *testing.T) {
 	}
 	if cached.CacheStatus == "hit" && len(cached.Citations) == 0 {
 		t.Fatalf("cache hit did not replay citations: %#v", cached)
+	}
+}
+
+func TestIngestMissingKnowledgeBaseWithPostgresQdrant(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	result, err := app.Ingest.Ingest(ctx, ingest.Request{
+		TenantID:        testTenantID,
+		KnowledgeBaseID: "kb_missing",
+		SourceURI:       "integration://missing-kb",
+		Name:            "missing.md",
+		Content:         []byte("missing knowledge bases must not reach postgres foreign keys"),
+	})
+	if !errors.Is(err, ingest.ErrKnowledgeBaseNotFound) {
+		t.Fatalf("Ingest() error = %v, want ErrKnowledgeBaseNotFound", err)
+	}
+	if result.Job.ID != "" {
+		t.Fatalf("unexpected job for missing knowledge base: %#v", result.Job)
 	}
 }
 

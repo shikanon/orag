@@ -141,7 +141,7 @@ func (s *Server) listKnowledgeBases(_ context.Context, c *app.RequestContext) {
 func (s *Server) getKnowledgeBase(_ context.Context, c *app.RequestContext) {
 	item, ok := s.App.KBStore.GetKnowledgeBase(tenantID(c), c.Param("id"))
 	if !ok {
-		writeError(c, consts.StatusNotFound, "knowledge_base_not_found", "knowledge base not found")
+		writeKnowledgeBaseNotFound(c)
 		return
 	}
 	c.JSON(consts.StatusOK, item)
@@ -153,6 +153,9 @@ func (s *Server) deleteKnowledgeBase(_ context.Context, c *app.RequestContext) {
 
 func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 	kbID := c.Param("id")
+	if !s.requireKnowledgeBase(c, kbID) {
+		return
+	}
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		writeError(c, consts.StatusBadRequest, "invalid_request", "multipart field file is required")
@@ -182,13 +185,17 @@ func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 		Content:         body,
 	})
 	if err != nil {
-		writeError(c, consts.StatusInternalServerError, "ingest_failed", err.Error())
+		writeIngestError(c, err)
 		return
 	}
 	c.JSON(consts.StatusAccepted, map[string]any{"document": result.Document, "chunks": len(result.Chunks), "job": result.Job})
 }
 
 func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
+	kbID := c.Param("id")
+	if !s.requireKnowledgeBase(c, kbID) {
+		return
+	}
 	var req struct {
 		SourceURI string `json:"source_uri"`
 		Name      string `json:"name"`
@@ -206,16 +213,36 @@ func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 	}
 	result, err := s.App.Ingest.Ingest(ctx, ingest.Request{
 		TenantID:        tenantID(c),
-		KnowledgeBaseID: c.Param("id"),
+		KnowledgeBaseID: kbID,
 		SourceURI:       req.SourceURI,
 		Name:            req.Name,
 		Content:         []byte(req.Content),
 	})
 	if err != nil {
-		writeError(c, consts.StatusInternalServerError, "ingest_failed", err.Error())
+		writeIngestError(c, err)
 		return
 	}
 	c.JSON(consts.StatusAccepted, map[string]any{"document": result.Document, "chunks": len(result.Chunks), "job": result.Job})
+}
+
+func (s *Server) requireKnowledgeBase(c *app.RequestContext, kbID string) bool {
+	if _, ok := s.App.KBStore.GetKnowledgeBase(tenantID(c), kbID); ok {
+		return true
+	}
+	writeKnowledgeBaseNotFound(c)
+	return false
+}
+
+func writeKnowledgeBaseNotFound(c *app.RequestContext) {
+	writeError(c, consts.StatusNotFound, "knowledge_base_not_found", "knowledge base not found")
+}
+
+func writeIngestError(c *app.RequestContext, err error) {
+	if errors.Is(err, ingest.ErrKnowledgeBaseNotFound) {
+		writeKnowledgeBaseNotFound(c)
+		return
+	}
+	writeError(c, consts.StatusInternalServerError, "ingest_failed", err.Error())
 }
 
 func (s *Server) getIngestionJob(ctx context.Context, c *app.RequestContext) {

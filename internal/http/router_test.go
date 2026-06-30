@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"mime/multipart"
 	"strings"
 	"testing"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/cloudwego/hertz/pkg/route"
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/config"
+	"github.com/shikanon/orag/internal/ingest"
+	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/platform/logger"
 	"github.com/shikanon/orag/internal/rag"
@@ -232,6 +235,30 @@ func TestIngestionJobLookupReturnsResultSummary(t *testing.T) {
 	}
 }
 
+func TestDocumentIngestionRequiresExistingKnowledgeBase(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	jobs := &countingJobStore{delegate: ingest.NewMemoryJobStore()}
+	app.Ingest.Jobs = jobs
+	missingKB := "kb_missing"
+
+	resp := performJSON(h, "POST", "/v1/knowledge-bases/"+missingKB+"/documents:import", `{"name":"missing.md","source_uri":"test://missing","content":"orphan chunks must not be created"}`, token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+	if jobs.createCalls != 0 {
+		t.Fatalf("import created %d ingestion jobs for missing knowledge base", jobs.createCalls)
+	}
+	assertNoChunks(t, app, missingKB)
+
+	resp = performMultipartUpload(t, h, "/v1/knowledge-bases/"+missingKB+"/documents", "missing.md", "orphan chunks must not be created", token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+	if jobs.createCalls != 0 {
+		t.Fatalf("upload created %d ingestion jobs for missing knowledge base", jobs.createCalls)
+	}
+	assertNoChunks(t, app, missingKB)
+}
+
 type testResponse struct {
 	Code          int
 	Body          string
@@ -312,6 +339,76 @@ func performJSONWithHeaders(h *route.Engine, method, path, body, token string, e
 		ContentType:   string(result.Header.ContentType()),
 		TraceIDHeader: result.Header.Get(observability.TraceIDHeader),
 	}
+}
+
+func performMultipartUpload(t *testing.T, h *route.Engine, path, filename, content, token string) testResponse {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	headers := []ut.Header{{Key: "Content-Type", Value: writer.FormDataContentType()}}
+	if token != "" {
+		headers = append(headers, ut.Header{Key: "Authorization", Value: "Bearer " + token})
+	}
+	w := ut.PerformRequest(h, "POST", path, &ut.Body{Body: bytes.NewReader(body.Bytes()), Len: body.Len()}, headers...)
+	result := w.Result()
+	return testResponse{
+		Code:          result.StatusCode(),
+		Body:          string(result.Body()),
+		ContentType:   string(result.Header.ContentType()),
+		TraceIDHeader: result.Header.Get(observability.TraceIDHeader),
+	}
+}
+
+func assertMissingKnowledgeBaseResponse(t *testing.T, resp testResponse) {
+	t.Helper()
+	if resp.Code != 404 {
+		t.Fatalf("missing knowledge base status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"code":"knowledge_base_not_found"`) {
+		t.Fatalf("unexpected missing knowledge base body: %s", resp.Body)
+	}
+}
+
+func assertNoChunks(t *testing.T, app *core.App, kbID string) {
+	t.Helper()
+	chunks, ok := app.KBStore.(kb.ChunkSource)
+	if !ok {
+		t.Fatalf("test knowledge base store does not expose chunks")
+	}
+	if got := chunks.Chunks("tenant_default", kbID); len(got) != 0 {
+		t.Fatalf("chunks created for missing knowledge base: %#v", got)
+	}
+}
+
+type countingJobStore struct {
+	delegate    ingest.JobStore
+	createCalls int
+	updateCalls int
+}
+
+func (s *countingJobStore) CreateJob(ctx context.Context, job ingest.Job) (ingest.Job, error) {
+	s.createCalls++
+	return s.delegate.CreateJob(ctx, job)
+}
+
+func (s *countingJobStore) UpdateJob(ctx context.Context, job ingest.Job) error {
+	s.updateCalls++
+	return s.delegate.UpdateJob(ctx, job)
+}
+
+func (s *countingJobStore) GetJob(ctx context.Context, tenantID, id string) (ingest.Job, bool, error) {
+	return s.delegate.GetJob(ctx, tenantID, id)
 }
 
 type failingPipeline struct {

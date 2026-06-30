@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -17,10 +18,13 @@ type Embedder interface {
 	Embed(ctx context.Context, texts []string) ([][]float64, error)
 }
 
+var ErrKnowledgeBaseNotFound = errors.New("knowledge base not found")
+
 type Service struct {
 	Parser           parser.Parser
 	Splitter         chunker.Recursive
 	Embedder         Embedder
+	KnowledgeBases   kb.KnowledgeBaseRepository
 	Indexer          kb.Indexer
 	Jobs             JobStore
 	MaxDocumentBytes int64
@@ -41,6 +45,12 @@ type Result struct {
 }
 
 func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
+	if s.KnowledgeBases != nil {
+		if _, ok := s.KnowledgeBases.GetKnowledgeBase(req.TenantID, req.KnowledgeBaseID); !ok {
+			return Result{}, fmt.Errorf("%w: %s/%s", ErrKnowledgeBaseNotFound, req.TenantID, req.KnowledgeBaseID)
+		}
+	}
+
 	now := time.Now().UTC()
 	job := Job{
 		ID:              id.New("job"),
