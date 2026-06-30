@@ -9,7 +9,7 @@ import (
 )
 
 func (r *Repository) CreateDataset(ctx context.Context, ds dataset.Dataset) (dataset.Dataset, error) {
-	_, err := r.Pool.Exec(ctx, `
+	_, err := r.datasetStore().Exec(ctx, `
 		INSERT INTO datasets(id, tenant_id, name, kind, version, created_at)
 		VALUES($1,$2,$3,$4,$5,$6)`,
 		ds.ID, ds.TenantID, ds.Name, ds.Kind, ds.Version, ds.CreatedAt)
@@ -17,7 +17,7 @@ func (r *Repository) CreateDataset(ctx context.Context, ds dataset.Dataset) (dat
 }
 
 func (r *Repository) GetDataset(ctx context.Context, tenantID, id string) (dataset.Dataset, bool, error) {
-	row := r.Pool.QueryRow(ctx, `
+	row := r.datasetStore().QueryRow(ctx, `
 		SELECT id, tenant_id, name, kind, version, created_at
 		FROM datasets
 		WHERE tenant_id=$1 AND id=$2`, tenantID, id)
@@ -36,19 +36,20 @@ func (r *Repository) AddDatasetItem(ctx context.Context, item dataset.Item) (dat
 	if err != nil {
 		return dataset.Item{}, err
 	}
-	_, err = r.Pool.Exec(ctx, `
+	_, err = r.datasetStore().Exec(ctx, `
 		INSERT INTO dataset_items(id, dataset_id, query, ground_truth, relevant_doc_ids)
 		VALUES($1,$2,$3,$4,$5)`,
 		item.ID, item.DatasetID, item.Query, item.GroundTruth, body)
 	return item, err
 }
 
-func (r *Repository) DatasetItems(ctx context.Context, datasetID string) ([]dataset.Item, error) {
-	rows, err := r.Pool.Query(ctx, `
-		SELECT id, dataset_id, query, ground_truth, relevant_doc_ids
-		FROM dataset_items
-		WHERE dataset_id=$1
-		ORDER BY id`, datasetID)
+func (r *Repository) DatasetItems(ctx context.Context, tenantID, datasetID string) ([]dataset.Item, error) {
+	rows, err := r.datasetStore().Query(ctx, `
+		SELECT di.id, di.dataset_id, di.query, di.ground_truth, di.relevant_doc_ids
+		FROM dataset_items di
+		JOIN datasets d ON d.id=di.dataset_id
+		WHERE d.tenant_id=$1 AND di.dataset_id=$2
+		ORDER BY di.id`, tenantID, datasetID)
 	if err != nil {
 		return nil, err
 	}

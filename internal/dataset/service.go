@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/platform/id"
 )
 
@@ -29,7 +30,7 @@ type Repository interface {
 	CreateDataset(ctx context.Context, ds Dataset) (Dataset, error)
 	GetDataset(ctx context.Context, tenantID, id string) (Dataset, bool, error)
 	AddDatasetItem(ctx context.Context, item Item) (Item, error)
-	DatasetItems(ctx context.Context, datasetID string) ([]Item, error)
+	DatasetItems(ctx context.Context, tenantID, datasetID string) ([]Item, error)
 }
 
 type Service struct {
@@ -55,14 +56,24 @@ func (s *Service) Create(ctx context.Context, tenantID, name, kind string) (Data
 	return s.repo.CreateDataset(ctx, ds)
 }
 
-func (s *Service) AddItem(ctx context.Context, datasetID string, item Item) (Item, error) {
+func (s *Service) AddItem(ctx context.Context, tenantID, datasetID string, item Item) (Item, error) {
+	if _, ok, err := s.repo.GetDataset(ctx, tenantID, datasetID); err != nil {
+		return Item{}, err
+	} else if !ok {
+		return Item{}, apperrors.New(apperrors.CodeNotFound, "dataset not found")
+	}
 	item.ID = id.New("dsi")
 	item.DatasetID = datasetID
 	return s.repo.AddDatasetItem(ctx, item)
 }
 
-func (s *Service) Items(ctx context.Context, datasetID string) ([]Item, error) {
-	return s.repo.DatasetItems(ctx, datasetID)
+func (s *Service) Items(ctx context.Context, tenantID, datasetID string) ([]Item, error) {
+	if _, ok, err := s.repo.GetDataset(ctx, tenantID, datasetID); err != nil {
+		return nil, err
+	} else if !ok {
+		return nil, apperrors.New(apperrors.CodeNotFound, "dataset not found")
+	}
+	return s.repo.DatasetItems(ctx, tenantID, datasetID)
 }
 
 func (s *Service) Get(ctx context.Context, tenantID, id string) (Dataset, bool, error) {
@@ -100,8 +111,12 @@ func (r *MemoryRepository) AddDatasetItem(_ context.Context, item Item) (Item, e
 	return item, nil
 }
 
-func (r *MemoryRepository) DatasetItems(_ context.Context, datasetID string) ([]Item, error) {
+func (r *MemoryRepository) DatasetItems(_ context.Context, tenantID, datasetID string) ([]Item, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	ds, ok := r.datasets[datasetID]
+	if !ok || ds.TenantID != tenantID {
+		return nil, nil
+	}
 	return append([]Item(nil), r.items[datasetID]...), nil
 }

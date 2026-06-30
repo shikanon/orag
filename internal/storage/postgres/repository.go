@@ -12,16 +12,17 @@ import (
 )
 
 type Repository struct {
-	Pool        *pgxpool.Pool
-	kbQueryer   knowledgeBaseQueryer
-	traceReader traceQueryer
+	Pool           *pgxpool.Pool
+	kbQueryer      repositoryQueryer
+	datasetQueryer repositoryQueryer
+	traceReader    traceQueryer
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{Pool: pool, kbQueryer: pool, traceReader: pgxTraceQueryer{pool: pool}}
+	return &Repository{Pool: pool, kbQueryer: pool, datasetQueryer: pool, traceReader: pgxTraceQueryer{pool: pool}}
 }
 
-type knowledgeBaseQueryer interface {
+type repositoryQueryer interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
@@ -185,9 +186,16 @@ func (r *Repository) BootstrapDefaults(ctx context.Context, tenantID, kbID strin
 	})
 }
 
-func (r *Repository) knowledgeBaseQueryer() knowledgeBaseQueryer {
+func (r *Repository) knowledgeBaseQueryer() repositoryQueryer {
 	if r.kbQueryer != nil {
 		return r.kbQueryer
+	}
+	return r.Pool
+}
+
+func (r *Repository) datasetStore() repositoryQueryer {
+	if r.datasetQueryer != nil {
+		return r.datasetQueryer
 	}
 	return r.Pool
 }

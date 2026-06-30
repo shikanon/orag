@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/shikanon/orag/internal/dataset"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -145,6 +146,36 @@ func TestRepositoryGetKnowledgeBaseReturnsScanError(t *testing.T) {
 	}
 }
 
+func TestRepositoryDatasetItemsFiltersByTenantThroughDatasets(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{queryRows: &fakeTraceRows{rows: [][]any{
+		{"dsi_1", "ds_1", "qdrant?", "qdrant", []byte(`["doc_1"]`)},
+	}}}
+	repo := &Repository{datasetQueryer: queryer}
+
+	got, err := repo.DatasetItems(context.Background(), "tenant_1", "ds_1")
+	if err != nil {
+		t.Fatalf("DatasetItems() error = %v", err)
+	}
+	want := []dataset.Item{{
+		ID:             "dsi_1",
+		DatasetID:      "ds_1",
+		Query:          "qdrant?",
+		GroundTruth:    "qdrant",
+		RelevantDocIDs: []string{"doc_1"},
+	}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("DatasetItems() = %#v, want %#v", got, want)
+	}
+	for _, required := range []string{"JOIN datasets", "d.tenant_id=$1", "di.dataset_id=$2"} {
+		if !strings.Contains(queryer.querySQL, required) {
+			t.Fatalf("DatasetItems() SQL missing %q: %s", required, queryer.querySQL)
+		}
+	}
+	if !reflect.DeepEqual(queryer.queryArgs, []any{"tenant_1", "ds_1"}) {
+		t.Fatalf("DatasetItems() args = %#v, want tenant and dataset id", queryer.queryArgs)
+	}
+}
+
 func TestRepositoryBootstrapDefaultsReturnsKnowledgeBaseError(t *testing.T) {
 	want := errors.New("knowledge base insert failed")
 	queryer := &fakeKnowledgeBaseQueryer{execErrs: []error{nil, want}}
@@ -232,27 +263,35 @@ type fakeKnowledgeBaseQueryer struct {
 	execErr   error
 	execErrs  []error
 	execCalls int
+	execArgs  []any
 	queryRows pgx.Rows
 	queryErr  error
 	querySQL  string
+	queryArgs []any
 	row       pgx.Row
+	rowSQL    string
+	rowArgs   []any
 }
 
-func (f *fakeKnowledgeBaseQueryer) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
+func (f *fakeKnowledgeBaseQueryer) Exec(_ context.Context, _ string, args ...any) (pgconn.CommandTag, error) {
 	err := f.execErr
 	if f.execCalls < len(f.execErrs) {
 		err = f.execErrs[f.execCalls]
 	}
 	f.execCalls++
+	f.execArgs = args
 	return pgconn.CommandTag{}, err
 }
 
-func (f *fakeKnowledgeBaseQueryer) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+func (f *fakeKnowledgeBaseQueryer) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
 	f.querySQL = sql
+	f.queryArgs = args
 	return f.queryRows, f.queryErr
 }
 
-func (f *fakeKnowledgeBaseQueryer) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
+func (f *fakeKnowledgeBaseQueryer) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
+	f.rowSQL = sql
+	f.rowArgs = args
 	if f.row == nil {
 		return fakeTraceRow{err: pgx.ErrNoRows}
 	}

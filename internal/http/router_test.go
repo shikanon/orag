@@ -270,6 +270,50 @@ func TestDeleteKnowledgeBaseNotImplementedDoesNotDelete(t *testing.T) {
 	}
 }
 
+func TestDatasetItemsRequireTenantOwnership(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	tokenA := tenantToken(t, app, "tenant_a")
+	tokenB := tenantToken(t, app, "tenant_b")
+	resp := performJSON(h, "POST", "/v1/datasets", `{"name":"tenant A","kind":"golden"}`, tokenA)
+	if resp.Code != 201 {
+		t.Fatalf("create dataset status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created struct {
+		ID       string `json:"id"`
+		TenantID string `json:"tenant_id"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" || created.TenantID != "tenant_a" {
+		t.Fatalf("created dataset = %#v", created)
+	}
+
+	resp = performJSON(h, "POST", "/v1/datasets/"+created.ID+"/items", `{"query":"cross","ground_truth":"bad"}`, tokenB)
+	if resp.Code != 404 || !strings.Contains(resp.Body, `"code":"dataset_not_found"`) {
+		t.Fatalf("cross-tenant add item status = %d body=%s", resp.Code, resp.Body)
+	}
+	items, err := app.Datasets.Items(context.Background(), "tenant_a", created.ID)
+	if err != nil {
+		t.Fatalf("owner Items() error = %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("cross-tenant add polluted dataset: %#v", items)
+	}
+
+	resp = performJSON(h, "POST", "/v1/evaluations", `{"dataset_id":"`+created.ID+`","knowledge_base_id":"kb_default","profile":"realtime"}`, tokenB)
+	if resp.Code != 404 || !strings.Contains(resp.Body, `"code":"dataset_not_found"`) {
+		t.Fatalf("cross-tenant evaluation status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	resp = performJSON(h, "POST", "/v1/datasets/"+created.ID+"/items", `{"query":"owned","ground_truth":"truth"}`, tokenA)
+	if resp.Code != 201 {
+		t.Fatalf("owner add item status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
 func TestIngestionJobLookupReturnsResultSummary(t *testing.T) {
 	h, closeApp := newTestHertz(t)
 	defer closeApp()
@@ -439,6 +483,15 @@ func loginToken(t *testing.T, h *route.Engine) string {
 		t.Fatal(err)
 	}
 	return body.AccessToken
+}
+
+func tenantToken(t *testing.T, app *core.App, tenantID string) string {
+	t.Helper()
+	token, err := app.Auth.IssueToken(tenantID, "user_"+tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
 }
 
 func performJSON(h *route.Engine, method, path, body, token string) testResponse {
