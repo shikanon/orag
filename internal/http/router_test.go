@@ -259,6 +259,54 @@ func TestDocumentIngestionRequiresExistingKnowledgeBase(t *testing.T) {
 	assertNoChunks(t, app, missingKB)
 }
 
+func TestDocumentIngestionChecksKnowledgeBaseBeforeParsingBody(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	jobs := &countingJobStore{delegate: ingest.NewMemoryJobStore()}
+	app.Ingest.Jobs = jobs
+	missingKB := "kb_missing_before_parse"
+
+	resp := performJSON(h, "POST", "/v1/knowledge-bases/"+missingKB+"/documents:import", `{`, token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+	if jobs.createCalls != 0 {
+		t.Fatalf("import created %d ingestion jobs for missing knowledge base", jobs.createCalls)
+	}
+	assertNoChunks(t, app, missingKB)
+
+	resp = performJSON(h, "POST", "/v1/knowledge-bases/"+missingKB+"/documents", "", token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+	if jobs.createCalls != 0 {
+		t.Fatalf("upload created %d ingestion jobs for missing knowledge base", jobs.createCalls)
+	}
+	assertNoChunks(t, app, missingKB)
+}
+
+func TestDocumentIngestionMapsServiceMissingKnowledgeBaseTo404(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	jobs := &countingJobStore{delegate: ingest.NewMemoryJobStore()}
+	app.Ingest.Jobs = jobs
+	app.Ingest.KnowledgeBases = kb.NewMemoryStore()
+
+	resp := performJSON(h, "POST", "/v1/knowledge-bases/kb_default/documents:import", `{"name":"missing.md","source_uri":"test://missing","content":"service guard should map to 404"}`, token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+	if jobs.createCalls != 0 {
+		t.Fatalf("import created %d ingestion jobs for service-level missing knowledge base", jobs.createCalls)
+	}
+	assertNoChunks(t, app, "kb_default")
+
+	resp = performMultipartUpload(t, h, "/v1/knowledge-bases/kb_default/documents", "missing.md", "service guard should map to 404", token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+	if jobs.createCalls != 0 {
+		t.Fatalf("upload created %d ingestion jobs for service-level missing knowledge base", jobs.createCalls)
+	}
+	assertNoChunks(t, app, "kb_default")
+}
+
 type testResponse struct {
 	Code          int
 	Body          string
