@@ -178,6 +178,148 @@ func TestQueryUsesRequestTraceID(t *testing.T) {
 	}
 }
 
+type queryValidationCase struct {
+	name    string
+	body    string
+	traceID string
+}
+
+func queryValidationCases(tracePrefix string) []queryValidationCase {
+	return []queryValidationCase{
+		{
+			name:    "empty object",
+			body:    `{}`,
+			traceID: tracePrefix + "_empty_object",
+		},
+		{
+			name:    "only query",
+			body:    `{"query":"hello"}`,
+			traceID: tracePrefix + "_only_query",
+		},
+		{
+			name:    "only knowledge_base_id",
+			body:    `{"knowledge_base_id":"kb_default"}`,
+			traceID: tracePrefix + "_only_knowledge_base_id",
+		},
+		{
+			name:    "blank knowledge_base_id",
+			body:    `{"knowledge_base_id":"  ","query":"hello"}`,
+			traceID: tracePrefix + "_blank_knowledge_base_id",
+		},
+		{
+			name:    "blank query",
+			body:    `{"knowledge_base_id":"kb_default","query":"  "}`,
+			traceID: tracePrefix + "_blank_query",
+		},
+		{
+			name:    "both blank strings",
+			body:    `{"knowledge_base_id":"","query":""}`,
+			traceID: tracePrefix + "_both_blank",
+		},
+	}
+}
+
+func TestQueryRejectsMissingRequiredFields(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+
+	for _, tt := range queryValidationCases("trace_query_validation") {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := performJSONWithTrace(h, "POST", "/v1/query", tt.body, token, tt.traceID)
+			assertErrorResponse(t, resp, 400, "invalid_request", tt.traceID)
+
+			var body ErrorResponse
+			if err := json.Unmarshal([]byte(resp.Body), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error.Code != "invalid_request" {
+				t.Fatalf("error code = %q, want invalid_request body=%s", body.Error.Code, resp.Body)
+			}
+			if body.Error.TraceID != tt.traceID {
+				t.Fatalf("error trace_id = %q, want %q body=%s", body.Error.TraceID, tt.traceID, resp.Body)
+			}
+
+			var topLevel map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(resp.Body), &topLevel); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := topLevel["answer"]; ok {
+				t.Fatalf("validation error returned query answer: %s", resp.Body)
+			}
+		})
+	}
+}
+
+func TestQueryStreamRejectsMissingRequiredFields(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	for _, tt := range queryValidationCases("trace_query_stream_validation") {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := performJSONWithTrace(h, "POST", "/v1/query:stream", tt.body, token, tt.traceID)
+			assertErrorResponse(t, resp, 400, "invalid_request", tt.traceID)
+			if strings.Contains(resp.ContentType, "text/event-stream") {
+				t.Fatalf("pre-stream validation content type = %q, want non-SSE body=%s", resp.ContentType, resp.Body)
+			}
+
+			var body ErrorResponse
+			if err := json.Unmarshal([]byte(resp.Body), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error.Code != "invalid_request" {
+				t.Fatalf("error code = %q, want invalid_request body=%s", body.Error.Code, resp.Body)
+			}
+			if body.Error.TraceID != tt.traceID {
+				t.Fatalf("error trace_id = %q, want %q body=%s", body.Error.TraceID, tt.traceID, resp.Body)
+			}
+		})
+	}
+}
+
+func TestInvalidQueryRequestsDoNotIncrementRAGSuccessMetrics(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	tests := []struct {
+		name string
+		path string
+		body string
+	}{
+		{
+			name: "json",
+			path: "/v1/query",
+			body: `{"knowledge_base_id":"kb_default","query":""}`,
+		},
+		{
+			name: "stream",
+			path: "/v1/query:stream",
+			body: `{"knowledge_base_id":"","query":"hello"}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			traceID := "trace_metrics_invalid_query_" + tt.name
+			resp := performJSONWithTrace(h, "POST", tt.path, tt.body, token, traceID)
+			assertErrorResponse(t, resp, 400, "invalid_request", traceID)
+		})
+	}
+
+	resp := performJSON(h, "GET", "/metrics", "", "")
+	if resp.Code != 200 {
+		t.Fatalf("metrics status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, "orag_rag_queries_total 0\n") {
+		t.Fatalf("invalid requests incremented total RAG queries: %s", resp.Body)
+	}
+	if strings.Contains(resp.Body, `outcome="success"`) {
+		t.Fatalf("invalid requests incremented successful RAG query metrics: %s", resp.Body)
+	}
+}
+
 func TestQueryStreamSSE(t *testing.T) {
 	h, closeApp := newTestHertz(t)
 	defer closeApp()
