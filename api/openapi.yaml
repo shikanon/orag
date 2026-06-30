@@ -327,6 +327,7 @@ paths:
     post:
       tags: [Evaluation]
       operationId: addDatasetItem
+      description: Returns `404 dataset_not_found` when the dataset does not exist or belongs to another tenant.
       security:
         - bearerAuth: []
       parameters:
@@ -348,10 +349,13 @@ paths:
           $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /v1/evaluations:
     post:
       tags: [Evaluation]
       operationId: runEvaluation
+      description: Returns `404 dataset_not_found` when `dataset_id` does not exist or belongs to another tenant.
       security:
         - bearerAuth: []
       requestBody:
@@ -370,6 +374,8 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "401":
+          $ref: "#/components/responses/Error"
+        "404":
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
@@ -396,6 +402,7 @@ paths:
     post:
       tags: [Evaluation]
       operationId: optimize
+      description: Returns `404 dataset_not_found` when `dataset_id` does not exist or belongs to another tenant.
       security:
         - bearerAuth: []
       requestBody:
@@ -414,6 +421,8 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "401":
+          $ref: "#/components/responses/Error"
+        "404":
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"

@@ -43,7 +43,7 @@ type RunResult struct {
 }
 
 func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
-	items, err := r.Datasets.Items(ctx, req.DatasetID)
+	items, err := r.Datasets.Items(ctx, req.TenantID, req.DatasetID)
 	if err != nil {
 		return RunResult{}, err
 	}
@@ -126,17 +126,19 @@ func (r Runner) Get(ctx context.Context, tenantID, id string) (RunResult, bool, 
 type MemoryRepository struct {
 	mu      sync.RWMutex
 	runs    map[string]RunResult
+	tenants map[string]string
 	results map[string][]map[string]float64
 }
 
 func NewMemoryRepository() *MemoryRepository {
-	return &MemoryRepository{runs: map[string]RunResult{}, results: map[string][]map[string]float64{}}
+	return &MemoryRepository{runs: map[string]RunResult{}, tenants: map[string]string{}, results: map[string][]map[string]float64{}}
 }
 
-func (r *MemoryRepository) StoreEvaluationRun(_ context.Context, _ string, result RunResult) error {
+func (r *MemoryRepository) StoreEvaluationRun(_ context.Context, tenantID string, result RunResult) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.runs[result.ID] = result
+	r.tenants[result.ID] = tenantID
 	return nil
 }
 
@@ -147,11 +149,11 @@ func (r *MemoryRepository) StoreEvaluationResult(_ context.Context, runID, _ str
 	return nil
 }
 
-func (r *MemoryRepository) GetEvaluationRun(_ context.Context, _ string, id string) (RunResult, bool, error) {
+func (r *MemoryRepository) GetEvaluationRun(_ context.Context, tenantID, id string) (RunResult, bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	result, ok := r.runs[id]
-	return result, ok, nil
+	return result, ok && r.tenants[id] == tenantID, nil
 }
 
 func matches(answer, groundTruth string) bool {

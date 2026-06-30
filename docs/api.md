@@ -76,6 +76,7 @@ Content-Type: application/json
 | `401` | `missing_bearer_token` | 受保护的 `/v1/*` API 未带 Bearer token。 |
 | `401` | `invalid_bearer_token` | Bearer token 无效或过期。 |
 | `404` | `knowledge_base_not_found` | 查询不存在或不属于当前 tenant 的知识库。 |
+| `404` | `dataset_not_found` | 写入样本、运行评估或优化时，数据集不存在或不属于当前 tenant。 |
 | `404` | `ingestion_job_not_found` | 查询不存在的入库 job。 |
 | `404` | `evaluation_not_found` | 查询不存在的评估结果。 |
 | `413` | `payload_too_large` | 入库内容超过 `INGEST_MAX_DOCUMENT_BYTES`。 |
@@ -472,6 +473,8 @@ POST /v1/datasets/{id}/items
 
 `examples/curl/40_eval.sh` 会先创建数据集，再添加一个样本；如果 `.orag-demo/document_id` 存在，会把该文档 ID 放入 `relevant_doc_ids`。
 
+当 `{id}` 不存在或不属于当前 Bearer token 的 tenant 时，返回 `404 dataset_not_found`，且不会写入 `dataset_items`。
+
 ## 评估
 
 ### 运行评估
@@ -520,6 +523,8 @@ POST /v1/evaluations
 - `citation_precision`：citation 命中 `relevant_doc_ids` 的比例；如果样本没有 `relevant_doc_ids` 且存在 citation，则记为 `1`。
 - `latency_p95_ms`：样本查询延迟的 p95。
 - `cache_hit_rate`：查询响应中 `cache_status=hit` 的比例。
+
+如果 `dataset_id` 不存在或不属于当前 Bearer token 的 tenant，返回 `404 dataset_not_found`，且不会写入 `evaluation_runs` 或 `evaluation_results`。
 
 ### 查询评估结果
 
@@ -580,3 +585,5 @@ POST /v1/optimizations
 ```
 
 优化器会对 `profiles × top_ks` 做确定性网格枚举，每个候选都会运行一次评估；候选 `score` 使用该次评估的 `accuracy`，`run_id` 是对应的 evaluation run ID。当前优化结果即时返回，不额外提供 `GET /v1/optimizations/{id}` 查询端点。
+
+如果 `dataset_id` 不存在或不属于当前 Bearer token 的 tenant，返回 `404 dataset_not_found`，不会为任何候选创建 evaluation run。

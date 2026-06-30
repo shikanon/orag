@@ -14,6 +14,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/route"
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/config"
+	"github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
@@ -259,6 +260,59 @@ func TestDocumentIngestionRequiresExistingKnowledgeBase(t *testing.T) {
 	assertNoChunks(t, app, missingKB)
 }
 
+func TestDatasetItemAndEvaluationCrossTenantReturn404(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	tenantAToken := loginToken(t, h)
+	tenantBToken, err := app.Auth.IssueToken("tenant_b", "user_b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evalRepo := &countingEvalRepository{delegate: app.Eval.Repository}
+	app.Eval.Repository = evalRepo
+
+	resp := performJSON(h, "POST", "/v1/datasets", `{"name":"tenant a regression","kind":"golden"}`, tenantAToken)
+	if resp.Code != 201 {
+		t.Fatalf("create dataset status = %d body=%s", resp.Code, resp.Body)
+	}
+	var ds struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &ds); err != nil {
+		t.Fatal(err)
+	}
+	if ds.ID == "" {
+		t.Fatalf("missing dataset id in response: %s", resp.Body)
+	}
+
+	resp = performJSON(h, "POST", "/v1/datasets/"+ds.ID+"/items", `{"query":"tenant b write","ground_truth":"blocked"}`, tenantBToken)
+	if resp.Code != 404 {
+		t.Fatalf("cross-tenant item status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"code":"dataset_not_found"`) {
+		t.Fatalf("unexpected cross-tenant item body: %s", resp.Body)
+	}
+	items, err := app.Datasets.Items(context.Background(), "tenant_default", ds.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("cross-tenant item was persisted: %#v", items)
+	}
+
+	resp = performJSON(h, "POST", "/v1/evaluations", `{"dataset_id":"`+ds.ID+`","knowledge_base_id":"kb_default","profile":"realtime"}`, tenantBToken)
+	if resp.Code != 404 {
+		t.Fatalf("cross-tenant evaluation status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"code":"dataset_not_found"`) {
+		t.Fatalf("unexpected cross-tenant evaluation body: %s", resp.Body)
+	}
+	if evalRepo.runCreates != 0 || evalRepo.resultCreates != 0 {
+		t.Fatalf("cross-tenant evaluation persisted rows: runs=%d results=%d", evalRepo.runCreates, evalRepo.resultCreates)
+	}
+}
+
 type testResponse struct {
 	Code          int
 	Body          string
@@ -409,6 +463,26 @@ func (s *countingJobStore) UpdateJob(ctx context.Context, job ingest.Job) error 
 
 func (s *countingJobStore) GetJob(ctx context.Context, tenantID, id string) (ingest.Job, bool, error) {
 	return s.delegate.GetJob(ctx, tenantID, id)
+}
+
+type countingEvalRepository struct {
+	delegate      eval.Repository
+	runCreates    int
+	resultCreates int
+}
+
+func (r *countingEvalRepository) StoreEvaluationRun(ctx context.Context, tenantID string, result eval.RunResult) error {
+	r.runCreates++
+	return r.delegate.StoreEvaluationRun(ctx, tenantID, result)
+}
+
+func (r *countingEvalRepository) StoreEvaluationResult(ctx context.Context, runID, datasetItemID, answer string, metrics map[string]float64) error {
+	r.resultCreates++
+	return r.delegate.StoreEvaluationResult(ctx, runID, datasetItemID, answer, metrics)
+}
+
+func (r *countingEvalRepository) GetEvaluationRun(ctx context.Context, tenantID, id string) (eval.RunResult, bool, error) {
+	return r.delegate.GetEvaluationRun(ctx, tenantID, id)
 }
 
 type failingPipeline struct {

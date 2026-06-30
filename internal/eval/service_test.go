@@ -2,6 +2,7 @@ package eval
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/shikanon/orag/internal/dataset"
@@ -37,7 +38,7 @@ func TestRunnerPersistsRunInMemoryRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = dsSvc.AddItem(ctx, ds.ID, dataset.Item{
+	_, err = dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
 		Query:          "qdrant vector",
 		GroundTruth:    "qdrant",
 		RelevantDocIDs: []string{"doc_1"},
@@ -103,7 +104,7 @@ func TestOptimizerCandidatesDoNotReuseSemanticCacheAcrossProfileOrTopK(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = dsSvc.AddItem(ctx, ds.ID, dataset.Item{
+	_, err = dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
 		Query:          "qdrant vector",
 		GroundTruth:    "qdrant",
 		RelevantDocIDs: []string{"doc_1"},
@@ -165,5 +166,35 @@ func TestOptimizerCandidatesDoNotReuseSemanticCacheAcrossProfileOrTopK(t *testin
 		if got := run.Metrics["cache_hit_rate"]; got != 0 {
 			t.Fatalf("candidate profile=%s top_k=%d cache_hit_rate = %v, want 0", candidate.Profile, candidate.TopK, got)
 		}
+	}
+}
+
+func TestRunnerRejectsCrossTenantDataset(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService()
+	ds, err := dsSvc.Create(ctx, "tenant_a", "tenant a regression", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dsSvc.AddItem(ctx, "tenant_a", ds.ID, dataset.Item{
+		Query:       "tenant a query",
+		GroundTruth: "tenant a answer",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	evalRepo := NewMemoryRepository()
+	runner := Runner{RAG: &rag.Service{}, Datasets: dsSvc, Repository: evalRepo}
+	_, err = runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_b",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Profile:         rag.ProfileRealtime,
+	})
+	if !errors.Is(err, dataset.ErrDatasetNotFound) {
+		t.Fatalf("Run() error = %v, want ErrDatasetNotFound", err)
+	}
+	if len(evalRepo.runs) != 0 {
+		t.Fatalf("cross-tenant run was persisted: %#v", evalRepo.runs)
 	}
 }

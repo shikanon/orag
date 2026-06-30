@@ -31,24 +31,30 @@ func (r *Repository) GetDataset(ctx context.Context, tenantID, id string) (datas
 	return ds, true, nil
 }
 
-func (r *Repository) AddDatasetItem(ctx context.Context, item dataset.Item) (dataset.Item, error) {
+func (r *Repository) AddDatasetItem(ctx context.Context, tenantID string, item dataset.Item) (dataset.Item, error) {
 	body, err := json.Marshal(item.RelevantDocIDs)
 	if err != nil {
 		return dataset.Item{}, err
 	}
-	_, err = r.Pool.Exec(ctx, `
+	tag, err := r.Pool.Exec(ctx, `
 		INSERT INTO dataset_items(id, dataset_id, query, ground_truth, relevant_doc_ids)
-		VALUES($1,$2,$3,$4,$5)`,
-		item.ID, item.DatasetID, item.Query, item.GroundTruth, body)
+		SELECT $1, d.id, $2, $3, $4
+		FROM datasets d
+		WHERE d.tenant_id=$5 AND d.id=$6`,
+		item.ID, item.Query, item.GroundTruth, body, tenantID, item.DatasetID)
+	if err == nil && tag.RowsAffected() == 0 {
+		return dataset.Item{}, dataset.ErrDatasetNotFound
+	}
 	return item, err
 }
 
-func (r *Repository) DatasetItems(ctx context.Context, datasetID string) ([]dataset.Item, error) {
+func (r *Repository) DatasetItems(ctx context.Context, tenantID, datasetID string) ([]dataset.Item, error) {
 	rows, err := r.Pool.Query(ctx, `
-		SELECT id, dataset_id, query, ground_truth, relevant_doc_ids
-		FROM dataset_items
-		WHERE dataset_id=$1
-		ORDER BY id`, datasetID)
+		SELECT i.id, i.dataset_id, i.query, i.ground_truth, i.relevant_doc_ids
+		FROM dataset_items i
+		JOIN datasets d ON d.id = i.dataset_id
+		WHERE d.tenant_id=$1 AND d.id=$2
+		ORDER BY i.id`, tenantID, datasetID)
 	if err != nil {
 		return nil, err
 	}
