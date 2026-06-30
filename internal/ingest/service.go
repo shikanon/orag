@@ -46,7 +46,9 @@ type Result struct {
 
 func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 	if s.KnowledgeBases != nil {
-		if _, ok := s.KnowledgeBases.GetKnowledgeBase(req.TenantID, req.KnowledgeBaseID); !ok {
+		if _, ok, err := s.KnowledgeBases.GetKnowledgeBase(req.TenantID, req.KnowledgeBaseID); err != nil {
+			return Result{}, err
+		} else if !ok {
 			return Result{}, fmt.Errorf("%w: %s/%s", ErrKnowledgeBaseNotFound, req.TenantID, req.KnowledgeBaseID)
 		}
 	}

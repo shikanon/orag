@@ -72,6 +72,62 @@ func TestAuthMiddlewareAndInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestKnowledgeBaseCreateStorageError(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	app.KBStore = fakeKnowledgeBaseRepository{putErr: errors.New("insert failed")}
+
+	resp := performJSONWithTrace(h, "POST", "/v1/knowledge-bases", `{"name":"Docs"}`, token, "trace_kb_create_error")
+	if resp.Code == 201 {
+		t.Fatalf("create status = 201, want storage error body=%s", resp.Body)
+	}
+	assertErrorResponse(t, resp, 500, "knowledge_base_create_failed", "trace_kb_create_error")
+}
+
+func TestKnowledgeBaseListStorageError(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	app.KBStore = fakeKnowledgeBaseRepository{listErr: errors.New("list failed")}
+
+	resp := performJSONWithTrace(h, "GET", "/v1/knowledge-bases", "", token, "trace_kb_list_error")
+	if resp.Code == 200 {
+		t.Fatalf("list status = 200, want storage error body=%s", resp.Body)
+	}
+	if strings.Contains(resp.Body, `"items":[]`) {
+		t.Fatalf("list storage error returned empty items: %s", resp.Body)
+	}
+	assertErrorResponse(t, resp, 500, "knowledge_base_list_failed", "trace_kb_list_error")
+}
+
+func TestKnowledgeBaseGetStorageError(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	app.KBStore = fakeKnowledgeBaseRepository{getErr: errors.New("lookup failed")}
+
+	resp := performJSONWithTrace(h, "GET", "/v1/knowledge-bases/kb_default", "", token, "trace_kb_get_error")
+	if resp.Code == 404 {
+		t.Fatalf("get storage error status = 404, want 500 body=%s", resp.Body)
+	}
+	assertErrorResponse(t, resp, 500, "knowledge_base_lookup_failed", "trace_kb_get_error")
+}
+
+func TestKnowledgeBaseGetNotFound(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	app.KBStore = fakeKnowledgeBaseRepository{getFound: false}
+
+	resp := performJSONWithTrace(h, "GET", "/v1/knowledge-bases/kb_missing", "", token, "trace_kb_not_found")
+	assertErrorResponse(t, resp, 404, "knowledge_base_not_found", "trace_kb_not_found")
+}
+
 func TestHTTPCompletionLogIncludesTraceAndErrorCodeWithoutSensitiveBody(t *testing.T) {
 	var logs bytes.Buffer
 	h, closeApp := newTestHertzWithLogger(t, slog.New(slog.NewJSONHandler(&logs, nil)))
@@ -428,6 +484,22 @@ func assertMissingKnowledgeBaseResponse(t *testing.T, resp testResponse) {
 	}
 }
 
+func assertErrorResponse(t *testing.T, resp testResponse, status int, code, traceID string) {
+	t.Helper()
+	if resp.Code != status {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, status, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"code":"`+code+`"`) {
+		t.Fatalf("error response missing code %q: %s", code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"trace_id":"`+traceID+`"`) {
+		t.Fatalf("error response missing trace %q: %s", traceID, resp.Body)
+	}
+	if resp.TraceIDHeader != traceID {
+		t.Fatalf("trace header = %q, want %q", resp.TraceIDHeader, traceID)
+	}
+}
+
 func assertNoChunks(t *testing.T, app *core.App, kbID string) {
 	t.Helper()
 	chunks, ok := app.KBStore.(kb.ChunkSource)
@@ -437,6 +509,27 @@ func assertNoChunks(t *testing.T, app *core.App, kbID string) {
 	if got := chunks.Chunks("tenant_default", kbID); len(got) != 0 {
 		t.Fatalf("chunks created for missing knowledge base: %#v", got)
 	}
+}
+
+type fakeKnowledgeBaseRepository struct {
+	putErr    error
+	listItems []kb.KnowledgeBase
+	listErr   error
+	getItem   kb.KnowledgeBase
+	getFound  bool
+	getErr    error
+}
+
+func (r fakeKnowledgeBaseRepository) PutKnowledgeBase(kb.KnowledgeBase) error {
+	return r.putErr
+}
+
+func (r fakeKnowledgeBaseRepository) ListKnowledgeBases(string) ([]kb.KnowledgeBase, error) {
+	return r.listItems, r.listErr
+}
+
+func (r fakeKnowledgeBaseRepository) GetKnowledgeBase(string, string) (kb.KnowledgeBase, bool, error) {
+	return r.getItem, r.getFound, r.getErr
 }
 
 type countingJobStore struct {

@@ -83,13 +83,14 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-func (s *MemoryStore) PutKnowledgeBase(kb KnowledgeBase) {
+func (s *MemoryStore) PutKnowledgeBase(kb KnowledgeBase) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.kbs[kb.ID] = kb
+	return nil
 }
 
-func (s *MemoryStore) ListKnowledgeBases(tenantID string) []KnowledgeBase {
+func (s *MemoryStore) ListKnowledgeBases(tenantID string) ([]KnowledgeBase, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]KnowledgeBase, 0, len(s.kbs))
@@ -99,14 +100,14 @@ func (s *MemoryStore) ListKnowledgeBases(tenantID string) []KnowledgeBase {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-	return out
+	return out, nil
 }
 
-func (s *MemoryStore) GetKnowledgeBase(tenantID, id string) (KnowledgeBase, bool) {
+func (s *MemoryStore) GetKnowledgeBase(tenantID, id string) (KnowledgeBase, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	item, ok := s.kbs[id]
-	return item, ok && item.TenantID == tenantID
+	return item, ok && item.TenantID == tenantID, nil
 }
 
 func (s *MemoryStore) Store(_ context.Context, doc Document, chunks []Chunk) error {

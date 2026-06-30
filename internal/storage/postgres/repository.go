@@ -6,17 +6,25 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shikanon/orag/internal/kb"
 )
 
 type Repository struct {
 	Pool        *pgxpool.Pool
+	kbQueryer   knowledgeBaseQueryer
 	traceReader traceQueryer
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{Pool: pool, traceReader: pgxTraceQueryer{pool: pool}}
+	return &Repository{Pool: pool, kbQueryer: pool, traceReader: pgxTraceQueryer{pool: pool}}
+}
+
+type knowledgeBaseQueryer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 type pgxTraceQueryer struct {
@@ -31,10 +39,10 @@ func (q pgxTraceQueryer) Query(ctx context.Context, sql string, args ...any) (tr
 	return q.pool.Query(ctx, sql, args...)
 }
 
-func (r *Repository) PutKnowledgeBase(item kb.KnowledgeBase) {
+func (r *Repository) PutKnowledgeBase(item kb.KnowledgeBase) error {
 	ctx := context.Background()
 	meta := mustJSON(item.Metadata)
-	_, _ = r.Pool.Exec(ctx, `
+	_, err := r.knowledgeBaseQueryer().Exec(ctx, `
 		INSERT INTO knowledge_bases(id, tenant_id, name, description, metadata, created_at, updated_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7)
 		ON CONFLICT (id) DO UPDATE SET
@@ -43,35 +51,46 @@ func (r *Repository) PutKnowledgeBase(item kb.KnowledgeBase) {
 			metadata=EXCLUDED.metadata,
 			updated_at=EXCLUDED.updated_at`,
 		item.ID, item.TenantID, item.Name, item.Description, meta, item.CreatedAt, item.UpdatedAt)
+	return err
 }
 
-func (r *Repository) ListKnowledgeBases(tenantID string) []kb.KnowledgeBase {
-	rows, err := r.Pool.Query(context.Background(), `
+func (r *Repository) ListKnowledgeBases(tenantID string) ([]kb.KnowledgeBase, error) {
+	rows, err := r.knowledgeBaseQueryer().Query(context.Background(), `
 		SELECT id, tenant_id, name, description, metadata, created_at, updated_at
 		FROM knowledge_bases
 		WHERE tenant_id=$1
 		ORDER BY created_at`, tenantID)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer rows.Close()
 	var out []kb.KnowledgeBase
 	for rows.Next() {
 		item, err := scanKnowledgeBase(rows)
-		if err == nil {
-			out = append(out, item)
+		if err != nil {
+			return nil, err
 		}
+		out = append(out, item)
 	}
-	return out
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-func (r *Repository) GetKnowledgeBase(tenantID, id string) (kb.KnowledgeBase, bool) {
-	row := r.Pool.QueryRow(context.Background(), `
+func (r *Repository) GetKnowledgeBase(tenantID, id string) (kb.KnowledgeBase, bool, error) {
+	row := r.knowledgeBaseQueryer().QueryRow(context.Background(), `
 		SELECT id, tenant_id, name, description, metadata, created_at, updated_at
 		FROM knowledge_bases
 		WHERE tenant_id=$1 AND id=$2`, tenantID, id)
 	item, err := scanKnowledgeBase(row)
-	return item, err == nil
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return kb.KnowledgeBase{}, false, nil
+		}
+		return kb.KnowledgeBase{}, false, err
+	}
+	return item, true, nil
 }
 
 func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
@@ -149,13 +168,13 @@ func (r *Repository) Chunks(tenantID, kbID string) []kb.Chunk {
 
 func (r *Repository) BootstrapDefaults(ctx context.Context, tenantID, kbID string) error {
 	now := time.Now().UTC()
-	if _, err := r.Pool.Exec(ctx, `
+	if _, err := r.knowledgeBaseQueryer().Exec(ctx, `
 		INSERT INTO tenants(id, name, created_at)
 		VALUES($1, $2, $3)
 		ON CONFLICT (id) DO NOTHING`, tenantID, tenantID, now); err != nil {
 		return err
 	}
-	r.PutKnowledgeBase(kb.KnowledgeBase{
+	return r.PutKnowledgeBase(kb.KnowledgeBase{
 		ID:          kbID,
 		TenantID:    tenantID,
 		Name:        "Default Knowledge Base",
@@ -164,7 +183,13 @@ func (r *Repository) BootstrapDefaults(ctx context.Context, tenantID, kbID strin
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	})
-	return nil
+}
+
+func (r *Repository) knowledgeBaseQueryer() knowledgeBaseQueryer {
+	if r.kbQueryer != nil {
+		return r.kbQueryer
+	}
+	return r.Pool
 }
 
 type kbScanner interface {

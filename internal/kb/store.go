@@ -1,9 +1,9 @@
 package kb
 
 type KnowledgeBaseRepository interface {
-	PutKnowledgeBase(kb KnowledgeBase)
-	ListKnowledgeBases(tenantID string) []KnowledgeBase
-	GetKnowledgeBase(tenantID, id string) (KnowledgeBase, bool)
+	PutKnowledgeBase(kb KnowledgeBase) error
+	ListKnowledgeBases(tenantID string) ([]KnowledgeBase, error)
+	GetKnowledgeBase(tenantID, id string) (KnowledgeBase, bool, error)
 }
 
 type ChunkSource interface {

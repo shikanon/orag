@@ -162,7 +162,9 @@ type knowledgeBackend struct {
 func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant string) (knowledgeBackend, error) {
 	if cfg.Storage.Backend == "memory" {
 		store := kb.NewMemoryStore()
-		bootstrapMemory(store, defaultTenant)
+		if err := bootstrapMemory(store, defaultTenant); err != nil {
+			return knowledgeBackend{}, err
+		}
 		return knowledgeBackend{
 			store:       store,
 			indexer:     store,
@@ -234,9 +236,9 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 	}, nil
 }
 
-func bootstrapMemory(store *kb.MemoryStore, tenantID string) {
+func bootstrapMemory(store *kb.MemoryStore, tenantID string) error {
 	now := time.Now().UTC()
-	store.PutKnowledgeBase(kb.KnowledgeBase{
+	return store.PutKnowledgeBase(kb.KnowledgeBase{
 		ID:          "kb_default",
 		TenantID:    tenantID,
 		Name:        "Default Knowledge Base",
