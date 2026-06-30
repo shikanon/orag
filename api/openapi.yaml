@@ -154,8 +154,14 @@ paths:
         - $ref: "#/components/parameters/ID"
       responses:
         "204":
-          description: Delete request accepted by the current handler.
+          description: Knowledge base deleted for the current tenant.
         "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+        "501":
           $ref: "#/components/responses/Error"
   /v1/knowledge-bases/{id}/documents:
     post:

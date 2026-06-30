@@ -1,9 +1,15 @@
 package kb
 
+import "context"
+
 type KnowledgeBaseRepository interface {
 	PutKnowledgeBase(kb KnowledgeBase)
 	ListKnowledgeBases(tenantID string) []KnowledgeBase
 	GetKnowledgeBase(tenantID, id string) (KnowledgeBase, bool)
+}
+
+type KnowledgeBaseDeleter interface {
+	DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error)
 }
 
 type ChunkSource interface {
@@ -12,6 +18,7 @@ type ChunkSource interface {
 
 type Store interface {
 	KnowledgeBaseRepository
+	KnowledgeBaseDeleter
 	ChunkSource
 	Indexer
 }

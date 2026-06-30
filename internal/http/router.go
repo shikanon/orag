@@ -147,7 +147,21 @@ func (s *Server) getKnowledgeBase(_ context.Context, c *app.RequestContext) {
 	c.JSON(consts.StatusOK, item)
 }
 
-func (s *Server) deleteKnowledgeBase(_ context.Context, c *app.RequestContext) {
+func (s *Server) deleteKnowledgeBase(ctx context.Context, c *app.RequestContext) {
+	deleter, ok := s.App.KBStore.(kb.KnowledgeBaseDeleter)
+	if !ok {
+		writeError(c, consts.StatusNotImplemented, "knowledge_base_delete_unsupported", "knowledge base delete is not supported by the configured storage backend")
+		return
+	}
+	deleted, err := deleter.DeleteKnowledgeBase(ctx, tenantID(c), c.Param("id"))
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "knowledge_base_delete_failed", err.Error())
+		return
+	}
+	if !deleted {
+		writeKnowledgeBaseNotFound(c)
+		return
+	}
 	c.Status(consts.StatusNoContent)
 }
 

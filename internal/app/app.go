@@ -159,6 +159,31 @@ type knowledgeBackend struct {
 	closers     []func() error
 }
 
+type knowledgeBasePointDeleter interface {
+	DeleteKnowledgeBasePoints(ctx context.Context, tenantID, kbID string) error
+}
+
+type knowledgeBaseStoreWithPointCleanup struct {
+	kb.KnowledgeBaseRepository
+	deleter       kb.KnowledgeBaseDeleter
+	pointDeleters []knowledgeBasePointDeleter
+}
+
+func (s knowledgeBaseStoreWithPointCleanup) DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error) {
+	if _, ok := s.GetKnowledgeBase(tenantID, id); !ok {
+		return false, nil
+	}
+	for _, deleter := range s.pointDeleters {
+		if deleter == nil {
+			continue
+		}
+		if err := deleter.DeleteKnowledgeBasePoints(ctx, tenantID, id); err != nil {
+			return false, err
+		}
+	}
+	return s.deleter.DeleteKnowledgeBase(ctx, tenantID, id)
+}
+
 func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant string) (knowledgeBackend, error) {
 	if cfg.Storage.Backend == "memory" {
 		store := kb.NewMemoryStore()
@@ -212,8 +237,13 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 	vectors := qdrantstore.VectorStore{Client: qdrantClient, Collection: cfg.Qdrant.Collection}
 	indexer := kb.CompositeIndexer{Indexers: []kb.Indexer{repo, vectors}}
 	cache := qdrantstore.SemanticCache{Client: qdrantClient, Collection: cfg.Qdrant.SemanticCacheCollection, Threshold: cfg.RAG.SemanticCacheThreshold}
+	store := knowledgeBaseStoreWithPointCleanup{
+		KnowledgeBaseRepository: repo,
+		deleter:                 repo,
+		pointDeleters:           []knowledgeBasePointDeleter{vectors, cache},
+	}
 	return knowledgeBackend{
-		store:       repo,
+		store:       store,
 		indexer:     indexer,
 		dense:       vectors,
 		sparse:      postgres.NewFTSRetriever(repo),

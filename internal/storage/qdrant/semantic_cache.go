@@ -81,6 +81,11 @@ func (s SemanticCache) Store(ctx context.Context, entry rag.SemanticCacheEntry) 
 	return err
 }
 
+func (s SemanticCache) DeleteKnowledgeBasePoints(ctx context.Context, tenantID, kbID string) error {
+	_, err := s.Client.Points.Delete(ctx, deleteKnowledgeBasePointsRequest(s.Collection, tenantID, kbID))
+	return err
+}
+
 func semanticCachePayload(entry rag.SemanticCacheEntry) map[string]*qdrant.Value {
 	createdAt := entry.CreatedAt
 	if createdAt.IsZero() {

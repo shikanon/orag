@@ -55,9 +55,44 @@ func TestMatchKeywordBuildsFieldCondition(t *testing.T) {
 	}
 }
 
+func TestDeleteKnowledgeBasePointsRequestUsesTenantAndKBFilter(t *testing.T) {
+	req := deleteKnowledgeBasePointsRequest("orag_chunks", "tenant_1", "kb_1")
+	if req.GetCollectionName() != "orag_chunks" {
+		t.Fatalf("collection = %q", req.GetCollectionName())
+	}
+	if req.Wait == nil || !req.GetWait() {
+		t.Fatalf("wait = %v, want true", req.Wait)
+	}
+	filter := req.GetPoints().GetFilter()
+	if filter == nil {
+		t.Fatal("delete request does not use a filter selector")
+	}
+	assertFilterMatches(t, filter, map[string]string{
+		"tenant_id":         "tenant_1",
+		"knowledge_base_id": "kb_1",
+	})
+}
+
 func TestPayloadIntegerStringFallback(t *testing.T) {
 	payload := map[string]*qdrant.Value{"offset": integerValue(12)}
 	if got := payloadString(payload, "offset"); got != "12" {
 		t.Fatalf("payloadString = %q", got)
+	}
+}
+
+func assertFilterMatches(t *testing.T, filter *qdrant.Filter, want map[string]string) {
+	t.Helper()
+	got := map[string]string{}
+	for _, cond := range filter.GetMust() {
+		field := cond.GetField()
+		got[field.GetKey()] = field.GetMatch().GetKeyword()
+	}
+	for key, value := range want {
+		if got[key] != value {
+			t.Fatalf("filter[%q] = %q, want %q; full filter = %#v", key, got[key], value, got)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("filter = %#v, want only %#v", got, want)
 	}
 }

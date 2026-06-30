@@ -259,6 +259,67 @@ func TestDocumentIngestionRequiresExistingKnowledgeBase(t *testing.T) {
 	assertNoChunks(t, app, missingKB)
 }
 
+func TestDeleteKnowledgeBaseRemovesMemoryState(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"Delete regression","description":"delete contract"}`, token)
+	if resp.Code != 201 {
+		t.Fatalf("create knowledge base status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created kb.KnowledgeBase
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" {
+		t.Fatalf("created knowledge base missing id: %#v", created)
+	}
+
+	resp = performJSON(h, "POST", "/v1/knowledge-bases/"+created.ID+"/documents:import", `{"name":"delete.md","source_uri":"test://delete","content":"delete cleanup marker for retrieval"}`, token)
+	if resp.Code != 202 {
+		t.Fatalf("import status = %d body=%s", resp.Code, resp.Body)
+	}
+	if got := app.KBStore.(kb.ChunkSource).Chunks("tenant_default", created.ID); len(got) == 0 {
+		t.Fatal("import did not create chunks before delete")
+	}
+
+	resp = performJSON(h, "DELETE", "/v1/knowledge-bases/"+created.ID, "", token)
+	if resp.Code != 204 {
+		t.Fatalf("delete status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	resp = performJSON(h, "GET", "/v1/knowledge-bases/"+created.ID, "", token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+
+	resp = performJSON(h, "GET", "/v1/knowledge-bases", "", token)
+	if resp.Code != 200 {
+		t.Fatalf("list status = %d body=%s", resp.Code, resp.Body)
+	}
+	if strings.Contains(resp.Body, created.ID) {
+		t.Fatalf("deleted knowledge base still appears in list: %s", resp.Body)
+	}
+
+	resp = performJSON(h, "POST", "/v1/knowledge-bases/"+created.ID+"/documents:import", `{"name":"after-delete.md","source_uri":"test://after-delete","content":"must not ingest"}`, token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+	assertNoChunks(t, app, created.ID)
+
+	resp = performJSON(h, "POST", "/v1/query", `{"knowledge_base_id":"`+created.ID+`","query":"delete cleanup marker"}`, token)
+	if resp.Code != 200 {
+		t.Fatalf("query status = %d body=%s", resp.Code, resp.Body)
+	}
+	var queryResp rag.QueryResponse
+	if err := json.Unmarshal([]byte(resp.Body), &queryResp); err != nil {
+		t.Fatal(err)
+	}
+	if len(queryResp.RetrievedChunks) != 0 {
+		t.Fatalf("query returned chunks for deleted knowledge base: %#v", queryResp.RetrievedChunks)
+	}
+	if !containsWarning(queryResp.Warnings, "no_retrieved_context") {
+		t.Fatalf("query warnings = %#v, want no_retrieved_context", queryResp.Warnings)
+	}
+}
+
 type testResponse struct {
 	Code          int
 	Body          string
@@ -389,6 +450,15 @@ func assertNoChunks(t *testing.T, app *core.App, kbID string) {
 	if got := chunks.Chunks("tenant_default", kbID); len(got) != 0 {
 		t.Fatalf("chunks created for missing knowledge base: %#v", got)
 	}
+}
+
+func containsWarning(warnings []string, want string) bool {
+	for _, warning := range warnings {
+		if warning == want {
+			return true
+		}
+	}
+	return false
 }
 
 type countingJobStore struct {

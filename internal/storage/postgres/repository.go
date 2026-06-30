@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shikanon/orag/internal/kb"
 )
@@ -14,6 +15,8 @@ type Repository struct {
 	Pool        *pgxpool.Pool
 	traceReader traceQueryer
 }
+
+var _ kb.KnowledgeBaseDeleter = (*Repository)(nil)
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{Pool: pool, traceReader: pgxTraceQueryer{pool: pool}}
@@ -74,6 +77,23 @@ func (r *Repository) GetKnowledgeBase(tenantID, id string) (kb.KnowledgeBase, bo
 	return item, err == nil
 }
 
+func (r *Repository) DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error) {
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	deleted, err := deleteKnowledgeBaseRows(ctx, tx, tenantID, id)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return deleted, nil
+}
+
 func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
@@ -126,6 +146,64 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 	}
 	return tx.Commit(ctx)
 }
+
+type knowledgeBaseDeleteExecer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+func deleteKnowledgeBaseRows(ctx context.Context, execer knowledgeBaseDeleteExecer, tenantID, id string) (bool, error) {
+	for _, statement := range []string{
+		deleteKnowledgeBaseChunksSQL,
+		deleteKnowledgeBaseDocumentsSQL,
+		deleteKnowledgeBaseJobsSQL,
+	} {
+		if _, err := execer.Exec(ctx, statement, tenantID, id); err != nil {
+			return false, err
+		}
+	}
+	tag, err := execer.Exec(ctx, deleteKnowledgeBaseSQL, tenantID, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+const deleteKnowledgeBaseChunksSQL = `
+	WITH target AS (
+		SELECT id FROM knowledge_bases
+		WHERE tenant_id=$1 AND id=$2
+		FOR UPDATE
+	)
+	DELETE FROM chunks
+	USING target
+	WHERE chunks.tenant_id=$1
+	  AND chunks.knowledge_base_id=target.id`
+
+const deleteKnowledgeBaseDocumentsSQL = `
+	WITH target AS (
+		SELECT id FROM knowledge_bases
+		WHERE tenant_id=$1 AND id=$2
+		FOR UPDATE
+	)
+	DELETE FROM documents
+	USING target
+	WHERE documents.tenant_id=$1
+	  AND documents.knowledge_base_id=target.id`
+
+const deleteKnowledgeBaseJobsSQL = `
+	WITH target AS (
+		SELECT id FROM knowledge_bases
+		WHERE tenant_id=$1 AND id=$2
+		FOR UPDATE
+	)
+	DELETE FROM ingestion_jobs
+	USING target
+	WHERE ingestion_jobs.tenant_id=$1
+	  AND ingestion_jobs.knowledge_base_id=target.id`
+
+const deleteKnowledgeBaseSQL = `
+	DELETE FROM knowledge_bases
+	WHERE tenant_id=$1 AND id=$2`
 
 func (r *Repository) Chunks(tenantID, kbID string) []kb.Chunk {
 	rows, err := r.Pool.Query(context.Background(), `

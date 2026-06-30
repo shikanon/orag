@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"os"
 	"reflect"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shikanon/orag/internal/rag"
 )
 
@@ -46,6 +48,78 @@ func TestIngestionJobResultMigration(t *testing.T) {
 		if !strings.Contains(text, required) {
 			t.Fatalf("migration missing %q: %s", required, text)
 		}
+	}
+}
+
+func TestDeleteKnowledgeBaseRowsCleansRelationalTables(t *testing.T) {
+	execer := &fakeDeleteExecer{tags: []pgconn.CommandTag{
+		pgconn.NewCommandTag("DELETE 2"),
+		pgconn.NewCommandTag("DELETE 1"),
+		pgconn.NewCommandTag("DELETE 1"),
+		pgconn.NewCommandTag("DELETE 1"),
+	}}
+
+	deleted, err := deleteKnowledgeBaseRows(context.Background(), execer, "tenant_1", "kb_1")
+	if err != nil {
+		t.Fatalf("deleteKnowledgeBaseRows() error = %v", err)
+	}
+	if !deleted {
+		t.Fatal("deleteKnowledgeBaseRows() deleted = false, want true")
+	}
+
+	wantDeletes := []string{
+		"DELETE FROM chunks",
+		"DELETE FROM documents",
+		"DELETE FROM ingestion_jobs",
+		"DELETE FROM knowledge_bases",
+	}
+	if len(execer.calls) != len(wantDeletes) {
+		t.Fatalf("Exec calls = %d, want %d", len(execer.calls), len(wantDeletes))
+	}
+	for i, call := range execer.calls {
+		sql := strings.Join(strings.Fields(call.sql), " ")
+		if !strings.Contains(sql, wantDeletes[i]) {
+			t.Fatalf("call %d SQL = %s, want %q", i, sql, wantDeletes[i])
+		}
+		if !reflect.DeepEqual(call.args, []any{"tenant_1", "kb_1"}) {
+			t.Fatalf("call %d args = %#v", i, call.args)
+		}
+		if !strings.Contains(sql, "tenant_id=$1") || !strings.Contains(sql, "id=$2") {
+			t.Fatalf("call %d is not tenant-scoped: %s", i, sql)
+		}
+	}
+}
+
+func TestDeleteKnowledgeBaseRowsReportsMissingKnowledgeBase(t *testing.T) {
+	execer := &fakeDeleteExecer{tags: []pgconn.CommandTag{
+		pgconn.NewCommandTag("DELETE 0"),
+		pgconn.NewCommandTag("DELETE 0"),
+		pgconn.NewCommandTag("DELETE 0"),
+		pgconn.NewCommandTag("DELETE 0"),
+	}}
+
+	deleted, err := deleteKnowledgeBaseRows(context.Background(), execer, "tenant_1", "missing_kb")
+	if err != nil {
+		t.Fatalf("deleteKnowledgeBaseRows() error = %v", err)
+	}
+	if deleted {
+		t.Fatal("deleteKnowledgeBaseRows() deleted = true, want false")
+	}
+}
+
+func TestDeleteKnowledgeBaseRowsStopsOnCleanupError(t *testing.T) {
+	cleanupErr := errors.New("delete chunks failed")
+	execer := &fakeDeleteExecer{errAt: 0, err: cleanupErr}
+
+	deleted, err := deleteKnowledgeBaseRows(context.Background(), execer, "tenant_1", "kb_1")
+	if !errors.Is(err, cleanupErr) {
+		t.Fatalf("deleteKnowledgeBaseRows() error = %v, want %v", err, cleanupErr)
+	}
+	if deleted {
+		t.Fatal("deleteKnowledgeBaseRows() deleted = true, want false")
+	}
+	if len(execer.calls) != 1 {
+		t.Fatalf("Exec calls = %d, want 1", len(execer.calls))
 	}
 }
 
@@ -95,6 +169,30 @@ func TestRepositoryGetTraceNotFound(t *testing.T) {
 	if reader.queriedSpans {
 		t.Fatal("GetTrace() queried spans for missing trace")
 	}
+}
+
+type deleteExecCall struct {
+	sql  string
+	args []any
+}
+
+type fakeDeleteExecer struct {
+	calls []deleteExecCall
+	tags  []pgconn.CommandTag
+	errAt int
+	err   error
+}
+
+func (f *fakeDeleteExecer) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	idx := len(f.calls)
+	f.calls = append(f.calls, deleteExecCall{sql: sql, args: append([]any(nil), args...)})
+	if f.err != nil && idx == f.errAt {
+		return pgconn.CommandTag{}, f.err
+	}
+	if idx < len(f.tags) {
+		return f.tags[idx], nil
+	}
+	return pgconn.NewCommandTag("DELETE 0"), nil
 }
 
 type fakeTraceReader struct {
