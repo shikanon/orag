@@ -130,6 +130,11 @@ func (n NodeSet) HybridRetrieve(ctx context.Context, st State) (State, error) {
 			RetrieveWithWarnings(context.Context, kb.SearchRequest) ([]kb.SearchResult, []string, error)
 		}); ok {
 			var warnings []string
+			searchReq.TopK = st.Request.TopK
+			if st.Request.TopK <= 0 {
+				searchReq.DenseTopK = st.TopK
+				searchReq.SparseTopK = st.TopK
+			}
 			results, warnings, err = retriever.RetrieveWithWarnings(ctx, searchReq)
 			st.Warnings = append(st.Warnings, warnings...)
 		} else {

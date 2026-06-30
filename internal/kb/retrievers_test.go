@@ -83,3 +83,57 @@ func TestHybridRetrieverMergesAndRanksStable(t *testing.T) {
 		t.Fatalf("top result = %#v", results[0])
 	}
 }
+
+func TestHybridRetrieverRequestTopKCapsRRFWhenDefaultsConfigured(t *testing.T) {
+	hybrid := HybridRetriever{
+		Dense:      stubRetriever{results: rankedResults("dense", 8)},
+		Sparse:     stubRetriever{results: rankedResults("sparse", 8)},
+		RRFK:       60,
+		TopN:       8,
+		DenseTopK:  8,
+		SparseTopK: 8,
+	}
+	results, warnings, err := hybrid.RetrieveWithWarnings(context.Background(), SearchRequest{TopK: 5})
+	if err != nil {
+		t.Fatalf("RetrieveWithWarnings() error = %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if len(results) != 5 {
+		t.Fatalf("len(results) = %d, want 5", len(results))
+	}
+}
+
+func TestHybridRetrieverFallsBackToConfiguredTopNWhenRequestTopKAbsent(t *testing.T) {
+	hybrid := HybridRetriever{
+		Dense:  stubRetriever{results: rankedResults("dense", 6)},
+		Sparse: stubRetriever{results: rankedResults("sparse", 6)},
+		RRFK:   60,
+		TopN:   4,
+	}
+	results, warnings, err := hybrid.RetrieveWithWarnings(context.Background(), SearchRequest{})
+	if err != nil {
+		t.Fatalf("RetrieveWithWarnings() error = %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if len(results) != 4 {
+		t.Fatalf("len(results) = %d, want 4", len(results))
+	}
+}
+
+func rankedResults(prefix string, n int) []SearchResult {
+	results := make([]SearchResult, 0, n)
+	for i := 1; i <= n; i++ {
+		id := prefix + "_" + string(rune('a'+i-1))
+		results = append(results, SearchResult{
+			Chunk: Chunk{ID: id, Content: id},
+			Score: float64(n - i + 1),
+			Rank:  i,
+			From:  prefix,
+		})
+	}
+	return results
+}

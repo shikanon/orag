@@ -87,6 +87,11 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		RetrieveWithWarnings(context.Context, kb.SearchRequest) ([]kb.SearchResult, []string, error)
 	}); ok {
 		var retrievalWarnings []string
+		searchReq.TopK = req.TopK
+		if req.TopK <= 0 {
+			searchReq.DenseTopK = topK
+			searchReq.SparseTopK = topK
+		}
 		results, retrievalWarnings, err = retriever.RetrieveWithWarnings(ctx, searchReq)
 		warnings = append(warnings, retrievalWarnings...)
 	} else {

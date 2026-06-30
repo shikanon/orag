@@ -106,7 +106,14 @@ func (r HybridRetriever) RetrieveWithWarnings(ctx context.Context, req SearchReq
 	if denseErr != nil && sparseErr != nil {
 		return nil, warnings, fmt.Errorf("hybrid retrieval failed: dense: %v; sparse: %v", denseErr, sparseErr)
 	}
-	return RRF([][]SearchResult{dense, sparse}, r.RRFK, r.TopN), warnings, nil
+	return RRF([][]SearchResult{dense, sparse}, r.RRFK, r.rrfTopN(req)), warnings, nil
+}
+
+func (r HybridRetriever) rrfTopN(req SearchRequest) int {
+	if req.TopK > 0 {
+		return req.TopK
+	}
+	return r.TopN
 }
 
 func denseLimit(req SearchRequest) int {
