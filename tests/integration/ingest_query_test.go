@@ -1,13 +1,21 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/cloudwego/hertz/pkg/common/ut"
+	"github.com/cloudwego/hertz/pkg/route"
+	oraghttp "github.com/shikanon/orag/internal/http"
 	"github.com/shikanon/orag/internal/ingest"
+	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
 )
 
@@ -93,6 +101,21 @@ func TestIngestMissingKnowledgeBaseWithPostgresQdrant(t *testing.T) {
 	}
 }
 
+func TestHTTPIngestMissingKnowledgeBaseWithPostgresQdrant(t *testing.T) {
+	app := newIntegrationApp(t)
+	h := oraghttp.NewServer(app).Hertz().Engine
+	token := loginHTTPToken(t, h, app.Config.Auth.AdminDefaultUsername, app.Config.Auth.AdminDefaultPassword)
+	missingKB := fmt.Sprintf("kb_missing_http_%d", time.Now().UnixNano())
+
+	status, body := performIntegrationJSON(h, "POST", "/v1/knowledge-bases/"+missingKB+"/documents:import", `{"name":"missing.md","source_uri":"integration://missing-http","content":"missing knowledge bases must return 404"}`, token)
+	assertMissingKBHTTPResponse(t, status, body)
+	assertNoStoredChunks(t, app.KBStore, missingKB)
+
+	status, body = performIntegrationUpload(t, h, "/v1/knowledge-bases/"+missingKB+"/documents", "missing.md", "missing knowledge bases must return 404", token)
+	assertMissingKBHTTPResponse(t, status, body)
+	assertNoStoredChunks(t, app.KBStore, missingKB)
+}
+
 func retrievedDocument(resp rag.QueryResponse, documentID string) bool {
 	for _, result := range resp.RetrievedChunks {
 		if result.Chunk.DocumentID == documentID {
@@ -100,6 +123,89 @@ func retrievedDocument(resp rag.QueryResponse, documentID string) bool {
 		}
 	}
 	return false
+}
+
+func loginHTTPToken(t *testing.T, h *route.Engine, username, password string) string {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"username": username, "password": password})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, resp := performIntegrationJSON(h, "POST", "/v1/auth/login", string(body), "")
+	if status != 200 {
+		t.Fatalf("login status = %d body=%s", status, resp)
+	}
+	var parsed struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.AccessToken == "" {
+		t.Fatal("missing access token")
+	}
+	return parsed.AccessToken
+}
+
+func performIntegrationJSON(h *route.Engine, method, path, body, token string) (int, string) {
+	headers := []ut.Header{{Key: "Content-Type", Value: "application/json"}}
+	if token != "" {
+		headers = append(headers, ut.Header{Key: "Authorization", Value: "Bearer " + token})
+	}
+	var reqBody *ut.Body
+	if body != "" {
+		reqBody = &ut.Body{Body: bytes.NewBufferString(body), Len: len(body)}
+	}
+	w := ut.PerformRequest(h, method, path, reqBody, headers...)
+	result := w.Result()
+	return result.StatusCode(), string(result.Body())
+}
+
+func performIntegrationUpload(t *testing.T, h *route.Engine, path, filename, content, token string) (int, string) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	headers := []ut.Header{{Key: "Content-Type", Value: writer.FormDataContentType()}}
+	if token != "" {
+		headers = append(headers, ut.Header{Key: "Authorization", Value: "Bearer " + token})
+	}
+	w := ut.PerformRequest(h, "POST", path, &ut.Body{Body: bytes.NewReader(body.Bytes()), Len: body.Len()}, headers...)
+	result := w.Result()
+	return result.StatusCode(), string(result.Body())
+}
+
+func assertMissingKBHTTPResponse(t *testing.T, status int, body string) {
+	t.Helper()
+	if status != 404 {
+		t.Fatalf("missing knowledge base status = %d body=%s", status, body)
+	}
+	if !strings.Contains(body, `"code":"knowledge_base_not_found"`) {
+		t.Fatalf("unexpected missing knowledge base body: %s", body)
+	}
+	if strings.Contains(body, `"code":"ingest_failed"`) {
+		t.Fatalf("missing knowledge base returned ingest_failed: %s", body)
+	}
+}
+
+func assertNoStoredChunks(t *testing.T, store any, kbID string) {
+	t.Helper()
+	chunks, ok := store.(kb.ChunkSource)
+	if !ok {
+		t.Fatalf("store does not expose chunks")
+	}
+	if got := chunks.Chunks(testTenantID, kbID); len(got) != 0 {
+		t.Fatalf("chunks created for missing knowledge base: %#v", got)
+	}
 }
 
 func citedDocument(resp rag.QueryResponse, documentID string) bool {

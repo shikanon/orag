@@ -71,6 +71,20 @@ func TestOpenAPI(t *testing.T) {
 		}
 	}
 
+	for _, route := range []struct {
+		method string
+		path   string
+		status int
+	}{
+		{http.MethodPost, "/v1/knowledge-bases/{id}/documents", http.StatusNotFound},
+		{http.MethodPost, "/v1/knowledge-bases/{id}/documents:import", http.StatusNotFound},
+	} {
+		op := doc.Paths.Find(route.path).GetOperation(route.method)
+		if op.Responses.Get(route.status) == nil {
+			t.Fatalf("%s %s missing %d response", route.method, route.path, route.status)
+		}
+	}
+
 	for path, item := range doc.Paths {
 		if path == "/v1/auth/login" || len(path) < len("/v1/") || path[:len("/v1/")] != "/v1/" {
 			continue
