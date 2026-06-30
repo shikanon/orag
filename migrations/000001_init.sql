@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     section TEXT NOT NULL DEFAULT '',
     offset_start INT NOT NULL DEFAULT 0,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    searchable BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
