@@ -186,6 +186,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 		pool.Close()
 		return knowledgeBackend{}, err
 	}
+	repo.StageChunks = true
 
 	qdrantCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

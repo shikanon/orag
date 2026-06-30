@@ -172,6 +172,44 @@ func TestIngestionJobResultMigration(t *testing.T) {
 	}
 }
 
+func TestChunkSearchableMigration(t *testing.T) {
+	initBody, err := os.ReadFile("../../../migrations/000001_init.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(initBody), "searchable BOOLEAN NOT NULL DEFAULT TRUE") {
+		t.Fatalf("initial schema does not create searchable chunks: %s", initBody)
+	}
+	body, err := os.ReadFile("../../../migrations/000004_chunk_searchable.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{"ADD COLUMN IF NOT EXISTS searchable", "DEFAULT TRUE", "WHERE searchable"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("migration missing %q: %s", required, text)
+		}
+	}
+}
+
+func TestFTSRetrieverFiltersSearchableChunks(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{queryRows: &fakeTraceRows{}}
+	retriever := FTSRetriever{queryer: queryer}
+
+	_, err := retriever.Retrieve(context.Background(), kb.SearchRequest{
+		TenantID:        "tenant_1",
+		KnowledgeBaseID: "kb_1",
+		Query:           "partial ingest",
+		TopK:            8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(queryer.querySQL, "AND searchable") {
+		t.Fatalf("FTS query does not filter searchable chunks: %s", queryer.querySQL)
+	}
+}
+
 func TestRepositoryGetTraceFound(t *testing.T) {
 	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
 	reader := &fakeTraceReader{

@@ -13,6 +13,7 @@ import (
 
 type Repository struct {
 	Pool        *pgxpool.Pool
+	StageChunks bool
 	kbQueryer   knowledgeBaseQueryer
 	traceReader traceQueryer
 }
@@ -129,8 +130,8 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 			chunk.DocumentID = existingID
 		}
 		_, err = tx.Exec(ctx, `
-			INSERT INTO chunks(id, tenant_id, knowledge_base_id, document_id, content, source_uri, page, section, offset_start, metadata)
-			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+			INSERT INTO chunks(id, tenant_id, knowledge_base_id, document_id, content, source_uri, page, section, offset_start, metadata, searchable)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 			ON CONFLICT (id) DO UPDATE SET
 				content=EXCLUDED.content,
 				source_uri=EXCLUDED.source_uri,
@@ -138,7 +139,7 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 				section=EXCLUDED.section,
 				offset_start=EXCLUDED.offset_start,
 				metadata=EXCLUDED.metadata`,
-			chunk.ID, chunk.TenantID, chunk.KnowledgeBaseID, chunk.DocumentID, chunk.Content, chunk.SourceURI, chunk.Page, chunk.Section, chunk.Offset, mustJSON(chunk.Metadata))
+			chunk.ID, chunk.TenantID, chunk.KnowledgeBaseID, chunk.DocumentID, chunk.Content, chunk.SourceURI, chunk.Page, chunk.Section, chunk.Offset, mustJSON(chunk.Metadata), !r.StageChunks)
 		if err != nil {
 			return err
 		}
@@ -146,11 +147,23 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 	return tx.Commit(ctx)
 }
 
+func (r *Repository) Activate(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	_, err := r.Pool.Exec(ctx, `
+		UPDATE chunks
+		SET searchable=TRUE
+		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND document_id=$3`,
+		doc.TenantID, doc.KnowledgeBaseID, doc.ID)
+	return err
+}
+
 func (r *Repository) Chunks(tenantID, kbID string) []kb.Chunk {
 	rows, err := r.Pool.Query(context.Background(), `
 		SELECT id, tenant_id, knowledge_base_id, document_id, content, source_uri, page, section, offset_start, metadata
 		FROM chunks
-		WHERE tenant_id=$1 AND knowledge_base_id=$2
+		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND searchable
 		ORDER BY id`, tenantID, kbID)
 	if err != nil {
 		return nil

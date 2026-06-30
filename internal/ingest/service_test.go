@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"errors"
+	"sort"
 	"testing"
 	"time"
 
@@ -19,6 +20,60 @@ func (fakeEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error
 		out[i] = []float64{1, 0, 0, 0}
 	}
 	return out, nil
+}
+
+type failingIndexer struct {
+	err error
+}
+
+func (i failingIndexer) Store(context.Context, kb.Document, []kb.Chunk) error {
+	return i.err
+}
+
+type noopIndexer struct{}
+
+func (noopIndexer) Store(context.Context, kb.Document, []kb.Chunk) error {
+	return nil
+}
+
+type stagedSearchStore struct {
+	pending map[string]kb.Chunk
+	active  map[string]kb.Chunk
+}
+
+func newStagedSearchStore() *stagedSearchStore {
+	return &stagedSearchStore{
+		pending: map[string]kb.Chunk{},
+		active:  map[string]kb.Chunk{},
+	}
+}
+
+func (s *stagedSearchStore) Store(_ context.Context, _ kb.Document, chunks []kb.Chunk) error {
+	for _, chunk := range chunks {
+		s.pending[chunk.ID] = chunk
+	}
+	return nil
+}
+
+func (s *stagedSearchStore) Activate(_ context.Context, _ kb.Document, chunks []kb.Chunk) error {
+	for _, chunk := range chunks {
+		if staged, ok := s.pending[chunk.ID]; ok {
+			s.active[chunk.ID] = staged
+			delete(s.pending, chunk.ID)
+		}
+	}
+	return nil
+}
+
+func (s *stagedSearchStore) Chunks(tenantID, kbID string) []kb.Chunk {
+	out := make([]kb.Chunk, 0, len(s.active))
+	for _, chunk := range s.active {
+		if chunk.TenantID == tenantID && chunk.KnowledgeBaseID == kbID {
+			out = append(out, chunk)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 func TestIngestCreatesJobAndStableIDs(t *testing.T) {
@@ -69,6 +124,98 @@ func TestIngestCreatesJobAndStableIDs(t *testing.T) {
 	}
 	if _, ok, err := jobs.GetJob(ctx, "tenant_default", first.Job.ID); err != nil || !ok {
 		t.Fatalf("job lookup ok=%v err=%v", ok, err)
+	}
+}
+
+func TestIngestFailedCompositeIndexDoesNotExposeSparseChunks(t *testing.T) {
+	ctx := context.Background()
+	store := newStagedSearchStore()
+	jobs := NewMemoryJobStore()
+	svc := &Service{
+		Parser:   parser.BasicParser{},
+		Splitter: chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder: fakeEmbedder{},
+		Indexer: kb.CompositeIndexer{Indexers: []kb.Indexer{
+			store,
+			failingIndexer{err: errors.New("qdrant upsert failed")},
+		}},
+		Jobs: jobs,
+	}
+
+	res, err := svc.Ingest(ctx, Request{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		SourceURI:       "memory://failed.md",
+		Name:            "failed.md",
+		Content:         []byte("failed ingestion hidden marker"),
+	})
+	if err == nil {
+		t.Fatal("expected indexer error")
+	}
+	if res.Job.Status != JobStatusFailed {
+		t.Fatalf("job status = %q", res.Job.Status)
+	}
+	updated, ok, err := jobs.GetJob(ctx, "tenant_default", res.Job.ID)
+	if err != nil || !ok {
+		t.Fatalf("job lookup ok=%v err=%v", ok, err)
+	}
+	if updated.Status != JobStatusFailed {
+		t.Fatalf("stored job status = %q", updated.Status)
+	}
+
+	results, err := (kb.SparseRetriever{Store: store}).Retrieve(ctx, kb.SearchRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "hidden marker",
+		TopK:            8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("failed ingestion is searchable: %#v", results)
+	}
+}
+
+func TestIngestSuccessfulCompositeIndexExposesSparseChunks(t *testing.T) {
+	ctx := context.Background()
+	store := newStagedSearchStore()
+	svc := &Service{
+		Parser:   parser.BasicParser{},
+		Splitter: chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder: fakeEmbedder{},
+		Indexer: kb.CompositeIndexer{Indexers: []kb.Indexer{
+			store,
+			noopIndexer{},
+		}},
+		Jobs: NewMemoryJobStore(),
+	}
+
+	res, err := svc.Ingest(ctx, Request{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		SourceURI:       "memory://success.md",
+		Name:            "success.md",
+		Content:         []byte("successful ingestion visible marker"),
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if res.Job.Status != JobStatusSucceeded {
+		t.Fatalf("job status = %q", res.Job.Status)
+	}
+
+	results, err := (kb.SparseRetriever{Store: store}).Retrieve(ctx, kb.SearchRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "visible marker",
+		TopK:            8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 || results[0].Chunk.DocumentID != res.Document.ID {
+		t.Fatalf("successful ingestion is not searchable: %#v", results)
 	}
 }
 
