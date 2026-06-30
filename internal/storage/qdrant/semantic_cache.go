@@ -33,14 +33,8 @@ func (s SemanticCache) Lookup(ctx context.Context, req rag.SemanticCacheLookupRe
 		CollectionName: s.Collection,
 		Vector:         float32Vector(req.Vector),
 		Limit:          1,
-		Filter: &qdrant.Filter{Must: []*qdrant.Condition{
-			matchKeyword("tenant_id", req.TenantID),
-			matchKeyword("knowledge_base_id", req.KnowledgeBaseID),
-			matchKeyword("cache_key_version", semanticCachePayloadVersion),
-			matchKeyword("profile", string(semanticCacheProfile(req.Profile))),
-			matchInteger("top_k", int64(req.TopK)),
-		}},
-		WithPayload: &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
+		Filter:         semanticCacheSearchFilter(req),
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
 	})
 	if err != nil {
 		return rag.QueryResponse{}, false, err
@@ -60,18 +54,11 @@ func (s SemanticCache) Store(ctx context.Context, entry rag.SemanticCacheEntry) 
 		return nil
 	}
 	wait := true
-	profile := semanticCacheEntryProfile(entry)
 	_, err := s.Client.Points.Upsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: s.Collection,
 		Wait:           &wait,
 		Points: []*qdrant.PointStruct{{
-			Id: pointID(rag.CacheKey(rag.QueryRequest{
-				TenantID:        entry.TenantID,
-				KnowledgeBaseID: entry.KnowledgeBaseID,
-				Query:           entry.Query,
-				Profile:         profile,
-				TopK:            entry.TopK,
-			})),
+			Id: semanticCachePointID(entry),
 			Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{
 				Data: float32Vector(entry.Vector),
 			}}},
@@ -79,6 +66,26 @@ func (s SemanticCache) Store(ctx context.Context, entry rag.SemanticCacheEntry) 
 		}},
 	})
 	return err
+}
+
+func semanticCacheSearchFilter(req rag.SemanticCacheLookupRequest) *qdrant.Filter {
+	return &qdrant.Filter{Must: []*qdrant.Condition{
+		matchKeyword("tenant_id", req.TenantID),
+		matchKeyword("knowledge_base_id", req.KnowledgeBaseID),
+		matchKeyword("cache_key_version", semanticCachePayloadVersion),
+		matchKeyword("profile", string(semanticCacheProfile(req.Profile))),
+		matchInteger("top_k", int64(req.TopK)),
+	}}
+}
+
+func semanticCachePointID(entry rag.SemanticCacheEntry) *qdrant.PointId {
+	return pointID(rag.CacheKey(rag.QueryRequest{
+		TenantID:        entry.TenantID,
+		KnowledgeBaseID: entry.KnowledgeBaseID,
+		Query:           entry.Query,
+		Profile:         semanticCacheEntryProfile(entry),
+		TopK:            entry.TopK,
+	}))
 }
 
 func semanticCachePayload(entry rag.SemanticCacheEntry) map[string]*qdrant.Value {
