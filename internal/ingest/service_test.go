@@ -2,7 +2,9 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/shikanon/orag/internal/ingest/chunker"
 	"github.com/shikanon/orag/internal/ingest/parser"
@@ -22,13 +24,21 @@ func (fakeEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error
 func TestIngestCreatesJobAndStableIDs(t *testing.T) {
 	ctx := context.Background()
 	store := kb.NewMemoryStore()
+	store.PutKnowledgeBase(kb.KnowledgeBase{
+		ID:        "kb_default",
+		TenantID:  "tenant_default",
+		Name:      "Default",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	})
 	jobs := NewMemoryJobStore()
 	svc := &Service{
-		Parser:   parser.BasicParser{},
-		Splitter: chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
-		Embedder: fakeEmbedder{},
-		Indexer:  store,
-		Jobs:     jobs,
+		Parser:         parser.BasicParser{},
+		Splitter:       chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder:       fakeEmbedder{},
+		KnowledgeBases: store,
+		Indexer:        store,
+		Jobs:           jobs,
 	}
 	req := Request{
 		TenantID:        "tenant_default",
@@ -59,6 +69,40 @@ func TestIngestCreatesJobAndStableIDs(t *testing.T) {
 	}
 	if _, ok, err := jobs.GetJob(ctx, "tenant_default", first.Job.ID); err != nil || !ok {
 		t.Fatalf("job lookup ok=%v err=%v", ok, err)
+	}
+}
+
+func TestIngestRejectsMissingKnowledgeBaseBeforeCreatingJob(t *testing.T) {
+	ctx := context.Background()
+	store := kb.NewMemoryStore()
+	jobs := NewMemoryJobStore()
+	svc := &Service{
+		Parser:         parser.BasicParser{},
+		Splitter:       chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder:       fakeEmbedder{},
+		KnowledgeBases: store,
+		Indexer:        store,
+		Jobs:           jobs,
+	}
+
+	res, err := svc.Ingest(ctx, Request{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_missing",
+		SourceURI:       "memory://missing.md",
+		Name:            "missing.md",
+		Content:         []byte("orphan chunks must not be created"),
+	})
+	if !errors.Is(err, ErrKnowledgeBaseNotFound) {
+		t.Fatalf("Ingest() error = %v, want ErrKnowledgeBaseNotFound", err)
+	}
+	if res.Job.ID != "" {
+		t.Fatalf("unexpected job result: %#v", res.Job)
+	}
+	if len(jobs.jobs) != 0 {
+		t.Fatalf("jobs created for missing knowledge base: %#v", jobs.jobs)
+	}
+	if got := store.Chunks("tenant_default", "kb_missing"); len(got) != 0 {
+		t.Fatalf("chunks created for missing knowledge base: %#v", got)
 	}
 }
 
