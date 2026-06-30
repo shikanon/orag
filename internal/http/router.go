@@ -130,16 +130,28 @@ func (s *Server) createKnowledgeBase(_ context.Context, c *app.RequestContext) {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	s.App.KBStore.PutKnowledgeBase(item)
+	if err := s.App.KBStore.PutKnowledgeBase(item); err != nil {
+		writeError(c, consts.StatusInternalServerError, "knowledge_base_create_failed", err.Error())
+		return
+	}
 	c.JSON(consts.StatusCreated, item)
 }
 
 func (s *Server) listKnowledgeBases(_ context.Context, c *app.RequestContext) {
-	c.JSON(consts.StatusOK, map[string]any{"items": s.App.KBStore.ListKnowledgeBases(tenantID(c))})
+	items, err := s.App.KBStore.ListKnowledgeBases(tenantID(c))
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "knowledge_base_list_failed", err.Error())
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]any{"items": items})
 }
 
 func (s *Server) getKnowledgeBase(_ context.Context, c *app.RequestContext) {
-	item, ok := s.App.KBStore.GetKnowledgeBase(tenantID(c), c.Param("id"))
+	item, ok, err := s.App.KBStore.GetKnowledgeBase(tenantID(c), c.Param("id"))
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "knowledge_base_lookup_failed", err.Error())
+		return
+	}
 	if !ok {
 		writeKnowledgeBaseNotFound(c)
 		return
@@ -226,7 +238,10 @@ func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 }
 
 func (s *Server) requireKnowledgeBase(c *app.RequestContext, kbID string) bool {
-	if _, ok := s.App.KBStore.GetKnowledgeBase(tenantID(c), kbID); ok {
+	if _, ok, err := s.App.KBStore.GetKnowledgeBase(tenantID(c), kbID); err != nil {
+		writeError(c, consts.StatusInternalServerError, "knowledge_base_lookup_failed", err.Error())
+		return false
+	} else if ok {
 		return true
 	}
 	writeKnowledgeBaseNotFound(c)

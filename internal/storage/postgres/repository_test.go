@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"os"
 	"reflect"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
 )
 
@@ -33,6 +36,126 @@ func TestStringMapRoundTrip(t *testing.T) {
 	got := stringMap(body)
 	if got["source"] != "test" {
 		t.Fatalf("stringMap() = %#v", got)
+	}
+}
+
+func TestRepositoryPutKnowledgeBaseReturnsExecError(t *testing.T) {
+	want := errors.New("exec failed")
+	queryer := &fakeKnowledgeBaseQueryer{execErr: want}
+	repo := &Repository{kbQueryer: queryer}
+
+	err := repo.PutKnowledgeBase(kb.KnowledgeBase{
+		ID:        "kb_1",
+		TenantID:  "tenant_1",
+		Name:      "Docs",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	})
+
+	if !errors.Is(err, want) {
+		t.Fatalf("PutKnowledgeBase() error = %v, want %v", err, want)
+	}
+	if queryer.execCalls != 1 {
+		t.Fatalf("Exec calls = %d, want 1", queryer.execCalls)
+	}
+}
+
+func TestRepositoryListKnowledgeBasesReturnsRowsAndKeepsOrderingSQL(t *testing.T) {
+	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	queryer := &fakeKnowledgeBaseQueryer{queryRows: &fakeTraceRows{rows: [][]any{
+		knowledgeBaseRow("kb_1", createdAt),
+		knowledgeBaseRow("kb_2", createdAt.Add(time.Hour)),
+	}}}
+	repo := &Repository{kbQueryer: queryer}
+
+	got, err := repo.ListKnowledgeBases("tenant_1")
+	if err != nil {
+		t.Fatalf("ListKnowledgeBases() error = %v", err)
+	}
+	if len(got) != 2 || got[0].ID != "kb_1" || got[1].ID != "kb_2" {
+		t.Fatalf("ListKnowledgeBases() = %#v", got)
+	}
+	if got[0].Metadata["source"] != "test" {
+		t.Fatalf("metadata = %#v", got[0].Metadata)
+	}
+	if !strings.Contains(queryer.querySQL, "ORDER BY created_at") {
+		t.Fatalf("list query does not preserve created_at ordering: %s", queryer.querySQL)
+	}
+}
+
+func TestRepositoryListKnowledgeBasesReturnsQueryError(t *testing.T) {
+	want := errors.New("query failed")
+	repo := &Repository{kbQueryer: &fakeKnowledgeBaseQueryer{queryErr: want}}
+
+	got, err := repo.ListKnowledgeBases("tenant_1")
+	if !errors.Is(err, want) {
+		t.Fatalf("ListKnowledgeBases() error = %v, want %v", err, want)
+	}
+	if got != nil {
+		t.Fatalf("ListKnowledgeBases() rows = %#v, want nil", got)
+	}
+}
+
+func TestRepositoryListKnowledgeBasesReturnsScanError(t *testing.T) {
+	want := errors.New("scan failed")
+	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	repo := &Repository{kbQueryer: &fakeKnowledgeBaseQueryer{queryRows: &fakeTraceRows{
+		rows:    [][]any{knowledgeBaseRow("kb_1", createdAt)},
+		scanErr: want,
+	}}}
+
+	_, err := repo.ListKnowledgeBases("tenant_1")
+	if !errors.Is(err, want) {
+		t.Fatalf("ListKnowledgeBases() error = %v, want %v", err, want)
+	}
+}
+
+func TestRepositoryListKnowledgeBasesReturnsRowsError(t *testing.T) {
+	want := errors.New("rows failed")
+	repo := &Repository{kbQueryer: &fakeKnowledgeBaseQueryer{queryRows: &fakeTraceRows{err: want}}}
+
+	_, err := repo.ListKnowledgeBases("tenant_1")
+	if !errors.Is(err, want) {
+		t.Fatalf("ListKnowledgeBases() error = %v, want %v", err, want)
+	}
+}
+
+func TestRepositoryGetKnowledgeBaseNotFound(t *testing.T) {
+	repo := &Repository{kbQueryer: &fakeKnowledgeBaseQueryer{row: fakeTraceRow{err: pgx.ErrNoRows}}}
+
+	got, found, err := repo.GetKnowledgeBase("tenant_1", "kb_missing")
+	if err != nil {
+		t.Fatalf("GetKnowledgeBase() error = %v", err)
+	}
+	if found {
+		t.Fatalf("GetKnowledgeBase() found = true, item = %#v", got)
+	}
+}
+
+func TestRepositoryGetKnowledgeBaseReturnsScanError(t *testing.T) {
+	want := errors.New("scan failed")
+	repo := &Repository{kbQueryer: &fakeKnowledgeBaseQueryer{row: fakeTraceRow{err: want}}}
+
+	_, found, err := repo.GetKnowledgeBase("tenant_1", "kb_1")
+	if !errors.Is(err, want) {
+		t.Fatalf("GetKnowledgeBase() error = %v, want %v", err, want)
+	}
+	if found {
+		t.Fatal("GetKnowledgeBase() found = true, want false")
+	}
+}
+
+func TestRepositoryBootstrapDefaultsReturnsKnowledgeBaseError(t *testing.T) {
+	want := errors.New("knowledge base insert failed")
+	queryer := &fakeKnowledgeBaseQueryer{execErrs: []error{nil, want}}
+	repo := &Repository{kbQueryer: queryer}
+
+	err := repo.BootstrapDefaults(context.Background(), "tenant_1", "kb_default")
+	if !errors.Is(err, want) {
+		t.Fatalf("BootstrapDefaults() error = %v, want %v", err, want)
+	}
+	if queryer.execCalls != 2 {
+		t.Fatalf("Exec calls = %d, want 2", queryer.execCalls)
 	}
 }
 
@@ -105,6 +228,37 @@ type fakeTraceReader struct {
 	queriedSpans bool
 }
 
+type fakeKnowledgeBaseQueryer struct {
+	execErr   error
+	execErrs  []error
+	execCalls int
+	queryRows pgx.Rows
+	queryErr  error
+	querySQL  string
+	row       pgx.Row
+}
+
+func (f *fakeKnowledgeBaseQueryer) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
+	err := f.execErr
+	if f.execCalls < len(f.execErrs) {
+		err = f.execErrs[f.execCalls]
+	}
+	f.execCalls++
+	return pgconn.CommandTag{}, err
+}
+
+func (f *fakeKnowledgeBaseQueryer) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+	f.querySQL = sql
+	return f.queryRows, f.queryErr
+}
+
+func (f *fakeKnowledgeBaseQueryer) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
+	if f.row == nil {
+		return fakeTraceRow{err: pgx.ErrNoRows}
+	}
+	return f.row
+}
+
 func (f *fakeTraceReader) QueryRow(_ context.Context, sql string, _ ...any) traceRow {
 	return f.row
 }
@@ -129,9 +283,10 @@ func (r fakeTraceRow) Scan(dest ...any) error {
 }
 
 type fakeTraceRows struct {
-	rows [][]any
-	idx  int
-	err  error
+	rows    [][]any
+	idx     int
+	err     error
+	scanErr error
 }
 
 func (r *fakeTraceRows) Close() {}
@@ -145,9 +300,47 @@ func (r *fakeTraceRows) Next() bool {
 }
 
 func (r *fakeTraceRows) Scan(dest ...any) error {
+	if r.scanErr != nil {
+		return r.scanErr
+	}
 	assignScanValues(dest, r.rows[r.idx])
 	r.idx++
 	return nil
+}
+
+func (r *fakeTraceRows) CommandTag() pgconn.CommandTag {
+	return pgconn.CommandTag{}
+}
+
+func (r *fakeTraceRows) FieldDescriptions() []pgconn.FieldDescription {
+	return nil
+}
+
+func (r *fakeTraceRows) Values() ([]any, error) {
+	if r.idx == 0 || r.idx > len(r.rows) {
+		return nil, nil
+	}
+	return r.rows[r.idx-1], nil
+}
+
+func (r *fakeTraceRows) RawValues() [][]byte {
+	return nil
+}
+
+func (r *fakeTraceRows) Conn() *pgx.Conn {
+	return nil
+}
+
+func knowledgeBaseRow(id string, createdAt time.Time) []any {
+	return []any{
+		id,
+		"tenant_1",
+		"Docs",
+		"Description",
+		[]byte(`{"source":"test"}`),
+		createdAt,
+		createdAt.Add(time.Minute),
+	}
 }
 
 func assignScanValues(dest []any, values []any) {
