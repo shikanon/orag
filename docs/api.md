@@ -501,8 +501,10 @@ POST /v1/evaluations
   "hit_rate": 1,
   "accuracy": 1,
   "metrics": {
+    "answer_accuracy": 1,
     "accuracy": 1,
     "hit_rate": 1,
+    "citation_hit_rate": 1,
     "context_recall": 1,
     "citation_precision": 1,
     "latency_p95_ms": 42,
@@ -514,7 +516,9 @@ POST /v1/evaluations
 
 当前评估 runner 会对数据集中的每个样本调用同一条 `POST /v1/query` 背后的 RAG 查询链路，并计算 rule-based 指标：
 
-- `accuracy` / `hit_rate`：答案包含 `ground_truth`，或响应存在 citation 时记为命中。
+- `answer_accuracy`：答案包含 `ground_truth` 中长度大于 3 的关键项时记为命中，citation 不会提升该指标。
+- `accuracy` / `hit_rate`：新运行中与 `answer_accuracy` 保持一致，作为兼容字段保留；历史已存运行可能没有 `answer_accuracy` 和 `citation_hit_rate`。
+- `citation_hit_rate`：响应存在至少一个 citation 时记为 `1`，用于单独观察证据存在性。
 - `context_recall`：召回 chunk 的 `document_id` 覆盖 `relevant_doc_ids` 的比例；如果样本没有 `relevant_doc_ids`，但有召回结果，则记为 `1`。
 - `citation_precision`：citation 命中 `relevant_doc_ids` 的比例；如果样本没有 `relevant_doc_ids` 且存在 citation，则记为 `1`。
 - `latency_p95_ms`：样本查询延迟的 p95。
@@ -578,4 +582,4 @@ POST /v1/optimizations
 }
 ```
 
-优化器会对 `profiles × top_ks` 做确定性网格枚举，每个候选都会运行一次评估；候选 `score` 使用该次评估的 `accuracy`，`run_id` 是对应的 evaluation run ID。当前优化结果即时返回，不额外提供 `GET /v1/optimizations/{id}` 查询端点。
+优化器会对 `profiles × top_ks` 做确定性网格枚举，每个候选都会运行一次评估；候选 `score` 优先使用该次评估的 `answer_accuracy`，仅在历史运行缺少该指标时回退到 `accuracy`，`run_id` 是对应的 evaluation run ID。当前优化结果即时返回，不额外提供 `GET /v1/optimizations/{id}` 查询端点。

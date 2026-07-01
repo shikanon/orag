@@ -27,8 +27,9 @@
 
 | 指标 | 当前计算方式 | 注意事项 |
 | --- | --- | --- |
-| `accuracy` | 答案包含 ground truth 关键项，或响应中存在任意引用则命中。 | 弱规则指标，不能单独证明答案正确。 |
-| `hit_rate` | 当前与 `accuracy` 保持一致。 | 适合基础回归，不适合主观质量判断。 |
+| `answer_accuracy` | 答案包含 ground truth 关键项时命中。 | 弱规则指标，不把 citation 存在性计入答案正确。 |
+| `accuracy` / `hit_rate` | 新运行中与 `answer_accuracy` 保持一致。 | 兼容别名；历史已存运行可能没有新增指标键。 |
+| `citation_hit_rate` | 响应中存在至少一个 citation 时命中。 | 只说明证据存在性，不证明答案正确。 |
 | `context_recall` | 检查 retrieved chunks 覆盖相关文档 ID 的比例。 | 只看文档 ID，不验证 chunk 内容是否真正支撑答案。 |
 | `citation_precision` | 检查引用文档 ID 是否落在相关文档列表中。 | 不验证引用位置与回答论断的一致性。 |
 | `latency_p95_ms` | 本次评估内样本查询延迟 P95。 | 来自 RAG 响应的 `LatencyMS`。 |
@@ -43,11 +44,13 @@ profiles x top_ks
 run evaluation for each candidate
         |
         v
-score = run.Accuracy
+score = run.Metrics["answer_accuracy"]
         |
         v
 return candidates + best
 ```
+
+当历史运行缺少 `answer_accuracy` 时，optimizer 会回退到 `run.Accuracy`。
 
 当前 optimizer 的边界：
 
@@ -60,10 +63,10 @@ return candidates + best
 
 | 场景 | 推荐做法 |
 | --- | --- |
-| PR 回归 | 准备小型 deterministic 数据集，观察 `accuracy`、`context_recall`、`citation_precision` 是否退化。 |
+| PR 回归 | 准备小型 deterministic 数据集，观察 `answer_accuracy`、`citation_hit_rate`、`context_recall`、`citation_precision` 是否退化。 |
 | profile 对比 | 使用相同数据集跑 `realtime` 和 `high_precision`。 |
 | top_k 调参 | 用 optimizer 枚举少量候选，避免大规模搜索拖慢本地验证。 |
-| 真实质量评审 | 结合人工检查或后续 LLM-as-Judge，不要只看当前 rule-based `accuracy`。 |
+| 真实质量评审 | 结合人工检查或后续 LLM-as-Judge，不要只看当前 rule-based `answer_accuracy`。 |
 
 ## 后续增强方向
 

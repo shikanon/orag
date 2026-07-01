@@ -55,7 +55,7 @@ func (o Optimizer) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeR
 			if err != nil {
 				return OptimizeResult{}, err
 			}
-			candidate := CandidateResult{Profile: profile, TopK: topK, Score: run.Accuracy, RunID: run.ID}
+			candidate := CandidateResult{Profile: profile, TopK: topK, Score: optimizerScore(run), RunID: run.ID}
 			out.Candidates = append(out.Candidates, candidate)
 			if candidate.Score >= out.Best.Score {
 				out.Best = candidate
@@ -63,4 +63,13 @@ func (o Optimizer) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeR
 		}
 	}
 	return out, nil
+}
+
+func optimizerScore(run RunResult) float64 {
+	if run.Metrics != nil {
+		if score, ok := run.Metrics["answer_accuracy"]; ok {
+			return score
+		}
+	}
+	return run.Accuracy
 }
