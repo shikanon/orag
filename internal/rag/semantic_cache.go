@@ -56,24 +56,20 @@ func NewSemanticCache(max int) *InMemorySemanticCache {
 }
 
 func (c *InMemorySemanticCache) Lookup(_ context.Context, req SemanticCacheLookupRequest) (QueryResponse, bool, error) {
-	resp, ok := c.Get(CacheKey(QueryRequest{
-		TenantID:        req.TenantID,
-		KnowledgeBaseID: req.KnowledgeBaseID,
-		Query:           req.Query,
-		Profile:         req.Profile,
-		TopK:            req.TopK,
-	}))
+	resp, ok := c.Get(cacheKey(req.TenantID, req.KnowledgeBaseID, req.Profile, req.TopK, req.Query))
 	return resp, ok, nil
 }
 
 func (c *InMemorySemanticCache) Store(_ context.Context, entry SemanticCacheEntry) error {
-	c.Put(CacheKey(QueryRequest{
-		TenantID:        entry.TenantID,
-		KnowledgeBaseID: entry.KnowledgeBaseID,
-		Query:           entry.Query,
-		Profile:         entry.Profile,
-		TopK:            entry.TopK,
-	}), entry.Response)
+	profile := entry.Profile
+	if profile == "" {
+		profile = entry.Response.Profile
+	}
+	resp := entry.Response
+	if resp.Profile == "" {
+		resp.Profile = profile
+	}
+	c.Put(cacheKey(entry.TenantID, entry.KnowledgeBaseID, profile, entry.TopK, entry.Query), resp)
 	return nil
 }
 
@@ -97,17 +93,20 @@ func (c *InMemorySemanticCache) Put(query string, resp QueryResponse) {
 }
 
 func CacheKey(req QueryRequest) string {
-	profile := req.Profile
+	return cacheKey(req.TenantID, req.KnowledgeBaseID, req.Profile, req.TopK, req.Query)
+}
+
+func cacheKey(tenantID, knowledgeBaseID string, profile Profile, topK int, query string) string {
 	if profile == "" {
 		profile = ProfileRealtime
 	}
 	return strings.Join([]string{
 		semanticCacheKeyVersion,
-		req.TenantID,
-		req.KnowledgeBaseID,
+		tenantID,
+		knowledgeBaseID,
 		string(profile),
-		strconv.Itoa(req.TopK),
-		normalizeCacheQuery(req.Query),
+		strconv.Itoa(topK),
+		normalizeCacheQuery(query),
 	}, "\x1f")
 }
 

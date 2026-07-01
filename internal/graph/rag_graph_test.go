@@ -90,6 +90,12 @@ func TestRAGGraphSemanticCacheIsolatesProfileAndTopK(t *testing.T) {
 	if resp.CacheStatus != "miss" {
 		t.Fatalf("high_precision cache_status = %q, want miss", resp.CacheStatus)
 	}
+	if resp.Profile != rag.ProfileHighPrecision {
+		t.Fatalf("high_precision profile = %q, want %q", resp.Profile, rag.ProfileHighPrecision)
+	}
+	if len(resp.Citations) == 0 {
+		t.Fatalf("high_precision response citations is empty after cache miss")
+	}
 
 	differentTopK := req
 	differentTopK.TopK = 16
