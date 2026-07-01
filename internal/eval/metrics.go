@@ -8,8 +8,12 @@ import (
 )
 
 func ScoreItem(item dataset.Item, resp rag.QueryResponse) map[string]float64 {
+	answerAccuracy := boolScore(matches(resp.Answer, item.GroundTruth))
+	citationHit := boolScore(len(resp.Citations) > 0)
 	return map[string]float64{
-		"accuracy":           boolScore(matches(resp.Answer, item.GroundTruth) || len(resp.Citations) > 0),
+		"answer_accuracy":    answerAccuracy,
+		"accuracy":           answerAccuracy,
+		"citation_hit_rate":  citationHit,
 		"context_recall":     contextRecall(item.RelevantDocIDs, resp),
 		"citation_precision": citationPrecision(item.RelevantDocIDs, resp),
 		"latency_ms":         float64(resp.LatencyMS),

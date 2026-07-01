@@ -788,6 +788,23 @@ components:
     RunEvaluationResponse:
       type: object
       required: [id, dataset_id, profile, total, hit_rate, accuracy, created_at]
+      example:
+        id: eval_xxx
+        dataset_id: ds_xxx
+        profile: realtime
+        total: 1
+        hit_rate: 1
+        accuracy: 1
+        metrics:
+          answer_accuracy: 1
+          accuracy: 1
+          hit_rate: 1
+          citation_hit_rate: 1
+          context_recall: 1
+          citation_precision: 1
+          latency_p95_ms: 42
+          cache_hit_rate: 0
+        created_at: "2026-06-29T10:04:00Z"
       properties:
         id:
           type: string
@@ -800,14 +817,30 @@ components:
         hit_rate:
           type: number
           format: double
+          description: Answer-focused hit rate. New runs keep this equal to `answer_accuracy`.
         accuracy:
           type: number
           format: double
+          description: Answer-focused compatibility alias for `answer_accuracy`.
         metrics:
           type: object
+          description: |
+            Numeric metric snapshot. New runs include `answer_accuracy`, `accuracy`,
+            `hit_rate`, `citation_hit_rate`, `context_recall`, `citation_precision`,
+            `latency_p95_ms`, and `cache_hit_rate`. Historical stored runs may not
+            include `answer_accuracy` or `citation_hit_rate`.
           additionalProperties:
             type: number
             format: double
+          example:
+            answer_accuracy: 1
+            accuracy: 1
+            hit_rate: 1
+            citation_hit_rate: 1
+            context_recall: 1
+            citation_precision: 1
+            latency_p95_ms: 42
+            cache_hit_rate: 0
         created_at:
           type: string
           format: date-time
@@ -838,11 +871,29 @@ components:
         score:
           type: number
           format: double
+          description: Candidate score from `answer_accuracy`, with fallback to legacy `accuracy` when the split metric is absent.
         run_id:
           type: string
     OptimizeResult:
       type: object
       required: [id, status, best, candidates]
+      example:
+        id: opt_xxx
+        status: completed
+        best:
+          profile: high_precision
+          top_k: 8
+          score: 1
+          run_id: eval_best
+        candidates:
+          - profile: realtime
+            top_k: 5
+            score: 0
+            run_id: eval_realtime
+          - profile: high_precision
+            top_k: 8
+            score: 1
+            run_id: eval_best
       properties:
         id:
           type: string
