@@ -2,6 +2,7 @@ package eval
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/shikanon/orag/internal/dataset"
@@ -52,7 +53,7 @@ func TestRunnerPersistsRunInMemoryRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = dsSvc.AddItem(ctx, ds.ID, dataset.Item{
+	_, err = dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
 		Query:          "qdrant vector",
 		GroundTruth:    "qdrant",
 		RelevantDocIDs: []string{"doc_1"},
@@ -110,6 +111,30 @@ func TestRunnerPersistsRunInMemoryRepository(t *testing.T) {
 	}
 }
 
+func TestRunnerRequiresDatasetTenant(t *testing.T) {
+	ctx := context.Background()
+	dsRepo := dataset.NewMemoryRepository()
+	dsSvc := dataset.NewService(dsRepo)
+	ds, err := dsSvc.Create(ctx, "tenant_default", "regression", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{Query: "q", GroundTruth: "a"}); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := Runner{Datasets: dsSvc}
+	_, err = runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_other",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Profile:         rag.ProfileRealtime,
+	})
+	if !errors.Is(err, dataset.ErrDatasetNotFound) {
+		t.Fatalf("Run() error = %v, want dataset not found", err)
+	}
+}
+
 func TestRunnerDoesNotCountCitationOnlyAsAnswerAccuracy(t *testing.T) {
 	ctx := context.Background()
 	dsRepo := dataset.NewMemoryRepository()
@@ -118,7 +143,7 @@ func TestRunnerDoesNotCountCitationOnlyAsAnswerAccuracy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = dsSvc.AddItem(ctx, ds.ID, dataset.Item{
+	_, err = dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
 		Query:          "qdrant vector",
 		GroundTruth:    "qdrant",
 		RelevantDocIDs: []string{"doc_1"},
@@ -184,7 +209,7 @@ func TestOptimizerCandidatesDoNotReuseSemanticCacheAcrossProfileOrTopK(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = dsSvc.AddItem(ctx, ds.ID, dataset.Item{
+	_, err = dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
 		Query:          "qdrant vector",
 		GroundTruth:    "qdrant",
 		RelevantDocIDs: []string{"doc_1"},

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/shikanon/orag/internal/dataset"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -210,6 +211,46 @@ func TestFTSRetrieverFiltersSearchableChunks(t *testing.T) {
 	}
 }
 
+func TestRepositoryAddDatasetItemRequiresTenantDataset(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{execTag: pgconn.NewCommandTag("INSERT 0 0")}
+	repo := &Repository{kbQueryer: queryer}
+
+	_, err := repo.AddDatasetItem(context.Background(), "tenant_other", dataset.Item{
+		ID:          "dsi_1",
+		DatasetID:   "ds_1",
+		Query:       "q",
+		GroundTruth: "a",
+	})
+
+	if !errors.Is(err, dataset.ErrDatasetNotFound) {
+		t.Fatalf("AddDatasetItem() error = %v, want dataset not found", err)
+	}
+	for _, want := range []string{"WHERE EXISTS", "tenant_id=$6", "id=$2"} {
+		if !strings.Contains(queryer.execSQL, want) {
+			t.Fatalf("dataset item insert missing %q tenant guard: %s", want, queryer.execSQL)
+		}
+	}
+}
+
+func TestRepositoryDatasetItemsFiltersTenant(t *testing.T) {
+	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	queryer := &fakeKnowledgeBaseQueryer{
+		row:       fakeTraceRow{values: datasetRow("ds_1", createdAt)},
+		queryRows: &fakeTraceRows{},
+	}
+	repo := &Repository{kbQueryer: queryer}
+
+	_, err := repo.DatasetItems(context.Background(), "tenant_1", "ds_1")
+	if err != nil {
+		t.Fatalf("DatasetItems() error = %v", err)
+	}
+	for _, want := range []string{"JOIN datasets d ON d.id=i.dataset_id", "d.tenant_id=$1", "i.dataset_id=$2"} {
+		if !strings.Contains(queryer.querySQL, want) {
+			t.Fatalf("dataset items query missing %q tenant guard: %s", want, queryer.querySQL)
+		}
+	}
+}
+
 func TestRepositoryGetTraceFound(t *testing.T) {
 	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
 	reader := &fakeTraceReader{
@@ -269,6 +310,8 @@ type fakeTraceReader struct {
 type fakeKnowledgeBaseQueryer struct {
 	execErr   error
 	execErrs  []error
+	execTag   pgconn.CommandTag
+	execSQL   string
 	execCalls int
 	queryRows pgx.Rows
 	queryErr  error
@@ -276,13 +319,14 @@ type fakeKnowledgeBaseQueryer struct {
 	row       pgx.Row
 }
 
-func (f *fakeKnowledgeBaseQueryer) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
+func (f *fakeKnowledgeBaseQueryer) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
+	f.execSQL = sql
 	err := f.execErr
 	if f.execCalls < len(f.execErrs) {
 		err = f.execErrs[f.execCalls]
 	}
 	f.execCalls++
-	return pgconn.CommandTag{}, err
+	return f.execTag, err
 }
 
 func (f *fakeKnowledgeBaseQueryer) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
@@ -378,6 +422,17 @@ func knowledgeBaseRow(id string, createdAt time.Time) []any {
 		[]byte(`{"source":"test"}`),
 		createdAt,
 		createdAt.Add(time.Minute),
+	}
+}
+
+func datasetRow(id string, createdAt time.Time) []any {
+	return []any{
+		id,
+		"tenant_1",
+		"Golden",
+		"golden",
+		"20260629100000",
+		createdAt,
 	}
 }
 
