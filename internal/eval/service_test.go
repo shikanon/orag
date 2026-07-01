@@ -8,6 +8,7 @@ import (
 	"github.com/shikanon/orag/internal/dataset"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/llm/ark"
+	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/prompt"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -111,6 +112,81 @@ func TestRunnerPersistsRunInMemoryRepository(t *testing.T) {
 	}
 }
 
+func TestRunnerRejectsMissingRequiredIDs(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name string
+		req  RunRequest
+	}{
+		{
+			name: "dataset id",
+			req: RunRequest{
+				TenantID:        "tenant_default",
+				KnowledgeBaseID: "kb_default",
+				Profile:         rag.ProfileRealtime,
+			},
+		},
+		{
+			name: "knowledge base id",
+			req: RunRequest{
+				TenantID:  "tenant_default",
+				DatasetID: "ds_default",
+				Profile:   rag.ProfileRealtime,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := (Runner{}).Run(ctx, tt.req); !apperrors.IsCode(err, apperrors.CodeValidation) {
+				t.Fatalf("Run() error = %v, want validation", err)
+			}
+		})
+	}
+}
+
+func TestRunnerRejectsUnknownDataset(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService(dataset.NewMemoryRepository())
+	runner := Runner{Datasets: dsSvc}
+
+	_, err := runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       "ds_missing",
+		KnowledgeBaseID: "kb_default",
+		Profile:         rag.ProfileRealtime,
+	})
+	if !errors.Is(err, dataset.ErrDatasetNotFound) {
+		t.Fatalf("Run() error = %v, want dataset not found", err)
+	}
+	if !apperrors.IsCode(err, apperrors.CodeNotFound) {
+		t.Fatalf("Run() error = %v, want not-found app error", err)
+	}
+}
+
+func TestRunnerRejectsEmptyDataset(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService(dataset.NewMemoryRepository())
+	ds, err := dsSvc.Create(ctx, "tenant_default", "empty", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evalRepo := NewMemoryRepository()
+	runner := Runner{Datasets: dsSvc, Repository: evalRepo}
+
+	_, err = runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Profile:         rag.ProfileRealtime,
+	})
+	if !apperrors.IsCode(err, apperrors.CodeValidation) {
+		t.Fatalf("Run() error = %v, want validation", err)
+	}
+	if len(evalRepo.runs) != 0 {
+		t.Fatalf("persisted runs = %d, want 0", len(evalRepo.runs))
+	}
+}
+
 func TestRunnerRequiresDatasetTenant(t *testing.T) {
 	ctx := context.Background()
 	dsRepo := dataset.NewMemoryRepository()
@@ -132,6 +208,9 @@ func TestRunnerRequiresDatasetTenant(t *testing.T) {
 	})
 	if !errors.Is(err, dataset.ErrDatasetNotFound) {
 		t.Fatalf("Run() error = %v, want dataset not found", err)
+	}
+	if !apperrors.IsCode(err, apperrors.CodeNotFound) {
+		t.Fatalf("Run() error = %v, want not-found app error", err)
 	}
 }
 
@@ -271,6 +350,29 @@ func TestOptimizerCandidatesDoNotReuseSemanticCacheAcrossProfileOrTopK(t *testin
 		if got := run.Metrics["cache_hit_rate"]; got != 0 {
 			t.Fatalf("candidate profile=%s top_k=%d cache_hit_rate = %v, want 0", candidate.Profile, candidate.TopK, got)
 		}
+	}
+}
+
+func TestOptimizerRejectsUnknownDataset(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService(dataset.NewMemoryRepository())
+	runner := Runner{Datasets: dsSvc}
+
+	result, err := (Optimizer{Runner: runner}).Optimize(ctx, OptimizeRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       "ds_missing",
+		KnowledgeBaseID: "kb_default",
+		Profiles:        []rag.Profile{rag.ProfileRealtime},
+		TopKs:           []int{1},
+	})
+	if !errors.Is(err, dataset.ErrDatasetNotFound) {
+		t.Fatalf("Optimize() error = %v, want dataset not found", err)
+	}
+	if !apperrors.IsCode(err, apperrors.CodeNotFound) {
+		t.Fatalf("Optimize() error = %v, want not-found app error", err)
+	}
+	if len(result.Candidates) != 0 {
+		t.Fatalf("candidates = %d, want 0", len(result.Candidates))
 	}
 }
 

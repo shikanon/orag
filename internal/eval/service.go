@@ -2,11 +2,13 @@ package eval
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/shikanon/orag/internal/dataset"
+	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -43,9 +45,26 @@ type RunResult struct {
 }
 
 func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
+	if strings.TrimSpace(req.DatasetID) == "" {
+		return RunResult{}, apperrors.New(apperrors.CodeValidation, "dataset_id is required")
+	}
+	if strings.TrimSpace(req.KnowledgeBaseID) == "" {
+		return RunResult{}, apperrors.New(apperrors.CodeValidation, "knowledge_base_id is required")
+	}
+	if _, ok, err := r.Datasets.Get(ctx, req.TenantID, req.DatasetID); err != nil {
+		return RunResult{}, err
+	} else if !ok {
+		return RunResult{}, apperrors.Wrap(apperrors.CodeNotFound, "dataset not found", dataset.ErrDatasetNotFound)
+	}
 	items, err := r.Datasets.Items(ctx, req.TenantID, req.DatasetID)
 	if err != nil {
+		if errors.Is(err, dataset.ErrDatasetNotFound) {
+			return RunResult{}, apperrors.Wrap(apperrors.CodeNotFound, "dataset not found", err)
+		}
 		return RunResult{}, err
+	}
+	if len(items) == 0 {
+		return RunResult{}, apperrors.New(apperrors.CodeValidation, "dataset is empty")
 	}
 	runID := id.New("eval")
 	var cacheHits int
