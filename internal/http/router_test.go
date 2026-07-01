@@ -222,6 +222,38 @@ func TestQueryStreamSSEErrorUsesRequestTraceID(t *testing.T) {
 	}
 }
 
+func TestDatasetItemCreateRequiresOwningTenant(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	ownerToken := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/datasets", `{"name":"regression","kind":"golden"}`, ownerToken)
+	if resp.Code != 201 {
+		t.Fatalf("create dataset status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" {
+		t.Fatalf("create dataset body missing id: %s", resp.Body)
+	}
+	otherToken, err := app.Auth.IssueToken("tenant_other", "user_other")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp = performJSONWithTrace(h, "POST", "/v1/datasets/"+created.ID+"/items", `{"query":"wrong tenant"}`, otherToken, "trace_dataset_item_tenant")
+	assertErrorResponse(t, resp, 404, "dataset_not_found", "trace_dataset_item_tenant")
+
+	resp = performJSON(h, "POST", "/v1/datasets/"+created.ID+"/items", `{"query":"owned tenant","ground_truth":"answer"}`, ownerToken)
+	if resp.Code != 201 {
+		t.Fatalf("owner add item status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
 func TestHealthReadyAndMetrics(t *testing.T) {
 	h, closeApp := newTestHertz(t)
 	defer closeApp()

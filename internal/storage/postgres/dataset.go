@@ -9,7 +9,7 @@ import (
 )
 
 func (r *Repository) CreateDataset(ctx context.Context, ds dataset.Dataset) (dataset.Dataset, error) {
-	_, err := r.Pool.Exec(ctx, `
+	_, err := r.datasetQueryer().Exec(ctx, `
 		INSERT INTO datasets(id, tenant_id, name, kind, version, created_at)
 		VALUES($1,$2,$3,$4,$5,$6)`,
 		ds.ID, ds.TenantID, ds.Name, ds.Kind, ds.Version, ds.CreatedAt)
@@ -17,7 +17,7 @@ func (r *Repository) CreateDataset(ctx context.Context, ds dataset.Dataset) (dat
 }
 
 func (r *Repository) GetDataset(ctx context.Context, tenantID, id string) (dataset.Dataset, bool, error) {
-	row := r.Pool.QueryRow(ctx, `
+	row := r.datasetQueryer().QueryRow(ctx, `
 		SELECT id, tenant_id, name, kind, version, created_at
 		FROM datasets
 		WHERE tenant_id=$1 AND id=$2`, tenantID, id)
@@ -31,24 +31,45 @@ func (r *Repository) GetDataset(ctx context.Context, tenantID, id string) (datas
 	return ds, true, nil
 }
 
-func (r *Repository) AddDatasetItem(ctx context.Context, item dataset.Item) (dataset.Item, error) {
+func (r *Repository) AddDatasetItem(ctx context.Context, tenantID string, item dataset.Item) (dataset.Item, error) {
 	body, err := json.Marshal(item.RelevantDocIDs)
 	if err != nil {
 		return dataset.Item{}, err
 	}
-	_, err = r.Pool.Exec(ctx, `
+	tag, err := r.datasetQueryer().Exec(ctx, `
 		INSERT INTO dataset_items(id, dataset_id, query, ground_truth, relevant_doc_ids)
-		VALUES($1,$2,$3,$4,$5)`,
-		item.ID, item.DatasetID, item.Query, item.GroundTruth, body)
-	return item, err
+		SELECT $1, d.id, $4, $5, $6
+		FROM datasets d
+		WHERE d.tenant_id=$2 AND d.id=$3`,
+		item.ID, tenantID, item.DatasetID, item.Query, item.GroundTruth, body)
+	if err != nil {
+		return dataset.Item{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return dataset.Item{}, dataset.ErrDatasetNotFound
+	}
+	return item, nil
 }
 
-func (r *Repository) DatasetItems(ctx context.Context, datasetID string) ([]dataset.Item, error) {
-	rows, err := r.Pool.Query(ctx, `
-		SELECT id, dataset_id, query, ground_truth, relevant_doc_ids
-		FROM dataset_items
-		WHERE dataset_id=$1
-		ORDER BY id`, datasetID)
+func (r *Repository) DatasetItems(ctx context.Context, tenantID, datasetID string) ([]dataset.Item, error) {
+	var exists bool
+	if err := r.datasetQueryer().QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM datasets
+			WHERE tenant_id=$1 AND id=$2
+		)`, tenantID, datasetID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, dataset.ErrDatasetNotFound
+	}
+	rows, err := r.datasetQueryer().Query(ctx, `
+		SELECT i.id, i.dataset_id, i.query, i.ground_truth, i.relevant_doc_ids
+		FROM dataset_items i
+		JOIN datasets d ON d.id=i.dataset_id
+		WHERE d.tenant_id=$1 AND d.id=$2
+		ORDER BY i.id`, tenantID, datasetID)
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,7 @@ package eval
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/shikanon/orag/internal/dataset"
@@ -52,7 +53,7 @@ func TestRunnerPersistsRunInMemoryRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = dsSvc.AddItem(ctx, ds.ID, dataset.Item{
+	_, err = dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
 		Query:          "qdrant vector",
 		GroundTruth:    "qdrant",
 		RelevantDocIDs: []string{"doc_1"},
@@ -110,6 +111,44 @@ func TestRunnerPersistsRunInMemoryRepository(t *testing.T) {
 	}
 }
 
+func TestRunnerRequiresDatasetOwningTenant(t *testing.T) {
+	ctx := context.Background()
+	dsRepo := dataset.NewMemoryRepository()
+	dsSvc := dataset.NewService(dsRepo)
+	ds, err := dsSvc.Create(ctx, "tenant_owner", "regression", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = dsSvc.AddItem(ctx, "tenant_owner", ds.ID, dataset.Item{
+		Query:       "qdrant vector",
+		GroundTruth: "qdrant",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var calls int
+	ragSvc := &rag.Service{
+		Pipeline: pipelineFunc(func(context.Context, rag.QueryRequest) (rag.QueryResponse, error) {
+			calls++
+			return rag.QueryResponse{Answer: "should not run"}, nil
+		}),
+	}
+	runner := Runner{RAG: ragSvc, Datasets: dsSvc, Repository: NewMemoryRepository()}
+	_, err = runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_other",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Profile:         rag.ProfileRealtime,
+	})
+	if !errors.Is(err, dataset.ErrDatasetNotFound) {
+		t.Fatalf("Run() error = %v, want ErrDatasetNotFound", err)
+	}
+	if calls != 0 {
+		t.Fatalf("RAG pipeline calls = %d, want 0 for cross-tenant dataset", calls)
+	}
+}
+
 func TestRunnerDoesNotCountCitationOnlyAsAnswerAccuracy(t *testing.T) {
 	ctx := context.Background()
 	dsRepo := dataset.NewMemoryRepository()
@@ -118,7 +157,7 @@ func TestRunnerDoesNotCountCitationOnlyAsAnswerAccuracy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = dsSvc.AddItem(ctx, ds.ID, dataset.Item{
+	_, err = dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
 		Query:          "qdrant vector",
 		GroundTruth:    "qdrant",
 		RelevantDocIDs: []string{"doc_1"},
@@ -184,7 +223,7 @@ func TestOptimizerCandidatesDoNotReuseSemanticCacheAcrossProfileOrTopK(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = dsSvc.AddItem(ctx, ds.ID, dataset.Item{
+	_, err = dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
 		Query:          "qdrant vector",
 		GroundTruth:    "qdrant",
 		RelevantDocIDs: []string{"doc_1"},

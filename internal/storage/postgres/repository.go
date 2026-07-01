@@ -15,11 +15,12 @@ type Repository struct {
 	Pool        *pgxpool.Pool
 	StageChunks bool
 	kbQueryer   knowledgeBaseQueryer
+	dsQueryer   knowledgeBaseQueryer
 	traceReader traceQueryer
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{Pool: pool, kbQueryer: pool, traceReader: pgxTraceQueryer{pool: pool}}
+	return &Repository{Pool: pool, kbQueryer: pool, dsQueryer: pool, traceReader: pgxTraceQueryer{pool: pool}}
 }
 
 type knowledgeBaseQueryer interface {
@@ -201,6 +202,13 @@ func (r *Repository) BootstrapDefaults(ctx context.Context, tenantID, kbID strin
 func (r *Repository) knowledgeBaseQueryer() knowledgeBaseQueryer {
 	if r.kbQueryer != nil {
 		return r.kbQueryer
+	}
+	return r.Pool
+}
+
+func (r *Repository) datasetQueryer() knowledgeBaseQueryer {
+	if r.dsQueryer != nil {
+		return r.dsQueryer
 	}
 	return r.Pool
 }

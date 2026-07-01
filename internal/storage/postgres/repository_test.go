@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/shikanon/orag/internal/dataset"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -145,6 +146,82 @@ func TestRepositoryGetKnowledgeBaseReturnsScanError(t *testing.T) {
 	}
 }
 
+func TestRepositoryAddDatasetItemUsesTenantScopedInsert(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{execTag: pgconn.NewCommandTag("INSERT 0 1")}
+	repo := &Repository{dsQueryer: queryer}
+
+	got, err := repo.AddDatasetItem(context.Background(), "tenant_1", dataset.Item{
+		ID:          "dsi_1",
+		DatasetID:   "ds_1",
+		Query:       "question",
+		GroundTruth: "answer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "dsi_1" || got.DatasetID != "ds_1" {
+		t.Fatalf("AddDatasetItem() = %#v", got)
+	}
+	for _, want := range []string{"FROM datasets d", "WHERE d.tenant_id=$2 AND d.id=$3"} {
+		if !strings.Contains(queryer.execSQL, want) {
+			t.Fatalf("dataset item insert SQL missing %q: %s", want, queryer.execSQL)
+		}
+	}
+	if len(queryer.execArgs) < 3 || queryer.execArgs[1] != "tenant_1" || queryer.execArgs[2] != "ds_1" {
+		t.Fatalf("insert args = %#v, want tenant and dataset id scoped args", queryer.execArgs)
+	}
+}
+
+func TestRepositoryAddDatasetItemReturnsNotFoundWhenTenantDoesNotOwnDataset(t *testing.T) {
+	repo := &Repository{dsQueryer: &fakeKnowledgeBaseQueryer{}}
+
+	_, err := repo.AddDatasetItem(context.Background(), "tenant_other", dataset.Item{
+		ID:        "dsi_1",
+		DatasetID: "ds_1",
+		Query:     "question",
+	})
+	if !errors.Is(err, dataset.ErrDatasetNotFound) {
+		t.Fatalf("AddDatasetItem() error = %v, want ErrDatasetNotFound", err)
+	}
+}
+
+func TestRepositoryDatasetItemsUsesTenantScopedRead(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{
+		row:       fakeTraceRow{values: []any{true}},
+		queryRows: &fakeTraceRows{},
+	}
+	repo := &Repository{dsQueryer: queryer}
+
+	got, err := repo.DatasetItems(context.Background(), "tenant_1", "ds_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("DatasetItems() = %#v, want empty owned dataset", got)
+	}
+	if !strings.Contains(queryer.rowSQL, "WHERE tenant_id=$1 AND id=$2") {
+		t.Fatalf("dataset ownership SQL is not tenant scoped: %s", queryer.rowSQL)
+	}
+	for _, want := range []string{"JOIN datasets d ON d.id=i.dataset_id", "WHERE d.tenant_id=$1 AND d.id=$2"} {
+		if !strings.Contains(queryer.querySQL, want) {
+			t.Fatalf("dataset item read SQL missing %q: %s", want, queryer.querySQL)
+		}
+	}
+}
+
+func TestRepositoryDatasetItemsReturnsNotFoundWhenTenantDoesNotOwnDataset(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{row: fakeTraceRow{values: []any{false}}}
+	repo := &Repository{dsQueryer: queryer}
+
+	_, err := repo.DatasetItems(context.Background(), "tenant_other", "ds_1")
+	if !errors.Is(err, dataset.ErrDatasetNotFound) {
+		t.Fatalf("DatasetItems() error = %v, want ErrDatasetNotFound", err)
+	}
+	if queryer.querySQL != "" {
+		t.Fatalf("DatasetItems() queried items after failed ownership check: %s", queryer.querySQL)
+	}
+}
+
 func TestRepositoryBootstrapDefaultsReturnsKnowledgeBaseError(t *testing.T) {
 	want := errors.New("knowledge base insert failed")
 	queryer := &fakeKnowledgeBaseQueryer{execErrs: []error{nil, want}}
@@ -270,27 +347,38 @@ type fakeKnowledgeBaseQueryer struct {
 	execErr   error
 	execErrs  []error
 	execCalls int
+	execSQL   string
+	execArgs  []any
+	execTag   pgconn.CommandTag
 	queryRows pgx.Rows
 	queryErr  error
 	querySQL  string
+	queryArgs []any
 	row       pgx.Row
+	rowSQL    string
+	rowArgs   []any
 }
 
-func (f *fakeKnowledgeBaseQueryer) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
+func (f *fakeKnowledgeBaseQueryer) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	f.execSQL = sql
+	f.execArgs = args
 	err := f.execErr
 	if f.execCalls < len(f.execErrs) {
 		err = f.execErrs[f.execCalls]
 	}
 	f.execCalls++
-	return pgconn.CommandTag{}, err
+	return f.execTag, err
 }
 
-func (f *fakeKnowledgeBaseQueryer) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+func (f *fakeKnowledgeBaseQueryer) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
 	f.querySQL = sql
+	f.queryArgs = args
 	return f.queryRows, f.queryErr
 }
 
-func (f *fakeKnowledgeBaseQueryer) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
+func (f *fakeKnowledgeBaseQueryer) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
+	f.rowSQL = sql
+	f.rowArgs = args
 	if f.row == nil {
 		return fakeTraceRow{err: pgx.ErrNoRows}
 	}

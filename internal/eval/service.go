@@ -43,7 +43,7 @@ type RunResult struct {
 }
 
 func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
-	items, err := r.Datasets.Items(ctx, req.DatasetID)
+	items, err := r.Datasets.Items(ctx, req.TenantID, req.DatasetID)
 	if err != nil {
 		return RunResult{}, err
 	}
