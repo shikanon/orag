@@ -16,7 +16,7 @@ func TestOptimizerUsesAnswerAccuracy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = dsSvc.AddItem(ctx, ds.ID, dataset.Item{
+	_, err = dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
 		Query:       "qdrant vector",
 		GroundTruth: "qdrant",
 	})

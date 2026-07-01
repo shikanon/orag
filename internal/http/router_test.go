@@ -14,6 +14,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/route"
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/config"
+	"github.com/shikanon/orag/internal/dataset"
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
@@ -385,6 +386,44 @@ func TestDocumentIngestionMapsServiceMissingKnowledgeBaseTo404(t *testing.T) {
 		t.Fatalf("upload created %d ingestion jobs for service-level missing knowledge base", jobs.createCalls)
 	}
 	assertNoChunks(t, app, "kb_default")
+}
+
+func TestDatasetItemAndEvaluationRequireTenantOwnership(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	ds, err := app.Datasets.Create(ctx, "tenant_default", "golden", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Datasets.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
+		Query:       "qdrant vector",
+		GroundTruth: "qdrant",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	otherToken, err := app.Auth.IssueToken("tenant_other", "user_other")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := performJSON(h, "POST", "/v1/datasets/"+ds.ID+"/items", `{"query":"cross tenant","ground_truth":"blocked"}`, otherToken)
+	if resp.Code != 404 || !strings.Contains(resp.Body, `"code":"dataset_not_found"`) {
+		t.Fatalf("cross-tenant dataset item status = %d body=%s", resp.Code, resp.Body)
+	}
+	items, err := app.Datasets.Items(ctx, "tenant_default", ds.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("dataset items = %d, want original item only", len(items))
+	}
+
+	resp = performJSON(h, "POST", "/v1/evaluations", `{"dataset_id":"`+ds.ID+`","knowledge_base_id":"kb_default","profile":"realtime"}`, otherToken)
+	if resp.Code != 404 || !strings.Contains(resp.Body, `"code":"dataset_not_found"`) {
+		t.Fatalf("cross-tenant evaluation status = %d body=%s", resp.Code, resp.Body)
+	}
 }
 
 type testResponse struct {
