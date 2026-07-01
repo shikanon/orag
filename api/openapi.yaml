@@ -153,10 +153,22 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ID"
       responses:
+        "204":
+          description: Knowledge base and associated knowledge-base data deleted.
         "401":
-          $ref: "#/components/responses/Error"
-        "501":
-          description: Knowledge base deletion is not implemented.
+          description: Missing, invalid, or expired bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Knowledge base is absent for the authenticated tenant; `error.code` is `knowledge_base_not_found`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Repository deletion or Qdrant cleanup failed; `error.code` is `knowledge_base_delete_failed`.
           content:
             application/json:
               schema:

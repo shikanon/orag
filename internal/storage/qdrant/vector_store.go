@@ -2,6 +2,7 @@ package qdrantstore
 
 import (
 	"context"
+	"fmt"
 
 	qdrant "github.com/qdrant/go-client/qdrant"
 	"github.com/shikanon/orag/internal/kb"
@@ -38,6 +39,43 @@ func (s VectorStore) Store(ctx context.Context, _ kb.Document, chunks []kb.Chunk
 	return err
 }
 
+func (s VectorStore) DeleteKnowledgeBase(ctx context.Context, tenantID, kbID string) error {
+	return deleteKnowledgeBasePoints(ctx, s.Client, s.Collection, tenantID, kbID)
+}
+
+func PurgeKnowledgeBase(ctx context.Context, client *Client, vectorCollection, cacheCollection, tenantID, kbID string) error {
+	if err := (VectorStore{Client: client, Collection: vectorCollection}).DeleteKnowledgeBase(ctx, tenantID, kbID); err != nil {
+		return fmt.Errorf("purge vector collection %q: %w", vectorCollection, err)
+	}
+	if err := (SemanticCache{Client: client, Collection: cacheCollection}).DeleteKnowledgeBase(ctx, tenantID, kbID); err != nil {
+		return fmt.Errorf("purge semantic cache collection %q: %w", cacheCollection, err)
+	}
+	return nil
+}
+
+func deleteKnowledgeBasePoints(ctx context.Context, client *Client, collection, tenantID, kbID string) error {
+	_, err := client.Points.Delete(ctx, deleteKnowledgeBasePointsRequest(collection, tenantID, kbID))
+	return err
+}
+
+func deleteKnowledgeBasePointsRequest(collection, tenantID, kbID string) *qdrant.DeletePoints {
+	wait := true
+	return &qdrant.DeletePoints{
+		CollectionName: collection,
+		Wait:           &wait,
+		Points: &qdrant.PointsSelector{PointsSelectorOneOf: &qdrant.PointsSelector_Filter{
+			Filter: knowledgeBaseFilter(tenantID, kbID),
+		}},
+	}
+}
+
+func knowledgeBaseFilter(tenantID, kbID string) *qdrant.Filter {
+	return &qdrant.Filter{Must: []*qdrant.Condition{
+		matchKeyword("tenant_id", tenantID),
+		matchKeyword("knowledge_base_id", kbID),
+	}}
+}
+
 func (s VectorStore) Retrieve(ctx context.Context, req kb.SearchRequest) ([]kb.SearchResult, error) {
 	limit := req.TopK
 	if req.DenseTopK > 0 {
@@ -50,11 +88,8 @@ func (s VectorStore) Retrieve(ctx context.Context, req kb.SearchRequest) ([]kb.S
 		CollectionName: s.Collection,
 		Vector:         float32Vector(req.Vector),
 		Limit:          uint64(limit),
-		Filter: &qdrant.Filter{Must: []*qdrant.Condition{
-			matchKeyword("tenant_id", req.TenantID),
-			matchKeyword("knowledge_base_id", req.KnowledgeBaseID),
-		}},
-		WithPayload: &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
+		Filter:         knowledgeBaseFilter(req.TenantID, req.KnowledgeBaseID),
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
 	})
 	if err != nil {
 		return nil, err

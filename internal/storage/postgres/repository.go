@@ -94,6 +94,32 @@ func (r *Repository) GetKnowledgeBase(tenantID, id string) (kb.KnowledgeBase, bo
 	return item, true, nil
 }
 
+func (r *Repository) DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error) {
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM chunks WHERE tenant_id=$1 AND knowledge_base_id=$2`, tenantID, id); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM documents WHERE tenant_id=$1 AND knowledge_base_id=$2`, tenantID, id); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM ingestion_jobs WHERE tenant_id=$1 AND knowledge_base_id=$2`, tenantID, id); err != nil {
+		return false, err
+	}
+	tag, err := tx.Exec(ctx, `DELETE FROM knowledge_bases WHERE tenant_id=$1 AND id=$2`, tenantID, id)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {

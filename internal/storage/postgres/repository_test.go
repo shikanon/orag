@@ -11,6 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -156,6 +158,93 @@ func TestRepositoryBootstrapDefaultsReturnsKnowledgeBaseError(t *testing.T) {
 	}
 	if queryer.execCalls != 2 {
 		t.Fatalf("Exec calls = %d, want 2", queryer.execCalls)
+	}
+}
+
+func TestRepositoryDeleteKnowledgeBaseCascades(t *testing.T) {
+	dsn := os.Getenv("POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("POSTGRES_TEST_DSN is not set; skipping Postgres integration test")
+	}
+	ctx := context.Background()
+	pool, err := Open(ctx, dsn)
+	if err != nil {
+		t.Skipf("POSTGRES_TEST_DSN is unavailable: %v", err)
+	}
+	defer pool.Close()
+	if err := Migrate(ctx, pool, "../../../migrations"); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	repo := NewRepository(pool)
+	tenantID := "tenant_delete_cascade"
+	cleanupTenant := func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM chunks WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM documents WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM ingestion_jobs WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM knowledge_bases WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM tenants WHERE id=$1`, tenantID)
+	}
+	cleanupTenant()
+	defer cleanupTenant()
+
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	if _, err := pool.Exec(ctx, `INSERT INTO tenants(id, name, created_at) VALUES($1, $2, $3)`, tenantID, tenantID, now); err != nil {
+		t.Fatalf("insert tenant error = %v", err)
+	}
+	for _, item := range []kb.KnowledgeBase{
+		{ID: "kb_delete_cascade", TenantID: tenantID, Name: "Delete", CreatedAt: now, UpdatedAt: now},
+		{ID: "kb_keep_cascade", TenantID: tenantID, Name: "Keep", CreatedAt: now.Add(time.Minute), UpdatedAt: now.Add(time.Minute)},
+	} {
+		if err := repo.PutKnowledgeBase(item); err != nil {
+			t.Fatalf("PutKnowledgeBase(%s) error = %v", item.ID, err)
+		}
+	}
+	for _, doc := range []kb.Document{
+		{ID: "doc_delete_cascade", TenantID: tenantID, KnowledgeBaseID: "kb_delete_cascade", SourceURI: "test://delete", Title: "Delete", ContentHash: "hash-delete", CreatedAt: now},
+		{ID: "doc_keep_cascade", TenantID: tenantID, KnowledgeBaseID: "kb_keep_cascade", SourceURI: "test://keep", Title: "Keep", ContentHash: "hash-keep", CreatedAt: now},
+	} {
+		chunks := []kb.Chunk{{
+			ID:              "chunk_" + doc.ID,
+			TenantID:        doc.TenantID,
+			KnowledgeBaseID: doc.KnowledgeBaseID,
+			DocumentID:      doc.ID,
+			Content:         "content " + doc.ID,
+			SourceURI:       doc.SourceURI,
+		}}
+		if err := repo.Store(ctx, doc, chunks); err != nil {
+			t.Fatalf("Store(%s) error = %v", doc.ID, err)
+		}
+	}
+	for _, job := range []ingest.Job{
+		{ID: "job_delete_cascade", TenantID: tenantID, KnowledgeBaseID: "kb_delete_cascade", Status: ingest.JobStatusSucceeded, SourceURI: "test://delete", DocumentID: "doc_delete_cascade", ChunkCount: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "job_keep_cascade", TenantID: tenantID, KnowledgeBaseID: "kb_keep_cascade", Status: ingest.JobStatusSucceeded, SourceURI: "test://keep", DocumentID: "doc_keep_cascade", ChunkCount: 1, CreatedAt: now, UpdatedAt: now},
+	} {
+		if _, err := repo.CreateJob(ctx, job); err != nil {
+			t.Fatalf("CreateJob(%s) error = %v", job.ID, err)
+		}
+	}
+
+	found, err := repo.DeleteKnowledgeBase(ctx, tenantID, "kb_delete_cascade")
+	if err != nil {
+		t.Fatalf("DeleteKnowledgeBase() error = %v", err)
+	}
+	if !found {
+		t.Fatal("DeleteKnowledgeBase() found = false, want true")
+	}
+	for _, table := range []string{"knowledge_bases", "documents", "chunks", "ingestion_jobs"} {
+		if got := countRows(t, pool, table, tenantID, "kb_delete_cascade"); got != 0 {
+			t.Fatalf("%s rows for deleted KB = %d, want 0", table, got)
+		}
+		if got := countRows(t, pool, table, tenantID, "kb_keep_cascade"); got != 1 {
+			t.Fatalf("%s rows for kept KB = %d, want 1", table, got)
+		}
+	}
+	found, err = repo.DeleteKnowledgeBase(ctx, tenantID, "kb_delete_cascade")
+	if err != nil {
+		t.Fatalf("repeated DeleteKnowledgeBase() error = %v", err)
+	}
+	if found {
+		t.Fatal("repeated DeleteKnowledgeBase() found = true, want false")
 	}
 }
 
@@ -390,4 +479,23 @@ func assignScanValues(dest []any, values []any) {
 		}
 		target.Set(value)
 	}
+}
+
+func countRows(t *testing.T, pool *pgxpool.Pool, table, tenantID, kbID string) int {
+	t.Helper()
+	queries := map[string]string{
+		"knowledge_bases": `SELECT count(*) FROM knowledge_bases WHERE tenant_id=$1 AND id=$2`,
+		"documents":       `SELECT count(*) FROM documents WHERE tenant_id=$1 AND knowledge_base_id=$2`,
+		"chunks":          `SELECT count(*) FROM chunks WHERE tenant_id=$1 AND knowledge_base_id=$2`,
+		"ingestion_jobs":  `SELECT count(*) FROM ingestion_jobs WHERE tenant_id=$1 AND knowledge_base_id=$2`,
+	}
+	query, ok := queries[table]
+	if !ok {
+		t.Fatalf("unknown table %q", table)
+	}
+	var count int
+	if err := pool.QueryRow(context.Background(), query, tenantID, kbID).Scan(&count); err != nil {
+		t.Fatalf("count %s rows error = %v", table, err)
+	}
+	return count
 }

@@ -246,28 +246,98 @@ func TestHealthReadyAndMetrics(t *testing.T) {
 	}
 }
 
-func TestDeleteKnowledgeBaseNotImplementedDoesNotDelete(t *testing.T) {
+func TestDeleteKnowledgeBase(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"Keep"}`, token)
+	if resp.Code != 201 {
+		t.Fatalf("create keep KB status = %d body=%s", resp.Code, resp.Body)
+	}
+	var keep kb.KnowledgeBase
+	if err := json.Unmarshal([]byte(resp.Body), &keep); err != nil {
+		t.Fatal(err)
+	}
+
+	resp = performJSON(h, "POST", "/v1/knowledge-bases/kb_default/documents:import", `{"name":"delete.md","source_uri":"test://delete","content":"delete should remove owned chunks"}`, token)
+	if resp.Code != 202 {
+		t.Fatalf("import status = %d body=%s", resp.Code, resp.Body)
+	}
+	if chunks := app.KBStore.(kb.ChunkSource).Chunks("tenant_default", "kb_default"); len(chunks) == 0 {
+		t.Fatal("import did not create chunks for kb_default")
+	}
+
+	resp = performJSON(h, "DELETE", "/v1/knowledge-bases/kb_default", "", "")
+	if resp.Code != 401 {
+		t.Fatalf("unauthenticated delete status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "GET", "/v1/knowledge-bases/kb_default", "", token)
+	if resp.Code != 200 {
+		t.Fatalf("knowledge base lookup after unauthenticated delete status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	resp = performJSON(h, "DELETE", "/v1/knowledge-bases/kb_default", "", token)
+	if resp.Code != 204 {
+		t.Fatalf("delete knowledge base status = %d body=%s", resp.Code, resp.Body)
+	}
+	if resp.Body != "" {
+		t.Fatalf("delete knowledge base body = %q, want empty", resp.Body)
+	}
+
+	resp = performJSON(h, "GET", "/v1/knowledge-bases/kb_default", "", token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+	assertNoChunks(t, app, "kb_default")
+
+	resp = performJSON(h, "GET", "/v1/knowledge-bases/"+keep.ID, "", token)
+	if resp.Code != 200 {
+		t.Fatalf("kept knowledge base lookup status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	resp = performJSON(h, "GET", "/v1/knowledge-bases", "", token)
+	if resp.Code != 200 {
+		t.Fatalf("list knowledge bases status = %d body=%s", resp.Code, resp.Body)
+	}
+	var listed struct {
+		Items []kb.KnowledgeBase `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &listed); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range listed.Items {
+		if item.ID == "kb_default" {
+			t.Fatalf("deleted knowledge base still listed: %#v", listed.Items)
+		}
+	}
+
+	resp = performJSON(h, "DELETE", "/v1/knowledge-bases/kb_default", "", token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+}
+
+func TestDeleteKnowledgeBaseStorageError(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	app.KBStore = fakeKnowledgeBaseRepository{deleteFound: true, deleteErr: errors.New("delete failed")}
+
+	resp := performJSONWithTrace(h, "DELETE", "/v1/knowledge-bases/kb_default", "", token, "trace_kb_delete_error")
+	if resp.Code == 204 {
+		t.Fatalf("delete storage error status = 204, want 500 body=%s", resp.Body)
+	}
+	assertErrorResponse(t, resp, 500, "knowledge_base_delete_failed", "trace_kb_delete_error")
+}
+
+func TestDeleteKnowledgeBaseNotFound(t *testing.T) {
 	h, closeApp := newTestHertz(t)
 	defer closeApp()
 
 	token := loginToken(t, h)
-	resp := performJSON(h, "GET", "/v1/knowledge-bases/kb_default", "", token)
-	if resp.Code != 200 {
-		t.Fatalf("initial knowledge base lookup status = %d body=%s", resp.Code, resp.Body)
-	}
-
-	resp = performJSON(h, "DELETE", "/v1/knowledge-bases/kb_default", "", token)
-	if resp.Code != 501 {
-		t.Fatalf("delete knowledge base status = %d body=%s", resp.Code, resp.Body)
-	}
-	if !strings.Contains(resp.Body, `"code":"knowledge_base_delete_not_supported"`) {
-		t.Fatalf("unexpected delete knowledge base body: %s", resp.Body)
-	}
-
-	resp = performJSON(h, "GET", "/v1/knowledge-bases/kb_default", "", token)
-	if resp.Code != 200 {
+	resp := performJSON(h, "DELETE", "/v1/knowledge-bases/kb_missing", "", token)
+	if resp.Code != 404 {
 		t.Fatalf("knowledge base lookup after delete status = %d body=%s", resp.Code, resp.Body)
 	}
+	assertMissingKnowledgeBaseResponse(t, resp)
 }
 
 func TestIngestionJobLookupReturnsResultSummary(t *testing.T) {
@@ -536,12 +606,14 @@ func assertNoChunks(t *testing.T, app *core.App, kbID string) {
 }
 
 type fakeKnowledgeBaseRepository struct {
-	putErr    error
-	listItems []kb.KnowledgeBase
-	listErr   error
-	getItem   kb.KnowledgeBase
-	getFound  bool
-	getErr    error
+	putErr      error
+	listItems   []kb.KnowledgeBase
+	listErr     error
+	getItem     kb.KnowledgeBase
+	getFound    bool
+	getErr      error
+	deleteFound bool
+	deleteErr   error
 }
 
 func (r fakeKnowledgeBaseRepository) PutKnowledgeBase(kb.KnowledgeBase) error {
@@ -554,6 +626,10 @@ func (r fakeKnowledgeBaseRepository) ListKnowledgeBases(string) ([]kb.KnowledgeB
 
 func (r fakeKnowledgeBaseRepository) GetKnowledgeBase(string, string) (kb.KnowledgeBase, bool, error) {
 	return r.getItem, r.getFound, r.getErr
+}
+
+func (r fakeKnowledgeBaseRepository) DeleteKnowledgeBase(context.Context, string, string) (bool, error) {
+	return r.deleteFound, r.deleteErr
 }
 
 type countingJobStore struct {

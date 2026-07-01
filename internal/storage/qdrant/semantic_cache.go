@@ -33,13 +33,11 @@ func (s SemanticCache) Lookup(ctx context.Context, req rag.SemanticCacheLookupRe
 		CollectionName: s.Collection,
 		Vector:         float32Vector(req.Vector),
 		Limit:          1,
-		Filter: &qdrant.Filter{Must: []*qdrant.Condition{
-			matchKeyword("tenant_id", req.TenantID),
-			matchKeyword("knowledge_base_id", req.KnowledgeBaseID),
+		Filter: &qdrant.Filter{Must: append(knowledgeBaseFilter(req.TenantID, req.KnowledgeBaseID).Must,
 			matchKeyword("cache_key_version", semanticCachePayloadVersion),
 			matchKeyword("profile", string(semanticCacheProfile(req.Profile))),
 			matchInteger("top_k", int64(req.TopK)),
-		}},
+		)},
 		WithPayload: &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
 	})
 	if err != nil {
@@ -79,6 +77,10 @@ func (s SemanticCache) Store(ctx context.Context, entry rag.SemanticCacheEntry) 
 		}},
 	})
 	return err
+}
+
+func (s SemanticCache) DeleteKnowledgeBase(ctx context.Context, tenantID, kbID string) error {
+	return deleteKnowledgeBasePoints(ctx, s.Client, s.Collection, tenantID, kbID)
 }
 
 func semanticCachePayload(entry rag.SemanticCacheEntry) map[string]*qdrant.Value {

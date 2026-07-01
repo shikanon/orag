@@ -78,7 +78,7 @@ Content-Type: application/json
 | `404` | `ingestion_job_not_found` | 查询不存在的入库 job。 |
 | `404` | `evaluation_not_found` | 查询不存在的评估结果。 |
 | `413` | `payload_too_large` | 入库内容超过 `INGEST_MAX_DOCUMENT_BYTES`。 |
-| `500` | `ingest_failed`、`query_failed`、`evaluation_failed`、`optimization_failed` | 后端入库、查询、评估或优化链路失败。 |
+| `500` | `ingest_failed`、`knowledge_base_delete_failed`、`query_failed`、`evaluation_failed`、`optimization_failed` | 后端入库、删除、查询、评估或优化链路失败。 |
 
 `trace_id` 用于排查同一次请求链路。服务优先复用请求头 `X-Trace-ID`；未传入时自动生成，并把同一个值写入响应头 `X-Trace-ID`、JSON 错误体、SSE 事件、结构化日志和 RAG trace 持久化记录。`POST /v1/query:stream` 在 RAG 查询阶段失败时返回 `text/event-stream`，事件名为 `error`，事件数据仍包含 `code`、`message`、`trace_id`。
 
@@ -196,7 +196,7 @@ GET /v1/knowledge-bases/{id}
 DELETE /v1/knowledge-bases/{id}
 ```
 
-删除能力当前未实现。带有效认证的请求返回 `501` JSON error，错误码为 `knowledge_base_delete_not_supported`，message 为 `knowledge base deletion is not implemented`，且不会删除知识库或关联数据。未认证请求仍返回 `401`。
+成功删除时返回 `204 No Content`，响应体为空，并移除该 tenant 下对应知识库的文档、chunk 和入库任务等关联数据。知识库不存在或不属于当前 tenant 时返回 `404 knowledge_base_not_found`；未认证请求仍返回 `401`；存储删除失败时返回 `500 knowledge_base_delete_failed`。
 
 ## 文档入库
 
