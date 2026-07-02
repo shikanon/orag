@@ -196,7 +196,6 @@ func (s *Service) LookupSemanticCache(ctx context.Context, req QueryRequest, vec
 	}
 	cached.CacheStatus = "hit"
 	cached.TraceID = traceID
-	cached.Profile = profile
 	cached.LatencyMS = time.Since(start).Milliseconds()
 	cached.CreatedAt = time.Now().UTC()
 	return cached, true, ""
