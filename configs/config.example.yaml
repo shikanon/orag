@@ -19,6 +19,8 @@ qdrant:
   auto_create_collections: true
 
 ark:
+  # Runtime defaults recommend VolcEngine / Ark / Doubao.
+  # Set ARK_API_KEY or VOLCENGINE_API_KEY before starting the service.
   base_url: https://ark.cn-beijing.volces.com/api/v3
   chat_model: doubao-seed-2-1-pro-260628
   embedding_model: doubao-embedding-vision-251215
@@ -31,6 +33,42 @@ ark:
   multimodal_model: doubao-seed-2-1-pro-260628
   timeout: 60s
   retry_times: 2
+
+models:
+  chat_provider: volcengine
+  embedding_provider: volcengine
+  rerank_provider: volcengine
+  multimodal_provider: volcengine
+  allow_deterministic_mock: false
+  supported_providers:
+    - openai
+    - azure-openai
+    - anthropic
+    - gemini
+    - google-cloud
+    - xai
+    - mistral
+    - cohere
+    - deepseek
+    - moonshot
+    - minimax
+    - baichuan
+    - zhipu-ai
+    - tongyi-qianwen
+    - volcengine
+    - tencent-hunyuan
+    - xunfei-spark
+    - baiduyiyan
+    - xiaomi
+    - perplexity
+    - voyage-ai
+    - jina
+  # Providers with no global endpoint require an explicit base URL through env:
+  # AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com
+  # GOOGLE_CLOUD_BASE_URL=https://your-google-cloud-model-endpoint
+  provider_base_url_overrides:
+    azure-openai: ""
+    google-cloud: ""
 
 rag:
   default_profile: realtime
@@ -47,7 +85,7 @@ rag:
   hyde_enabled: true
   no_context_answer: 未在知识库中检索到足够依据，无法基于上下文回答。
   prompt_cache_mode: auto
-  require_external_providers: false
+  require_external_providers: true
 
 ingestion:
   chunk_size_tokens: 800

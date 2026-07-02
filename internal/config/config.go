@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	modelprovider "github.com/shikanon/orag/internal/llm/provider"
 )
 
 type Config struct {
@@ -16,6 +18,7 @@ type Config struct {
 	Database      DatabaseConfig
 	Qdrant        QdrantConfig
 	Ark           ArkConfig
+	Models        ModelProviderConfig
 	RAG           RAGConfig
 	Ingestion     IngestionConfig
 	ObjectStorage ObjectStorageConfig
@@ -73,6 +76,16 @@ type ArkConfig struct {
 	Timeout             time.Duration
 	RetryTimes          int
 	LiveTests           bool
+}
+
+type ModelProviderConfig struct {
+	ChatProvider           string
+	EmbeddingProvider      string
+	RerankProvider         string
+	MultimodalProvider     string
+	AllowDeterministicMock bool
+	ProviderAPIKeys        map[string]string
+	ProviderBaseURLs       map[string]string
 }
 
 type RAGConfig struct {
@@ -196,7 +209,7 @@ func Load() (Config, error) {
 			HyDEEnabled:              getenvBool("RAG_HYDE_ENABLED", true),
 			NoContextAnswer:          getenv("RAG_NO_CONTEXT_ANSWER", "未在知识库中检索到足够依据，无法基于上下文回答。"),
 			PromptCacheMode:          getenv("PROMPT_CACHE_MODE", "auto"),
-			RequireExternalProviders: getenvBool("REQUIRE_EXTERNAL_PROVIDERS", false),
+			RequireExternalProviders: getenvBool("REQUIRE_EXTERNAL_PROVIDERS", true),
 		},
 		Ingestion: IngestionConfig{
 			ChunkSizeTokens:    getenvInt("INGEST_CHUNK_SIZE_TOKENS", 800),
@@ -235,8 +248,41 @@ func Load() (Config, error) {
 			RecordPrompts:     getenvBool("OBSERVABILITY_RECORD_PROMPTS", false),
 		},
 	}
+	cfg.Models = loadModelProviders()
+	cfg.applyModelProviderDefaults()
+	if cfg.Ark.APIKey == "" {
+		cfg.Ark.APIKey = cfg.ModelProviderAPIKey(modelprovider.VolcEngine)
+	}
+	cfg.Ark.RerankProvider = cfg.Models.RerankProvider
 
 	return cfg, cfg.Validate()
+}
+
+func (c *Config) applyModelProviderDefaults() {
+	registry := modelprovider.BuiltinRegistry()
+	c.Ark.ChatModel = selectedProviderModel(registry, c.Models.ChatProvider, modelprovider.CapabilityChat, "ARK_CHAT_MODEL", c.Ark.ChatModel)
+	c.Ark.EmbeddingModel = selectedProviderModel(registry, c.Models.EmbeddingProvider, modelprovider.CapabilityEmbedding, "ARK_EMBEDDING_MODEL", c.Ark.EmbeddingModel)
+	c.Ark.RerankModel = selectedProviderModel(registry, c.Models.RerankProvider, modelprovider.CapabilityRerank, "ARK_RERANK_MODEL", c.Ark.RerankModel)
+	c.Ark.MultimodalModel = selectedProviderModel(registry, c.Models.MultimodalProvider, modelprovider.CapabilityImage2Text, "ARK_MULTIMODAL_MODEL", c.Ark.MultimodalModel)
+}
+
+func selectedProviderModel(registry modelprovider.Registry, provider string, capability modelprovider.Capability, envKey string, current string) string {
+	if value, ok := os.LookupEnv(envKey); ok && strings.TrimSpace(value) != "" {
+		return current
+	}
+	info, ok := registry.Get(modelprovider.NormalizeName(provider))
+	if !ok {
+		return current
+	}
+	if model := strings.TrimSpace(info.DefaultModels[capability]); model != "" {
+		return model
+	}
+	if capability == modelprovider.CapabilityImage2Text {
+		if model := strings.TrimSpace(info.DefaultModels[modelprovider.CapabilityChat]); model != "" {
+			return model
+		}
+	}
+	return current
 }
 
 func (c Config) Validate() error {
@@ -244,8 +290,8 @@ func (c Config) Validate() error {
 	if c.Auth.JWTSecret == "" {
 		missing = append(missing, "JWT_SECRET")
 	}
-	if c.RAG.RequireExternalProviders && c.Ark.APIKey == "" {
-		missing = append(missing, "ARK_API_KEY")
+	if err := c.validateModelProviders(&missing); err != nil {
+		return err
 	}
 	if c.Qdrant.Host == "" {
 		missing = append(missing, "QDRANT_HOST")
@@ -264,9 +310,6 @@ func (c Config) Validate() error {
 	}
 	if c.Ingestion.ParserMethod == "docling" && strings.TrimSpace(c.Ingestion.Docling.ServerURL) == "" {
 		return errors.New("DOCLING_SERVER_URL is required when INGEST_PARSER_METHOD=docling")
-	}
-	if c.Ark.RerankProvider != "volcengine" && c.Ark.RerankProvider != "aliyun" {
-		return errors.New("RERANK_PROVIDER must be volcengine or aliyun")
 	}
 	if c.Ark.EmbeddingDimensions <= 0 {
 		return errors.New("ARK_EMBEDDING_DIMENSIONS must be positive")
@@ -297,6 +340,11 @@ func (c Config) RedactedEnv() map[string]string {
 		"ARK_API_KEY":                      redact(c.Ark.APIKey),
 		"ARK_CHAT_MODEL":                   c.Ark.ChatModel,
 		"ARK_EMBEDDING_MODEL":              c.Ark.EmbeddingModel,
+		"LLM_CHAT_PROVIDER":                c.Models.ChatProvider,
+		"LLM_EMBEDDING_PROVIDER":           c.Models.EmbeddingProvider,
+		"LLM_RERANK_PROVIDER":              c.Models.RerankProvider,
+		"LLM_MULTIMODAL_PROVIDER":          c.Models.MultimodalProvider,
+		"ALLOW_DETERMINISTIC_MOCK":         strconv.FormatBool(c.Models.AllowDeterministicMock),
 		"INGEST_PARSER_METHOD":             c.Ingestion.ParserMethod,
 		"MINERU_APISERVER":                 c.Ingestion.MinerU.APIURL,
 		"MINERU_SERVER_URL":                c.Ingestion.MinerU.ServerURL,
@@ -312,6 +360,114 @@ func (c Config) RedactedEnv() map[string]string {
 		"RAG_HYDE_ENABLED":                 strconv.FormatBool(c.RAG.HyDEEnabled),
 		"PROMPT_CACHE_MODE":                c.RAG.PromptCacheMode,
 	}
+}
+
+func loadModelProviders() ModelProviderConfig {
+	registry := modelprovider.BuiltinRegistry()
+	cfg := ModelProviderConfig{
+		ChatProvider:           string(modelprovider.NormalizeName(getenv("LLM_CHAT_PROVIDER", getenv("LLM_PROVIDER", string(modelprovider.VolcEngine))))),
+		EmbeddingProvider:      string(modelprovider.NormalizeName(getenv("LLM_EMBEDDING_PROVIDER", string(modelprovider.VolcEngine)))),
+		RerankProvider:         string(modelprovider.NormalizeName(getenv("LLM_RERANK_PROVIDER", getenv("RERANK_PROVIDER", string(modelprovider.VolcEngine))))),
+		MultimodalProvider:     string(modelprovider.NormalizeName(getenv("LLM_MULTIMODAL_PROVIDER", string(modelprovider.VolcEngine)))),
+		AllowDeterministicMock: getenvBool("ALLOW_DETERMINISTIC_MOCK", false) || getenvBool("ORAG_TEST_MODE", false),
+		ProviderAPIKeys:        map[string]string{},
+		ProviderBaseURLs:       map[string]string{},
+	}
+	for _, name := range registry.Names() {
+		info := registry.MustGet(name)
+		for _, key := range info.RequiredEnv {
+			if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+				cfg.ProviderAPIKeys[string(info.Name)] = value
+				break
+			}
+		}
+		if value := providerBaseURLFromEnv(info.Name); value != "" {
+			cfg.ProviderBaseURLs[string(info.Name)] = value
+		}
+	}
+	return cfg
+}
+
+func (c Config) validateModelProviders(missing *[]string) error {
+	registry := modelprovider.BuiltinRegistry()
+	missingKeys := map[modelprovider.Name]bool{}
+	missingBaseURLs := map[modelprovider.Name]bool{}
+	checks := []struct {
+		provider   string
+		capability modelprovider.Capability
+		env        string
+	}{
+		{provider: c.Models.ChatProvider, capability: modelprovider.CapabilityChat, env: "LLM_CHAT_PROVIDER"},
+		{provider: c.Models.EmbeddingProvider, capability: modelprovider.CapabilityEmbedding, env: "LLM_EMBEDDING_PROVIDER"},
+		{provider: c.Models.RerankProvider, capability: modelprovider.CapabilityRerank, env: "LLM_RERANK_PROVIDER"},
+		{provider: c.Models.MultimodalProvider, capability: modelprovider.CapabilityImage2Text, env: "LLM_MULTIMODAL_PROVIDER"},
+	}
+	for _, check := range checks {
+		name := modelprovider.NormalizeName(check.provider)
+		if name == "" {
+			return fmt.Errorf("%s must not be empty", check.env)
+		}
+		info, ok := registry.Get(name)
+		if !ok {
+			return fmt.Errorf("%s %q is not supported", check.env, check.provider)
+		}
+		if !info.Supports(check.capability) {
+			return fmt.Errorf("%s provider %q does not support %s", check.env, info.Name, check.capability)
+		}
+		if info.Name == modelprovider.Mock && !c.Models.AllowDeterministicMock {
+			return fmt.Errorf("ALLOW_DETERMINISTIC_MOCK=true is required when %s=mock", check.env)
+		}
+		if info.Name != modelprovider.Mock && c.ModelProviderAPIKey(info.Name) == "" {
+			if !missingKeys[info.Name] {
+				*missing = append(*missing, fmt.Sprintf("%s (%s)", strings.Join(info.RequiredEnv, " or "), info.Name))
+				missingKeys[info.Name] = true
+			}
+		}
+		if info.Name != modelprovider.Mock && c.ModelProviderBaseURL(info.Name) == "" && modelprovider.DefaultBaseURL(info.Name) == "" {
+			if !missingBaseURLs[info.Name] {
+				*missing = append(*missing, fmt.Sprintf("%s_BASE_URL (%s)", providerEnvPrefix(info.Name), info.Name))
+				missingBaseURLs[info.Name] = true
+			}
+		}
+	}
+	return nil
+}
+
+func (c Config) ModelProviderAPIKey(name modelprovider.Name) string {
+	if c.Models.ProviderAPIKeys == nil {
+		return ""
+	}
+	if value := strings.TrimSpace(c.Models.ProviderAPIKeys[string(modelprovider.NormalizeName(string(name)))]); value != "" {
+		return value
+	}
+	if info, ok := modelprovider.BuiltinRegistry().Get(name); ok {
+		return strings.TrimSpace(c.Models.ProviderAPIKeys[string(info.Name)])
+	}
+	return ""
+}
+
+func (c Config) ModelProviderBaseURL(name modelprovider.Name) string {
+	if c.Models.ProviderBaseURLs == nil {
+		return ""
+	}
+	if value := strings.TrimSpace(c.Models.ProviderBaseURLs[string(modelprovider.NormalizeName(string(name)))]); value != "" {
+		return value
+	}
+	if info, ok := modelprovider.BuiltinRegistry().Get(name); ok {
+		return strings.TrimSpace(c.Models.ProviderBaseURLs[string(info.Name)])
+	}
+	return ""
+}
+
+func providerBaseURLFromEnv(name modelprovider.Name) string {
+	if name == modelprovider.VolcEngine {
+		return getenv("ARK_BASE_URL", getenv("LLM_API_BASE_URL", ""))
+	}
+	return strings.TrimSpace(os.Getenv(providerEnvPrefix(name) + "_BASE_URL"))
+}
+
+func providerEnvPrefix(name modelprovider.Name) string {
+	return strings.ToUpper(strings.ReplaceAll(string(name), "-", "_"))
 }
 
 func redact(v string) string {

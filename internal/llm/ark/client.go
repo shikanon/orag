@@ -338,6 +338,8 @@ func mediaType(name string) string {
 		return "image/webp"
 	case strings.HasSuffix(lower, ".pdf"):
 		return "application/pdf"
+	case strings.HasSuffix(lower, ".docx"):
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	case strings.HasSuffix(lower, ".mp3"):
 		return "audio/mpeg"
 	case strings.HasSuffix(lower, ".wav"):

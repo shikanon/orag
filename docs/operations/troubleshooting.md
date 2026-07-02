@@ -41,7 +41,8 @@ curl -fsS http://localhost:8080/readyz
 | `postgres` | `DATABASE_URL` 错误、数据库未启动、账号密码不匹配。 | 检查 `make dev-up`、`docker compose ps` 和数据库连接串。 |
 | `qdrant` | `QDRANT_HOST`、`QDRANT_GRPC_PORT` 或 TLS/API key 配置错误。 | 确认后端使用 gRPC 端口 `6334`，不是 REST 端口 `6333`。 |
 | collection 缺失 | 主 collection 或 semantic cache collection 不存在。 | 开启 `QDRANT_AUTO_CREATE_COLLECTIONS=true` 或手动创建 collection。 |
-| `ark=mock` | 未配置 `ARK_API_KEY`。 | 本地可接受；真实模型验证和生产必须配置 key。 |
+| `model_provider=mock` | 显式启用了 deterministic mock provider。 | 只用于测试或本地无外部模型调试；真实模型验证和生产必须配置所选 provider 的 key。 |
+| provider base URL 缺失 | 选择了 Azure OpenAI 或 Google Cloud，但没有配置 `AZURE_OPENAI_BASE_URL` 或 `GOOGLE_CLOUD_BASE_URL`。 | 补齐对应 base URL；其它 provider 如走代理或私有网关，检查 `<PROVIDER>_BASE_URL`。 |
 
 注意：`/readyz` 不验证数据库迁移是否完整。如果接口报 SQL 表不存在，应执行 `make migrate`。
 
@@ -67,8 +68,8 @@ curl -fsS http://localhost:8080/readyz
 | --- | --- |
 | 查询 500 | 从错误响应或 SSE `error` 事件取 `trace_id`，再检查模型接口、rerank 接口、Qdrant 或 PostgreSQL 访问是否失败。 |
 | 答案无引用 | 文档是否成功入库，Qdrant 主 collection 是否有向量，PostgreSQL FTS 是否有 chunk。 |
-| 结果不稳定 | profile、top_k、rerank provider 和 mock/真实 Ark 配置是否一致。 |
-| 延迟过高 | top-k 候选规模、rerank 超时、Ark timeout 和上下文 token 预算。 |
+| 结果不稳定 | profile、top_k、rerank provider、provider base URL 和 mock/真实 provider 配置是否一致。 |
+| 延迟过高 | top-k 候选规模、rerank 超时、模型 provider timeout 和上下文 token 预算。 |
 
 已知 `trace_id` 时先查询持久化 RAG trace：
 
@@ -84,7 +85,7 @@ oragctl trace --trace-id trace_xxx
 | 2 | 运行 `oragctl trace --trace-id <trace_id>`。 | 查看 `profile`、RAG 总耗时和 `node_spans`。 |
 | 3 | 检查 `node_spans[].error`。 | 判断失败发生在检索、重排、打包、生成还是引用阶段。 |
 | 4 | 对照 `node_spans[].latency_ms` 和 metrics histogram。 | 判断是单次异常还是整体延迟升高。 |
-| 5 | 回到依赖日志或配置。 | 针对 Qdrant、PostgreSQL、Ark、rerank provider 或 token/tenant 问题处理。 |
+| 5 | 回到依赖日志或配置。 | 针对 Qdrant、PostgreSQL、模型 provider、rerank provider 或 token/tenant 问题处理。 |
 
 ## Metrics 没变化
 

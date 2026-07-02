@@ -17,6 +17,7 @@ import (
 	"github.com/shikanon/orag/internal/ingest/parser"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/llm/ark"
+	modelprovider "github.com/shikanon/orag/internal/llm/provider"
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/platform/httpclient"
 	"github.com/shikanon/orag/internal/platform/id"
@@ -44,21 +45,10 @@ type App struct {
 
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, error) {
 	_ = ctx
-	model := ark.NewClient(ark.Config{
-		APIKey:              cfg.Ark.APIKey,
-		BaseURL:             cfg.Ark.BaseURL,
-		ChatModel:           cfg.Ark.ChatModel,
-		EmbeddingModel:      cfg.Ark.EmbeddingModel,
-		EmbeddingDimensions: cfg.Ark.EmbeddingDimensions,
-		RerankProvider:      cfg.Ark.RerankProvider,
-		RerankBaseURL:       cfg.Ark.RerankBaseURL,
-		RerankModel:         cfg.Ark.RerankModel,
-		RerankAPIKey:        cfg.Ark.RerankAPIKey,
-		RerankInstruct:      cfg.Ark.RerankInstruct,
-		MultimodalModel:     cfg.Ark.MultimodalModel,
-		Timeout:             cfg.Ark.Timeout,
-		RetryTimes:          cfg.Ark.RetryTimes,
-	}, httpclient.New(cfg.Ark.Timeout))
+	model, err := buildModelClient(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	defaultTenant := "tenant_default"
 	authSvc := auth.NewService(cfg.Auth.JWTSecret, cfg.Auth.TokenTTL)
@@ -120,6 +110,48 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Qdrant:   backend.qdrant,
 		closers:  backend.closers,
 	}, nil
+}
+
+func buildModelClient(cfg config.Config) (*modelprovider.Client, error) {
+	apiKeys := make(map[modelprovider.Name]string, len(cfg.Models.ProviderAPIKeys))
+	for name, value := range cfg.Models.ProviderAPIKeys {
+		apiKeys[modelprovider.NormalizeName(name)] = value
+	}
+	baseURLs := modelProviderBaseURLs(cfg)
+	return modelprovider.NewClient(modelprovider.Config{
+		ChatProvider:           modelprovider.NormalizeName(cfg.Models.ChatProvider),
+		EmbeddingProvider:      modelprovider.NormalizeName(cfg.Models.EmbeddingProvider),
+		RerankProvider:         modelprovider.NormalizeName(cfg.Models.RerankProvider),
+		MultimodalProvider:     modelprovider.NormalizeName(cfg.Models.MultimodalProvider),
+		APIKeys:                apiKeys,
+		BaseURLs:               baseURLs,
+		ChatModel:              cfg.Ark.ChatModel,
+		EmbeddingModel:         cfg.Ark.EmbeddingModel,
+		EmbeddingDimensions:    cfg.Ark.EmbeddingDimensions,
+		RerankModel:            cfg.Ark.RerankModel,
+		RerankInstruct:         cfg.Ark.RerankInstruct,
+		MultimodalModel:        cfg.Ark.MultimodalModel,
+		AllowDeterministicMock: cfg.Models.AllowDeterministicMock,
+		Timeout:                cfg.Ark.Timeout,
+		RetryTimes:             cfg.Ark.RetryTimes,
+	}, httpclient.New(cfg.Ark.Timeout))
+}
+
+func modelProviderBaseURLs(cfg config.Config) map[modelprovider.Name]string {
+	urls := map[modelprovider.Name]string{}
+	for name, value := range cfg.Models.ProviderBaseURLs {
+		urls[modelprovider.NormalizeName(name)] = value
+	}
+	if urls[modelprovider.VolcEngine] == "" {
+		urls[modelprovider.VolcEngine] = cfg.Ark.BaseURL
+	}
+	registry := modelprovider.BuiltinRegistry()
+	for _, name := range registry.Names() {
+		if urls[name] == "" {
+			urls[name] = modelprovider.DefaultBaseURL(name)
+		}
+	}
+	return urls
 }
 
 func buildDocumentParser(cfg config.Config, model ark.MultimodalParser) parser.Parser {
@@ -296,12 +328,24 @@ func (a *App) Readiness(ctx context.Context) (map[string]ReadinessCheck, bool) {
 			}
 		}
 	}
-	if a.Config.Ark.APIKey == "" {
-		checks["ark"] = ReadinessCheck{Status: "mock"}
-	} else {
-		checks["ark"] = ReadinessCheck{Status: "configured"}
-	}
+	checks["model_provider"] = ReadinessCheck{Status: a.modelProviderStatus()}
 	return checks, ready
+}
+
+func (a *App) modelProviderStatus() string {
+	if a.Config.Models.AllowDeterministicMock {
+		for _, provider := range []string{
+			a.Config.Models.ChatProvider,
+			a.Config.Models.EmbeddingProvider,
+			a.Config.Models.RerankProvider,
+			a.Config.Models.MultimodalProvider,
+		} {
+			if modelprovider.NormalizeName(provider) == modelprovider.Mock {
+				return "mock"
+			}
+		}
+	}
+	return "configured"
 }
 
 func (a *App) Close() error {
