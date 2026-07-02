@@ -19,6 +19,9 @@ import (
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
+	"github.com/shikanon/orag/internal/storage/postgres"
+	qdrantstore "github.com/shikanon/orag/internal/storage/qdrant"
+	"google.golang.org/grpc"
 )
 
 func TestIngestQueryWithPostgresQdrant(t *testing.T) {
@@ -100,6 +103,76 @@ func TestIngestMissingKnowledgeBaseWithPostgresQdrant(t *testing.T) {
 	}
 	if result.Job.ID != "" {
 		t.Fatalf("unexpected job for missing knowledge base: %#v", result.Job)
+	}
+}
+
+func TestFailedQdrantIngestKeepsPostgresChunksUnsearchable(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	kbID := fmt.Sprintf("kb_failed_qdrant_%d", time.Now().UnixNano())
+	now := time.Now().UTC()
+	if err := app.KBStore.PutKnowledgeBase(ctx, kb.KnowledgeBase{
+		ID:          kbID,
+		TenantID:    testTenantID,
+		Name:        "integration failed qdrant",
+		Description: "temporary integration test knowledge base",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = app.KBStore.DeleteKnowledgeBase(context.Background(), testTenantID, kbID) })
+
+	repo := postgres.NewRepository(app.Postgres)
+	repo.StageChunks = true
+	qdrantErr := errors.New("qdrant upsert failed")
+	vectors := qdrantstore.VectorStore{
+		Client:     &qdrantstore.Client{Points: failingPointsClient{err: qdrantErr}},
+		Collection: app.Config.Qdrant.Collection,
+	}
+	app.Ingest.Indexer = kb.CompositeIndexer{Indexers: []kb.Indexer{repo, vectors}}
+
+	marker := fmt.Sprintf("failedqdrantmarker%d", time.Now().UnixNano())
+	result, err := app.Ingest.Ingest(ctx, ingest.Request{
+		TenantID:        testTenantID,
+		KnowledgeBaseID: kbID,
+		SourceURI:       "integration://" + marker,
+		Name:            marker + ".md",
+		Content:         []byte("The marker " + marker + " must remain hidden after a failed qdrant write."),
+	})
+	if !errors.Is(err, qdrantErr) {
+		t.Fatalf("Ingest() error = %v, want %v", err, qdrantErr)
+	}
+	if result.Job.Status != ingest.JobStatusFailed {
+		t.Fatalf("job status = %q", result.Job.Status)
+	}
+	job, ok, err := app.Ingest.Jobs.GetJob(ctx, testTenantID, result.Job.ID)
+	if err != nil || !ok {
+		t.Fatalf("job lookup ok=%v err=%v", ok, err)
+	}
+	if job.Status != ingest.JobStatusFailed {
+		t.Fatalf("stored job status = %q", job.Status)
+	}
+	if count := countPostgresRows(t, ctx, app, "chunks", kbID); count == 0 {
+		t.Fatal("expected staged postgres chunks after qdrant failure")
+	}
+	if count := countSearchablePostgresChunks(t, ctx, app, kbID); count != 0 {
+		t.Fatalf("searchable postgres chunks after qdrant failure = %d", count)
+	}
+
+	results, err := postgres.NewFTSRetriever(repo).Retrieve(ctx, kb.SearchRequest{
+		TenantID:        testTenantID,
+		KnowledgeBaseID: kbID,
+		Query:           marker,
+		TopK:            8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("failed ingest chunks are searchable through postgres FTS: %#v", results)
 	}
 }
 
@@ -210,6 +283,18 @@ func countQdrantPoints(t *testing.T, ctx context.Context, app *core.App, kbID st
 	return int(resp.GetResult().GetCount())
 }
 
+func countSearchablePostgresChunks(t *testing.T, ctx context.Context, app *core.App, kbID string) int {
+	t.Helper()
+	var count int
+	if err := app.Postgres.QueryRow(ctx, `
+		SELECT count(*) FROM chunks
+		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND searchable`,
+		testTenantID, kbID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
 func integrationKnowledgeBaseFilter(kbID string) *qdrant.Filter {
 	return &qdrant.Filter{Must: []*qdrant.Condition{
 		integrationMatchKeyword("tenant_id", testTenantID),
@@ -233,6 +318,26 @@ func retrievedDocument(resp rag.QueryResponse, documentID string) bool {
 		}
 	}
 	return false
+}
+
+type failingPointsClient struct {
+	err error
+}
+
+func (c failingPointsClient) Upsert(context.Context, *qdrant.UpsertPoints, ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
+	return nil, c.err
+}
+
+func (c failingPointsClient) Search(context.Context, *qdrant.SearchPoints, ...grpc.CallOption) (*qdrant.SearchResponse, error) {
+	return nil, c.err
+}
+
+func (c failingPointsClient) Delete(context.Context, *qdrant.DeletePoints, ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
+	return nil, c.err
+}
+
+func (c failingPointsClient) Count(context.Context, *qdrant.CountPoints, ...grpc.CallOption) (*qdrant.CountResponse, error) {
+	return nil, c.err
 }
 
 func loginHTTPToken(t *testing.T, h *route.Engine, username, password string) string {
