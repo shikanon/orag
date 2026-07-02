@@ -21,6 +21,8 @@
 | `evaluation_runs` | 一次评估运行的汇总结果。 |
 | `evaluation_results` | 每个样本的答案和逐样本指标。 |
 
+数据集样本写入、评估运行和 optimizer 都会先按当前 tenant 校验 `dataset_id`。数据集不存在或属于其他 tenant 时返回 `404 dataset_not_found`，不会写入样本或评估结果。
+
 `GET /v1/evaluations/{id}` 当前查询的是运行级汇总，不返回逐样本明细。
 
 ## 指标边界

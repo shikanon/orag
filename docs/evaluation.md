@@ -13,7 +13,7 @@
 
 `datasets` 由租户隔离，主要字段包括 `id`、`tenant_id`、`name`、`kind`、`version` 和 `created_at`。`version` 当前由创建时间生成，适合区分同名数据集的不同批次。
 
-`dataset_items` 按 `dataset_id` 归属到数据集。每条样本包含：
+`dataset_items` 按 `dataset_id` 归属到数据集；写入和读取样本前都会校验数据集属于当前 tenant。每条样本包含：
 
 - `query`：评估时传给 RAG 服务的用户问题。
 - `ground_truth`：规则指标用于匹配的参考答案或关键事实文本。
@@ -32,12 +32,14 @@
 
 `POST /v1/evaluations` 会按以下路径执行：
 
-1. 根据 `dataset_id` 读取数据集样本。
+1. 根据当前 tenant 和 `dataset_id` 校验数据集归属并读取样本。
 2. 对每个样本调用同一套 `rag.Service.Query`，传入 `tenant_id`、`knowledge_base_id`、`query`、`profile` 和可选 `top_k`。
 3. 基于 RAG 响应中的答案、引用、检索 chunk、延迟和 cache 状态计算逐样本规则指标。
 4. 聚合生成一次 `evaluation_run`，并在配置了 Repository 时写入运行汇总和逐样本结果。
 
 因此评估结果反映的是当前线上查询链路在指定知识库、profile 和 `top_k` 下的行为，而不是离线 mock 检索器或独立评测流水线。
+
+如果 `dataset_id` 不存在或不属于当前 tenant，添加样本、运行评估和运行 optimizer 都会返回 `404 dataset_not_found`。这些失败路径不会写入 `dataset_items`、`evaluation_runs` 或 `evaluation_results`。
 
 ## 当前指标
 

@@ -335,6 +335,7 @@ paths:
     post:
       tags: [Evaluation]
       operationId: addDatasetItem
+      description: Returns `404 dataset_not_found` when the dataset does not exist or belongs to another tenant.
       security:
         - bearerAuth: []
       parameters:
@@ -362,6 +363,7 @@ paths:
     post:
       tags: [Evaluation]
       operationId: runEvaluation
+      description: Returns `404 dataset_not_found` when `dataset_id` does not exist or belongs to another tenant.
       security:
         - bearerAuth: []
       requestBody:
@@ -408,6 +410,7 @@ paths:
     post:
       tags: [Evaluation]
       operationId: optimize
+      description: Returns `404 dataset_not_found` when `dataset_id` does not exist or belongs to another tenant.
       security:
         - bearerAuth: []
       requestBody:
