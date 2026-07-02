@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -262,6 +263,57 @@ func TestHighPrecisionRewriteNodeRuns(t *testing.T) {
 	}
 }
 
+func TestHighPrecisionMultiQueryAndHyDERunAdditionalRetrievals(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+	model := &scriptedGraphModel{}
+	retriever := &recordingGraphRetriever{}
+	svc.Cache = nil
+	svc.Model = model
+	svc.Retriever = retriever
+	svc.QueryRewriteEnabled = false
+	svc.MultiQueryCount = 3
+	svc.HyDEEnabled = true
+	nodes := NodeSet{Service: svc}
+
+	st, err := nodes.Init(ctx, State{Request: rag.QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+		Profile:         rag.ProfileHighPrecision,
+	}})
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	st, err = nodes.MultiQuery(ctx, st)
+	if err != nil {
+		t.Fatalf("MultiQuery() error = %v", err)
+	}
+	if len(st.RetrievalQueries) != 4 {
+		t.Fatalf("retrieval queries = %d, want 4: %#v", len(st.RetrievalQueries), st.RetrievalQueries)
+	}
+	if !model.sawSystemPrompt("多查询") {
+		t.Fatalf("multi-query generation chat was not called: %#v", model.systemPrompts)
+	}
+	if !model.sawSystemPrompt("HyDE") {
+		t.Fatalf("HyDE generation chat was not called: %#v", model.systemPrompts)
+	}
+	if len(st.Warnings) != 0 {
+		t.Fatalf("MultiQuery() warnings = %#v, want none", st.Warnings)
+	}
+
+	st, err = nodes.HybridRetrieve(ctx, st)
+	if err != nil {
+		t.Fatalf("HybridRetrieve() error = %v", err)
+	}
+	if len(retriever.requests) != 4 {
+		t.Fatalf("retrieval calls = %d, want 4: %#v", len(retriever.requests), retriever.requests)
+	}
+	if len(st.Results) == 0 {
+		t.Fatalf("expected fused retrieval results")
+	}
+}
+
 type capturingTraceStore struct {
 	traceID string
 	spans   []NodeSpan
@@ -281,6 +333,77 @@ type failingRetriever struct {
 
 func (r failingRetriever) Retrieve(context.Context, kb.SearchRequest) ([]kb.SearchResult, error) {
 	return nil, r.err
+}
+
+type recordingGraphRetriever struct {
+	requests []kb.SearchRequest
+}
+
+func (r *recordingGraphRetriever) Retrieve(_ context.Context, req kb.SearchRequest) ([]kb.SearchResult, error) {
+	r.requests = append(r.requests, req)
+	id := fmt.Sprintf("chk_graph_%d", len(r.requests))
+	return []kb.SearchResult{{
+		Chunk: kb.Chunk{
+			ID:         id,
+			DocumentID: "doc_graph",
+			Content:    req.Query + " context",
+			SourceURI:  "memory://graph",
+		},
+		Score: 1,
+		Rank:  1,
+		From:  "stub",
+	}}, nil
+}
+
+type scriptedGraphModel struct {
+	systemPrompts []string
+}
+
+func (m *scriptedGraphModel) Chat(_ context.Context, messages []ark.ChatMessage) (string, error) {
+	system := ""
+	for _, message := range messages {
+		if message.Role == "system" {
+			system = message.Content
+			break
+		}
+	}
+	m.systemPrompts = append(m.systemPrompts, system)
+	switch {
+	case strings.Contains(system, "多查询"):
+		return `["qdrant hybrid retrieval", "dense sparse fusion"]`, nil
+	case strings.Contains(system, "HyDE"):
+		return "qdrant vector search stores documents for hybrid retrieval", nil
+	default:
+		return "answer [chk_graph_1]", nil
+	}
+}
+
+func (m *scriptedGraphModel) Embed(_ context.Context, texts []string) ([][]float64, error) {
+	out := make([][]float64, len(texts))
+	for i, text := range texts {
+		out[i] = []float64{float64(len(text)%7) + 1, float64(len(text)%5) + 1}
+	}
+	return out, nil
+}
+
+func (m *scriptedGraphModel) Rerank(_ context.Context, _ string, docs []ark.RerankDocument, topN int) ([]ark.RerankResult, error) {
+	if topN <= 0 || topN > len(docs) {
+		topN = len(docs)
+	}
+	out := make([]ark.RerankResult, 0, topN)
+	for i := 0; i < topN; i++ {
+		out = append(out, ark.RerankResult{Index: i, Score: 1 / float64(i+1)})
+	}
+	return out, nil
+}
+
+func (m *scriptedGraphModel) sawSystemPrompt(value string) bool {
+	for _, prompt := range m.systemPrompts {
+		if strings.Contains(prompt, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func newTestService(t *testing.T) *rag.Service {
