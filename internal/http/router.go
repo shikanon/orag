@@ -292,6 +292,9 @@ func (s *Server) query(ctx context.Context, c *app.RequestContext) {
 	if !bindJSON(c, &req) {
 		return
 	}
+	if !validateQueryRequest(c, req) {
+		return
+	}
 	start := time.Now()
 	traceID := requestTraceID(c)
 	ctx = observability.WithTraceID(ctx, traceID)
@@ -310,6 +313,9 @@ func (s *Server) query(ctx context.Context, c *app.RequestContext) {
 func (s *Server) queryStream(ctx context.Context, c *app.RequestContext) {
 	var req rag.QueryRequest
 	if !bindJSON(c, &req) {
+		return
+	}
+	if !validateQueryRequest(c, req) {
 		return
 	}
 	start := time.Now()
@@ -332,6 +338,18 @@ func (s *Server) queryStream(ctx context.Context, c *app.RequestContext) {
 	c.Response.SetStatusCode(consts.StatusOK)
 	c.Response.Header.SetContentType("text/event-stream; charset=utf-8")
 	c.Response.SetBodyString(querySSE(resp))
+}
+
+func validateQueryRequest(c *app.RequestContext, req rag.QueryRequest) bool {
+	if strings.TrimSpace(req.KnowledgeBaseID) == "" {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "knowledge_base_id is required")
+		return false
+	}
+	if strings.TrimSpace(req.Query) == "" {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "query is required")
+		return false
+	}
+	return true
 }
 
 func (s *Server) observeRAGSuccess(profile rag.Profile, cacheStatus string, latencyMS int64) {
