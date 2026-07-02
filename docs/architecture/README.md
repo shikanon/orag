@@ -22,7 +22,7 @@
 | Graph 编排 | `../../internal/graph` | Eino Graph 节点和 RAG 链路。 |
 | 知识库能力 | `../../internal/kb` | 检索器、RRF、store 抽象和能力组合。 |
 | 入库 | `../../internal/ingest` | loader、parser、chunker、jobs 和入库服务。 |
-| 模型适配 | `../../internal/llm/ark` | Ark/豆包 chat、embedding、rerank、多模态适配。 |
+| 模型适配 | `../../internal/llm/provider`、`../../internal/llm/ark` | Provider registry 和 adapter 选择；Ark/豆包仍作为默认推荐实现。 |
 | 存储 | `../../internal/storage` | PostgreSQL、Qdrant 真实后端实现。 |
 | 评估 | `../../internal/eval` | 数据集、评估运行、metrics、optimizer。 |
 | 观测 | `../../internal/observability` | metrics 和 tracing 入口。 |
@@ -34,7 +34,7 @@ orag-api
   |
   +-- PostgreSQL: metadata, FTS, dataset, evaluation, trace
   +-- Qdrant: vector collection, semantic cache collection
-  +-- Ark/Doubao: chat, embedding, rerank, multimodal parser
+  +-- Model providers: 默认 VolcEngine/Doubao，可按能力选择 chat、embedding、rerank、multimodal provider
 ```
 
 默认真实后端是 `STORAGE_BACKEND=qdrant_postgres`。`STORAGE_BACKEND=memory` 只用于单测、本地无依赖调试或排查 HTTP 层问题。
@@ -42,7 +42,7 @@ orag-api
 ## 当前边界
 
 - 系统默认不依赖 ES/Neo4j。
-- `/readyz` 不主动调用 Ark 外部接口，只根据 key 配置状态报告 `mock` 或 `configured`。
+- `/readyz` 不主动调用外部模型接口，只根据 provider 配置状态报告 `model_provider=mock` 或 `model_provider=configured`。
 - 当前 metrics 是进程内 Prometheus 文本指标，已包含 HTTP/RAG counter、受控低基数 label、cache hit/miss 和 RAG latency histogram；仍不提供指标持久化、分位数预聚合或外部 exporter。
 - metrics label 不包含 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本；单次请求排查应使用结构化日志和 `oragctl trace --trace-id <trace_id>`。
 - 当前持久化的是应用内 RAG trace，不是 OpenTelemetry span 或 LangFuse trace；`OTEL_EXPORTER_OTLP_ENDPOINT` 与 `LANGFUSE_*` 仅保留配置边界。

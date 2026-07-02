@@ -8,8 +8,10 @@
 | --- | --- | --- |
 | PostgreSQL | `DATABASE_URL` | 元数据、FTS、数据集、评估结果和 trace。 |
 | Qdrant | `QDRANT_HOST`、`QDRANT_GRPC_PORT` | 主向量 collection 和语义缓存 collection。 |
-| Ark/豆包 | `ARK_API_KEY`、`ARK_BASE_URL`、模型变量 | Chat、Embedding、Rerank、多模态解析；无 key 时使用 deterministic mock。 |
-| Rerank | `RERANK_PROVIDER` | 可选 `volcengine` 或 `aliyun`。 |
+| 模型 Provider | `LLM_CHAT_PROVIDER`、`LLM_EMBEDDING_PROVIDER`、`LLM_RERANK_PROVIDER`、`LLM_MULTIMODAL_PROVIDER` | 默认均为 `volcengine`，启动默认要求所选 provider 的 API Key。 |
+| Ark/豆包 | `ARK_API_KEY` / `VOLCENGINE_API_KEY`、`ARK_BASE_URL`、模型变量 | 默认推荐 Doubao，提供 Chat、Embedding、Rerank、多模态解析。 |
+| Provider Endpoint | `AZURE_OPENAI_BASE_URL`、`GOOGLE_CLOUD_BASE_URL`、可选 `<PROVIDER>_BASE_URL` | Azure OpenAI 和 Google Cloud 必填，其它 provider 可用来覆盖默认 endpoint。 |
+| Rerank | `LLM_RERANK_PROVIDER` / `RERANK_PROVIDER` | 默认 `volcengine`，兼容旧的 `aliyun`/通义百炼路径。 |
 | Observability | `OTEL_EXPORTER_OTLP_ENDPOINT`、`LANGFUSE_*` | 当前为空时不启用外部 exporter 或 LangFuse。 |
 
 ## 健康检查
@@ -20,7 +22,7 @@
 | `GET /readyz` | 配置和依赖就绪检查。 | 失败表示依赖或 collection 未就绪。 |
 | `GET /metrics` | Prometheus 文本指标。 | 失败表示 metrics endpoint 不可用。 |
 
-`/readyz` 当前不会主动调用 Ark 外部服务。`ark=configured` 只表示已配置 `ARK_API_KEY`，不代表 key、模型名、额度或网络出口一定可用。
+`/readyz` 当前不会主动调用外部模型服务。`model_provider=configured` 只表示已配置所选 provider 的必需 key，不代表 key、模型名、额度或网络出口一定可用；`model_provider=mock` 只会在显式 deterministic mock 测试模式下出现。
 
 ## Metrics
 
@@ -90,7 +92,7 @@ oragctl trace --trace-id trace_xxx
 
 部署前确认：
 
-- 已替换 `JWT_SECRET`、`ADMIN_DEFAULT_PASSWORD`、数据库密码、模型 key 和对象存储密钥。
+- 已替换 `JWT_SECRET`、`ADMIN_DEFAULT_PASSWORD`、数据库密码、所选模型 provider key、所选 provider 的 base URL 和对象存储密钥。
 - 容器内 `DATABASE_URL` 使用 Compose/Kubernetes 服务名，例如 `postgres`。
 - 容器内 `QDRANT_HOST` 使用服务名，例如 `qdrant`。
 - 已执行数据库迁移。

@@ -16,7 +16,7 @@
 cp .env.example .env
 ```
 
-`.env.example` 记录了本地默认配置，例如 `PORT=8080`、`DATABASE_URL=postgres://orag:orag@localhost:5432/orag?sslmode=disable`、`QDRANT_HOST=localhost`、`QDRANT_GRPC_PORT=6334` 和 Ark 模型变量。当前 Go 进程通过环境变量和代码默认值读取配置，直接执行 `make run` 或 `go run` 时如需覆盖默认值，请在命令前传入或先 `export`；`deployments/docker-compose.yml` 中的 `orag-api` 容器会读取 `../.env`。
+`.env.example` 记录了本地默认配置，例如 `PORT=8080`、`DATABASE_URL=postgres://orag:orag@localhost:5432/orag?sslmode=disable`、`QDRANT_HOST=localhost`、`QDRANT_GRPC_PORT=6334` 和模型 provider 变量。当前 Go 进程通过环境变量和代码默认值读取配置，直接执行 `make run` 或 `go run` 时如需覆盖默认值，请在命令前传入或先 `export`；`deployments/docker-compose.yml` 中的 `orag-api` 容器会读取 `../.env`。
 
 示例：
 
@@ -25,7 +25,18 @@ PORT=18080 DEBUG=true make run
 DATABASE_URL="postgres://orag:orag@localhost:5432/orag?sslmode=disable" make migrate
 ```
 
-未配置 `ARK_API_KEY` 时，Ark/豆包适配层使用 deterministic mock，适合本地开发、单元测试和 CI。需要真实模型调用时再显式配置 `ARK_API_KEY`、模型变量和对应测试开关。
+默认运行要求真实模型 provider API Key。默认推荐火山引擎/方舟/Doubao，启动前至少配置 `ARK_API_KEY` 或 `VOLCENGINE_API_KEY`。只有在显式测试模式下才允许 deterministic mock，例如：
+
+```bash
+ALLOW_DETERMINISTIC_MOCK=true \
+LLM_CHAT_PROVIDER=mock \
+LLM_EMBEDDING_PROVIDER=mock \
+LLM_RERANK_PROVIDER=mock \
+LLM_MULTIMODAL_PROVIDER=mock \
+STORAGE_BACKEND=memory make run
+```
+
+切换到其它 provider 时，先设置对应 `LLM_*_PROVIDER` 和 API key。大多数 provider 内置默认 endpoint；Azure OpenAI 还必须设置 `AZURE_OPENAI_BASE_URL`，Google Cloud 还必须设置 `GOOGLE_CLOUD_BASE_URL`。如需代理或私有网关，其它 provider 可用 `<PROVIDER>_BASE_URL` 覆盖默认 endpoint。
 
 ## 启动本地依赖
 
@@ -111,7 +122,7 @@ scripts/wait-ready.sh http://localhost:8080/readyz
 ```bash
 DEBUG=true make run
 PORT=18080 DEBUG=true make run
-STORAGE_BACKEND=memory DEBUG=true make run
+ALLOW_DETERMINISTIC_MOCK=true LLM_CHAT_PROVIDER=mock LLM_EMBEDDING_PROVIDER=mock LLM_RERANK_PROVIDER=mock LLM_MULTIMODAL_PROVIDER=mock STORAGE_BACKEND=memory DEBUG=true make run
 ```
 
 说明：

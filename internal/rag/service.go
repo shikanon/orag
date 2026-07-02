@@ -17,9 +17,15 @@ type Pipeline interface {
 	Invoke(ctx context.Context, req QueryRequest) (QueryResponse, error)
 }
 
+type Model interface {
+	ark.ChatGenerator
+	ark.Embedder
+	ark.Reranker
+}
+
 type Service struct {
 	Retriever              kb.Retriever
-	Model                  *ark.Client
+	Model                  Model
 	Cache                  SemanticCacheStore
 	Packer                 ContextPacker
 	PromptStrategy         prompt.CacheStrategy

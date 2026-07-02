@@ -6,8 +6,10 @@
 
 - PostgreSQL：默认连接串来自 `DATABASE_URL`，示例为 `postgres://orag:orag@localhost:5432/orag?sslmode=disable`。部署后需要执行数据库迁移。
 - Qdrant：向量检索使用 gRPC 端口 `6334`，Docker Compose 同时暴露 REST 端口 `6333` 供 Qdrant 自身 healthcheck 使用。默认主 collection 为 `orag_chunks`，语义缓存 collection 为 `orag_semantic_cache`。
-- Ark/豆包模型接口：由 `ARK_API_KEY`、`ARK_BASE_URL`、`ARK_CHAT_MODEL`、`ARK_EMBEDDING_MODEL`、`ARK_MULTIMODAL_MODEL`、`ARK_TIMEOUT` 和 `ARK_RETRY_TIMES` 配置。默认 embedding 模型为火山 `doubao-embedding-vision-251215`，调用 `/embeddings/multimodal`。
-- Rerank 接口：由 `RERANK_PROVIDER` 选择 `volcengine` 或 `aliyun`。火山/方舟使用 `ARK_RERANK_BASE_URL`、`ARK_RERANK_MODEL`；阿里云百炼使用 `ALIYUN_RERANK_API_KEY`、`ALIYUN_RERANK_BASE_URL`、`ALIYUN_RERANK_MODEL`。未配置模型 key 时会使用 deterministic mock，只适合本地调试和无外部依赖测试。
+- 模型 provider：由 `LLM_CHAT_PROVIDER`、`LLM_EMBEDDING_PROVIDER`、`LLM_RERANK_PROVIDER`、`LLM_MULTIMODAL_PROVIDER` 选择不同厂商；默认均为 `volcengine`。
+- Ark/豆包模型接口：由 `ARK_API_KEY` 或 `VOLCENGINE_API_KEY`、`ARK_BASE_URL`、`ARK_CHAT_MODEL`、`ARK_EMBEDDING_MODEL`、`ARK_MULTIMODAL_MODEL`、`ARK_TIMEOUT` 和 `ARK_RETRY_TIMES` 配置。默认推荐火山 Doubao，默认 embedding 模型为 `doubao-embedding-vision-251215`，调用 `/embeddings/multimodal`。
+- Provider Endpoint：大多数 provider 内置默认 endpoint；Azure OpenAI 和 Google Cloud 需分别配置 `AZURE_OPENAI_BASE_URL`、`GOOGLE_CLOUD_BASE_URL`。其它 provider 如走代理、私有网关或不同区域，可用 `<PROVIDER>_BASE_URL` 覆盖默认值。
+- Rerank 接口：由 `LLM_RERANK_PROVIDER` 或兼容变量 `RERANK_PROVIDER` 选择 provider。火山/方舟使用 `ARK_RERANK_BASE_URL`、`ARK_RERANK_MODEL`；阿里云百炼/通义可使用 `ALIYUN_RERANK_API_KEY`、`ALIYUN_RERANK_BASE_URL`、`ALIYUN_RERANK_MODEL`。未配置所选 provider 的 key 时默认启动失败；deterministic mock 只允许显式测试模式启用。
 - 文档解析：默认 `INGEST_PARSER_METHOD=basic` 不依赖额外解析服务；PDF、图片和 DOCX 内嵌图片会通过 Ark 多模态模型生成描述。`mineru` 需要 `MINERU_APISERVER`，可选 `MINERU_SERVER_URL` 用于 VLM HTTP backend；`docling` 需要 `DOCLING_SERVER_URL`。
 - 对象存储和观测平台：默认 `OBJECT_STORAGE_PROVIDER=local`、`OBJECT_STORAGE_MOCK_UPLOAD=true`，`OTEL_EXPORTER_OTLP_ENDPOINT`、`LANGFUSE_*` 为空时不启用外部 exporter 或 LangFuse。
 
@@ -19,7 +21,7 @@
 
 生产环境建议：
 
-- 替换所有示例弱口令和默认密钥，至少包括 `JWT_SECRET`、`ADMIN_DEFAULT_PASSWORD`、`DATABASE_URL` 中的数据库密码、`ARK_API_KEY`、`ALIYUN_RERANK_API_KEY`、`QDRANT_API_KEY`、对象存储密钥和 `LANGFUSE_SECRET_KEY`。
+- 替换所有示例弱口令和默认密钥，至少包括 `JWT_SECRET`、`ADMIN_DEFAULT_PASSWORD`、`DATABASE_URL` 中的数据库密码、`ARK_API_KEY` / `VOLCENGINE_API_KEY`、其它模型 provider key、所选 provider 的 base URL、`ALIYUN_RERANK_API_KEY`、`QDRANT_API_KEY`、对象存储密钥和 `LANGFUSE_SECRET_KEY`。
 - 通过部署平台的 Secret、KMS 或环境变量注入敏感值，不把真实 `.env` 打进镜像，也不在 CI 日志中打印完整配置。
 - 除非已有数据合规和脱敏策略，否则保持 `OBSERVABILITY_RECORD_PROMPTS=false`，避免将用户问题、上下文片段或 prompt 明文写入外部观测系统。
 - 生产服务建议显式设置 `DEBUG=false`，并根据入口域名设置 `PUBLIC_BASE_URL`。
@@ -35,14 +37,14 @@
 
 - `STORAGE_BACKEND=memory`：只返回本地 `storage=ready`。
 - `STORAGE_BACKEND=qdrant_postgres`：检查 `postgres` 是否可 ping 通，检查 Qdrant 主 collection `QDRANT_COLLECTION` 和语义缓存 collection `QDRANT_SEMANTIC_CACHE_COLLECTION` 是否存在。
-- `ark`：只根据 `ARK_API_KEY` 是否配置报告状态，不主动调用 Ark 外部接口，避免第三方波动影响本地服务就绪。
+- `model_provider`：只根据配置校验结果报告 `configured` 或显式测试模式下的 `mock`，不主动调用外部模型接口，避免第三方波动影响本地服务就绪。
 
-Ark 状态只可能报告为：
+模型 provider 状态只可能报告为：
 
-- `mock`：未配置 `ARK_API_KEY`，当前使用 deterministic mock。
-- `configured`：已配置 `ARK_API_KEY`。
+- `mock`：显式设置 `ALLOW_DETERMINISTIC_MOCK=true` 且选择 `mock` provider。
+- `configured`：已配置所选 provider 的必需 key。
 
-如果 PostgreSQL 不可达、Qdrant 不可达或必需 collection 缺失，`/readyz` 会返回未就绪；但它不会验证数据库迁移是否完整，也不会验证 Ark key、模型名或额度是否真实可用。
+如果 PostgreSQL 不可达、Qdrant 不可达或必需 collection 缺失，`/readyz` 会返回未就绪；但它不会验证数据库迁移是否完整，也不会验证模型 key、模型名、额度或网络出口是否真实可用。
 
 ## Metrics
 
@@ -150,12 +152,12 @@ QDRANT_GRPC_PORT=6334
 - `postgres` 报错：检查 `DATABASE_URL`、数据库账号密码、网络连通性和 PostgreSQL 服务状态。注意 `/readyz` 只做 ping，不验证迁移完整性；接口出现 SQL 表不存在时再执行 `make migrate` 或对应迁移命令。
 - `qdrant` 报错：检查 `QDRANT_HOST`、`QDRANT_GRPC_PORT`、`QDRANT_API_KEY`、`QDRANT_USE_TLS` 和 Qdrant 服务状态。默认 gRPC 端口是 `6334`，不要误填 REST 端口 `6333`。
 - `required collection is missing`：检查 `QDRANT_COLLECTION`、`QDRANT_SEMANTIC_CACHE_COLLECTION` 名称是否与环境变量一致；需要自动创建时确认 `QDRANT_AUTO_CREATE_COLLECTIONS=true`，否则手动创建两个 collection，并保持向量维度与 `ARK_EMBEDDING_DIMENSIONS` 一致。
-- `ark=mock`：说明未配置 `ARK_API_KEY`，服务会走 deterministic mock。生产或真实模型验证必须配置 Ark key 和模型名。`/readyz` 不主动调用 Ark 外部接口，因此 `ark=configured` 只代表 key 已注入，不代表 key、额度或模型名一定可用。
+- `model_provider=mock`：说明当前显式启用了 deterministic mock。生产或真实模型验证必须改为真实 provider 并配置对应 key。`/readyz` 不主动调用外部模型接口，因此 `model_provider=configured` 只代表必需 key 已注入，不代表 key、额度或模型名一定可用。
 
 ### API 可以启动但查询失败
 
 - 401/403：检查登录 token、`JWT_SECRET` 是否发生轮换、`AUTH_TOKEN_TTL` 是否过期，以及默认管理员密码是否已按部署环境更新。
-- 入库或查询返回外部模型错误：检查 `ARK_BASE_URL`、`ARK_RERANK_BASE_URL`、`ALIYUN_RERANK_BASE_URL`、模型名、超时和重试配置；用真实外部模型前应确保网络出口、账号额度和模型权限可用。
+- 入库或查询返回外部模型错误：检查 `LLM_*_PROVIDER`、对应 provider API key、`ARK_BASE_URL`、`AZURE_OPENAI_BASE_URL`、`GOOGLE_CLOUD_BASE_URL`、其它 `<PROVIDER>_BASE_URL`、`ARK_RERANK_BASE_URL`、`ALIYUN_RERANK_BASE_URL`、模型名、超时和重试配置；用真实外部模型前应确保网络出口、账号额度和模型权限可用。
 - 查询结果总是无上下文：检查文档是否成功入库、PostgreSQL 元数据是否存在、Qdrant 主 collection 是否有向量，以及 `RAG_CONTEXT_TOP_N`、`RAG_MAX_CONTEXT_TOKENS` 是否被设置得过低。
 - 语义缓存命中异常：查看 `orag_rag_cache_hits_total`、`orag_rag_cache_misses_total` 和 `RAG_SEMANTIC_CACHE_THRESHOLD`；collection 缺失会在 `/readyz` 暴露。
 - 已知错误响应或 SSE `error` 事件中的 `trace_id`：先在 HTTP 日志中搜索该值，再运行 `oragctl trace --trace-id <trace_id>` 查看 `node_spans[].error` 和节点耗时。

@@ -453,6 +453,11 @@ func newTestHertzWithLoggerAndApp(t *testing.T, logg *slog.Logger) (*route.Engin
 	t.Setenv("ADMIN_DEFAULT_USERNAME", "admin")
 	t.Setenv("ADMIN_DEFAULT_PASSWORD", "secret")
 	t.Setenv("PORT", "0")
+	t.Setenv("ALLOW_DETERMINISTIC_MOCK", "true")
+	t.Setenv("LLM_CHAT_PROVIDER", "mock")
+	t.Setenv("LLM_EMBEDDING_PROVIDER", "mock")
+	t.Setenv("LLM_RERANK_PROVIDER", "mock")
+	t.Setenv("LLM_MULTIMODAL_PROVIDER", "mock")
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatal(err)

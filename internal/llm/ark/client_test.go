@@ -2,7 +2,11 @@ package ark
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -192,5 +196,40 @@ func TestClientUsesFakeArkServer(t *testing.T) {
 	}
 	if streamed != "fake ark stream" {
 		t.Fatalf("streamed = %q", streamed)
+	}
+}
+
+func TestMultimodalParseUsesDocxMediaType(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		messages := body["messages"].([]any)
+		content := messages[0].(map[string]any)["content"].([]any)
+		fileURL := content[1].(map[string]any)["file_url"].(map[string]any)["url"].(string)
+		if !strings.HasPrefix(fileURL, "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,") {
+			t.Fatalf("unexpected file url prefix: %s", fileURL)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"role": "assistant", "content": "parsed"}}},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{
+		APIKey:          "test-key",
+		BaseURL:         server.URL,
+		MultimodalModel: "vision",
+	}, server.Client())
+	parsed, err := client.MultimodalParse(context.Background(), "document.docx", []byte("docx bytes"))
+	if err != nil {
+		t.Fatalf("MultimodalParse() error = %v", err)
+	}
+	if parsed != "parsed" {
+		t.Fatalf("parsed = %q", parsed)
 	}
 }
