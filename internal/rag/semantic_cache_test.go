@@ -3,6 +3,7 @@ package rag
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestInMemorySemanticCacheIsolatesProfileAndTopK(t *testing.T) {

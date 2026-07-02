@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -9,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shikanon/orag/internal/dataset"
-	"github.com/shikanon/orag/internal/platform/apperrors"
 )
 
 func TestRepositoryAddDatasetItemEnforcesTenant(t *testing.T) {
@@ -23,7 +23,7 @@ func TestRepositoryAddDatasetItemEnforcesTenant(t *testing.T) {
 		Query:       "q",
 		GroundTruth: "a",
 	})
-	if !apperrors.IsCode(err, apperrors.CodeNotFound) {
+	if !errors.Is(err, dataset.ErrDatasetNotFound) {
 		t.Fatalf("AddDatasetItem() err = %v, want not_found", err)
 	}
 	if !strings.Contains(db.execSQL, "FROM datasets d") || !strings.Contains(db.execSQL, "d.tenant_id=$2 AND d.id=$3") {
@@ -54,7 +54,7 @@ func TestRepositoryDatasetItemsEnforcesTenant(t *testing.T) {
 	repo := &Repository{datasetRunner: db}
 
 	_, err := repo.DatasetItems(ctx, "tenant_b", "ds_a")
-	if !apperrors.IsCode(err, apperrors.CodeNotFound) {
+	if !errors.Is(err, dataset.ErrDatasetNotFound) {
 		t.Fatalf("DatasetItems() err = %v, want not_found", err)
 	}
 	if db.queryCalled {

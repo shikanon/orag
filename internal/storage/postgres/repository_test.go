@@ -213,7 +213,7 @@ func TestFTSRetrieverFiltersSearchableChunks(t *testing.T) {
 
 func TestRepositoryAddDatasetItemRequiresTenantDataset(t *testing.T) {
 	queryer := &fakeKnowledgeBaseQueryer{execTag: pgconn.NewCommandTag("INSERT 0 0")}
-	repo := &Repository{kbQueryer: queryer}
+	repo := &Repository{kbQueryer: queryer, datasetRunner: queryer}
 
 	_, err := repo.AddDatasetItem(context.Background(), "tenant_other", dataset.Item{
 		ID:          "dsi_1",
@@ -238,7 +238,7 @@ func TestRepositoryDatasetItemsFiltersTenant(t *testing.T) {
 		row:       fakeTraceRow{values: datasetRow("ds_1", createdAt)},
 		queryRows: &fakeTraceRows{},
 	}
-	repo := &Repository{kbQueryer: queryer}
+	repo := &Repository{kbQueryer: queryer, datasetRunner: queryer}
 
 	_, err := repo.DatasetItems(context.Background(), "tenant_1", "ds_1")
 	if err != nil {

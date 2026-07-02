@@ -42,7 +42,7 @@ func TestMemoryStoreDeleteKnowledgeBaseIsTenantScopedAndCleansChunks(t *testing.
 	if deleted {
 		t.Fatal("DeleteKnowledgeBase() deleted a knowledge base for the wrong tenant")
 	}
-	if _, ok := store.GetKnowledgeBase("tenant_owner", "kb_delete"); !ok {
+	if _, ok, err := store.GetKnowledgeBase("tenant_owner", "kb_delete"); err != nil || !ok {
 		t.Fatal("knowledge base was removed by wrong-tenant delete")
 	}
 	if got := store.Chunks("tenant_owner", "kb_delete"); len(got) != 1 {
@@ -56,7 +56,7 @@ func TestMemoryStoreDeleteKnowledgeBaseIsTenantScopedAndCleansChunks(t *testing.
 	if !deleted {
 		t.Fatal("DeleteKnowledgeBase() deleted = false, want true")
 	}
-	if _, ok := store.GetKnowledgeBase("tenant_owner", "kb_delete"); ok {
+	if _, ok, err := store.GetKnowledgeBase("tenant_owner", "kb_delete"); err != nil || ok {
 		t.Fatal("deleted knowledge base is still visible")
 	}
 	if got := store.Chunks("tenant_owner", "kb_delete"); len(got) != 0 {
