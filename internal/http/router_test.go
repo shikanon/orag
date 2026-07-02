@@ -837,6 +837,10 @@ func (r fakeKnowledgeBaseRepository) GetKnowledgeBase(string, string) (kb.Knowle
 	return r.getItem, r.getFound, r.getErr
 }
 
+func (r fakeKnowledgeBaseRepository) DeleteKnowledgeBase(context.Context, string, string) (bool, error) {
+	return r.getFound, r.getErr
+}
+
 type countingJobStore struct {
 	delegate    ingest.JobStore
 	createCalls int

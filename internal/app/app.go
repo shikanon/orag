@@ -220,7 +220,7 @@ func (s knowledgeBaseStore) DeleteKnowledgeBase(ctx context.Context, tenantID, i
 	}
 	if s.vectorDeleter != nil {
 		if err := s.vectorDeleter.DeleteKnowledgeBaseVectors(ctx, tenantID, id); err != nil {
-			return true, err
+			return false, err
 		}
 	}
 	return s.primary.DeleteKnowledgeBase(ctx, tenantID, id)
