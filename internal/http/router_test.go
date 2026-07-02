@@ -217,12 +217,34 @@ func queryValidationCases(tracePrefix string) []queryValidationCase {
 			body:    `{"knowledge_base_id":"","query":""}`,
 			traceID: tracePrefix + "_both_blank",
 		},
+		{
+			name:    "invalid profile",
+			body:    `{"knowledge_base_id":"kb_default","query":"hello","profile":"batch"}`,
+			traceID: tracePrefix + "_invalid_profile",
+		},
+		{
+			name:    "zero top_k",
+			body:    `{"knowledge_base_id":"kb_default","query":"hello","top_k":0}`,
+			traceID: tracePrefix + "_zero_top_k",
+		},
+		{
+			name:    "negative top_k",
+			body:    `{"knowledge_base_id":"kb_default","query":"hello","top_k":-1}`,
+			traceID: tracePrefix + "_negative_top_k",
+		},
+		{
+			name:    "too large top_k",
+			body:    `{"knowledge_base_id":"kb_default","query":"hello","top_k":101}`,
+			traceID: tracePrefix + "_too_large_top_k",
+		},
 	}
 }
 
-func TestQueryRejectsMissingRequiredFields(t *testing.T) {
-	h, closeApp := newTestHertz(t)
+func TestQueryRejectsInvalidRequests(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
 	defer closeApp()
+	pipeline := &countingPipeline{}
+	app.RAG.Pipeline = pipeline
 
 	token := loginToken(t, h)
 
@@ -251,11 +273,17 @@ func TestQueryRejectsMissingRequiredFields(t *testing.T) {
 			}
 		})
 	}
+
+	if pipeline.calls != 0 {
+		t.Fatalf("query pipeline called %d times for invalid requests", pipeline.calls)
+	}
 }
 
-func TestQueryStreamRejectsMissingRequiredFields(t *testing.T) {
-	h, closeApp := newTestHertz(t)
+func TestQueryStreamRejectsInvalidRequests(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
 	defer closeApp()
+	pipeline := &countingPipeline{}
+	app.RAG.Pipeline = pipeline
 
 	token := loginToken(t, h)
 	for _, tt := range queryValidationCases("trace_query_stream_validation") {
@@ -277,6 +305,10 @@ func TestQueryStreamRejectsMissingRequiredFields(t *testing.T) {
 				t.Fatalf("error trace_id = %q, want %q body=%s", body.Error.TraceID, tt.traceID, resp.Body)
 			}
 		})
+	}
+
+	if pipeline.calls != 0 {
+		t.Fatalf("query stream pipeline called %d times for invalid requests", pipeline.calls)
 	}
 }
 
@@ -361,6 +393,16 @@ func TestInvalidQueryRequestsDoNotIncrementRAGSuccessMetrics(t *testing.T) {
 			name: "stream",
 			path: "/v1/query:stream",
 			body: `{"knowledge_base_id":"","query":"hello"}`,
+		},
+		{
+			name: "invalid_profile",
+			path: "/v1/query",
+			body: `{"knowledge_base_id":"kb_default","query":"hello","profile":"batch"}`,
+		},
+		{
+			name: "invalid_top_k",
+			path: "/v1/query:stream",
+			body: `{"knowledge_base_id":"kb_default","query":"hello","top_k":101}`,
 		},
 	}
 	for _, tt := range tests {

@@ -27,6 +27,16 @@ type Server struct {
 	App *core.App
 }
 
+const maxQueryTopK = 100
+
+type queryRequest struct {
+	KnowledgeBaseID string      `json:"knowledge_base_id"`
+	Query           string      `json:"query"`
+	Profile         rag.Profile `json:"profile,omitempty"`
+	SessionID       string      `json:"session_id,omitempty"`
+	TopK            *int        `json:"top_k,omitempty"`
+}
+
 func NewServer(app *core.App) *Server {
 	return &Server{App: app}
 }
@@ -292,24 +302,25 @@ func (s *Server) getIngestionJob(ctx context.Context, c *app.RequestContext) {
 }
 
 func (s *Server) query(ctx context.Context, c *app.RequestContext) {
-	var req rag.QueryRequest
+	var req queryRequest
 	if !bindJSON(c, &req) {
 		return
 	}
 	if !validateQueryRequest(c, req) {
 		return
 	}
-	if !s.requireKnowledgeBase(c, req.KnowledgeBaseID) {
+	ragReq := req.ragRequest()
+	if !s.requireKnowledgeBase(c, ragReq.KnowledgeBaseID) {
 		return
 	}
 	start := time.Now()
 	traceID := requestTraceID(c)
 	ctx = observability.WithTraceID(ctx, traceID)
-	req.TenantID = tenantID(c)
-	req.TraceID = traceID
-	resp, err := s.App.RAG.Query(ctx, req)
+	ragReq.TenantID = tenantID(c)
+	ragReq.TraceID = traceID
+	resp, err := s.App.RAG.Query(ctx, ragReq)
 	if err != nil {
-		s.observeRAGError(req.Profile, "query_failed", time.Since(start).Milliseconds())
+		s.observeRAGError(ragReq.Profile, "query_failed", time.Since(start).Milliseconds())
 		writeError(c, consts.StatusInternalServerError, "query_failed", err.Error())
 		return
 	}
@@ -318,27 +329,28 @@ func (s *Server) query(ctx context.Context, c *app.RequestContext) {
 }
 
 func (s *Server) queryStream(ctx context.Context, c *app.RequestContext) {
-	var req rag.QueryRequest
+	var req queryRequest
 	if !bindJSON(c, &req) {
 		return
 	}
 	if !validateQueryRequest(c, req) {
 		return
 	}
-	if !s.requireKnowledgeBase(c, req.KnowledgeBaseID) {
+	ragReq := req.ragRequest()
+	if !s.requireKnowledgeBase(c, ragReq.KnowledgeBaseID) {
 		return
 	}
 	start := time.Now()
 	traceID := requestTraceID(c)
 	ctx = observability.WithTraceID(ctx, traceID)
-	req.TenantID = tenantID(c)
-	req.TraceID = traceID
-	resp, err := s.App.RAG.Query(ctx, req)
+	ragReq.TenantID = tenantID(c)
+	ragReq.TraceID = traceID
+	resp, err := s.App.RAG.Query(ctx, ragReq)
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache")
 	if err != nil {
 		c.Set("error_code", "query_failed")
-		s.observeRAGError(req.Profile, "query_failed", time.Since(start).Milliseconds())
+		s.observeRAGError(ragReq.Profile, "query_failed", time.Since(start).Milliseconds())
 		c.Response.SetStatusCode(consts.StatusInternalServerError)
 		c.Response.Header.SetContentType("text/event-stream; charset=utf-8")
 		c.Response.SetBodyString(errorSSE("query_failed", err.Error(), traceID))
@@ -350,13 +362,39 @@ func (s *Server) queryStream(ctx context.Context, c *app.RequestContext) {
 	c.Response.SetBodyString(querySSE(resp))
 }
 
-func validateQueryRequest(c *app.RequestContext, req rag.QueryRequest) bool {
+func (req queryRequest) ragRequest() rag.QueryRequest {
+	topK := 0
+	if req.TopK != nil {
+		topK = *req.TopK
+	}
+	return rag.QueryRequest{
+		KnowledgeBaseID: req.KnowledgeBaseID,
+		Query:           req.Query,
+		Profile:         req.Profile,
+		SessionID:       req.SessionID,
+		TopK:            topK,
+	}
+}
+
+func validateQueryRequest(c *app.RequestContext, req queryRequest) bool {
 	if strings.TrimSpace(req.KnowledgeBaseID) == "" {
 		writeError(c, consts.StatusBadRequest, "invalid_request", "knowledge_base_id is required")
 		return false
 	}
 	if strings.TrimSpace(req.Query) == "" {
 		writeError(c, consts.StatusBadRequest, "invalid_request", "query is required")
+		return false
+	}
+	if req.Profile != "" && req.Profile != rag.ProfileRealtime && req.Profile != rag.ProfileHighPrecision {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "profile must be realtime or high_precision")
+		return false
+	}
+	if req.TopK != nil && *req.TopK <= 0 {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "top_k must be positive")
+		return false
+	}
+	if req.TopK != nil && *req.TopK > maxQueryTopK {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "top_k must be at most 100")
 		return false
 	}
 	return true

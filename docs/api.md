@@ -49,7 +49,7 @@ Content-Type: application/json
 - `realtime`
 - `high_precision`
 
-当请求未显式传 `profile` 时，服务使用配置项 `RAG_DEFAULT_PROFILE`，默认是 `realtime`。当请求未显式传 `top_k` 或传入非正数时，服务使用配置的 dense top-k，默认来自 `RAG_DENSE_TOP_K=50`；底层 dense/sparse 候选规模仍分别受 `RAG_DENSE_TOP_K` 和 `RAG_SPARSE_TOP_K` 影响。
+当请求未显式传 `profile` 时，服务使用配置项 `RAG_DEFAULT_PROFILE`，默认是 `realtime`。当请求未显式传 `top_k` 时，服务使用配置的 dense top-k，默认来自 `RAG_DENSE_TOP_K=50`；显式传入的 `top_k` 必须在 `1..100` 范围内。底层 dense/sparse 候选规模仍分别受 `RAG_DENSE_TOP_K` 和 `RAG_SPARSE_TOP_K` 影响。
 
 ## 统一错误响应
 
@@ -318,7 +318,7 @@ POST /v1/query
 }
 ```
 
-必填字段是 `knowledge_base_id` 和 `query`。`profile` 可选值为 `realtime`、`high_precision`；`session_id` 当前作为请求字段透传给 RAG 层，不在 OpenAPI 响应中返回；`top_k` 控制本次请求最终融合后的检索结果数量。
+必填字段是 `knowledge_base_id` 和 `query`。`profile` 可选值为 `realtime`、`high_precision`；`session_id` 当前作为请求字段透传给 RAG 层，不在 OpenAPI 响应中返回；`top_k` 控制本次请求最终融合后的检索结果数量，显式传入时必须在 `1..100` 范围内。
 
 响应 `200 OK`：
 
