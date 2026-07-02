@@ -700,6 +700,8 @@ components:
           type: string
         top_k:
           type: integer
+          minimum: 1
+          maximum: 100
     QueryResponse:
       type: object
       required: [answer, citations, retrieved_chunks, trace_id, cache_status, profile, latency_ms, created_at]
