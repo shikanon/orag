@@ -79,7 +79,7 @@ Content-Type: application/json
 | `404` | `ingestion_job_not_found` | 查询不存在的入库 job。 |
 | `404` | `evaluation_not_found` | 查询不存在的评估结果。 |
 | `413` | `payload_too_large` | 入库内容超过 `INGEST_MAX_DOCUMENT_BYTES`。 |
-| `500` | `ingest_failed`、`query_failed`、`evaluation_failed`、`optimization_failed` | 后端入库、查询、评估或优化链路失败。 |
+| `500` | `knowledge_base_write_failed`、`ingest_failed`、`query_failed`、`evaluation_failed`、`optimization_failed` | 知识库创建写入失败，或后端入库、查询、评估、优化链路失败。 |
 
 `trace_id` 用于排查同一次请求链路。服务优先复用请求头 `X-Trace-ID`；未传入时自动生成，并把同一个值写入响应头 `X-Trace-ID`、JSON 错误体、SSE 事件、结构化日志和 RAG trace 持久化记录。`POST /v1/query:stream` 在 RAG 查询阶段失败时返回 `text/event-stream`，事件名为 `error`，事件数据仍包含 `code`、`message`、`trace_id`。
 
