@@ -44,8 +44,10 @@ func TestRepositoryPutKnowledgeBaseReturnsExecError(t *testing.T) {
 	want := errors.New("exec failed")
 	queryer := &fakeKnowledgeBaseQueryer{execErr: want}
 	repo := &Repository{kbQueryer: queryer}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	err := repo.PutKnowledgeBase(kb.KnowledgeBase{
+	err := repo.PutKnowledgeBase(ctx, kb.KnowledgeBase{
 		ID:        "kb_1",
 		TenantID:  "tenant_1",
 		Name:      "Docs",
@@ -58,6 +60,9 @@ func TestRepositoryPutKnowledgeBaseReturnsExecError(t *testing.T) {
 	}
 	if queryer.execCalls != 1 {
 		t.Fatalf("Exec calls = %d, want 1", queryer.execCalls)
+	}
+	if queryer.execCtx != ctx {
+		t.Fatal("PutKnowledgeBase() did not pass caller context to Exec")
 	}
 }
 
@@ -311,6 +316,7 @@ type fakeKnowledgeBaseQueryer struct {
 	execErr   error
 	execErrs  []error
 	execTag   pgconn.CommandTag
+	execCtx   context.Context
 	execSQL   string
 	execCalls int
 	queryRows pgx.Rows
@@ -319,7 +325,8 @@ type fakeKnowledgeBaseQueryer struct {
 	row       pgx.Row
 }
 
-func (f *fakeKnowledgeBaseQueryer) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
+func (f *fakeKnowledgeBaseQueryer) Exec(ctx context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
+	f.execCtx = ctx
 	f.execSQL = sql
 	err := f.execErr
 	if f.execCalls < len(f.execErrs) {

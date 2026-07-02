@@ -9,13 +9,15 @@ import (
 func TestMemoryStoreDeleteKnowledgeBaseIsTenantScopedAndCleansChunks(t *testing.T) {
 	store := NewMemoryStore()
 	now := time.Now().UTC()
-	store.PutKnowledgeBase(KnowledgeBase{
+	if err := store.PutKnowledgeBase(context.Background(), KnowledgeBase{
 		ID:        "kb_delete",
 		TenantID:  "tenant_owner",
 		Name:      "Delete me",
 		CreatedAt: now,
 		UpdatedAt: now,
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.Store(context.Background(), Document{
 		ID:              "doc_delete",
 		TenantID:        "tenant_owner",
