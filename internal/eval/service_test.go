@@ -376,6 +376,96 @@ func TestOptimizerRejectsUnknownDataset(t *testing.T) {
 	}
 }
 
+func TestOptimizerTopKChangesHybridFinalCandidateCount(t *testing.T) {
+	ctx := context.Background()
+	dsRepo := dataset.NewMemoryRepository()
+	dsSvc := dataset.NewService(dsRepo)
+	ds, err := dsSvc.Create(ctx, "tenant_default", "optimizer-topk", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
+		Query:          "qdrant vector",
+		GroundTruth:    "qdrant",
+		RelevantDocIDs: []string{"doc_1", "doc_2", "doc_3"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	retrieved := []kb.SearchResult{
+		{
+			Chunk: kb.Chunk{ID: "chk_1", DocumentID: "doc_1", Content: "qdrant vector document one"},
+			Score: 1,
+			Rank:  1,
+			From:  "test",
+		},
+		{
+			Chunk: kb.Chunk{ID: "chk_2", DocumentID: "doc_2", Content: "qdrant vector document two"},
+			Score: 0.9,
+			Rank:  2,
+			From:  "test",
+		},
+		{
+			Chunk: kb.Chunk{ID: "chk_3", DocumentID: "doc_3", Content: "qdrant vector document three"},
+			Score: 0.8,
+			Rank:  3,
+			From:  "test",
+		},
+	}
+	ragSvc := &rag.Service{
+		Retriever: kb.HybridRetriever{
+			Dense:      fixedResultsRetriever{results: retrieved},
+			Sparse:     fixedResultsRetriever{results: retrieved},
+			RRFK:       60,
+			TopN:       8,
+			DenseTopK:  8,
+			SparseTopK: 8,
+		},
+		Model:           ark.NewClient(ark.Config{EmbeddingDimensions: 4}, nil),
+		Packer:          rag.ContextPacker{MaxTokens: 512, TopN: 10},
+		PromptStrategy:  prompt.NewStrategy("auto"),
+		DefaultProfile:  rag.ProfileRealtime,
+		NoContextAnswer: "no context",
+		TopK:            8,
+	}
+	evalRepo := NewMemoryRepository()
+	runner := Runner{RAG: ragSvc, Datasets: dsSvc, Repository: evalRepo}
+	result, err := (Optimizer{Runner: runner}).Optimize(ctx, OptimizeRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Profiles:        []rag.Profile{rag.ProfileRealtime},
+		TopKs:           []int{1, 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recalls := map[int]float64{}
+	for _, candidate := range result.Candidates {
+		run, ok, err := runner.Get(ctx, "tenant_default", candidate.RunID)
+		if err != nil || !ok {
+			t.Fatalf("Get(%q) ok=%v err=%v", candidate.RunID, ok, err)
+		}
+		recalls[candidate.TopK] = run.Metrics["context_recall"]
+	}
+	if recalls[1] >= recalls[3] {
+		t.Fatalf("context_recall by top_k = %#v, want top_k=3 to retrieve more relevant context than top_k=1", recalls)
+	}
+	if recalls[3] != 1 {
+		t.Fatalf("top_k=3 context_recall = %v, want 1", recalls[3])
+	}
+}
+
+type fixedResultsRetriever struct {
+	results []kb.SearchResult
+}
+
+func (r fixedResultsRetriever) Retrieve(context.Context, kb.SearchRequest) ([]kb.SearchResult, error) {
+	return append([]kb.SearchResult(nil), r.results...), nil
+}
+
 type pipelineFunc func(context.Context, rag.QueryRequest) (rag.QueryResponse, error)
 
 func (f pipelineFunc) Invoke(ctx context.Context, req rag.QueryRequest) (rag.QueryResponse, error) {
