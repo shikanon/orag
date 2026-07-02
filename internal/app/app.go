@@ -43,23 +43,6 @@ type App struct {
 	closers  []func() error
 }
 
-func (a *App) DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error) {
-	found, err := a.KBStore.DeleteKnowledgeBase(ctx, tenantID, id)
-	if err != nil || !found {
-		return found, err
-	}
-	if a.Qdrant == nil {
-		return true, nil
-	}
-	// PostgreSQL and Qdrant do not share a transaction. The relational delete is
-	// already committed here, so Qdrant purge failures are surfaced to the caller
-	// for retry/alerting instead of being hidden as a successful delete.
-	if err := qdrantstore.PurgeKnowledgeBase(ctx, a.Qdrant, a.Config.Qdrant.Collection, a.Config.Qdrant.SemanticCacheCollection, tenantID, id); err != nil {
-		return true, err
-	}
-	return true, nil
-}
-
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, error) {
 	_ = ctx
 	model, err := buildModelClient(cfg)

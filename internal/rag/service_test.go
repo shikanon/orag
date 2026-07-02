@@ -23,15 +23,15 @@ func TestLookupSemanticCachePreservesCachedProfile(t *testing.T) {
 		TenantID:        "tenant_default",
 		KnowledgeBaseID: "kb_default",
 		Query:           "qdrant vector search",
-	}, []float64{0.1, 0.2}, "trace_high_precision", ProfileHighPrecision, 16, time.Now())
+	}, []float64{0.1, 0.2}, "trace_realtime", ProfileRealtime, 16, time.Now())
 	if warning != "" {
 		t.Fatalf("LookupSemanticCache() warning = %q", warning)
 	}
 	if !ok {
 		t.Fatalf("LookupSemanticCache() hit = false, want true")
 	}
-	if cache.lookupReq.Profile != ProfileHighPrecision {
-		t.Fatalf("lookup profile = %q, want %q", cache.lookupReq.Profile, ProfileHighPrecision)
+	if cache.lookupReq.Profile != ProfileRealtime {
+		t.Fatalf("lookup profile = %q, want %q", cache.lookupReq.Profile, ProfileRealtime)
 	}
 	if cache.lookupReq.TopK != 16 {
 		t.Fatalf("lookup top_k = %d, want 16", cache.lookupReq.TopK)
@@ -42,8 +42,8 @@ func TestLookupSemanticCachePreservesCachedProfile(t *testing.T) {
 	if resp.CacheStatus != "hit" {
 		t.Fatalf("cache_status = %q, want hit", resp.CacheStatus)
 	}
-	if resp.TraceID != "trace_high_precision" {
-		t.Fatalf("trace_id = %q, want trace_high_precision", resp.TraceID)
+	if resp.TraceID != "trace_realtime" {
+		t.Fatalf("trace_id = %q, want trace_realtime", resp.TraceID)
 	}
 }
 

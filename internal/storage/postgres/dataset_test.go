@@ -26,10 +26,10 @@ func TestRepositoryAddDatasetItemEnforcesTenant(t *testing.T) {
 	if !errors.Is(err, dataset.ErrDatasetNotFound) {
 		t.Fatalf("AddDatasetItem() err = %v, want not_found", err)
 	}
-	if !strings.Contains(db.execSQL, "FROM datasets d") || !strings.Contains(db.execSQL, "d.tenant_id=$2 AND d.id=$3") {
+	if !strings.Contains(db.execSQL, "WHERE EXISTS") || !strings.Contains(db.execSQL, "tenant_id=$6 AND id=$2") {
 		t.Fatalf("AddDatasetItem() SQL missing tenant dataset guard: %s", db.execSQL)
 	}
-	if got := db.execArgs[1]; got != "tenant_b" {
+	if got := db.execArgs[5]; got != "tenant_b" {
 		t.Fatalf("tenant arg = %v, want tenant_b", got)
 	}
 
@@ -72,7 +72,7 @@ func TestRepositoryDatasetItemsEnforcesTenant(t *testing.T) {
 	if len(items) != 1 || items[0].ID != "dsi_1" || items[0].RelevantDocIDs[0] != "doc_1" {
 		t.Fatalf("DatasetItems() = %#v", items)
 	}
-	if !strings.Contains(db.querySQL, "JOIN datasets d ON d.id=di.dataset_id") || !strings.Contains(db.querySQL, "d.tenant_id=$1 AND di.dataset_id=$2") {
+	if !strings.Contains(db.querySQL, "JOIN datasets d ON d.id=i.dataset_id") || !strings.Contains(db.querySQL, "d.tenant_id=$1 AND i.dataset_id=$2") {
 		t.Fatalf("DatasetItems() SQL missing tenant join: %s", db.querySQL)
 	}
 	if got := db.queryArgs[0]; got != "tenant_a" {
