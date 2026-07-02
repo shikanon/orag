@@ -3,6 +3,7 @@ package rag
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestInMemorySemanticCacheIsolatesProfileAndTopK(t *testing.T) {
@@ -81,4 +82,38 @@ func TestCacheKeyIncludesProfileAndTopK(t *testing.T) {
 	if CacheKey(base) != CacheKey(queryWhitespaceVariant) {
 		t.Fatalf("CacheKey() should normalize query case and whitespace")
 	}
+}
+
+func TestLookupSemanticCacheRejectsMismatchedStoredProfile(t *testing.T) {
+	service := Service{Cache: staticSemanticCacheStore{
+		resp: QueryResponse{
+			Answer:  "cached realtime answer",
+			Profile: ProfileRealtime,
+		},
+		ok: true,
+	}}
+	_, ok, warning := service.LookupSemanticCache(context.Background(), QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+	}, []float64{0.1, 0.2}, "trace_1", ProfileHighPrecision, 8, time.Now())
+	if warning != "" {
+		t.Fatalf("warning = %q", warning)
+	}
+	if ok {
+		t.Fatalf("LookupSemanticCache() hit = true, want false for mismatched profile")
+	}
+}
+
+type staticSemanticCacheStore struct {
+	resp QueryResponse
+	ok   bool
+}
+
+func (s staticSemanticCacheStore) Lookup(context.Context, SemanticCacheLookupRequest) (QueryResponse, bool, error) {
+	return s.resp, s.ok, nil
+}
+
+func (s staticSemanticCacheStore) Store(context.Context, SemanticCacheEntry) error {
+	return nil
 }
