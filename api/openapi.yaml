@@ -272,6 +272,8 @@ paths:
           $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
   "/v1/query:stream":
@@ -301,6 +303,8 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "401":
+          $ref: "#/components/responses/Error"
+        "404":
           $ref: "#/components/responses/Error"
         "500":
           description: SSE error event.

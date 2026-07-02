@@ -226,6 +226,10 @@ func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 	if !bindJSON(c, &req) {
 		return
 	}
+	if strings.TrimSpace(req.Content) == "" {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "content is required")
+		return
+	}
 	if req.Name == "" {
 		req.Name = "imported.md"
 	}
@@ -295,6 +299,9 @@ func (s *Server) query(ctx context.Context, c *app.RequestContext) {
 	if !validateQueryRequest(c, req) {
 		return
 	}
+	if !s.requireKnowledgeBase(c, req.KnowledgeBaseID) {
+		return
+	}
 	start := time.Now()
 	traceID := requestTraceID(c)
 	ctx = observability.WithTraceID(ctx, traceID)
@@ -316,6 +323,9 @@ func (s *Server) queryStream(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	if !validateQueryRequest(c, req) {
+		return
+	}
+	if !s.requireKnowledgeBase(c, req.KnowledgeBaseID) {
 		return
 	}
 	start := time.Now()

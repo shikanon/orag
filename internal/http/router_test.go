@@ -280,6 +280,68 @@ func TestQueryStreamRejectsMissingRequiredFields(t *testing.T) {
 	}
 }
 
+func TestQueryRequiresExistingKnowledgeBase(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	otherToken, err := app.Auth.IssueToken("tenant_other", "user_other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pipeline := &countingPipeline{}
+	app.RAG.Pipeline = pipeline
+
+	for _, tt := range []struct {
+		name    string
+		path    string
+		body    string
+		token   string
+		traceID string
+	}{
+		{
+			name:    "json missing knowledge base",
+			path:    "/v1/query",
+			body:    `{"knowledge_base_id":"kb_missing_query","query":"hello"}`,
+			token:   token,
+			traceID: "trace_query_missing_kb",
+		},
+		{
+			name:    "stream missing knowledge base",
+			path:    "/v1/query:stream",
+			body:    `{"knowledge_base_id":"kb_missing_query","query":"hello"}`,
+			token:   token,
+			traceID: "trace_query_stream_missing_kb",
+		},
+		{
+			name:    "json cross tenant knowledge base",
+			path:    "/v1/query",
+			body:    `{"knowledge_base_id":"kb_default","query":"hello"}`,
+			token:   otherToken,
+			traceID: "trace_query_cross_tenant_kb",
+		},
+		{
+			name:    "stream cross tenant knowledge base",
+			path:    "/v1/query:stream",
+			body:    `{"knowledge_base_id":"kb_default","query":"hello"}`,
+			token:   otherToken,
+			traceID: "trace_query_stream_cross_tenant_kb",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := performJSONWithTrace(h, "POST", tt.path, tt.body, tt.token, tt.traceID)
+			assertErrorResponse(t, resp, 404, "knowledge_base_not_found", tt.traceID)
+			if strings.Contains(resp.ContentType, "text/event-stream") {
+				t.Fatalf("missing knowledge base response content type = %q, want JSON error body=%s", resp.ContentType, resp.Body)
+			}
+		})
+	}
+
+	if pipeline.calls != 0 {
+		t.Fatalf("query pipeline called %d times for missing knowledge bases", pipeline.calls)
+	}
+}
+
 func TestInvalidQueryRequestsDoNotIncrementRAGSuccessMetrics(t *testing.T) {
 	h, closeApp := newTestHertz(t)
 	defer closeApp()
@@ -550,6 +612,41 @@ func TestDeleteKnowledgeBaseRemovesItFromGetListAndMemoryChunks(t *testing.T) {
 	resp = performJSON(h, "DELETE", "/v1/knowledge-bases/"+created.ID, "", token)
 	if resp.Code != 404 {
 		t.Fatalf("delete missing status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
+func TestImportDocumentRejectsMissingContent(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	jobs := &countingJobStore{delegate: ingest.NewMemoryJobStore()}
+	app.Ingest.Jobs = jobs
+
+	for _, tt := range []struct {
+		name    string
+		body    string
+		traceID string
+	}{
+		{
+			name:    "missing content",
+			body:    `{"name":"missing.md","source_uri":"test://missing-content"}`,
+			traceID: "trace_import_missing_content",
+		},
+		{
+			name:    "blank content",
+			body:    `{"name":"blank.md","source_uri":"test://blank-content","content":"  "}`,
+			traceID: "trace_import_blank_content",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := performJSONWithTrace(h, "POST", "/v1/knowledge-bases/kb_default/documents:import", tt.body, token, tt.traceID)
+			assertErrorResponse(t, resp, 400, "invalid_request", tt.traceID)
+			assertNoChunks(t, app, "kb_default")
+		})
+	}
+	if jobs.createCalls != 0 {
+		t.Fatalf("import created %d ingestion jobs for invalid content", jobs.createCalls)
 	}
 }
 
@@ -859,6 +956,17 @@ func (s *countingJobStore) UpdateJob(ctx context.Context, job ingest.Job) error 
 
 func (s *countingJobStore) GetJob(ctx context.Context, tenantID, id string) (ingest.Job, bool, error) {
 	return s.delegate.GetJob(ctx, tenantID, id)
+}
+
+type countingPipeline struct {
+	calls int
+	resp  rag.QueryResponse
+	err   error
+}
+
+func (p *countingPipeline) Invoke(context.Context, rag.QueryRequest) (rag.QueryResponse, error) {
+	p.calls++
+	return p.resp, p.err
 }
 
 type failingPipeline struct {

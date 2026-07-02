@@ -78,6 +78,8 @@ func TestOpenAPI(t *testing.T) {
 	}{
 		{http.MethodPost, "/v1/knowledge-bases/{id}/documents", http.StatusNotFound},
 		{http.MethodPost, "/v1/knowledge-bases/{id}/documents:import", http.StatusNotFound},
+		{http.MethodPost, "/v1/query", http.StatusNotFound},
+		{http.MethodPost, "/v1/query:stream", http.StatusNotFound},
 	} {
 		op := doc.Paths.Find(route.path).GetOperation(route.method)
 		if op.Responses.Get(route.status) == nil {
