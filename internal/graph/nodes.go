@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/llm/ark"
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/prompt"
@@ -66,21 +65,10 @@ func (n NodeSet) QueryRewrite(ctx context.Context, st State) (State, error) {
 		if st.Cached || st.Profile != rag.ProfileHighPrecision || !n.Service.QueryRewriteEnabled {
 			return nil
 		}
-		st.RewrittenQuery = st.Request.Query
-		if n.Service.Model == nil {
-			return nil
-		}
-		answer, err := n.Service.Model.Chat(ctx, []ark.ChatMessage{
-			{Role: "system", Content: "你是 RAG 查询改写器。只输出一个适合检索的中文查询，不要解释。"},
-			{Role: "user", Content: st.Request.Query},
-		})
-		if err != nil {
-			st.Warnings = append(st.Warnings, "query rewrite failed: "+err.Error())
-			return nil
-		}
-		answer = strings.TrimSpace(answer)
-		if answer != "" && len([]rune(answer)) <= 240 {
-			st.RewrittenQuery = answer
+		rewritten, warnings := n.Service.RewriteQuery(ctx, st.Request, st.Profile)
+		st.Warnings = append(st.Warnings, warnings...)
+		if rewritten != "" {
+			st.RewrittenQuery = rewritten
 		}
 		return nil
 	})
@@ -88,12 +76,15 @@ func (n NodeSet) QueryRewrite(ctx context.Context, st State) (State, error) {
 
 func (n NodeSet) MultiQuery(ctx context.Context, st State) (State, error) {
 	return n.withSpan(ctx, "multi_query", st, func(st *State) error {
-		if st.Cached || st.Profile != rag.ProfileHighPrecision || n.Service.MultiQueryCount <= 1 {
+		if st.Cached || st.Profile != rag.ProfileHighPrecision || (n.Service.MultiQueryCount <= 1 && !n.Service.HyDEEnabled) {
 			return nil
 		}
 		if st.RewrittenQuery == "" {
 			st.RewrittenQuery = st.Request.Query
 		}
+		queries, warnings := n.Service.BuildRetrievalQueries(ctx, st.Request, st.Profile, st.RewrittenQuery)
+		st.Warnings = append(st.Warnings, warnings...)
+		st.RetrievalQueries = queries
 		return nil
 	})
 }
@@ -103,46 +94,22 @@ func (n NodeSet) HybridRetrieve(ctx context.Context, st State) (State, error) {
 		if st.Cached {
 			return nil
 		}
-		query := st.Request.Query
-		if st.RewrittenQuery != "" {
-			query = st.RewrittenQuery
-		}
-		if len(st.Embedding) == 0 || st.RewrittenQuery != "" {
-			embeddings, err := n.Service.Model.Embed(ctx, []string{query})
-			if err != nil {
-				return err
+		retrievalQueries := st.RetrievalQueries
+		if len(retrievalQueries) == 0 {
+			query := st.Request.Query
+			source := "query"
+			if st.RewrittenQuery != "" {
+				query = st.RewrittenQuery
+				source = "rewrite"
 			}
-			if len(embeddings) == 0 {
-				return fmt.Errorf("embedding response is empty")
-			}
-			st.Embedding = embeddings[0]
+			retrievalQueries = []rag.RetrievalQuery{{Query: query, Source: source}}
 		}
-		searchReq := kb.SearchRequest{
-			TenantID:        st.Request.TenantID,
-			KnowledgeBaseID: st.Request.KnowledgeBaseID,
-			Query:           query,
-			Vector:          st.Embedding,
-			TopK:            st.TopK,
-		}
-		var results []kb.SearchResult
-		var err error
-		if retriever, ok := n.Service.Retriever.(interface {
-			RetrieveWithWarnings(context.Context, kb.SearchRequest) ([]kb.SearchResult, []string, error)
-		}); ok {
-			var warnings []string
-			searchReq.TopK = st.Request.TopK
-			if st.Request.TopK <= 0 {
-				searchReq.DenseTopK = st.TopK
-				searchReq.SparseTopK = st.TopK
-			}
-			results, warnings, err = retriever.RetrieveWithWarnings(ctx, searchReq)
-			st.Warnings = append(st.Warnings, warnings...)
-		} else {
-			results, err = n.Service.Retriever.Retrieve(ctx, searchReq)
-		}
+		results, queryVector, warnings, err := n.Service.RetrieveExpanded(ctx, st.Request, st.TopK, retrievalQueries, st.Embedding)
+		st.Warnings = append(st.Warnings, warnings...)
 		if err != nil {
 			return err
 		}
+		st.Embedding = queryVector
 		st.Results = results
 		return nil
 	})

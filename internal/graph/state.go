@@ -14,19 +14,20 @@ type NodeSpan struct {
 }
 
 type State struct {
-	Request        rag.QueryRequest
-	Response       rag.QueryResponse
-	Start          time.Time
-	TraceID        string
-	Profile        rag.Profile
-	TopK           int
-	Cached         bool
-	Embedding      []float64
-	RewrittenQuery string
-	Results        []kb.SearchResult
-	Context        string
-	Citations      []rag.Citation
-	PromptText     string
-	Warnings       []string
-	Spans          []NodeSpan
+	Request          rag.QueryRequest
+	Response         rag.QueryResponse
+	Start            time.Time
+	TraceID          string
+	Profile          rag.Profile
+	TopK             int
+	Cached           bool
+	Embedding        []float64
+	RewrittenQuery   string
+	RetrievalQueries []rag.RetrievalQuery
+	Results          []kb.SearchResult
+	Context          string
+	Citations        []rag.Citation
+	PromptText       string
+	Warnings         []string
+	Spans            []NodeSpan
 }

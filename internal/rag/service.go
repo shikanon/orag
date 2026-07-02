@@ -81,28 +81,12 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 	} else if warning != "" {
 		warnings = append(warnings, warning)
 	}
-	searchReq := kb.SearchRequest{
-		TenantID:        req.TenantID,
-		KnowledgeBaseID: req.KnowledgeBaseID,
-		Query:           req.Query,
-		Vector:          embeddings[0],
-		TopK:            topK,
-	}
-	var results []kb.SearchResult
-	if retriever, ok := s.Retriever.(interface {
-		RetrieveWithWarnings(context.Context, kb.SearchRequest) ([]kb.SearchResult, []string, error)
-	}); ok {
-		var retrievalWarnings []string
-		searchReq.TopK = req.TopK
-		if req.TopK <= 0 {
-			searchReq.DenseTopK = topK
-			searchReq.SparseTopK = topK
-		}
-		results, retrievalWarnings, err = retriever.RetrieveWithWarnings(ctx, searchReq)
-		warnings = append(warnings, retrievalWarnings...)
-	} else {
-		results, err = s.Retriever.Retrieve(ctx, searchReq)
-	}
+	rewrittenQuery, rewriteWarnings := s.RewriteQuery(ctx, req, profile)
+	warnings = append(warnings, rewriteWarnings...)
+	retrievalQueries, expansionWarnings := s.BuildRetrievalQueries(ctx, req, profile, rewrittenQuery)
+	warnings = append(warnings, expansionWarnings...)
+	results, queryVector, retrievalWarnings, err := s.RetrieveExpanded(ctx, req, topK, retrievalQueries, embeddings[0])
+	warnings = append(warnings, retrievalWarnings...)
 	if err != nil {
 		s.logFailure(ctx, req, profile, traceID, "hybrid_retrieve", start, err)
 		return QueryResponse{}, err
@@ -151,7 +135,7 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		CreatedAt:       time.Now().UTC(),
 		LatencyMS:       time.Since(start).Milliseconds(),
 	}
-	if warning := s.StoreSemanticCache(ctx, req, embeddings[0], profile, topK, resp); warning != "" {
+	if warning := s.StoreSemanticCache(ctx, req, queryVector, profile, topK, resp); warning != "" {
 		resp.Warnings = append(resp.Warnings, warning)
 	}
 	return resp, nil
