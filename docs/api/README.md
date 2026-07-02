@@ -54,7 +54,7 @@ Content-Type: application/json
 | `200 OK` | 查询、列表、详情类响应。 |
 | `201 Created` | 创建知识库、创建数据集、添加数据集样本。 |
 | `202 Accepted` | 文档入库、运行评估、运行优化。 |
-| `204 No Content` | 删除知识库当前返回空响应。 |
+| `204 No Content` | 删除知识库成功，响应体为空。 |
 
 ## 契约维护
 

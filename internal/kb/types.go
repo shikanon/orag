@@ -110,6 +110,27 @@ func (s *MemoryStore) GetKnowledgeBase(tenantID, id string) (KnowledgeBase, bool
 	return item, ok && item.TenantID == tenantID, nil
 }
 
+func (s *MemoryStore) DeleteKnowledgeBase(_ context.Context, tenantID, id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.kbs[id]
+	if !ok || item.TenantID != tenantID {
+		return false, nil
+	}
+	delete(s.kbs, id)
+	for docID, doc := range s.documents {
+		if doc.TenantID == tenantID && doc.KnowledgeBaseID == id {
+			delete(s.documents, docID)
+		}
+	}
+	for chunkID, chunk := range s.chunks {
+		if chunk.TenantID == tenantID && chunk.KnowledgeBaseID == id {
+			delete(s.chunks, chunkID)
+		}
+	}
+	return true, nil
+}
+
 func (s *MemoryStore) Store(_ context.Context, doc Document, chunks []Chunk) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

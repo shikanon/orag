@@ -38,6 +38,18 @@ func (s VectorStore) Store(ctx context.Context, _ kb.Document, chunks []kb.Chunk
 	return err
 }
 
+func (s VectorStore) DeleteKnowledgeBaseVectors(ctx context.Context, tenantID, kbID string) error {
+	wait := true
+	_, err := s.Client.Points.Delete(ctx, &qdrant.DeletePoints{
+		CollectionName: s.Collection,
+		Wait:           &wait,
+		Points: &qdrant.PointsSelector{PointsSelectorOneOf: &qdrant.PointsSelector_Filter{
+			Filter: knowledgeBaseFilter(tenantID, kbID),
+		}},
+	})
+	return err
+}
+
 func (s VectorStore) Retrieve(ctx context.Context, req kb.SearchRequest) ([]kb.SearchResult, error) {
 	limit := req.TopK
 	if req.DenseTopK > 0 {
@@ -50,11 +62,8 @@ func (s VectorStore) Retrieve(ctx context.Context, req kb.SearchRequest) ([]kb.S
 		CollectionName: s.Collection,
 		Vector:         float32Vector(req.Vector),
 		Limit:          uint64(limit),
-		Filter: &qdrant.Filter{Must: []*qdrant.Condition{
-			matchKeyword("tenant_id", req.TenantID),
-			matchKeyword("knowledge_base_id", req.KnowledgeBaseID),
-		}},
-		WithPayload: &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
+		Filter:         knowledgeBaseFilter(req.TenantID, req.KnowledgeBaseID),
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
 	})
 	if err != nil {
 		return nil, err
@@ -69,6 +78,13 @@ func (s VectorStore) Retrieve(ctx context.Context, req kb.SearchRequest) ([]kb.S
 		})
 	}
 	return results, nil
+}
+
+func knowledgeBaseFilter(tenantID, kbID string) *qdrant.Filter {
+	return &qdrant.Filter{Must: []*qdrant.Condition{
+		matchKeyword("tenant_id", tenantID),
+		matchKeyword("knowledge_base_id", kbID),
+	}}
 }
 
 func matchKeyword(key, value string) *qdrant.Condition {

@@ -13,6 +13,8 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/common/ut"
 	"github.com/cloudwego/hertz/pkg/route"
+	qdrant "github.com/qdrant/go-client/qdrant"
+	core "github.com/shikanon/orag/internal/app"
 	oraghttp "github.com/shikanon/orag/internal/http"
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
@@ -114,6 +116,112 @@ func TestHTTPIngestMissingKnowledgeBaseWithPostgresQdrant(t *testing.T) {
 	status, body = performIntegrationUpload(t, h, "/v1/knowledge-bases/"+missingKB+"/documents", "missing.md", "missing knowledge bases must return 404", token)
 	assertMissingKBHTTPResponse(t, status, body)
 	assertNoStoredChunks(t, app.KBStore, missingKB)
+}
+
+func TestDeleteKnowledgeBaseCleansPostgresAndQdrant(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	kbID := fmt.Sprintf("kb_delete_%d", time.Now().UnixNano())
+	now := time.Now().UTC()
+	app.KBStore.PutKnowledgeBase(kb.KnowledgeBase{
+		ID:          kbID,
+		TenantID:    testTenantID,
+		Name:        "integration delete",
+		Description: "temporary integration test knowledge base",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+
+	result, err := app.Ingest.Ingest(ctx, ingest.Request{
+		TenantID:        testTenantID,
+		KnowledgeBaseID: kbID,
+		SourceURI:       "integration://" + kbID,
+		Name:            kbID + ".md",
+		Content:         []byte("This marker verifies knowledge base deletion clears vectors and rows."),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Job.ChunkCount == 0 {
+		t.Fatalf("expected chunks before delete: %#v", result.Job)
+	}
+	if count := countPostgresRows(t, ctx, app, "chunks", kbID); count == 0 {
+		t.Fatal("expected postgres chunks before delete")
+	}
+	if count := countQdrantPoints(t, ctx, app, kbID); count == 0 {
+		t.Fatal("expected qdrant points before delete")
+	}
+
+	deleted, err := app.KBStore.DeleteKnowledgeBase(ctx, testTenantID, kbID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !deleted {
+		t.Fatal("DeleteKnowledgeBase deleted=false, want true")
+	}
+	if _, ok, err := app.KBStore.GetKnowledgeBase(testTenantID, kbID); err != nil {
+		t.Fatal(err)
+	} else if ok {
+		t.Fatal("deleted knowledge base is still readable")
+	}
+	for _, table := range []string{"chunks", "documents", "ingestion_jobs", "knowledge_bases"} {
+		if count := countPostgresRows(t, ctx, app, table, kbID); count != 0 {
+			t.Fatalf("%s rows after delete = %d", table, count)
+		}
+	}
+	if count := countQdrantPoints(t, ctx, app, kbID); count != 0 {
+		t.Fatalf("qdrant points after delete = %d", count)
+	}
+}
+
+func countPostgresRows(t *testing.T, ctx context.Context, app *core.App, table, kbID string) int {
+	t.Helper()
+	var where string
+	switch table {
+	case "chunks", "documents", "ingestion_jobs":
+		where = "tenant_id=$1 AND knowledge_base_id=$2"
+	case "knowledge_bases":
+		where = "tenant_id=$1 AND id=$2"
+	default:
+		t.Fatalf("unexpected table %q", table)
+	}
+	var count int
+	if err := app.Postgres.QueryRow(ctx, fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", table, where), testTenantID, kbID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+func countQdrantPoints(t *testing.T, ctx context.Context, app *core.App, kbID string) int {
+	t.Helper()
+	exact := true
+	resp, err := app.Qdrant.Points.Count(ctx, &qdrant.CountPoints{
+		CollectionName: app.Config.Qdrant.Collection,
+		Filter:         integrationKnowledgeBaseFilter(kbID),
+		Exact:          &exact,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return int(resp.GetResult().GetCount())
+}
+
+func integrationKnowledgeBaseFilter(kbID string) *qdrant.Filter {
+	return &qdrant.Filter{Must: []*qdrant.Condition{
+		integrationMatchKeyword("tenant_id", testTenantID),
+		integrationMatchKeyword("knowledge_base_id", kbID),
+	}}
+}
+
+func integrationMatchKeyword(key, value string) *qdrant.Condition {
+	return &qdrant.Condition{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{
+		Key: key,
+		Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{
+			Keyword: value,
+		}},
+	}}}
 }
 
 func retrievedDocument(resp rag.QueryResponse, documentID string) bool {
