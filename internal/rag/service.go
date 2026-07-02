@@ -199,6 +199,9 @@ func (s *Service) LookupSemanticCache(ctx context.Context, req QueryRequest, vec
 	if !ok {
 		return QueryResponse{}, false, ""
 	}
+	if cachedProfile := cacheProfile(cached.Profile); cachedProfile != cacheProfile(profile) {
+		return QueryResponse{}, false, ""
+	}
 	cached.CacheStatus = "hit"
 	cached.TraceID = traceID
 	cached.LatencyMS = time.Since(start).Milliseconds()
@@ -243,6 +246,13 @@ func (s *Service) Profile(requested Profile) Profile {
 		return s.DefaultProfile
 	}
 	return ProfileRealtime
+}
+
+func cacheProfile(profile Profile) Profile {
+	if profile == "" {
+		return ProfileRealtime
+	}
+	return profile
 }
 
 func (s *Service) ApplyRerank(ctx context.Context, query string, results []kb.SearchResult) []kb.SearchResult {

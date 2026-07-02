@@ -17,11 +17,16 @@ type Config struct {
 	UseTLS bool
 }
 
+type PointsClient interface {
+	Upsert(ctx context.Context, in *qdrant.UpsertPoints, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error)
+	Search(ctx context.Context, in *qdrant.SearchPoints, opts ...grpc.CallOption) (*qdrant.SearchResponse, error)
+}
+
 type Client struct {
 	Conn        *grpc.ClientConn
 	Qdrant      qdrant.QdrantClient
 	Collections qdrant.CollectionsClient
-	Points      qdrant.PointsClient
+	Points      PointsClient
 }
 
 func Open(ctx context.Context, cfg Config) (*Client, error) {
