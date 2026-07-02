@@ -125,14 +125,16 @@ func TestDeleteKnowledgeBaseCleansPostgresAndQdrant(t *testing.T) {
 
 	kbID := fmt.Sprintf("kb_delete_%d", time.Now().UnixNano())
 	now := time.Now().UTC()
-	app.KBStore.PutKnowledgeBase(kb.KnowledgeBase{
+	if err := app.KBStore.PutKnowledgeBase(ctx, kb.KnowledgeBase{
 		ID:          kbID,
 		TenantID:    testTenantID,
 		Name:        "integration delete",
 		Description: "temporary integration test knowledge base",
 		CreatedAt:   now,
 		UpdatedAt:   now,
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	result, err := app.Ingest.Ingest(ctx, ingest.Request{
 		TenantID:        testTenantID,

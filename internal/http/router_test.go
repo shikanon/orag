@@ -825,7 +825,7 @@ type fakeKnowledgeBaseRepository struct {
 	getErr    error
 }
 
-func (r fakeKnowledgeBaseRepository) PutKnowledgeBase(kb.KnowledgeBase) error {
+func (r fakeKnowledgeBaseRepository) PutKnowledgeBase(context.Context, kb.KnowledgeBase) error {
 	return r.putErr
 }
 

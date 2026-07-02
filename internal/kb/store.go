@@ -3,7 +3,7 @@ package kb
 import "context"
 
 type KnowledgeBaseRepository interface {
-	PutKnowledgeBase(kb KnowledgeBase) error
+	PutKnowledgeBase(ctx context.Context, kb KnowledgeBase) error
 	ListKnowledgeBases(tenantID string) ([]KnowledgeBase, error)
 	GetKnowledgeBase(tenantID, id string) (KnowledgeBase, bool, error)
 	DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error)

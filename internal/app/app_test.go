@@ -90,7 +90,7 @@ func newFakeKnowledgeBaseRepo(calls *[]string, items ...kb.KnowledgeBase) *fakeK
 	return repo
 }
 
-func (r *fakeKnowledgeBaseRepo) PutKnowledgeBase(item kb.KnowledgeBase) error {
+func (r *fakeKnowledgeBaseRepo) PutKnowledgeBase(_ context.Context, item kb.KnowledgeBase) error {
 	r.items[item.TenantID+"/"+item.ID] = item
 	return nil
 }

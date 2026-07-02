@@ -200,8 +200,8 @@ type knowledgeBaseStore struct {
 	vectorDeleter knowledgeBaseVectorDeleter
 }
 
-func (s knowledgeBaseStore) PutKnowledgeBase(item kb.KnowledgeBase) error {
-	return s.primary.PutKnowledgeBase(item)
+func (s knowledgeBaseStore) PutKnowledgeBase(ctx context.Context, item kb.KnowledgeBase) error {
+	return s.primary.PutKnowledgeBase(ctx, item)
 }
 
 func (s knowledgeBaseStore) ListKnowledgeBases(tenantID string) ([]kb.KnowledgeBase, error) {
@@ -229,7 +229,7 @@ func (s knowledgeBaseStore) DeleteKnowledgeBase(ctx context.Context, tenantID, i
 func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant string) (knowledgeBackend, error) {
 	if cfg.Storage.Backend == "memory" {
 		store := kb.NewMemoryStore()
-		if err := bootstrapMemory(store, defaultTenant); err != nil {
+		if err := bootstrapMemory(ctx, store, defaultTenant); err != nil {
 			return knowledgeBackend{}, err
 		}
 		return knowledgeBackend{
@@ -304,9 +304,9 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 	}, nil
 }
 
-func bootstrapMemory(store *kb.MemoryStore, tenantID string) error {
+func bootstrapMemory(ctx context.Context, store *kb.MemoryStore, tenantID string) error {
 	now := time.Now().UTC()
-	return store.PutKnowledgeBase(kb.KnowledgeBase{
+	return store.PutKnowledgeBase(ctx, kb.KnowledgeBase{
 		ID:          "kb_default",
 		TenantID:    tenantID,
 		Name:        "Default Knowledge Base",

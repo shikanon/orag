@@ -79,13 +79,15 @@ func (s *stagedSearchStore) Chunks(tenantID, kbID string) []kb.Chunk {
 func TestIngestCreatesJobAndStableIDs(t *testing.T) {
 	ctx := context.Background()
 	store := kb.NewMemoryStore()
-	store.PutKnowledgeBase(kb.KnowledgeBase{
+	if err := store.PutKnowledgeBase(ctx, kb.KnowledgeBase{
 		ID:        "kb_default",
 		TenantID:  "tenant_default",
 		Name:      "Default",
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	jobs := NewMemoryJobStore()
 	svc := &Service{
 		Parser:         parser.BasicParser{},

@@ -63,8 +63,7 @@ func (q pgxDatasetQueryer) QueryRow(ctx context.Context, sql string, args ...any
 	return q.pool.QueryRow(ctx, sql, args...)
 }
 
-func (r *Repository) PutKnowledgeBase(item kb.KnowledgeBase) error {
-	ctx := context.Background()
+func (r *Repository) PutKnowledgeBase(ctx context.Context, item kb.KnowledgeBase) error {
 	meta := mustJSON(item.Metadata)
 	_, err := r.knowledgeBaseQueryer().Exec(ctx, `
 		INSERT INTO knowledge_bases(id, tenant_id, name, description, metadata, created_at, updated_at)
@@ -244,7 +243,7 @@ func (r *Repository) BootstrapDefaults(ctx context.Context, tenantID, kbID strin
 		ON CONFLICT (id) DO NOTHING`, tenantID, tenantID, now); err != nil {
 		return err
 	}
-	return r.PutKnowledgeBase(kb.KnowledgeBase{
+	return r.PutKnowledgeBase(ctx, kb.KnowledgeBase{
 		ID:          kbID,
 		TenantID:    tenantID,
 		Name:        "Default Knowledge Base",

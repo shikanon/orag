@@ -108,7 +108,7 @@ func (s *Server) login(_ context.Context, c *app.RequestContext) {
 	c.JSON(consts.StatusOK, map[string]any{"access_token": token, "token_type": "Bearer", "expires_in": int(s.App.Config.Auth.TokenTTL.Seconds())})
 }
 
-func (s *Server) createKnowledgeBase(_ context.Context, c *app.RequestContext) {
+func (s *Server) createKnowledgeBase(ctx context.Context, c *app.RequestContext) {
 	var req struct {
 		Name        string            `json:"name"`
 		Description string            `json:"description"`
@@ -131,7 +131,7 @@ func (s *Server) createKnowledgeBase(_ context.Context, c *app.RequestContext) {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	if err := s.App.KBStore.PutKnowledgeBase(item); err != nil {
+	if err := s.App.KBStore.PutKnowledgeBase(ctx, item); err != nil {
 		writeError(c, consts.StatusInternalServerError, "knowledge_base_create_failed", err.Error())
 		return
 	}
