@@ -394,11 +394,6 @@ func TestDatasetItemEvaluationAndOptimizationUseTokenTenant(t *testing.T) {
 	if resp.Code != 404 || !strings.Contains(resp.Body, `"code":"dataset_not_found"`) {
 		t.Fatalf("cross-tenant evaluation status = %d body=%s", resp.Code, resp.Body)
 	}
-	resp = performJSON(h, "POST", "/v1/evaluations", evalBody, tenantAToken)
-	if resp.Code != 202 {
-		t.Fatalf("tenant evaluation status = %d body=%s", resp.Code, resp.Body)
-	}
-
 	optimizeBody := `{"dataset_id":"` + created.ID + `","knowledge_base_id":"kb_default","profiles":["realtime"],"top_ks":[1]}`
 	resp = performJSON(h, "POST", "/v1/optimizations", optimizeBody, tenantBToken)
 	if resp.Code != 404 || !strings.Contains(resp.Body, `"code":"dataset_not_found"`) {
@@ -413,6 +408,11 @@ func TestDatasetItemEvaluationAndOptimizationUseTokenTenant(t *testing.T) {
 	resp = performJSON(h, "POST", "/v1/datasets/"+created.ID+"/items", itemBody, tenantAToken)
 	if resp.Code != 201 {
 		t.Fatalf("tenant item create status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	resp = performJSON(h, "POST", "/v1/evaluations", evalBody, tenantAToken)
+	if resp.Code != 202 {
+		t.Fatalf("tenant evaluation status = %d body=%s", resp.Code, resp.Body)
 	}
 }
 
