@@ -18,6 +18,7 @@ import (
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
+	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -431,6 +432,14 @@ func (s *Server) optimize(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	c.JSON(consts.StatusAccepted, result)
+}
+
+func writeDatasetError(c *app.RequestContext, fallbackCode string, err error) {
+	if apperrors.IsCode(err, apperrors.CodeNotFound) {
+		writeError(c, consts.StatusNotFound, "dataset_not_found", "dataset not found")
+		return
+	}
+	writeError(c, consts.StatusInternalServerError, fallbackCode, err.Error())
 }
 
 func bindJSON(c *app.RequestContext, dst any) bool {

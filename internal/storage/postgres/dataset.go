@@ -9,7 +9,7 @@ import (
 )
 
 func (r *Repository) CreateDataset(ctx context.Context, ds dataset.Dataset) (dataset.Dataset, error) {
-	_, err := r.knowledgeBaseQueryer().Exec(ctx, `
+	_, err := r.datasetDB().Exec(ctx, `
 		INSERT INTO datasets(id, tenant_id, name, kind, version, created_at)
 		VALUES($1,$2,$3,$4,$5,$6)`,
 		ds.ID, ds.TenantID, ds.Name, ds.Kind, ds.Version, ds.CreatedAt)
@@ -17,7 +17,7 @@ func (r *Repository) CreateDataset(ctx context.Context, ds dataset.Dataset) (dat
 }
 
 func (r *Repository) GetDataset(ctx context.Context, tenantID, id string) (dataset.Dataset, bool, error) {
-	row := r.knowledgeBaseQueryer().QueryRow(ctx, `
+	row := r.datasetDB().QueryRow(ctx, `
 		SELECT id, tenant_id, name, kind, version, created_at
 		FROM datasets
 		WHERE tenant_id=$1 AND id=$2`, tenantID, id)
@@ -36,7 +36,7 @@ func (r *Repository) AddDatasetItem(ctx context.Context, tenantID string, item d
 	if err != nil {
 		return dataset.Item{}, err
 	}
-	tag, err := r.knowledgeBaseQueryer().Exec(ctx, `
+	tag, err := r.datasetDB().Exec(ctx, `
 		INSERT INTO dataset_items(id, dataset_id, query, ground_truth, relevant_doc_ids)
 		SELECT $1, $2, $3, $4, $5
 		WHERE EXISTS (
@@ -59,7 +59,7 @@ func (r *Repository) DatasetItems(ctx context.Context, tenantID, datasetID strin
 	} else if !ok {
 		return nil, dataset.ErrDatasetNotFound
 	}
-	rows, err := r.knowledgeBaseQueryer().Query(ctx, `
+	rows, err := r.datasetDB().Query(ctx, `
 		SELECT i.id, i.dataset_id, i.query, i.ground_truth, i.relevant_doc_ids
 		FROM dataset_items i
 		JOIN datasets d ON d.id=i.dataset_id
@@ -80,4 +80,11 @@ func (r *Repository) DatasetItems(ctx context.Context, tenantID, datasetID strin
 		out = append(out, item)
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) datasetDB() datasetQueryer {
+	if r.datasetRunner != nil {
+		return r.datasetRunner
+	}
+	return pgxDatasetQueryer{pool: r.Pool}
 }

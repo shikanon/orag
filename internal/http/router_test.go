@@ -223,6 +223,57 @@ func TestQueryStreamSSEErrorUsesRequestTraceID(t *testing.T) {
 	}
 }
 
+func TestDatasetItemEvaluationAndOptimizationUseTokenTenant(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	tenantAToken := loginToken(t, h)
+	tenantBToken, err := app.Auth.IssueToken("tenant_b", "user_b")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := performJSON(h, "POST", "/v1/datasets", `{"name":"regression","kind":"golden"}`, tenantAToken)
+	if resp.Code != 201 {
+		t.Fatalf("create dataset status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" {
+		t.Fatalf("missing dataset id: %s", resp.Body)
+	}
+
+	evalBody := `{"dataset_id":"` + created.ID + `","knowledge_base_id":"kb_default","profile":"realtime"}`
+	resp = performJSON(h, "POST", "/v1/evaluations", evalBody, tenantBToken)
+	if resp.Code != 404 || !strings.Contains(resp.Body, `"code":"dataset_not_found"`) {
+		t.Fatalf("cross-tenant evaluation status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "POST", "/v1/evaluations", evalBody, tenantAToken)
+	if resp.Code != 202 {
+		t.Fatalf("tenant evaluation status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	optimizeBody := `{"dataset_id":"` + created.ID + `","knowledge_base_id":"kb_default","profiles":["realtime"],"top_ks":[1]}`
+	resp = performJSON(h, "POST", "/v1/optimizations", optimizeBody, tenantBToken)
+	if resp.Code != 404 || !strings.Contains(resp.Body, `"code":"dataset_not_found"`) {
+		t.Fatalf("cross-tenant optimization status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	itemBody := `{"query":"q","ground_truth":"a","relevant_doc_ids":["doc_1"]}`
+	resp = performJSON(h, "POST", "/v1/datasets/"+created.ID+"/items", itemBody, tenantBToken)
+	if resp.Code != 404 || !strings.Contains(resp.Body, `"code":"dataset_not_found"`) {
+		t.Fatalf("cross-tenant item create status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "POST", "/v1/datasets/"+created.ID+"/items", itemBody, tenantAToken)
+	if resp.Code != 201 {
+		t.Fatalf("tenant item create status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
 func TestHealthReadyAndMetrics(t *testing.T) {
 	h, closeApp := newTestHertz(t)
 	defer closeApp()
