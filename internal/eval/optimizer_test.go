@@ -2,9 +2,11 @@ package eval
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/shikanon/orag/internal/dataset"
+	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/rag"
 )
 
@@ -61,5 +63,38 @@ func TestOptimizerUsesAnswerAccuracy(t *testing.T) {
 	}
 	if result.Best.Profile != rag.ProfileHighPrecision || result.Best.Score != 1 {
 		t.Fatalf("best = %#v, want high_precision score 1", result.Best)
+	}
+}
+
+func TestOptimizerRequiresDatasetTenant(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService(dataset.NewMemoryRepository())
+	ds, err := dsSvc.Create(ctx, "tenant_a", "optimizer-tenant", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dsSvc.Create(ctx, "tenant_b", "tenant-b-regression", "golden"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dsSvc.AddItem(ctx, "tenant_a", ds.ID, dataset.Item{Query: "q", GroundTruth: "a"}); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := Runner{Datasets: dsSvc}
+	result, err := (Optimizer{Runner: runner}).Optimize(ctx, OptimizeRequest{
+		TenantID:        "tenant_b",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Profiles:        []rag.Profile{rag.ProfileRealtime},
+		TopKs:           []int{1},
+	})
+	if !errors.Is(err, dataset.ErrDatasetNotFound) {
+		t.Fatalf("Optimize() error = %v, want dataset not found", err)
+	}
+	if !apperrors.IsCode(err, apperrors.CodeNotFound) {
+		t.Fatalf("Optimize() error = %v, want not-found app error", err)
+	}
+	if len(result.Candidates) != 0 {
+		t.Fatalf("candidates = %d, want 0", len(result.Candidates))
 	}
 }
