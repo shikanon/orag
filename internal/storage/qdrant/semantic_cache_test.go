@@ -69,68 +69,122 @@ func TestSemanticCachePayloadRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSemanticCacheSearchFilterIncludesProfileAndTopK(t *testing.T) {
-	filter := semanticCacheSearchFilter(rag.SemanticCacheLookupRequest{
+func TestSemanticCacheLookupFilterIncludesProfile(t *testing.T) {
+	req := rag.SemanticCacheLookupRequest{
 		TenantID:        "tenant_default",
 		KnowledgeBaseID: "kb_default",
 		Profile:         rag.ProfileHighPrecision,
-		TopK:            16,
-	})
-	conditions := filter.GetMust()
-	if got := filterKeyword(conditions, "tenant_id"); got != "tenant_default" {
-		t.Fatalf("tenant_id filter = %q", got)
+		TopK:            12,
 	}
-	if got := filterKeyword(conditions, "knowledge_base_id"); got != "kb_default" {
-		t.Fatalf("knowledge_base_id filter = %q", got)
+
+	filter := semanticCacheLookupFilter(req)
+	if got := filterKeyword(t, filter, "tenant_id"); got != req.TenantID {
+		t.Fatalf("tenant filter = %q", got)
 	}
-	if got := filterKeyword(conditions, "cache_key_version"); got != semanticCachePayloadVersion {
-		t.Fatalf("cache_key_version filter = %q", got)
+	if got := filterKeyword(t, filter, "knowledge_base_id"); got != req.KnowledgeBaseID {
+		t.Fatalf("knowledge base filter = %q", got)
 	}
-	if got := filterKeyword(conditions, "profile"); got != string(rag.ProfileHighPrecision) {
-		t.Fatalf("profile filter = %q", got)
+	if got := filterKeyword(t, filter, "cache_key_version"); got != semanticCachePayloadVersion {
+		t.Fatalf("cache key version filter = %q", got)
 	}
-	if got := filterInteger(conditions, "top_k"); got != 16 {
+	if got := filterKeyword(t, filter, "profile"); got != string(req.Profile) {
+		t.Fatalf("profile filter = %q, want %q", got, req.Profile)
+	}
+	if got := filterInteger(t, filter, "top_k"); got != int64(req.TopK) {
 		t.Fatalf("top_k filter = %d", got)
 	}
+
+	req.Profile = ""
+	if got := filterKeyword(t, semanticCacheLookupFilter(req), "profile"); got != string(rag.ProfileRealtime) {
+		t.Fatalf("empty request profile filter = %q, want %q", got, rag.ProfileRealtime)
+	}
 }
 
-func TestSemanticCachePointIDIncludesProfileAndTopK(t *testing.T) {
-	base := rag.SemanticCacheEntry{
+func TestSemanticCachePointKeyUsesResolvedProfile(t *testing.T) {
+	entry := rag.SemanticCacheEntry{
 		TenantID:        "tenant_default",
 		KnowledgeBaseID: "kb_default",
-		Query:           "qdrant cache",
-		Profile:         rag.ProfileRealtime,
+		Query:           "  Qdrant   Cache  ",
 		TopK:            8,
+		Response: rag.QueryResponse{
+			Profile: rag.ProfileHighPrecision,
+		},
 	}
-	profileVariant := base
-	profileVariant.Profile = rag.ProfileHighPrecision
-	topKVariant := base
-	topKVariant.TopK = 16
 
-	if semanticCachePointID(base).GetNum() == semanticCachePointID(profileVariant).GetNum() {
-		t.Fatalf("semantic cache point id should differ by profile")
+	got := semanticCachePointKey(entry)
+	want := rag.CacheKey(rag.QueryRequest{
+		TenantID:        entry.TenantID,
+		KnowledgeBaseID: entry.KnowledgeBaseID,
+		Query:           entry.Query,
+		Profile:         rag.ProfileHighPrecision,
+		TopK:            entry.TopK,
+	})
+	if got != want {
+		t.Fatalf("point key = %q, want %q", got, want)
 	}
-	if semanticCachePointID(base).GetNum() == semanticCachePointID(topKVariant).GetNum() {
-		t.Fatalf("semantic cache point id should differ by top_k")
+	if payloadProfile := payloadString(semanticCachePayload(entry), "profile"); payloadProfile != string(rag.ProfileHighPrecision) {
+		t.Fatalf("payload profile = %q", payloadProfile)
+	}
+
+	profileVariant := entry
+	profileVariant.Response.Profile = rag.ProfileRealtime
+	if semanticCachePointKey(profileVariant) == got {
+		t.Fatalf("point key should differ by resolved profile")
+	}
+
+	topKVariant := entry
+	topKVariant.TopK = 99
+	if semanticCachePointKey(topKVariant) == got {
+		t.Fatalf("point key should differ by top_k")
 	}
 }
 
-func filterKeyword(conditions []*qdrant.Condition, key string) string {
-	for _, condition := range conditions {
-		field := condition.GetField()
-		if field.GetKey() == key {
-			return field.GetMatch().GetKeyword()
-		}
+func TestSemanticCacheLookupPayloadRequiresMatchingProfile(t *testing.T) {
+	payload := map[string]*qdrant.Value{
+		"profile":        stringValue(string(rag.ProfileRealtime)),
+		"answer":         stringValue("cached answer"),
+		"citations_json": stringValue("[]"),
+		"retrieved_json": stringValue("[]"),
 	}
-	return ""
+
+	resp, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{Profile: rag.ProfileRealtime}, payload)
+	if !ok {
+		t.Fatalf("same profile payload should hit")
+	}
+	if resp.Profile != rag.ProfileRealtime {
+		t.Fatalf("response profile = %q", resp.Profile)
+	}
+
+	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{Profile: rag.ProfileHighPrecision}, payload); ok {
+		t.Fatalf("mismatched profile payload should miss")
+	}
+
+	delete(payload, "profile")
+	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{Profile: rag.ProfileRealtime}, payload); ok {
+		t.Fatalf("empty profile payload should miss")
+	}
 }
 
-func filterInteger(conditions []*qdrant.Condition, key string) int64 {
-	for _, condition := range conditions {
-		field := condition.GetField()
+func filterKeyword(t *testing.T, filter *qdrant.Filter, key string) string {
+	t.Helper()
+	field := filterField(t, filter, key)
+	return field.GetMatch().GetKeyword()
+}
+
+func filterInteger(t *testing.T, filter *qdrant.Filter, key string) int64 {
+	t.Helper()
+	field := filterField(t, filter, key)
+	return field.GetMatch().GetInteger()
+}
+
+func filterField(t *testing.T, filter *qdrant.Filter, key string) *qdrant.FieldCondition {
+	t.Helper()
+	for _, cond := range filter.GetMust() {
+		field := cond.GetField()
 		if field.GetKey() == key {
-			return field.GetMatch().GetInteger()
+			return field
 		}
 	}
-	return 0
+	t.Fatalf("filter missing field %q", key)
+	return nil
 }

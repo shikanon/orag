@@ -33,7 +33,7 @@ func (s SemanticCache) Lookup(ctx context.Context, req rag.SemanticCacheLookupRe
 		CollectionName: s.Collection,
 		Vector:         float32Vector(req.Vector),
 		Limit:          1,
-		Filter:         semanticCacheSearchFilter(req),
+		Filter:         semanticCacheLookupFilter(req),
 		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
 	})
 	if err != nil {
@@ -46,7 +46,8 @@ func (s SemanticCache) Lookup(ctx context.Context, req rag.SemanticCacheLookupRe
 	if float64(point.GetScore()) < threshold {
 		return rag.QueryResponse{}, false, nil
 	}
-	return semanticCacheResponseFromPayload(point.GetPayload()), true, nil
+	cached, ok := semanticCacheLookupResponseFromPayload(req, point.GetPayload())
+	return cached, ok, nil
 }
 
 func (s SemanticCache) Store(ctx context.Context, entry rag.SemanticCacheEntry) error {
@@ -68,7 +69,7 @@ func (s SemanticCache) Store(ctx context.Context, entry rag.SemanticCacheEntry) 
 	return err
 }
 
-func semanticCacheSearchFilter(req rag.SemanticCacheLookupRequest) *qdrant.Filter {
+func semanticCacheLookupFilter(req rag.SemanticCacheLookupRequest) *qdrant.Filter {
 	return &qdrant.Filter{Must: []*qdrant.Condition{
 		matchKeyword("tenant_id", req.TenantID),
 		matchKeyword("knowledge_base_id", req.KnowledgeBaseID),
@@ -79,13 +80,17 @@ func semanticCacheSearchFilter(req rag.SemanticCacheLookupRequest) *qdrant.Filte
 }
 
 func semanticCachePointID(entry rag.SemanticCacheEntry) *qdrant.PointId {
-	return pointID(rag.CacheKey(rag.QueryRequest{
+	return pointID(semanticCachePointKey(entry))
+}
+
+func semanticCachePointKey(entry rag.SemanticCacheEntry) string {
+	return rag.CacheKey(rag.QueryRequest{
 		TenantID:        entry.TenantID,
 		KnowledgeBaseID: entry.KnowledgeBaseID,
 		Query:           entry.Query,
 		Profile:         semanticCacheEntryProfile(entry),
 		TopK:            entry.TopK,
-	}))
+	})
 }
 
 func semanticCachePayload(entry rag.SemanticCacheEntry) map[string]*qdrant.Value {
@@ -107,6 +112,14 @@ func semanticCachePayload(entry rag.SemanticCacheEntry) map[string]*qdrant.Value
 		"retrieved_json":    stringValue(mustMarshalString(resp.RetrievedChunks)),
 		"created_at":        stringValue(createdAt.UTC().Format(time.RFC3339Nano)),
 	}
+}
+
+func semanticCacheLookupResponseFromPayload(req rag.SemanticCacheLookupRequest, payload map[string]*qdrant.Value) (rag.QueryResponse, bool) {
+	profile := payloadString(payload, "profile")
+	if profile == "" || rag.Profile(profile) != semanticCacheProfile(req.Profile) {
+		return rag.QueryResponse{}, false
+	}
+	return semanticCacheResponseFromPayload(payload), true
 }
 
 func semanticCacheResponseFromPayload(payload map[string]*qdrant.Value) rag.QueryResponse {

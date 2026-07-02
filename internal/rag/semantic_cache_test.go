@@ -82,3 +82,57 @@ func TestCacheKeyIncludesProfileAndTopK(t *testing.T) {
 		t.Fatalf("CacheKey() should normalize query case and whitespace")
 	}
 }
+
+func TestSemanticCacheStoreUsesResponseProfile(t *testing.T) {
+	ctx := context.Background()
+	cache := &recordingSemanticCache{}
+	service := Service{Cache: cache}
+	req := QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+	}
+	resp := QueryResponse{
+		Answer:  "cached answer",
+		Profile: ProfileHighPrecision,
+		Citations: []Citation{{
+			ChunkID:    "chk_1",
+			DocumentID: "doc_1",
+			SourceURI:  "memory://doc",
+		}},
+	}
+
+	if warning := service.StoreSemanticCache(ctx, req, []float64{0.1}, ProfileRealtime, 8, resp); warning != "" {
+		t.Fatalf("StoreSemanticCache() warning = %q", warning)
+	}
+	if cache.entry.Profile != ProfileHighPrecision {
+		t.Fatalf("stored profile = %q, want %q", cache.entry.Profile, ProfileHighPrecision)
+	}
+	if cache.entry.Response.Profile != ProfileHighPrecision {
+		t.Fatalf("stored response profile = %q, want %q", cache.entry.Response.Profile, ProfileHighPrecision)
+	}
+
+	resp.Profile = ""
+	if warning := service.StoreSemanticCache(ctx, req, []float64{0.1}, ProfileRealtime, 8, resp); warning != "" {
+		t.Fatalf("StoreSemanticCache() warning = %q", warning)
+	}
+	if cache.entry.Profile != ProfileRealtime {
+		t.Fatalf("fallback profile = %q, want %q", cache.entry.Profile, ProfileRealtime)
+	}
+	if cache.entry.Response.Profile != ProfileRealtime {
+		t.Fatalf("fallback response profile = %q, want %q", cache.entry.Response.Profile, ProfileRealtime)
+	}
+}
+
+type recordingSemanticCache struct {
+	entry SemanticCacheEntry
+}
+
+func (c *recordingSemanticCache) Lookup(context.Context, SemanticCacheLookupRequest) (QueryResponse, bool, error) {
+	return QueryResponse{}, false, nil
+}
+
+func (c *recordingSemanticCache) Store(_ context.Context, entry SemanticCacheEntry) error {
+	c.entry = entry
+	return nil
+}
