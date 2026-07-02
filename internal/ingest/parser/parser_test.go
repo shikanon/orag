@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +19,12 @@ type recordingMultimodal struct {
 func (m *recordingMultimodal) MultimodalParse(_ context.Context, name string, _ []byte) (string, error) {
 	m.names = append(m.names, name)
 	return "vision: " + name, nil
+}
+
+type failingMultimodal struct{}
+
+func (failingMultimodal) MultimodalParse(_ context.Context, _ string, _ []byte) (string, error) {
+	return "", errors.New("vision unavailable")
 }
 
 func TestBasicParserText(t *testing.T) {
@@ -51,6 +58,19 @@ func TestBasicParserDescribesPDFWithMultimodalModel(t *testing.T) {
 	}
 	if len(mm.names) != 1 || mm.names[0] != "deck.pdf" {
 		t.Fatalf("multimodal calls = %#v", mm.names)
+	}
+}
+
+func TestBasicParserRejectsPDFWithoutMultimodalText(t *testing.T) {
+	if _, err := (BasicParser{}).Parse(context.Background(), "deck.pdf", []byte("%PDF-binary")); err == nil {
+		t.Fatal("expected PDF without multimodal text to fail")
+	}
+}
+
+func TestBasicParserReturnsMultimodalErrors(t *testing.T) {
+	_, err := (BasicParser{Multimodal: failingMultimodal{}}).Parse(context.Background(), "scan.png", []byte("\x89PNG"))
+	if err == nil || !strings.Contains(err.Error(), "vision unavailable") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
 )
 
@@ -46,6 +47,25 @@ func TestIngestionJobResultMigration(t *testing.T) {
 		if !strings.Contains(text, required) {
 			t.Fatalf("migration missing %q: %s", required, text)
 		}
+	}
+}
+
+func TestChunksWithDocumentIDRemapsChunkIDs(t *testing.T) {
+	chunks := []kb.Chunk{
+		{ID: "chk_old_0", DocumentID: "doc_old", Content: "first"},
+		{ID: "chk_old_1", DocumentID: "doc_old", Content: "second"},
+	}
+
+	got := chunksWithDocumentID(chunks, "doc_existing")
+
+	if got[0].DocumentID != "doc_existing" || got[1].DocumentID != "doc_existing" {
+		t.Fatalf("document ids = %q, %q", got[0].DocumentID, got[1].DocumentID)
+	}
+	if got[0].ID != chunkID("doc_existing", 0) || got[1].ID != chunkID("doc_existing", 1) {
+		t.Fatalf("chunk ids not remapped: %#v", got)
+	}
+	if chunks[0].DocumentID != "doc_old" || chunks[0].ID != "chk_old_0" {
+		t.Fatalf("input chunks were mutated: %#v", chunks)
 	}
 }
 

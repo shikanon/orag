@@ -2,7 +2,10 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -91,6 +94,7 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 	}
 	if existingID != "" {
 		doc.ID = existingID
+		chunks = chunksWithDocumentID(chunks, existingID)
 	}
 
 	_, err = tx.Exec(ctx, `
@@ -106,9 +110,6 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 	}
 
 	for _, chunk := range chunks {
-		if existingID != "" {
-			chunk.DocumentID = existingID
-		}
 		_, err = tx.Exec(ctx, `
 			INSERT INTO chunks(id, tenant_id, knowledge_base_id, document_id, content, source_uri, page, section, offset_start, metadata)
 			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
@@ -125,6 +126,24 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+func chunksWithDocumentID(chunks []kb.Chunk, documentID string) []kb.Chunk {
+	out := make([]kb.Chunk, len(chunks))
+	copy(out, chunks)
+	for i := range out {
+		if out[i].DocumentID == documentID {
+			continue
+		}
+		out[i].DocumentID = documentID
+		out[i].ID = chunkID(documentID, i)
+	}
+	return out
+}
+
+func chunkID(docID string, index int) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%d", docID, index)))
+	return "chk_" + hex.EncodeToString(sum[:])[:24]
 }
 
 func (r *Repository) Chunks(tenantID, kbID string) []kb.Chunk {
