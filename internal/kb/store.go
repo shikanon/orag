@@ -9,12 +9,17 @@ type KnowledgeBaseRepository interface {
 	DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error)
 }
 
+type KnowledgeBaseDeleter interface {
+	DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error)
+}
+
 type ChunkSource interface {
 	Chunks(tenantID, kbID string) []Chunk
 }
 
 type Store interface {
 	KnowledgeBaseRepository
+	KnowledgeBaseDeleter
 	ChunkSource
 	Indexer
 }
