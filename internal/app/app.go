@@ -74,6 +74,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		NoContextAnswer:        cfg.RAG.NoContextAnswer,
 		TopK:                   cfg.RAG.DenseTopK,
 		SemanticCacheThreshold: cfg.RAG.SemanticCacheThreshold,
+		RRFK:                   cfg.RAG.RRFK,
 
 		QueryRewriteEnabled: cfg.RAG.QueryRewriteEnabled,
 		MultiQueryCount:     cfg.RAG.MultiQueryCount,

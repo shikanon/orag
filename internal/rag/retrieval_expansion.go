@@ -153,7 +153,7 @@ func (s *Service) RetrieveExpanded(ctx context.Context, req QueryRequest, topK i
 	if len(resultSets) == 1 {
 		return resultSets[0], queryVector, warnings, nil
 	}
-	return kb.RRF(resultSets, 60, topK), queryVector, warnings, nil
+	return kb.RRF(resultSets, s.RRFK, topK), queryVector, warnings, nil
 }
 
 func (s *Service) generateMultiQueries(ctx context.Context, originalQuery, baseQuery string, count int) ([]string, error) {

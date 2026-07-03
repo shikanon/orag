@@ -11,6 +11,9 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("PORT", "")
 	t.Setenv("ARK_BASE_URL", "")
 	t.Setenv("ARK_API_KEY", "ark-test-key")
+	t.Setenv("RAG_QUERY_REWRITE_ENABLED", "")
+	t.Setenv("RAG_MULTI_QUERY_COUNT", "")
+	t.Setenv("RAG_HYDE_ENABLED", "")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -44,6 +47,15 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Ingestion.ParserMethod != "basic" {
 		t.Fatalf("default parser method = %q", cfg.Ingestion.ParserMethod)
+	}
+	if !cfg.RAG.QueryRewriteEnabled {
+		t.Fatal("expected query rewrite default to be enabled")
+	}
+	if cfg.RAG.MultiQueryCount != 3 {
+		t.Fatalf("default multi-query count = %d, want 3", cfg.RAG.MultiQueryCount)
+	}
+	if !cfg.RAG.HyDEEnabled {
+		t.Fatal("expected HyDE default to be enabled")
 	}
 }
 

@@ -71,7 +71,7 @@ trace context (trace_id)
 | `realtime` | 默认 profile，偏主路径和低延迟。 |
 | `high_precision` | 用于质量优先的查询和评估对比。 |
 
-profile 与 `top_k` 会影响候选规模、召回质量和延迟。optimizer 当前只对 `profiles` 和 `top_ks` 做确定性网格搜索。
+`high_precision` 会启用查询改写、多查询扩展（`RAG_MULTI_QUERY_COUNT`，默认 3）和 HyDE，并对多路检索结果做 RRF 融合后再重排。profile 与 `top_k` 会影响候选规模、召回质量和延迟。optimizer 当前只对 `profiles` 和 `top_ks` 做确定性网格搜索。
 
 ## Cache 状态
 

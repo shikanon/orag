@@ -3,6 +3,7 @@ package rag
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -96,6 +97,35 @@ func TestExecuteHighPrecisionMultiQueryAndHyDEUseExpandedRetrieval(t *testing.T)
 	}
 }
 
+func TestRetrieveExpandedUsesConfiguredRRFK(t *testing.T) {
+	ctx := context.Background()
+	retriever := &rrfKServiceRetriever{}
+	service := Service{
+		Retriever: retriever,
+		RRFK:      7,
+		TopK:      5,
+	}
+
+	results, _, _, err := service.RetrieveExpanded(ctx, QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+	}, 5, []RetrievalQuery{
+		{Query: "qdrant hybrid retrieval", EmbeddingText: "qdrant vector search"},
+		{Query: "dense sparse fusion", EmbeddingText: "qdrant vector search"},
+	}, []float64{1, 2})
+	if err != nil {
+		t.Fatalf("RetrieveExpanded() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1: %#v", len(results), results)
+	}
+	wantScore := 1.0/float64(7+1) + 1.0/float64(7+2)
+	if math.Abs(results[0].Score-wantScore) > 1e-12 {
+		t.Fatalf("RRF score = %.12f, want %.12f", results[0].Score, wantScore)
+	}
+}
+
 type semanticCacheStub struct {
 	lookupReq SemanticCacheLookupRequest
 	resp      QueryResponse
@@ -128,6 +158,27 @@ func (r *recordingServiceRetriever) Retrieve(_ context.Context, req kb.SearchReq
 		},
 		Score: 1,
 		Rank:  1,
+		From:  "stub",
+	}}, nil
+}
+
+type rrfKServiceRetriever struct {
+	calls int
+}
+
+func (r *rrfKServiceRetriever) Retrieve(_ context.Context, req kb.SearchRequest) ([]kb.SearchResult, error) {
+	r.calls++
+	return []kb.SearchResult{{
+		Chunk: kb.Chunk{
+			ID:              "chk_rrf",
+			TenantID:        req.TenantID,
+			KnowledgeBaseID: req.KnowledgeBaseID,
+			DocumentID:      "doc_rrf",
+			Content:         req.Query + " context",
+			SourceURI:       "memory://rrf",
+		},
+		Score: 1,
+		Rank:  r.calls,
 		From:  "stub",
 	}}, nil
 }
