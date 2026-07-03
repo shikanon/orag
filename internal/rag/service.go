@@ -34,6 +34,7 @@ type Service struct {
 	TopK                   int
 	Pipeline               Pipeline
 	SemanticCacheThreshold float64
+	RRFK                   int
 
 	QueryRewriteEnabled bool
 	MultiQueryCount     int
