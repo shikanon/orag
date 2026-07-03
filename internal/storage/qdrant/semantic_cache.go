@@ -69,6 +69,18 @@ func (s SemanticCache) Store(ctx context.Context, entry rag.SemanticCacheEntry) 
 	return err
 }
 
+func (s SemanticCache) DeleteKnowledgeBaseSemanticCache(ctx context.Context, tenantID, kbID string) error {
+	wait := true
+	_, err := s.Client.Points.Delete(ctx, &qdrant.DeletePoints{
+		CollectionName: s.Collection,
+		Wait:           &wait,
+		Points: &qdrant.PointsSelector{PointsSelectorOneOf: &qdrant.PointsSelector_Filter{
+			Filter: knowledgeBaseFilter(tenantID, kbID),
+		}},
+	})
+	return err
+}
+
 func semanticCacheLookupFilter(req rag.SemanticCacheLookupRequest) *qdrant.Filter {
 	return &qdrant.Filter{Must: []*qdrant.Condition{
 		matchKeyword("tenant_id", req.TenantID),
