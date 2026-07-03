@@ -76,6 +76,7 @@ Content-Type: application/json
 | `401` | `missing_bearer_token` | 受保护的 `/v1/*` API 未带 Bearer token。 |
 | `401` | `invalid_bearer_token` | Bearer token 无效或过期。 |
 | `404` | `knowledge_base_not_found` | 查询/删除不存在或不属于当前 tenant 的知识库，或向这类知识库导入/上传文档。 |
+| `404` | `dataset_not_found` | 写入样本、运行评估或优化时，数据集不存在或不属于当前 tenant。 |
 | `404` | `ingestion_job_not_found` | 查询不存在的入库 job。 |
 | `404` | `evaluation_not_found` | 查询不存在的评估结果。 |
 | `413` | `payload_too_large` | 入库内容超过 `INGEST_MAX_DOCUMENT_BYTES`。 |
@@ -470,6 +471,8 @@ POST /v1/datasets/{id}/items
 }
 ```
 
+如果 `{id}` 对应的数据集不存在或不属于当前 tenant，返回 `404 dataset_not_found`，不会写入样本。
+
 `examples/curl/40_eval.sh` 会先创建数据集，再添加一个样本；如果 `.orag-demo/document_id` 存在，会把该文档 ID 放入 `relevant_doc_ids`。
 
 ## 评估
@@ -490,6 +493,8 @@ POST /v1/evaluations
   "top_k": 8
 }
 ```
+
+如果 `dataset_id` 不存在或不属于当前 tenant，返回 `404 dataset_not_found`，不会创建 `evaluation_runs` 或 `evaluation_results`。
 
 响应 `202 Accepted`：
 
@@ -553,6 +558,8 @@ POST /v1/optimizations
 ```
 
 `profiles` 和 `top_ks` 都是可选字段。未传 `profiles` 时，优化器默认尝试 `realtime` 和 `high_precision`；未传 `top_ks` 时，默认尝试 `[8]`。
+
+如果 `dataset_id` 不存在或不属于当前 tenant，返回 `404 dataset_not_found`，不会创建候选评估运行。
 
 响应 `202 Accepted`：
 
