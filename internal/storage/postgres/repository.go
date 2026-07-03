@@ -15,6 +15,7 @@ type Repository struct {
 	Pool          *pgxpool.Pool
 	StageChunks   bool
 	kbQueryer     knowledgeBaseQueryer
+	kbTxBeginner  knowledgeBaseTxBeginner
 	traceReader   traceQueryer
 	datasetRunner datasetQueryer
 }
@@ -27,6 +28,25 @@ type knowledgeBaseQueryer interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+type knowledgeBaseTx interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
+}
+
+type knowledgeBaseTxBeginner interface {
+	BeginKnowledgeBaseTx(ctx context.Context) (knowledgeBaseTx, error)
+}
+
+type pgxKnowledgeBaseTxBeginner struct {
+	pool *pgxpool.Pool
+}
+
+func (b pgxKnowledgeBaseTxBeginner) BeginKnowledgeBaseTx(ctx context.Context) (knowledgeBaseTx, error) {
+	return b.pool.Begin(ctx)
 }
 
 type pgxTraceQueryer struct {
@@ -117,11 +137,23 @@ func (r *Repository) GetKnowledgeBase(tenantID, id string) (kb.KnowledgeBase, bo
 }
 
 func (r *Repository) DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error) {
-	tx, err := r.Pool.Begin(ctx)
+	tx, err := r.knowledgeBaseTxBeginner().BeginKnowledgeBaseTx(ctx)
 	if err != nil {
 		return false, err
 	}
 	defer tx.Rollback(ctx)
+
+	var lockedID string
+	if err = tx.QueryRow(ctx, `
+		SELECT id
+		FROM knowledge_bases
+		WHERE tenant_id=$1 AND id=$2
+		FOR UPDATE`, tenantID, id).Scan(&lockedID); err != nil {
+		if err == pgx.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
 
 	if _, err = tx.Exec(ctx, `
 		DELETE FROM chunks
@@ -259,6 +291,13 @@ func (r *Repository) knowledgeBaseQueryer() knowledgeBaseQueryer {
 		return r.kbQueryer
 	}
 	return r.Pool
+}
+
+func (r *Repository) knowledgeBaseTxBeginner() knowledgeBaseTxBeginner {
+	if r.kbTxBeginner != nil {
+		return r.kbTxBeginner
+	}
+	return pgxKnowledgeBaseTxBeginner{pool: r.Pool}
 }
 
 type kbScanner interface {

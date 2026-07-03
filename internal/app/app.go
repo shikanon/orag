@@ -195,9 +195,14 @@ type knowledgeBaseVectorDeleter interface {
 	DeleteKnowledgeBaseVectors(ctx context.Context, tenantID, kbID string) error
 }
 
+type knowledgeBaseSemanticCacheDeleter interface {
+	DeleteKnowledgeBaseSemanticCache(ctx context.Context, tenantID, kbID string) error
+}
+
 type knowledgeBaseStore struct {
-	primary       kb.KnowledgeBaseRepository
-	vectorDeleter knowledgeBaseVectorDeleter
+	primary              kb.KnowledgeBaseRepository
+	vectorDeleter        knowledgeBaseVectorDeleter
+	semanticCacheDeleter knowledgeBaseSemanticCacheDeleter
 }
 
 func (s knowledgeBaseStore) PutKnowledgeBase(ctx context.Context, item kb.KnowledgeBase) error {
@@ -220,6 +225,11 @@ func (s knowledgeBaseStore) DeleteKnowledgeBase(ctx context.Context, tenantID, i
 	}
 	if s.vectorDeleter != nil {
 		if err := s.vectorDeleter.DeleteKnowledgeBaseVectors(ctx, tenantID, id); err != nil {
+			return false, err
+		}
+	}
+	if s.semanticCacheDeleter != nil {
+		if err := s.semanticCacheDeleter.DeleteKnowledgeBaseSemanticCache(ctx, tenantID, id); err != nil {
 			return false, err
 		}
 	}
@@ -283,7 +293,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 	indexer := kb.CompositeIndexer{Indexers: []kb.Indexer{repo, vectors}}
 	cache := qdrantstore.SemanticCache{Client: qdrantClient, Collection: cfg.Qdrant.SemanticCacheCollection, Threshold: cfg.RAG.SemanticCacheThreshold}
 	return knowledgeBackend{
-		store:       knowledgeBaseStore{primary: repo, vectorDeleter: vectors},
+		store:       knowledgeBaseStore{primary: repo, vectorDeleter: vectors, semanticCacheDeleter: cache},
 		indexer:     indexer,
 		dense:       vectors,
 		sparse:      postgres.NewFTSRetriever(repo),

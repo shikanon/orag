@@ -197,7 +197,7 @@ GET /v1/knowledge-bases/{id}
 DELETE /v1/knowledge-bases/{id}
 ```
 
-删除成功返回 `204 No Content`，不返回 JSON body；找不到知识库时返回 `404 knowledge_base_not_found`。
+删除成功返回 `204 No Content`，不返回 JSON body；找不到知识库时返回 `404 knowledge_base_not_found`。删除会清理当前 tenant 下该知识库的文档、chunks、向量索引和语义缓存；清理失败时返回 JSON error。
 
 ## 文档入库
 

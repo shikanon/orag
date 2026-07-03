@@ -608,7 +608,8 @@ func TestDeleteKnowledgeBaseRemovesItFromGetListAndMemoryChunks(t *testing.T) {
 		t.Fatalf("create response missing id: %s", resp.Body)
 	}
 
-	resp = performJSON(h, "POST", "/v1/knowledge-bases/"+created.ID+"/documents:import", `{"name":"delete.md","source_uri":"example://delete","content":"This document should be removed with the knowledge base."}`, token)
+	marker := "deleted_kb_http_contract_marker"
+	resp = performJSON(h, "POST", "/v1/knowledge-bases/"+created.ID+"/documents:import", `{"name":"delete.md","source_uri":"example://delete","content":"This document should be removed with marker `+marker+`."}`, token)
 	if resp.Code != 202 {
 		t.Fatalf("import status = %d body=%s", resp.Code, resp.Body)
 	}
@@ -649,6 +650,25 @@ func TestDeleteKnowledgeBaseRemovesItFromGetListAndMemoryChunks(t *testing.T) {
 	}
 	if chunks := chunkSource.Chunks("tenant_default", created.ID); len(chunks) != 0 {
 		t.Fatalf("deleted knowledge base still has chunks: %#v", chunks)
+	}
+
+	stalePipeline := &countingPipeline{resp: rag.QueryResponse{
+		Answer:      "stale deleted content " + marker,
+		CacheStatus: "miss",
+		Profile:     rag.ProfileRealtime,
+		RetrievedChunks: []kb.SearchResult{{
+			Chunk: kb.Chunk{
+				TenantID:        "tenant_default",
+				KnowledgeBaseID: created.ID,
+				Content:         "stale deleted content " + marker,
+			},
+		}},
+	}}
+	app.RAG.Pipeline = stalePipeline
+	resp = performJSONWithTrace(h, "POST", "/v1/query", `{"knowledge_base_id":"`+created.ID+`","query":"`+marker+`"}`, token, "trace_deleted_kb_query")
+	assertErrorResponse(t, resp, 404, "knowledge_base_not_found", "trace_deleted_kb_query")
+	if stalePipeline.calls != 0 {
+		t.Fatalf("query pipeline called %d times for deleted knowledge base", stalePipeline.calls)
 	}
 
 	resp = performJSON(h, "DELETE", "/v1/knowledge-bases/"+created.ID, "", token)

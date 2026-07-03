@@ -1,12 +1,14 @@
 package qdrantstore
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	qdrant "github.com/qdrant/go-client/qdrant"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
+	"google.golang.org/grpc"
 )
 
 func TestSemanticCachePayloadRoundTrip(t *testing.T) {
@@ -165,6 +167,34 @@ func TestSemanticCacheLookupPayloadRequiresMatchingProfile(t *testing.T) {
 	}
 }
 
+func TestSemanticCacheDeleteKnowledgeBaseUsesTenantScopedFilter(t *testing.T) {
+	points := &recordingPointsClient{}
+	cache := SemanticCache{
+		Client:     &Client{Points: points},
+		Collection: "orag_semantic_cache_test",
+	}
+
+	if err := cache.DeleteKnowledgeBaseSemanticCache(context.Background(), "tenant_1", "kb_1"); err != nil {
+		t.Fatal(err)
+	}
+	if points.deleteReq == nil {
+		t.Fatal("DeleteKnowledgeBaseSemanticCache did not call Qdrant delete")
+	}
+	if points.deleteReq.GetCollectionName() != cache.Collection {
+		t.Fatalf("collection = %q, want %q", points.deleteReq.GetCollectionName(), cache.Collection)
+	}
+	if !points.deleteReq.GetWait() {
+		t.Fatalf("wait = %v, want true", points.deleteReq.GetWait())
+	}
+	filter := points.deleteReq.GetPoints().GetFilter()
+	if got := filterKeyword(t, filter, "tenant_id"); got != "tenant_1" {
+		t.Fatalf("tenant filter = %q", got)
+	}
+	if got := filterKeyword(t, filter, "knowledge_base_id"); got != "kb_1" {
+		t.Fatalf("knowledge base filter = %q", got)
+	}
+}
+
 func filterKeyword(t *testing.T, filter *qdrant.Filter, key string) string {
 	t.Helper()
 	field := filterField(t, filter, key)
@@ -187,4 +217,25 @@ func filterField(t *testing.T, filter *qdrant.Filter, key string) *qdrant.FieldC
 	}
 	t.Fatalf("filter missing field %q", key)
 	return nil
+}
+
+type recordingPointsClient struct {
+	deleteReq *qdrant.DeletePoints
+}
+
+func (c *recordingPointsClient) Upsert(context.Context, *qdrant.UpsertPoints, ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
+	return &qdrant.PointsOperationResponse{}, nil
+}
+
+func (c *recordingPointsClient) Search(context.Context, *qdrant.SearchPoints, ...grpc.CallOption) (*qdrant.SearchResponse, error) {
+	return &qdrant.SearchResponse{}, nil
+}
+
+func (c *recordingPointsClient) Delete(_ context.Context, req *qdrant.DeletePoints, _ ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
+	c.deleteReq = req
+	return &qdrant.PointsOperationResponse{}, nil
+}
+
+func (c *recordingPointsClient) Count(context.Context, *qdrant.CountPoints, ...grpc.CallOption) (*qdrant.CountResponse, error) {
+	return &qdrant.CountResponse{}, nil
 }

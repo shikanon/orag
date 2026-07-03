@@ -151,6 +151,104 @@ func TestRepositoryGetKnowledgeBaseReturnsScanError(t *testing.T) {
 	}
 }
 
+func TestRepositoryDeleteKnowledgeBaseLocksAndDeletesChildrenInTransaction(t *testing.T) {
+	tx := &fakeKnowledgeBaseTx{
+		row: fakeTraceRow{values: []any{"kb_1"}},
+		execTags: []pgconn.CommandTag{
+			pgconn.NewCommandTag("DELETE 1"),
+			pgconn.NewCommandTag("DELETE 1"),
+			pgconn.NewCommandTag("DELETE 1"),
+			pgconn.NewCommandTag("DELETE 1"),
+		},
+	}
+	beginner := &fakeKnowledgeBaseTxBeginner{tx: tx}
+	repo := &Repository{kbTxBeginner: beginner}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	deleted, err := repo.DeleteKnowledgeBase(ctx, "tenant_1", "kb_1")
+	if err != nil {
+		t.Fatalf("DeleteKnowledgeBase() error = %v", err)
+	}
+	if !deleted {
+		t.Fatal("DeleteKnowledgeBase() deleted = false, want true")
+	}
+	if beginner.calls != 1 || beginner.beginCtx != ctx {
+		t.Fatal("DeleteKnowledgeBase() did not begin a transaction with caller context")
+	}
+	for _, want := range []string{"FROM knowledge_bases", "tenant_id=$1 AND id=$2", "FOR UPDATE"} {
+		if !strings.Contains(tx.queryRowSQL, want) {
+			t.Fatalf("lock query missing %q: %s", want, tx.queryRowSQL)
+		}
+	}
+	wantTables := []string{"chunks", "documents", "ingestion_jobs", "knowledge_bases"}
+	if len(tx.execSQLs) != len(wantTables) {
+		t.Fatalf("Exec calls = %d, want %d: %#v", len(tx.execSQLs), len(wantTables), tx.execSQLs)
+	}
+	for i, table := range wantTables {
+		if !strings.Contains(tx.execSQLs[i], "DELETE FROM "+table) {
+			t.Fatalf("delete %d SQL = %s, want table %s", i, tx.execSQLs[i], table)
+		}
+		if table == "knowledge_bases" {
+			if !strings.Contains(tx.execSQLs[i], "tenant_id=$1 AND id=$2") {
+				t.Fatalf("knowledge base delete missing tenant guard: %s", tx.execSQLs[i])
+			}
+			continue
+		}
+		if !strings.Contains(tx.execSQLs[i], "tenant_id=$1 AND knowledge_base_id=$2") {
+			t.Fatalf("%s delete missing tenant/kb guard: %s", table, tx.execSQLs[i])
+		}
+	}
+	if tx.commitCalls != 1 {
+		t.Fatalf("Commit calls = %d, want 1", tx.commitCalls)
+	}
+}
+
+func TestRepositoryDeleteKnowledgeBaseMissingDoesNotDeleteChildren(t *testing.T) {
+	tx := &fakeKnowledgeBaseTx{row: fakeTraceRow{err: pgx.ErrNoRows}}
+	repo := &Repository{kbTxBeginner: &fakeKnowledgeBaseTxBeginner{tx: tx}}
+
+	deleted, err := repo.DeleteKnowledgeBase(context.Background(), "tenant_1", "kb_missing")
+	if err != nil {
+		t.Fatalf("DeleteKnowledgeBase() error = %v", err)
+	}
+	if deleted {
+		t.Fatal("DeleteKnowledgeBase() deleted = true, want false")
+	}
+	if len(tx.execSQLs) != 0 {
+		t.Fatalf("missing knowledge base deleted children: %#v", tx.execSQLs)
+	}
+	if tx.commitCalls != 0 {
+		t.Fatalf("Commit calls = %d, want 0", tx.commitCalls)
+	}
+	if tx.rollbackCalls != 1 {
+		t.Fatalf("Rollback calls = %d, want 1", tx.rollbackCalls)
+	}
+}
+
+func TestRepositoryDeleteKnowledgeBaseRollsBackOnChildDeleteError(t *testing.T) {
+	want := errors.New("delete chunks failed")
+	tx := &fakeKnowledgeBaseTx{
+		row:      fakeTraceRow{values: []any{"kb_1"}},
+		execErrs: []error{want},
+	}
+	repo := &Repository{kbTxBeginner: &fakeKnowledgeBaseTxBeginner{tx: tx}}
+
+	deleted, err := repo.DeleteKnowledgeBase(context.Background(), "tenant_1", "kb_1")
+	if !errors.Is(err, want) {
+		t.Fatalf("DeleteKnowledgeBase() error = %v, want %v", err, want)
+	}
+	if deleted {
+		t.Fatal("DeleteKnowledgeBase() deleted = true, want false")
+	}
+	if tx.commitCalls != 0 {
+		t.Fatalf("Commit calls = %d, want 0", tx.commitCalls)
+	}
+	if tx.rollbackCalls != 1 {
+		t.Fatalf("Rollback calls = %d, want 1", tx.rollbackCalls)
+	}
+}
+
 func TestRepositoryBootstrapDefaultsReturnsKnowledgeBaseError(t *testing.T) {
 	want := errors.New("knowledge base insert failed")
 	queryer := &fakeKnowledgeBaseQueryer{execErrs: []error{nil, want}}
@@ -323,6 +421,68 @@ type fakeKnowledgeBaseQueryer struct {
 	queryErr  error
 	querySQL  string
 	row       pgx.Row
+}
+
+type fakeKnowledgeBaseTxBeginner struct {
+	tx       *fakeKnowledgeBaseTx
+	err      error
+	beginCtx context.Context
+	calls    int
+}
+
+func (f *fakeKnowledgeBaseTxBeginner) BeginKnowledgeBaseTx(ctx context.Context) (knowledgeBaseTx, error) {
+	f.beginCtx = ctx
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.tx, nil
+}
+
+type fakeKnowledgeBaseTx struct {
+	row           pgx.Row
+	queryRowSQL   string
+	queryRowArg   []any
+	execErrs      []error
+	execTags      []pgconn.CommandTag
+	execSQLs      []string
+	execArgs      [][]any
+	commitErr     error
+	commitCalls   int
+	rollbackErr   error
+	rollbackCalls int
+}
+
+func (f *fakeKnowledgeBaseTx) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
+	f.queryRowSQL = sql
+	f.queryRowArg = args
+	if f.row == nil {
+		return fakeTraceRow{err: pgx.ErrNoRows}
+	}
+	return f.row
+}
+
+func (f *fakeKnowledgeBaseTx) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	call := len(f.execSQLs)
+	f.execSQLs = append(f.execSQLs, sql)
+	f.execArgs = append(f.execArgs, args)
+	if call < len(f.execErrs) && f.execErrs[call] != nil {
+		return pgconn.CommandTag{}, f.execErrs[call]
+	}
+	if call < len(f.execTags) {
+		return f.execTags[call], nil
+	}
+	return pgconn.NewCommandTag("DELETE 0"), nil
+}
+
+func (f *fakeKnowledgeBaseTx) Commit(context.Context) error {
+	f.commitCalls++
+	return f.commitErr
+}
+
+func (f *fakeKnowledgeBaseTx) Rollback(context.Context) error {
+	f.rollbackCalls++
+	return f.rollbackErr
 }
 
 func (f *fakeKnowledgeBaseQueryer) Exec(ctx context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {

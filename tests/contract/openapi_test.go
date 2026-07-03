@@ -76,6 +76,9 @@ func TestOpenAPI(t *testing.T) {
 		path   string
 		status int
 	}{
+		{http.MethodDelete, "/v1/knowledge-bases/{id}", http.StatusNoContent},
+		{http.MethodDelete, "/v1/knowledge-bases/{id}", http.StatusNotFound},
+		{http.MethodDelete, "/v1/knowledge-bases/{id}", http.StatusInternalServerError},
 		{http.MethodPost, "/v1/knowledge-bases/{id}/documents", http.StatusNotFound},
 		{http.MethodPost, "/v1/knowledge-bases/{id}/documents:import", http.StatusNotFound},
 		{http.MethodPost, "/v1/query", http.StatusNotFound},

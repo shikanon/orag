@@ -161,6 +161,8 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /v1/knowledge-bases/{id}/documents:
     post:
       tags: [Ingestion]

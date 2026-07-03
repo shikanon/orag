@@ -228,6 +228,35 @@ func TestDeleteKnowledgeBaseCleansPostgresAndQdrant(t *testing.T) {
 	if count := countQdrantPoints(t, ctx, app, kbID); count == 0 {
 		t.Fatal("expected qdrant points before delete")
 	}
+	cacheVector := make([]float64, app.Config.Ark.EmbeddingDimensions)
+	cacheVector[0] = 0.42
+	if err := app.RAG.Cache.Store(ctx, rag.SemanticCacheEntry{
+		TenantID:        testTenantID,
+		KnowledgeBaseID: kbID,
+		Query:           "cache cleanup " + kbID,
+		Vector:          cacheVector,
+		Profile:         rag.ProfileRealtime,
+		TopK:            8,
+		Response: rag.QueryResponse{
+			Answer:  "cached answer for deleted knowledge base",
+			Profile: rag.ProfileRealtime,
+			RetrievedChunks: []kb.SearchResult{{
+				Chunk: kb.Chunk{
+					ID:              "cached_" + kbID,
+					TenantID:        testTenantID,
+					KnowledgeBaseID: kbID,
+					DocumentID:      result.Document.ID,
+					Content:         "cached deleted content",
+				},
+			}},
+		},
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if count := countQdrantSemanticCachePoints(t, ctx, app, kbID); count == 0 {
+		t.Fatal("expected qdrant semantic cache points before delete")
+	}
 
 	deleted, err := app.KBStore.DeleteKnowledgeBase(ctx, testTenantID, kbID)
 	if err != nil {
@@ -248,6 +277,9 @@ func TestDeleteKnowledgeBaseCleansPostgresAndQdrant(t *testing.T) {
 	}
 	if count := countQdrantPoints(t, ctx, app, kbID); count != 0 {
 		t.Fatalf("qdrant points after delete = %d", count)
+	}
+	if count := countQdrantSemanticCachePoints(t, ctx, app, kbID); count != 0 {
+		t.Fatalf("qdrant semantic cache points after delete = %d", count)
 	}
 }
 
@@ -271,9 +303,19 @@ func countPostgresRows(t *testing.T, ctx context.Context, app *core.App, table, 
 
 func countQdrantPoints(t *testing.T, ctx context.Context, app *core.App, kbID string) int {
 	t.Helper()
+	return countQdrantPointsInCollection(t, ctx, app, app.Config.Qdrant.Collection, kbID)
+}
+
+func countQdrantSemanticCachePoints(t *testing.T, ctx context.Context, app *core.App, kbID string) int {
+	t.Helper()
+	return countQdrantPointsInCollection(t, ctx, app, app.Config.Qdrant.SemanticCacheCollection, kbID)
+}
+
+func countQdrantPointsInCollection(t *testing.T, ctx context.Context, app *core.App, collection, kbID string) int {
+	t.Helper()
 	exact := true
 	resp, err := app.Qdrant.Points.Count(ctx, &qdrant.CountPoints{
-		CollectionName: app.Config.Qdrant.Collection,
+		CollectionName: collection,
 		Filter:         integrationKnowledgeBaseFilter(kbID),
 		Exact:          &exact,
 	})
