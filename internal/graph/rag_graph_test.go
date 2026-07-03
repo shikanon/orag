@@ -139,6 +139,49 @@ func TestRAGGraphInvokeUsesRequestTraceIDInPersistence(t *testing.T) {
 	}
 }
 
+func TestRAGGraphInvokeRepeatedTraceIDPersistsSeparateSpanBatches(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+	svc.Cache = nil
+	g, err := NewRAGGraph(ctx, svc)
+	if err != nil {
+		t.Fatalf("NewRAGGraph() error = %v", err)
+	}
+	store := &capturingTraceStore{}
+	g.TraceStore = store
+
+	req := rag.QueryRequest{
+		TenantID:        "tenant_default",
+		TraceID:         "trace_graph_reused",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+	}
+	for i := 0; i < 2; i++ {
+		resp, err := g.Invoke(ctx, req)
+		if err != nil {
+			t.Fatalf("Invoke(%d) error = %v", i+1, err)
+		}
+		if resp.TraceID != "trace_graph_reused" {
+			t.Fatalf("Invoke(%d) trace_id = %q, want trace_graph_reused", i+1, resp.TraceID)
+		}
+	}
+
+	if store.calls != 2 {
+		t.Fatalf("StoreTrace() calls = %d, want 2", store.calls)
+	}
+	for i, traceID := range store.traceIDs {
+		if traceID != "trace_graph_reused" {
+			t.Fatalf("stored trace_id[%d] = %q, want trace_graph_reused", i, traceID)
+		}
+	}
+	if len(store.spanBatches) != 2 || len(store.spanBatches[0]) == 0 || len(store.spanBatches[1]) == 0 {
+		t.Fatalf("stored span batches = %#v, want non-empty spans per invocation", store.spanBatches)
+	}
+	if len(store.spanBatches[1]) != len(store.spanBatches[0]) {
+		t.Fatalf("second span batch appears to include prior request spans: first=%d second=%d", len(store.spanBatches[0]), len(store.spanBatches[1]))
+	}
+}
+
 func TestRAGGraphFailureLogIncludesCorrelationFieldsWithoutSensitiveContent(t *testing.T) {
 	var logs bytes.Buffer
 	ctx := context.Background()
@@ -315,15 +358,19 @@ func TestHighPrecisionMultiQueryAndHyDERunAdditionalRetrievals(t *testing.T) {
 }
 
 type capturingTraceStore struct {
-	traceID string
-	spans   []NodeSpan
-	calls   int
+	traceID     string
+	traceIDs    []string
+	spans       []NodeSpan
+	spanBatches [][]NodeSpan
+	calls       int
 }
 
 func (s *capturingTraceStore) StoreTrace(_ context.Context, _, traceID, _ string, _ rag.Profile, _ int64, spans []NodeSpan) error {
 	s.calls++
 	s.traceID = traceID
+	s.traceIDs = append(s.traceIDs, traceID)
 	s.spans = append([]NodeSpan(nil), spans...)
+	s.spanBatches = append(s.spanBatches, append([]NodeSpan(nil), spans...))
 	return nil
 }
 

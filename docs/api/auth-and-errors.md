@@ -69,6 +69,8 @@ curl -fsS http://localhost:8080/v1/knowledge-bases \
 
 `trace_id` 用于排查同一次请求链路。服务会优先使用请求头 `X-Trace-ID`；未传入时自动生成新的 ID，并把同一个值写入响应头 `X-Trace-ID`、JSON 错误体、SSE 事件、结构化日志和 RAG trace 持久化记录。调用方应把错误响应中的 `trace_id` 原样反馈给运维或研发，不需要解析其中含义。
 
+调用方如果复用同一个 `X-Trace-ID`，HTTP 响应和日志仍会使用该 ID；PostgreSQL 中的持久化 RAG trace 按最后完成的请求整体覆盖，同一个 `trace_id` 不会追加或混合多次请求的 node spans。需要分别查询多次请求时，应为每次请求提供不同的 `X-Trace-ID`，或让服务自动生成。
+
 SSE 查询在 RAG 查询阶段失败时，响应仍是 `text/event-stream`，事件名为 `error`，事件数据中包含 `code`、`message` 和 `trace_id`。SSE 的 `trace` 事件、后续 `chunk`/`citations`/`done` 事件和失败时的 `error` 事件使用同一个 `trace_id`。
 
 排查持久化 RAG trace 时使用 CLI，而不是 HTTP API：

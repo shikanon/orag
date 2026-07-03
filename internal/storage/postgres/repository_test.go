@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shikanon/orag/internal/dataset"
+	raggraph "github.com/shikanon/orag/internal/graph"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -354,6 +355,52 @@ func TestRepositoryDatasetItemsFiltersTenant(t *testing.T) {
 	}
 }
 
+func TestRepositoryStoreTraceReplacesSpansForRepeatedTraceID(t *testing.T) {
+	db := newFakeTraceDB(time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC))
+	repo := &Repository{traceReader: db, traceTxBeginner: db}
+	ctx := context.Background()
+
+	err := repo.StoreTrace(ctx, "tenant_1", "trace_reused", "first query", rag.ProfileRealtime, 111, []raggraph.NodeSpan{
+		{NodeName: "retrieve_first", LatencyMS: 12},
+		{NodeName: "generate_first", LatencyMS: 99, Error: "first failure"},
+	})
+	if err != nil {
+		t.Fatalf("first StoreTrace() error = %v", err)
+	}
+	err = repo.StoreTrace(ctx, "tenant_1", "trace_reused", "second query", rag.ProfileHighPrecision, 222, []raggraph.NodeSpan{
+		{NodeName: "retrieve_second", LatencyMS: 21},
+		{NodeName: "generate_second", LatencyMS: 201},
+	})
+	if err != nil {
+		t.Fatalf("second StoreTrace() error = %v", err)
+	}
+
+	got, found, err := repo.GetTrace(ctx, "trace_reused")
+	if err != nil {
+		t.Fatalf("GetTrace() error = %v", err)
+	}
+	if !found {
+		t.Fatal("GetTrace() found = false, want true")
+	}
+	if got.Profile != rag.ProfileHighPrecision || got.LatencyMS != 222 {
+		t.Fatalf("GetTrace() metadata = %#v, want second trace metadata", got)
+	}
+	if got.HasError || got.ErrorCount != 0 {
+		t.Fatalf("GetTrace() mixed first error span: has_error=%v error_count=%d", got.HasError, got.ErrorCount)
+	}
+	if len(got.NodeSpans) != 2 {
+		t.Fatalf("GetTrace() spans = %#v, want only second trace spans", got.NodeSpans)
+	}
+	for _, span := range got.NodeSpans {
+		if strings.Contains(span.NodeName, "first") || span.Error == "first failure" {
+			t.Fatalf("GetTrace() mixed first trace span after repeated trace_id: %#v", got.NodeSpans)
+		}
+	}
+	if got.NodeSpans[0].NodeName != "retrieve_second" || got.NodeSpans[1].NodeName != "generate_second" {
+		t.Fatalf("GetTrace() spans = %#v, want second trace order", got.NodeSpans)
+	}
+}
+
 func TestRepositoryGetTraceFound(t *testing.T) {
 	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
 	reader := &fakeTraceReader{
@@ -410,6 +457,28 @@ type fakeTraceReader struct {
 	queriedSpans bool
 }
 
+type fakeTraceDB struct {
+	baseTime time.Time
+	seq      int
+	records  map[string]fakeStoredTrace
+	spans    map[string][]TraceNodeSpan
+}
+
+type fakeStoredTrace struct {
+	id        string
+	tenantID  string
+	profile   string
+	latencyMS int64
+	createdAt time.Time
+}
+
+type fakeTraceTx struct {
+	db      *fakeTraceDB
+	seq     int
+	records map[string]fakeStoredTrace
+	spans   map[string][]TraceNodeSpan
+}
+
 type fakeKnowledgeBaseQueryer struct {
 	execErr   error
 	execErrs  []error
@@ -437,6 +506,117 @@ func (f *fakeKnowledgeBaseTxBeginner) BeginKnowledgeBaseTx(ctx context.Context) 
 		return nil, f.err
 	}
 	return f.tx, nil
+}
+
+func newFakeTraceDB(baseTime time.Time) *fakeTraceDB {
+	return &fakeTraceDB{
+		baseTime: baseTime,
+		records:  make(map[string]fakeStoredTrace),
+		spans:    make(map[string][]TraceNodeSpan),
+	}
+}
+
+func (db *fakeTraceDB) BeginTraceTx(context.Context) (traceTx, error) {
+	return &fakeTraceTx{
+		db:      db,
+		seq:     db.seq,
+		records: cloneFakeTraceRecords(db.records),
+		spans:   cloneFakeTraceSpans(db.spans),
+	}, nil
+}
+
+func (db *fakeTraceDB) QueryRow(_ context.Context, sql string, args ...any) traceRow {
+	if !strings.Contains(sql, "FROM rag_traces") {
+		return fakeTraceRow{err: errors.New("unexpected trace row query")}
+	}
+	traceID, _ := args[0].(string)
+	record, ok := db.records[traceID]
+	if !ok {
+		return fakeTraceRow{err: pgx.ErrNoRows}
+	}
+	return fakeTraceRow{values: []any{record.id, record.tenantID, record.profile, record.latencyMS, record.createdAt}}
+}
+
+func (db *fakeTraceDB) Query(_ context.Context, sql string, args ...any) (traceRows, error) {
+	if !strings.Contains(sql, "FROM rag_node_spans") {
+		return nil, errors.New("unexpected trace spans query")
+	}
+	traceID, _ := args[0].(string)
+	rows := make([][]any, 0, len(db.spans[traceID]))
+	for _, span := range db.spans[traceID] {
+		rows = append(rows, []any{span.ID, span.NodeName, span.LatencyMS, span.Error, span.CreatedAt})
+	}
+	return &fakeTraceRows{rows: rows}, nil
+}
+
+func (tx *fakeTraceTx) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	switch {
+	case strings.Contains(sql, "INSERT INTO rag_traces"):
+		traceID, _ := args[0].(string)
+		tenantID, _ := args[1].(string)
+		profile, _ := args[3].(string)
+		latencyMS, _ := args[4].(int64)
+		tx.records[traceID] = fakeStoredTrace{
+			id:        traceID,
+			tenantID:  tenantID,
+			profile:   profile,
+			latencyMS: latencyMS,
+			createdAt: tx.nextTime(),
+		}
+		return pgconn.NewCommandTag("INSERT 1"), nil
+	case strings.Contains(sql, "DELETE FROM rag_node_spans"):
+		traceID, _ := args[0].(string)
+		delete(tx.spans, traceID)
+		return pgconn.NewCommandTag("DELETE 1"), nil
+	case strings.Contains(sql, "INSERT INTO rag_node_spans"):
+		traceID, _ := args[1].(string)
+		spanID, _ := args[0].(string)
+		nodeName, _ := args[2].(string)
+		latencyMS, _ := args[3].(int64)
+		spanErr, _ := args[4].(string)
+		tx.spans[traceID] = append(tx.spans[traceID], TraceNodeSpan{
+			ID:        spanID,
+			NodeName:  nodeName,
+			LatencyMS: latencyMS,
+			Error:     spanErr,
+			CreatedAt: tx.nextTime(),
+		})
+		return pgconn.NewCommandTag("INSERT 1"), nil
+	default:
+		return pgconn.CommandTag{}, errors.New("unexpected trace exec")
+	}
+}
+
+func (tx *fakeTraceTx) Commit(context.Context) error {
+	tx.db.seq = tx.seq
+	tx.db.records = tx.records
+	tx.db.spans = tx.spans
+	return nil
+}
+
+func (tx *fakeTraceTx) Rollback(context.Context) error {
+	return nil
+}
+
+func (tx *fakeTraceTx) nextTime() time.Time {
+	tx.seq++
+	return tx.db.baseTime.Add(time.Duration(tx.seq) * time.Millisecond)
+}
+
+func cloneFakeTraceRecords(in map[string]fakeStoredTrace) map[string]fakeStoredTrace {
+	out := make(map[string]fakeStoredTrace, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneFakeTraceSpans(in map[string][]TraceNodeSpan) map[string][]TraceNodeSpan {
+	out := make(map[string][]TraceNodeSpan, len(in))
+	for key, value := range in {
+		out[key] = append([]TraceNodeSpan(nil), value...)
+	}
+	return out
 }
 
 type fakeKnowledgeBaseTx struct {

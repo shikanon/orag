@@ -12,12 +12,13 @@ import (
 )
 
 type Repository struct {
-	Pool          *pgxpool.Pool
-	StageChunks   bool
-	kbQueryer     knowledgeBaseQueryer
-	kbTxBeginner  knowledgeBaseTxBeginner
-	traceReader   traceQueryer
-	datasetRunner datasetQueryer
+	Pool            *pgxpool.Pool
+	StageChunks     bool
+	kbQueryer       knowledgeBaseQueryer
+	kbTxBeginner    knowledgeBaseTxBeginner
+	traceReader     traceQueryer
+	traceTxBeginner traceTxBeginner
+	datasetRunner   datasetQueryer
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
@@ -59,6 +60,24 @@ func (q pgxTraceQueryer) QueryRow(ctx context.Context, sql string, args ...any) 
 
 func (q pgxTraceQueryer) Query(ctx context.Context, sql string, args ...any) (traceRows, error) {
 	return q.pool.Query(ctx, sql, args...)
+}
+
+type traceTx interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
+}
+
+type traceTxBeginner interface {
+	BeginTraceTx(ctx context.Context) (traceTx, error)
+}
+
+type pgxTraceTxBeginner struct {
+	pool *pgxpool.Pool
+}
+
+func (b pgxTraceTxBeginner) BeginTraceTx(ctx context.Context) (traceTx, error) {
+	return b.pool.Begin(ctx)
 }
 
 type datasetQueryer interface {

@@ -46,7 +46,7 @@ type traceRows interface {
 }
 
 func (r *Repository) StoreTrace(ctx context.Context, tenantID, traceID, query string, profile rag.Profile, latencyMS int64, spans []raggraph.NodeSpan) error {
-	tx, err := r.Pool.Begin(ctx)
+	tx, err := r.traceTxStarter().BeginTraceTx(ctx)
 	if err != nil {
 		return err
 	}
@@ -54,8 +54,19 @@ func (r *Repository) StoreTrace(ctx context.Context, tenantID, traceID, query st
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO rag_traces(id, tenant_id, query, profile, latency_ms)
 		VALUES($1,$2,$3,$4,$5)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (id) DO UPDATE SET
+			tenant_id=EXCLUDED.tenant_id,
+			query=EXCLUDED.query,
+			profile=EXCLUDED.profile,
+			latency_ms=EXCLUDED.latency_ms,
+			created_at=now()`,
 		traceID, tenantID, query, string(profile), latencyMS); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM rag_node_spans
+		WHERE trace_id=$1`,
+		traceID); err != nil {
 		return err
 	}
 	for _, span := range spans {
@@ -117,4 +128,11 @@ func (r *Repository) traceQueryer() traceQueryer {
 		return r.traceReader
 	}
 	return pgxTraceQueryer{pool: r.Pool}
+}
+
+func (r *Repository) traceTxStarter() traceTxBeginner {
+	if r.traceTxBeginner != nil {
+		return r.traceTxBeginner
+	}
+	return pgxTraceTxBeginner{pool: r.Pool}
 }
