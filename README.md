@@ -147,7 +147,7 @@ OpenAPI 源文件为 `api/openapi.yaml`，服务内置文档入口为 `GET /docs
 | Provider Base URL | `AZURE_OPENAI_BASE_URL`、`GOOGLE_CLOUD_BASE_URL`，以及可选的 `<PROVIDER>_BASE_URL` 覆盖 |
 | 入库解析 | `INGEST_PARSER_METHOD`、`MINERU_APISERVER`、`MINERU_SERVER_URL`、`MINERU_BACKEND`、`MINERU_PARSE_METHOD`、`MINERU_LANG`、`MINERU_FORMULA_ENABLE`、`MINERU_TABLE_ENABLE`、`DOCLING_SERVER_URL`、`DOCLING_TIMEOUT` |
 
-默认 `.env.example` 中 `REQUIRE_EXTERNAL_PROVIDERS=true`，服务启动会校验所选 provider 的 API Key。`/readyz` 使用 `model_provider=configured` 或显式测试模式下的 `model_provider=mock` 表达模型层状态，不主动调用外部模型服务。
+默认 `.env.example` 中 `REQUIRE_EXTERNAL_PROVIDERS=false`，服务启动仍会校验所选 provider 的 API Key，除非显式启用 deterministic mock provider。`/readyz` 使用 `model_provider=configured` 或显式测试模式下的 `model_provider=mock` 表达模型层状态，不主动调用外部模型服务。
 
 支持的 provider registry 覆盖 OpenAI、Azure-OpenAI、Anthropic、Gemini、Google Cloud、xAI、Mistral、Cohere、DeepSeek、Moonshot、MiniMax、BaiChuan、ZHIPU-AI、Tongyi-Qianwen、VolcEngine、Tencent Hunyuan、XunFei Spark、BaiduYiyan、Xiaomi、Perplexity、Voyage AI 和 Jina。默认 chat/multimodal 模型为火山 `doubao-seed-2-1-pro-260628`，默认 embedding 模型为火山 `doubao-embedding-vision-251215`。真实 Ark smoke test 还需要显式设置 `LIVE_ARK_TESTS=1`，否则默认跳过。
 

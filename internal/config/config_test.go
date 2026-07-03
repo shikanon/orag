@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -42,6 +44,32 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Ingestion.ParserMethod != "basic" {
 		t.Fatalf("default parser method = %q", cfg.Ingestion.ParserMethod)
+	}
+}
+
+func TestEnvExampleContainsDocumentedOnboardingKeys(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", ".env.example"))
+	if err != nil {
+		t.Fatalf("read .env.example: %v", err)
+	}
+
+	values := parseEnvExample(t, string(content))
+	for _, key := range []string{
+		"ADMIN_DEFAULT_USERNAME",
+		"ADMIN_DEFAULT_PASSWORD",
+		"AUTH_TOKEN_TTL",
+		"JWT_SECRET",
+		"ARK_API_KEY",
+		"REQUIRE_EXTERNAL_PROVIDERS",
+		"DATABASE_URL",
+		"QDRANT_HOST",
+		"QDRANT_GRPC_PORT",
+		"QDRANT_COLLECTION",
+		"QDRANT_SEMANTIC_CACHE_COLLECTION",
+	} {
+		if _, ok := values[key]; !ok {
+			t.Fatalf(".env.example missing %s", key)
+		}
 	}
 }
 
@@ -171,6 +199,7 @@ func TestInvalidStorageBackend(t *testing.T) {
 
 func TestInvalidRerankProvider(t *testing.T) {
 	t.Setenv("ARK_API_KEY", "ark-test-key")
+	t.Setenv("LLM_RERANK_PROVIDER", "")
 	t.Setenv("RERANK_PROVIDER", "unknown")
 	_, err := Load()
 	if err == nil {
@@ -253,4 +282,22 @@ func TestRemoteParserRequiresEndpoint(t *testing.T) {
 	if _, err := Load(); err == nil {
 		t.Fatal("expected missing Docling endpoint error")
 	}
+}
+
+func parseEnvExample(t *testing.T, content string) map[string]string {
+	t.Helper()
+
+	values := map[string]string{}
+	for lineNo, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			t.Fatalf(".env.example line %d is not KEY=value", lineNo+1)
+		}
+		values[strings.TrimSpace(key)] = value
+	}
+	return values
 }
