@@ -75,7 +75,7 @@ Content-Type: application/json
 | `401` | `invalid_credentials` | 登录用户名或密码不正确。 |
 | `401` | `missing_bearer_token` | 受保护的 `/v1/*` API 未带 Bearer token。 |
 | `401` | `invalid_bearer_token` | Bearer token 无效或过期。 |
-| `404` | `knowledge_base_not_found` | 查询不存在或不属于当前 tenant 的知识库。 |
+| `404` | `knowledge_base_not_found` | 查询/删除不存在或不属于当前 tenant 的知识库，或向这类知识库导入/上传文档。 |
 | `404` | `ingestion_job_not_found` | 查询不存在的入库 job。 |
 | `404` | `evaluation_not_found` | 查询不存在的评估结果。 |
 | `413` | `payload_too_large` | 入库内容超过 `INGEST_MAX_DOCUMENT_BYTES`。 |
@@ -201,7 +201,7 @@ DELETE /v1/knowledge-bases/{id}
 
 ## 文档入库
 
-文档入库有两种入口：JSON 文本导入和 multipart 文件上传。两者成功后都返回同一个 `IngestionResponse`，包含文档摘要、chunk 数量和入库 job。
+文档入库有两种入口：JSON 文本导入和 multipart 文件上传。两者成功后都返回同一个 `IngestionResponse`，包含文档摘要、chunk 数量和入库 job。若 `{id}` 对应的知识库不存在或当前 tenant 不可访问，两个入口都返回 `404 knowledge_base_not_found`。
 
 ### 导入文本
 

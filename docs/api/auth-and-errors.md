@@ -89,7 +89,7 @@ oragctl trace --trace-id trace_xxx
 | `401` | `invalid_credentials` | 登录用户名或密码不正确。 |
 | `401` | `missing_bearer_token` | 受保护 API 未带 Bearer token。 |
 | `401` | `invalid_bearer_token` | Bearer token 无效或过期。 |
-| `404` | `knowledge_base_not_found` | 查询不存在或不属于当前 tenant 的知识库。 |
+| `404` | `knowledge_base_not_found` | 查询不存在或不属于当前 tenant 的知识库，或向这类知识库导入/上传文档。 |
 | `404` | `dataset_not_found` | 写入样本、运行评估或优化时，数据集不存在或不属于当前 tenant。 |
 | `404` | `ingestion_job_not_found` | 查询不存在的入库 job。 |
 | `404` | `evaluation_not_found` | 查询不存在的评估结果。 |
