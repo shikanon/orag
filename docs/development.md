@@ -219,17 +219,36 @@ LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,
 
 ## 常用 API smoke
 
-服务启动后可按顺序执行：
+完整示例索引见 [`../examples/README.md`](../examples/README.md)。服务模式示例需要先完成依赖启动、迁移并保持 API 服务运行：
 
 ```bash
+make dev-up
+make migrate
+make run
+```
+
+在另一个终端按顺序执行 curl 示例：
+
+```bash
+examples/curl/05_health_ready.sh
 examples/curl/00_login.sh
 examples/curl/10_create_kb.sh
 examples/curl/20_upload_doc.sh
+examples/curl/25_upload_file.sh
 examples/curl/30_query.sh
+examples/curl/35_query_stream.sh
+examples/curl/36_trace_lookup.sh
 examples/curl/40_eval.sh
+examples/curl/45_optimize.sh
 ```
 
-脚本会把临时 token、KB ID、dataset ID 写入 `.orag-demo/`，该目录不应提交。
+脚本默认请求 `BASE_URL=http://localhost:8080`，登录参数默认为 `ADMIN_USERNAME=admin` 和 `ADMIN_PASSWORD=admin`；如果服务端 `.env` 覆盖了默认管理员账号，请同步覆盖这些客户端变量。脚本会把临时 token、KB ID、trace ID、dataset ID 等状态写入 `.orag-demo/`，该目录不应提交；可用 `STATE_DIR` 改到其它临时目录。
+
+Go memory 示例展示无外部依赖的入库、查询和 trace/response 元数据读取，适合快速验证示例包可编译运行：
+
+```bash
+GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
+```
 
 ## Mac、Go 1.22 和 Hertz 构建注意事项
 

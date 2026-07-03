@@ -3,6 +3,7 @@ package ark
 import (
 	"context"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -110,6 +111,40 @@ func TestMockRerank(t *testing.T) {
 	}
 }
 
+func TestDeterministicMockMatchesArkClientInterface(t *testing.T) {
+	server := fakeark.NewServer()
+	defer server.Close()
+
+	deterministic := NewClient(Config{EmbeddingDimensions: 4}, nil)
+	arkClient := NewClient(Config{
+		APIKey:              "test-key",
+		BaseURL:             server.URL,
+		RerankBaseURL:       server.URL,
+		ChatModel:           "chat",
+		EmbeddingModel:      "embedding",
+		EmbeddingDimensions: 4,
+		RerankModel:         "rerank",
+	}, server.Client())
+
+	messages := []ChatMessage{{Role: "user", Content: "hello"}}
+	assertChatInterface(t, deterministic, messages)
+	assertChatInterface(t, arkClient, messages)
+	assertStreamInterface(t, deterministic, messages)
+	assertStreamInterface(t, arkClient, messages)
+
+	texts := []string{"qdrant vector", "postgres sparse"}
+	assertEmbeddingInterface(t, deterministic, texts, 4)
+	assertEmbeddingInterface(t, arkClient, texts, 4)
+
+	docs := []RerankDocument{
+		{Content: "qdrant vector database"},
+		{Content: "postgres metadata store"},
+		{Content: "unrelated"},
+	}
+	assertRerankInterface(t, deterministic, "qdrant vector", docs, 2)
+	assertRerankInterface(t, arkClient, "qdrant vector", docs, 2)
+}
+
 func TestMultimodalEmbeddingUsesVisionEndpoint(t *testing.T) {
 	server := fakeark.NewServer()
 	defer server.Close()
@@ -146,7 +181,7 @@ func TestAliyunRerank(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 1 || out[0].Index != 1 {
+	if len(out) != 2 || out[0].Index != 1 {
 		t.Fatalf("unexpected aliyun rerank result: %#v", out)
 	}
 }
@@ -192,5 +227,72 @@ func TestClientUsesFakeArkServer(t *testing.T) {
 	}
 	if streamed != "fake ark stream" {
 		t.Fatalf("streamed = %q", streamed)
+	}
+}
+
+func assertChatInterface(t *testing.T, client *Client, messages []ChatMessage) {
+	t.Helper()
+	answer, err := client.Chat(context.Background(), messages)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if strings.TrimSpace(answer) == "" {
+		t.Fatal("Chat() returned empty answer")
+	}
+}
+
+func assertStreamInterface(t *testing.T, client *Client, messages []ChatMessage) {
+	t.Helper()
+	chunks, errs := client.ChatStream(context.Background(), messages)
+	var content strings.Builder
+	done := false
+	for chunk := range chunks {
+		content.WriteString(chunk.Content)
+		if chunk.Done {
+			done = true
+		}
+	}
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("ChatStream() error = %v", err)
+		}
+	}
+	if strings.TrimSpace(content.String()) == "" {
+		t.Fatal("ChatStream() returned empty content")
+	}
+	if !done {
+		t.Fatal("ChatStream() did not emit done chunk")
+	}
+}
+
+func assertEmbeddingInterface(t *testing.T, client *Client, texts []string, dims int) {
+	t.Helper()
+	vectors, err := client.Embed(context.Background(), texts)
+	if err != nil {
+		t.Fatalf("Embed() error = %v", err)
+	}
+	if len(vectors) != len(texts) {
+		t.Fatalf("embedding count = %d, want %d", len(vectors), len(texts))
+	}
+	for i, vector := range vectors {
+		if len(vector) != dims {
+			t.Fatalf("embedding %d dims = %d, want %d", i, len(vector), dims)
+		}
+	}
+}
+
+func assertRerankInterface(t *testing.T, client *Client, query string, docs []RerankDocument, topN int) {
+	t.Helper()
+	results, err := client.Rerank(context.Background(), query, docs, topN)
+	if err != nil {
+		t.Fatalf("Rerank() error = %v", err)
+	}
+	if len(results) != topN {
+		t.Fatalf("rerank count = %d, want %d", len(results), topN)
+	}
+	for _, result := range results {
+		if result.Index < 0 || result.Index >= len(docs) {
+			t.Fatalf("rerank index out of range: %#v", result)
+		}
 	}
 }

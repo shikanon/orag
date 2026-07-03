@@ -36,10 +36,17 @@ type App struct {
 	Datasets *dataset.Service
 	Eval     eval.Runner
 	Metrics  *observability.Metrics
+	Traces   TraceRepository
 
 	Postgres *pgxpool.Pool
 	Qdrant   *qdrantstore.Client
 	closers  []func() error
+}
+
+type TraceRepository interface {
+	GetTrace(ctx context.Context, traceID string) (postgres.TraceRecord, bool, error)
+	ListTraces(ctx context.Context, filter postgres.TraceListFilter) ([]postgres.TraceRecord, error)
+	TraceNodeStats(ctx context.Context, filter postgres.TraceListFilter) ([]postgres.TraceNodeStat, error)
 }
 
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, error) {
@@ -115,6 +122,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Datasets: datasets,
 		Eval:     eval.Runner{RAG: ragSvc, Datasets: datasets, Repository: backend.evalRepo},
 		Metrics:  observability.NewMetrics(),
+		Traces:   backend.traceRepo,
 		Postgres: backend.pool,
 		Qdrant:   backend.qdrant,
 		closers:  backend.closers,
@@ -151,6 +159,7 @@ type knowledgeBackend struct {
 	cache       rag.SemanticCacheStore
 	jobs        ingest.JobStore
 	traceStore  raggraph.TraceStore
+	traceRepo   TraceRepository
 	datasetRepo dataset.Repository
 	evalRepo    eval.Repository
 	pool        *pgxpool.Pool
@@ -161,6 +170,7 @@ type knowledgeBackend struct {
 func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant string) (knowledgeBackend, error) {
 	if cfg.Storage.Backend == "memory" {
 		store := kb.NewMemoryStore()
+		traceRepo := newMemoryTraceRepository()
 		bootstrapMemory(store, defaultTenant)
 		return knowledgeBackend{
 			store:       store,
@@ -169,6 +179,8 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			sparse:      kb.SparseRetriever{Store: store},
 			cache:       rag.NewSemanticCache(cfg.RAG.SemanticCacheMaxEntries),
 			jobs:        ingest.NewMemoryJobStore(),
+			traceStore:  traceRepo,
+			traceRepo:   traceRepo,
 			datasetRepo: dataset.NewMemoryRepository(),
 			evalRepo:    eval.NewMemoryRepository(),
 		}, nil
@@ -219,6 +231,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 		cache:       cache,
 		jobs:        repo,
 		traceStore:  repo,
+		traceRepo:   repo,
 		datasetRepo: repo,
 		evalRepo:    repo,
 		pool:        pool,

@@ -19,7 +19,7 @@ type NodeSet struct {
 }
 
 func (n NodeSet) Init(ctx context.Context, st State) (State, error) {
-	return n.withSpan("init", st, func(st *State) error {
+	return n.withSpan(ctx, "init", st, func(ctx context.Context, st *State) error {
 		st.Start = time.Now()
 		st.TraceID = strings.TrimSpace(st.Request.TraceID)
 		if st.TraceID == "" {
@@ -39,7 +39,7 @@ func (n NodeSet) Init(ctx context.Context, st State) (State, error) {
 }
 
 func (n NodeSet) SemanticCacheLookup(ctx context.Context, st State) (State, error) {
-	return n.withSpan("semantic_cache_lookup", st, func(st *State) error {
+	return n.withSpan(ctx, "semantic_cache_lookup", st, func(ctx context.Context, st *State) error {
 		if n.Service.Cache == nil {
 			return nil
 		}
@@ -62,7 +62,7 @@ func (n NodeSet) SemanticCacheLookup(ctx context.Context, st State) (State, erro
 }
 
 func (n NodeSet) QueryRewrite(ctx context.Context, st State) (State, error) {
-	return n.withSpan("query_rewrite", st, func(st *State) error {
+	return n.withSpan(ctx, "query_rewrite", st, func(ctx context.Context, st *State) error {
 		if st.Cached || st.Profile != rag.ProfileHighPrecision || !n.Service.QueryRewriteEnabled {
 			return nil
 		}
@@ -86,8 +86,8 @@ func (n NodeSet) QueryRewrite(ctx context.Context, st State) (State, error) {
 	})
 }
 
-func (n NodeSet) MultiQuery(_ context.Context, st State) (State, error) {
-	return n.withSpan("multi_query", st, func(st *State) error {
+func (n NodeSet) MultiQuery(ctx context.Context, st State) (State, error) {
+	return n.withSpan(ctx, "multi_query", st, func(_ context.Context, st *State) error {
 		if st.Cached || st.Profile != rag.ProfileHighPrecision || n.Service.MultiQueryCount <= 1 {
 			return nil
 		}
@@ -99,7 +99,7 @@ func (n NodeSet) MultiQuery(_ context.Context, st State) (State, error) {
 }
 
 func (n NodeSet) HybridRetrieve(ctx context.Context, st State) (State, error) {
-	return n.withSpan("hybrid_retrieve", st, func(st *State) error {
+	return n.withSpan(ctx, "hybrid_retrieve", st, func(ctx context.Context, st *State) error {
 		if st.Cached {
 			return nil
 		}
@@ -144,7 +144,7 @@ func (n NodeSet) HybridRetrieve(ctx context.Context, st State) (State, error) {
 }
 
 func (n NodeSet) Rerank(ctx context.Context, st State) (State, error) {
-	return n.withSpan("ark_rerank", st, func(st *State) error {
+	return n.withSpan(ctx, "ark_rerank", st, func(ctx context.Context, st *State) error {
 		if st.Cached || len(st.Results) == 0 {
 			return nil
 		}
@@ -153,8 +153,8 @@ func (n NodeSet) Rerank(ctx context.Context, st State) (State, error) {
 	})
 }
 
-func (n NodeSet) ContextPack(_ context.Context, st State) (State, error) {
-	return n.withSpan("context_pack", st, func(st *State) error {
+func (n NodeSet) ContextPack(ctx context.Context, st State) (State, error) {
+	return n.withSpan(ctx, "context_pack", st, func(_ context.Context, st *State) error {
 		if st.Cached || len(st.Results) == 0 {
 			return nil
 		}
@@ -163,8 +163,8 @@ func (n NodeSet) ContextPack(_ context.Context, st State) (State, error) {
 	})
 }
 
-func (n NodeSet) PromptPrefixCache(_ context.Context, st State) (State, error) {
-	return n.withSpan("prompt_prefix_cache", st, func(st *State) error {
+func (n NodeSet) PromptPrefixCache(ctx context.Context, st State) (State, error) {
+	return n.withSpan(ctx, "prompt_prefix_cache", st, func(_ context.Context, st *State) error {
 		if st.Cached || len(st.Results) == 0 {
 			return nil
 		}
@@ -179,7 +179,7 @@ func (n NodeSet) PromptPrefixCache(_ context.Context, st State) (State, error) {
 }
 
 func (n NodeSet) Generate(ctx context.Context, st State) (State, error) {
-	return n.withSpan("ark_generate", st, func(st *State) error {
+	return n.withSpan(ctx, "ark_generate", st, func(ctx context.Context, st *State) error {
 		if st.Cached {
 			return nil
 		}
@@ -222,7 +222,7 @@ func (n NodeSet) Generate(ctx context.Context, st State) (State, error) {
 }
 
 func (n NodeSet) SemanticCacheWrite(ctx context.Context, st State) (State, error) {
-	return n.withSpan("semantic_cache_write", st, func(st *State) error {
+	return n.withSpan(ctx, "semantic_cache_write", st, func(ctx context.Context, st *State) error {
 		if st.Cached || n.Service.Cache == nil || len(st.Response.Citations) == 0 {
 			return nil
 		}
@@ -241,16 +241,26 @@ func (n NodeSet) systemPrompt(profile rag.Profile) string {
 	return system
 }
 
-func (n NodeSet) withSpan(name string, st State, fn func(*State) error) (State, error) {
-	start := time.Now()
-	err := fn(&st)
-	latencyMS := time.Since(start).Milliseconds()
-	span := NodeSpan{NodeName: name, LatencyMS: latencyMS}
+func (n NodeSet) withSpan(ctx context.Context, name string, st State, fn func(context.Context, *State) error) (State, error) {
+	spanCtx, obsSpan := observability.StartSpan(ctx, name)
+	start := time.Now().UTC()
+	err := fn(spanCtx, &st)
+	obsSpan.End(err)
+	endedAt := time.Now().UTC()
+	latencyMS := endedAt.Sub(start).Milliseconds()
+	span := NodeSpan{
+		NodeName:  name,
+		Sequence:  len(st.Spans) + 1,
+		LatencyMS: latencyMS,
+		StartedAt: start,
+		EndedAt:   endedAt,
+	}
 	if err != nil {
 		span.Error = err.Error()
 		n.logNodeFailure(st, name, latencyMS, err)
 	}
 	st.Spans = append(st.Spans, span)
+	st.spanRecorder.append(span)
 	return st, err
 }
 

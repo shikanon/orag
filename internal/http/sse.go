@@ -15,11 +15,12 @@ func querySSE(resp rag.QueryResponse) string {
 	}
 	writeSSEEvent(&b, "citations", resp.Citations)
 	writeSSEEvent(&b, "done", map[string]any{
-		"trace_id":     resp.TraceID,
-		"cache_status": resp.CacheStatus,
-		"profile":      resp.Profile,
-		"latency_ms":   resp.LatencyMS,
-		"warnings":     resp.Warnings,
+		"trace_id":      resp.TraceID,
+		"cache_status":  resp.CacheStatus,
+		"profile":       resp.Profile,
+		"latency_ms":    resp.LatencyMS,
+		"warnings":      resp.Warnings,
+		"trace_summary": resp.TraceSummary,
 	})
 	return b.String()
 }

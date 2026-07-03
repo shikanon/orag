@@ -112,19 +112,30 @@ make dev-down
 
 ## API Smoke
 
-服务启动后按顺序执行：
+完整示例入口见 [examples/README.md](./examples/README.md)。服务模式示例需要先启动 API 服务，默认请求 `BASE_URL=http://localhost:8080`，可通过 `BASE_URL` 覆盖：
 
 ```bash
+examples/curl/05_health_ready.sh
 examples/curl/00_login.sh
 examples/curl/10_create_kb.sh
 examples/curl/20_upload_doc.sh
+examples/curl/25_upload_file.sh
 examples/curl/30_query.sh
+examples/curl/35_query_stream.sh
+examples/curl/36_trace_lookup.sh
 examples/curl/40_eval.sh
+examples/curl/45_optimize.sh
 ```
 
-脚本默认请求 `BASE_URL=http://localhost:8080`，可通过 `BASE_URL` 覆盖。登录默认账号来自 `.env.example` 中的 `ADMIN_DEFAULT_USERNAME=admin` 和 `ADMIN_DEFAULT_PASSWORD=admin`。
+登录脚本默认使用 `ADMIN_USERNAME=admin` 和 `ADMIN_PASSWORD=admin` 调用服务端默认管理员账号；如 `.env` 中修改了 `ADMIN_DEFAULT_USERNAME` 或 `ADMIN_DEFAULT_PASSWORD`，请同步覆盖客户端变量。
 
-脚本运行状态保存在 `.orag-demo/`，包括本地 token、知识库 ID、文档 ID、数据集 ID 和入库 job ID，不应提交。
+脚本运行状态保存在 `.orag-demo/`，包括本地 token、知识库 ID、文档 ID、trace ID、数据集 ID 和入库 job ID，不应提交；可通过 `STATE_DIR` 指向其它临时目录。
+
+Go memory 示例不依赖 PostgreSQL、Qdrant 或 Ark，可直接运行：
+
+```bash
+GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
+```
 
 OpenAPI 源文件为 `api/openapi.yaml`，服务内置文档入口为 `GET /docs`。
 
@@ -183,12 +194,12 @@ LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,
 
 | 文档 | 适合读者 | 内容 |
 | --- | --- | --- |
-| `docs/README.md` | 第一次进入项目的开发者 | 文档地图、推荐阅读路径和维护规则。 |
-| `docs/getting-started/` | 新开发者、API smoke 使用者 | 本地启动、依赖说明、API smoke 和状态目录。 |
-| `docs/api/` | API 调用方、SDK/前端开发者 | 认证、错误模型、知识库、入库、查询和 SSE。 |
-| `docs/architecture/` | 后端开发者、架构评审者 | 模块地图、运行时依赖和 RAG pipeline。 |
-| `docs/evaluation/` | 评估/算法/质量负责人 | 数据集结构、rule-based metrics、optimizer 和 LLM-as-Judge 增强边界。 |
-| `docs/operations/` | 运维、SRE、部署负责人 | 部署依赖、健康检查、metrics、配置安全和故障排查。 |
+| [docs/README.md](./docs/README.md) | 第一次进入项目的开发者 | 文档地图、推荐阅读路径和维护规则。 |
+| [docs/getting-started/](./docs/getting-started/) | 新开发者、API smoke 使用者 | 本地启动、依赖说明、API smoke 和状态目录。 |
+| [docs/api/](./docs/api/) | API 调用方、SDK/前端开发者 | 认证、错误模型、知识库、入库、查询和 SSE。 |
+| [docs/architecture/](./docs/architecture/) | 后端开发者、架构评审者 | 模块地图、运行时依赖和 RAG pipeline。 |
+| [docs/evaluation/](./docs/evaluation/) | 评估/算法/质量负责人 | 数据集结构、rule-based metrics、optimizer 和 LLM-as-Judge 增强边界。 |
+| [docs/operations/](./docs/operations/) | 运维、SRE、部署负责人 | 部署依赖、健康检查、metrics、配置安全和故障排查。 |
 
 ## 当前边界
 

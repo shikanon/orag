@@ -151,10 +151,15 @@ CREATE TABLE IF NOT EXISTS rag_node_spans (
     id TEXT PRIMARY KEY,
     trace_id TEXT NOT NULL REFERENCES rag_traces(id),
     node_name TEXT NOT NULL,
+    sequence INT NOT NULL DEFAULT 0,
     latency_ms BIGINT NOT NULL,
     error TEXT NOT NULL DEFAULT '',
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS rag_node_spans_trace_sequence_uidx ON rag_node_spans (trace_id, sequence);
 
 -- +goose Down
 DROP TABLE IF EXISTS rag_node_spans;

@@ -13,7 +13,7 @@
 | `examples/curl/40_eval.sh` | `POST /v1/datasets`、`POST /v1/datasets/{id}/items`、`POST /v1/evaluations` | 使用 `DATASET_NAME`、`DATASET_KIND`、`EVAL_QUERY`、`GROUND_TRUTH`、`PROFILE`、`TOP_K`。 |
 | `examples/curl/lib.sh` | 无直接业务端点 | 提供 `BASE_URL`、`.orag-demo/` 状态文件、`TOKEN`/`KB_ID` 覆盖和简单 JSON 转义。 |
 
-未被 curl 脚本覆盖但已实现的接口包括：`GET /v1/knowledge-bases`、`GET /v1/knowledge-bases/{id}`、`DELETE /v1/knowledge-bases/{id}`、`POST /v1/knowledge-bases/{id}/documents`、`GET /v1/ingestion-jobs/{id}`、`POST /v1/query:stream`、`GET /v1/evaluations/{id}` 和 `POST /v1/optimizations`。
+未被 curl 脚本覆盖但已实现的接口包括：`GET /v1/knowledge-bases`、`GET /v1/knowledge-bases/{id}`、`DELETE /v1/knowledge-bases/{id}`、`POST /v1/knowledge-bases/{id}/documents`、`GET /v1/ingestion-jobs/{id}`、`POST /v1/query:stream`、`GET /v1/traces`、`GET /v1/traces/{trace_id}`、`GET /v1/evaluations/{id}` 和 `POST /v1/optimizations`。
 
 ## 通用约定
 
@@ -83,13 +83,54 @@ Content-Type: application/json
 
 `trace_id` 用于排查同一次请求链路。服务优先复用请求头 `X-Trace-ID`；未传入时自动生成，并把同一个值写入响应头 `X-Trace-ID`、JSON 错误体、SSE 事件、结构化日志和 RAG trace 持久化记录。`POST /v1/query:stream` 在 RAG 查询阶段失败时返回 `text/event-stream`，事件名为 `error`，事件数据仍包含 `code`、`message`、`trace_id`。
 
-当前 HTTP API 不提供 trace 查询端点。排查 RAG trace 时使用 CLI 查询 PostgreSQL：
+排查 RAG trace 时可以使用 HTTP API 或 CLI 查询 PostgreSQL：
 
 ```bash
+curl -sS "$BASE_URL/v1/traces/trace_xxx" \
+  -H "Authorization: Bearer $TOKEN"
+
 oragctl trace --trace-id trace_xxx
 ```
 
-命中时返回 `found=true` 和 `trace` 对象，包含 `tenant_id`、`profile`、`latency_ms`、`has_error`、`error_count` 和按时间排序的 `node_spans`；未命中时返回 `found=false` 和查询的 `trace_id`。
+`GET /v1/traces/{trace_id}` 命中时直接返回 trace 对象，包含 `trace_id`、`tenant_id`、`profile`、`latency_ms`、`has_error`、`error_count` 和按时间排序的 `node_spans`；不存在或不属于当前 token tenant 时返回 `404 trace_not_found`。
+
+`GET /v1/traces` 返回当前 token tenant 下的 trace 列表：
+
+```bash
+curl -sS "$BASE_URL/v1/traces?profile=realtime&has_error=false&slow_ms=100&limit=20" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+支持的过滤参数：
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `profile` | `realtime` 或 `high_precision` | 按 RAG profile 过滤。 |
+| `since` / `until` | RFC3339 时间 | 按 `created_at` 闭区间过滤。 |
+| `has_error` | boolean | 过滤有无错误 node span 的 trace。 |
+| `slow_ms` | 非负整数 | 只返回 `latency_ms` 大于等于该值的 trace。 |
+| `limit` | 正整数，最大 500 | 限制返回条数；未传时使用服务默认值。 |
+
+列表响应：
+
+```json
+{
+  "items": [
+    {
+      "trace_id": "trace_xxx",
+      "tenant_id": "tenant_default",
+      "profile": "realtime",
+      "latency_ms": 42,
+      "created_at": "2026-06-29T10:02:00Z",
+      "has_error": false,
+      "error_count": 0,
+      "node_spans": []
+    }
+  ]
+}
+```
+
+非法的 `profile`、`since`、`until`、`has_error`、`slow_ms` 或 `limit` 参数会返回 `400 invalid_request`。
 
 ## 认证
 

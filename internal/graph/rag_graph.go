@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/shikanon/orag/internal/observability"
@@ -73,15 +74,55 @@ func (g *RAGGraph) Invoke(ctx context.Context, req rag.QueryRequest) (rag.QueryR
 	}
 	req.TraceID = traceID
 	ctx = observability.WithTraceID(ctx, traceID)
-	out, err := g.runner.Invoke(ctx, State{Request: req})
+	start := time.Now()
+	recorder := &spanRecorder{}
+	out, err := g.runner.Invoke(ctx, State{Request: req, spanRecorder: recorder})
 	if err != nil {
+		g.storePartialTrace(ctx, req, traceID, time.Since(start).Milliseconds(), recorder.snapshot())
 		return rag.QueryResponse{}, err
 	}
 	resp := out.Response
+	resp.TraceSummary = traceSummary(out.Spans)
 	if g.TraceStore != nil && resp.TraceID != "" {
 		if err := g.TraceStore.StoreTrace(ctx, req.TenantID, resp.TraceID, req.Query, resp.Profile, resp.LatencyMS, out.Spans); err != nil {
-			resp.Warnings = append(resp.Warnings, "trace store failed: "+err.Error())
+			msg := "trace store failed: " + err.Error()
+			resp.Warnings = append(resp.Warnings, msg)
+			resp.TraceWarnings = append(resp.TraceWarnings, rag.Warning{
+				Code:    rag.WarningCodeTraceStoreFailed,
+				Message: msg,
+			})
 		}
 	}
 	return resp, nil
+}
+
+func (g *RAGGraph) storePartialTrace(ctx context.Context, req rag.QueryRequest, traceID string, latencyMS int64, spans []NodeSpan) {
+	if g.TraceStore == nil || traceID == "" || len(spans) == 0 {
+		return
+	}
+	_ = g.TraceStore.StoreTrace(ctx, req.TenantID, traceID, req.Query, g.profileFor(req.Profile), latencyMS, spans)
+}
+
+func (g *RAGGraph) profileFor(requested rag.Profile) rag.Profile {
+	if g != nil && g.Service != nil {
+		return g.Service.Profile(requested)
+	}
+	if requested != "" {
+		return requested
+	}
+	return rag.ProfileRealtime
+}
+
+func traceSummary(spans []NodeSpan) *rag.TraceSummary {
+	if len(spans) == 0 {
+		return nil
+	}
+	summary := &rag.TraceSummary{NodeCount: len(spans)}
+	for i, span := range spans {
+		if i == 0 || span.LatencyMS > summary.SlowestLatencyMS {
+			summary.SlowestNode = span.NodeName
+			summary.SlowestLatencyMS = span.LatencyMS
+		}
+	}
+	return summary
 }

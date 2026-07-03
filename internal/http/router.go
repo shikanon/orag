@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
+	"github.com/shikanon/orag/internal/storage/postgres"
 )
 
 type Server struct {
@@ -50,6 +52,8 @@ func (s *Server) Hertz() *server.Hertz {
 	v1.GET("/ingestion-jobs/:id", s.getIngestionJob)
 	v1.POST("/query", s.query)
 	v1.POST("/query:stream", s.queryStream)
+	v1.GET("/traces", s.listTraces)
+	v1.GET("/traces/:trace_id", s.getTrace)
 	v1.POST("/datasets", s.createDataset)
 	v1.POST("/datasets/:id/items", s.addDatasetItem)
 	v1.POST("/evaluations", s.runEvaluation)
@@ -295,6 +299,112 @@ func (s *Server) observeRAGError(profile rag.Profile, errorCode string, latencyM
 	}
 	s.App.Metrics.ObserveRAGQuery(string(profile), "unknown", "error", latencyMS)
 	s.App.Metrics.IncRAGError(string(profile), errorCode)
+}
+
+func (s *Server) getTrace(ctx context.Context, c *app.RequestContext) {
+	if s.App.Traces == nil {
+		writeError(c, consts.StatusInternalServerError, "trace_repository_missing", "trace repository is not configured")
+		return
+	}
+	traceID := strings.TrimSpace(c.Param("trace_id"))
+	if traceID == "" {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "trace_id is required")
+		return
+	}
+	trace, found, err := s.App.Traces.GetTrace(ctx, traceID)
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "trace_lookup_failed", err.Error())
+		return
+	}
+	if !found || trace.TenantID != tenantID(c) {
+		writeError(c, consts.StatusNotFound, "trace_not_found", "trace not found")
+		return
+	}
+	normalizeTraceResponse(&trace)
+	c.JSON(consts.StatusOK, trace)
+}
+
+func (s *Server) listTraces(ctx context.Context, c *app.RequestContext) {
+	if s.App.Traces == nil {
+		writeError(c, consts.StatusInternalServerError, "trace_repository_missing", "trace repository is not configured")
+		return
+	}
+	filter, ok := parseTraceListFilter(c)
+	if !ok {
+		return
+	}
+	filter.TenantID = tenantID(c)
+	traces, err := s.App.Traces.ListTraces(ctx, filter)
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "trace_list_failed", err.Error())
+		return
+	}
+	for i := range traces {
+		normalizeTraceResponse(&traces[i])
+	}
+	c.JSON(consts.StatusOK, map[string]any{"items": traces})
+}
+
+func normalizeTraceResponse(trace *postgres.TraceRecord) {
+	if trace.NodeSpans == nil {
+		trace.NodeSpans = []postgres.TraceNodeSpan{}
+	}
+}
+
+func parseTraceListFilter(c *app.RequestContext) (postgres.TraceListFilter, bool) {
+	var filter postgres.TraceListFilter
+	if profile := strings.TrimSpace(c.Query("profile")); profile != "" {
+		switch rag.Profile(profile) {
+		case rag.ProfileRealtime, rag.ProfileHighPrecision:
+			filter.Profile = rag.Profile(profile)
+		default:
+			writeError(c, consts.StatusBadRequest, "invalid_request", "profile must be realtime or high_precision")
+			return postgres.TraceListFilter{}, false
+		}
+	}
+	for _, field := range []struct {
+		name string
+		dst  *time.Time
+	}{
+		{name: "since", dst: &filter.Since},
+		{name: "until", dst: &filter.Until},
+	} {
+		value := strings.TrimSpace(c.Query(field.name))
+		if value == "" {
+			continue
+		}
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			writeError(c, consts.StatusBadRequest, "invalid_request", field.name+" must be RFC3339")
+			return postgres.TraceListFilter{}, false
+		}
+		*field.dst = parsed
+	}
+	if value := strings.TrimSpace(c.Query("has_error")); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			writeError(c, consts.StatusBadRequest, "invalid_request", "has_error must be true or false")
+			return postgres.TraceListFilter{}, false
+		}
+		filter.HasError = &parsed
+	}
+	if value := strings.TrimSpace(c.Query("slow_ms")); value != "" {
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || parsed < 0 {
+			writeError(c, consts.StatusBadRequest, "invalid_request", "slow_ms must be a non-negative integer")
+			return postgres.TraceListFilter{}, false
+		}
+		filter.SlowMS = parsed
+	}
+	if value := strings.TrimSpace(c.Query("limit")); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed <= 0 {
+			writeError(c, consts.StatusBadRequest, "invalid_request", "limit must be a positive integer")
+			return postgres.TraceListFilter{}, false
+		}
+		filter.Limit = parsed
+	}
+	return filter, true
 }
 
 func (s *Server) createDataset(ctx context.Context, c *app.RequestContext) {

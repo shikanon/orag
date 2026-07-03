@@ -16,10 +16,11 @@ import (
 type Repository struct {
 	Pool        *pgxpool.Pool
 	traceReader traceQueryer
+	traceWriter traceBeginner
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{Pool: pool, traceReader: pgxTraceQueryer{pool: pool}}
+	return &Repository{Pool: pool, traceReader: pgxTraceQueryer{pool: pool}, traceWriter: pgxTraceWriter{pool: pool}}
 }
 
 type pgxTraceQueryer struct {

@@ -35,6 +35,8 @@ func TestOpenAPI(t *testing.T) {
 		{http.MethodGet, "/v1/ingestion-jobs/{id}"},
 		{http.MethodPost, "/v1/query"},
 		{http.MethodPost, "/v1/query:stream"},
+		{http.MethodGet, "/v1/traces"},
+		{http.MethodGet, "/v1/traces/{trace_id}"},
 		{http.MethodPost, "/v1/datasets"},
 		{http.MethodPost, "/v1/datasets/{id}/items"},
 		{http.MethodPost, "/v1/evaluations"},
@@ -65,6 +67,9 @@ func TestOpenAPI(t *testing.T) {
 		"OptimizeRequest",
 		"OptimizeResult",
 		"ReadinessResponse",
+		"TraceListResponse",
+		"TraceRecord",
+		"TraceNodeSpan",
 	} {
 		if doc.Components.Schemas[schema] == nil {
 			t.Fatalf("missing schema %s", schema)

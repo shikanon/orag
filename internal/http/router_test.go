@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/common/ut"
 	"github.com/cloudwego/hertz/pkg/route"
@@ -16,6 +17,7 @@ import (
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/platform/logger"
 	"github.com/shikanon/orag/internal/rag"
+	"github.com/shikanon/orag/internal/storage/postgres"
 )
 
 func TestLoginValidatesPassword(t *testing.T) {
@@ -136,6 +138,11 @@ func TestQueryStreamSSE(t *testing.T) {
 			t.Fatalf("sse body missing %q: %s", event, resp.Body)
 		}
 	}
+	for _, field := range []string{`"trace_summary":`, `"node_count":`, `"slowest_node":`, `"slowest_latency_ms":`} {
+		if !strings.Contains(resp.Body, field) {
+			t.Fatalf("sse done missing trace summary field %s: %s", field, resp.Body)
+		}
+	}
 }
 
 func TestQueryStreamSSEErrorUsesRequestTraceID(t *testing.T) {
@@ -160,6 +167,106 @@ func TestQueryStreamSSEErrorUsesRequestTraceID(t *testing.T) {
 	}
 	if strings.Contains(resp.Body, "trace_sse_error") || strings.Contains(resp.Body, "query=") || strings.Contains(resp.Body, "session_id") {
 		t.Fatalf("metrics contains high-cardinality request data: %s", resp.Body)
+	}
+}
+
+func TestGetTraceReturnsTraceForCurrentTenant(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	app.Traces = &fakeTraceRepository{
+		trace: postgres.TraceRecord{
+			ID:        "trace_1",
+			TenantID:  "tenant_default",
+			Profile:   rag.ProfileRealtime,
+			LatencyMS: 42,
+			CreatedAt: time.Date(2026, 7, 2, 10, 0, 0, 0, time.UTC),
+			NodeSpans: []postgres.TraceNodeSpan{{
+				ID:        "span_1",
+				NodeName:  "retrieve",
+				Sequence:  1,
+				LatencyMS: 12,
+				StartedAt: time.Date(2026, 7, 2, 10, 0, 0, 0, time.UTC),
+				EndedAt:   time.Date(2026, 7, 2, 10, 0, 0, 12*int(time.Millisecond), time.UTC),
+				CreatedAt: time.Date(2026, 7, 2, 10, 0, 0, 0, time.UTC),
+			}},
+		},
+		found: true,
+	}
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "GET", "/v1/traces/trace_1", "", token)
+	if resp.Code != 200 {
+		t.Fatalf("trace status = %d body=%s", resp.Code, resp.Body)
+	}
+	for _, want := range []string{`"trace_id":"trace_1"`, `"tenant_id":"tenant_default"`, `"node_name":"retrieve"`} {
+		if !strings.Contains(resp.Body, want) {
+			t.Fatalf("trace body missing %s: %s", want, resp.Body)
+		}
+	}
+}
+
+func TestGetTraceNotFound(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	app.Traces = &fakeTraceRepository{}
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "GET", "/v1/traces/missing_trace", "", token)
+	if resp.Code != 404 {
+		t.Fatalf("trace status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"code":"trace_not_found"`) {
+		t.Fatalf("unexpected body: %s", resp.Body)
+	}
+}
+
+func TestListTracesAppliesFilters(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	repo := &fakeTraceRepository{
+		traces: []postgres.TraceRecord{{
+			ID:         "trace_2",
+			TenantID:   "tenant_default",
+			Profile:    rag.ProfileHighPrecision,
+			LatencyMS:  125,
+			CreatedAt:  time.Date(2026, 7, 2, 10, 5, 0, 0, time.UTC),
+			HasError:   true,
+			ErrorCount: 1,
+		}},
+	}
+	app.Traces = repo
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "GET", "/v1/traces?profile=high_precision&since=2026-07-02T10:00:00Z&until=2026-07-02T11:00:00Z&has_error=true&slow_ms=100&limit=25", "", token)
+	if resp.Code != 200 {
+		t.Fatalf("trace list status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"items":[`) || !strings.Contains(resp.Body, `"trace_id":"trace_2"`) {
+		t.Fatalf("unexpected trace list body: %s", resp.Body)
+	}
+	if repo.lastFilter.TenantID != "tenant_default" || repo.lastFilter.Profile != rag.ProfileHighPrecision || repo.lastFilter.SlowMS != 100 || repo.lastFilter.Limit != 25 {
+		t.Fatalf("unexpected filter: %#v", repo.lastFilter)
+	}
+	if repo.lastFilter.HasError == nil || !*repo.lastFilter.HasError {
+		t.Fatalf("unexpected has_error filter: %#v", repo.lastFilter.HasError)
+	}
+	if repo.lastFilter.Since.IsZero() || repo.lastFilter.Until.IsZero() {
+		t.Fatalf("missing time filters: %#v", repo.lastFilter)
+	}
+}
+
+func TestListTracesRejectsInvalidParams(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	app.Traces = &fakeTraceRepository{}
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "GET", "/v1/traces?has_error=maybe", "", token)
+	if resp.Code != 400 {
+		t.Fatalf("trace list status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"code":"invalid_request"`) {
+		t.Fatalf("unexpected body: %s", resp.Body)
 	}
 }
 
@@ -320,4 +427,24 @@ type failingPipeline struct {
 
 func (p failingPipeline) Invoke(context.Context, rag.QueryRequest) (rag.QueryResponse, error) {
 	return rag.QueryResponse{}, p.err
+}
+
+type fakeTraceRepository struct {
+	trace      postgres.TraceRecord
+	found      bool
+	traces     []postgres.TraceRecord
+	lastFilter postgres.TraceListFilter
+}
+
+func (r *fakeTraceRepository) GetTrace(context.Context, string) (postgres.TraceRecord, bool, error) {
+	return r.trace, r.found, nil
+}
+
+func (r *fakeTraceRepository) ListTraces(_ context.Context, filter postgres.TraceListFilter) ([]postgres.TraceRecord, error) {
+	r.lastFilter = filter
+	return r.traces, nil
+}
+
+func (r *fakeTraceRepository) TraceNodeStats(context.Context, postgres.TraceListFilter) ([]postgres.TraceNodeStat, error) {
+	return nil, nil
 }

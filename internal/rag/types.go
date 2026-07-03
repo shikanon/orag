@@ -31,6 +31,19 @@ type Citation struct {
 	Quote      string `json:"quote,omitempty"`
 }
 
+const WarningCodeTraceStoreFailed = "trace_store_failed"
+
+type Warning struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type TraceSummary struct {
+	NodeCount        int    `json:"node_count"`
+	SlowestNode      string `json:"slowest_node,omitempty"`
+	SlowestLatencyMS int64  `json:"slowest_latency_ms"`
+}
+
 type QueryResponse struct {
 	Answer          string            `json:"answer"`
 	Citations       []Citation        `json:"citations"`
@@ -39,6 +52,8 @@ type QueryResponse struct {
 	CacheStatus     string            `json:"cache_status"`
 	Profile         Profile           `json:"profile"`
 	Warnings        []string          `json:"warnings,omitempty"`
+	TraceWarnings   []Warning         `json:"trace_warnings,omitempty"`
+	TraceSummary    *TraceSummary     `json:"trace_summary,omitempty"`
 	LatencyMS       int64             `json:"latency_ms"`
 	CreatedAt       time.Time         `json:"created_at"`
 }
