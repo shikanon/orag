@@ -21,6 +21,13 @@ type TraceStore interface {
 	StoreTrace(ctx context.Context, tenantID, traceID, query string, profile rag.Profile, latencyMS int64, spans []NodeSpan) error
 }
 
+type traceRecord struct {
+	traceID   string
+	profile   rag.Profile
+	latencyMS int64
+	spans     []NodeSpan
+}
+
 type spanCollectorKey struct{}
 
 type spanCollector struct {
@@ -107,25 +114,57 @@ func (g *RAGGraph) Invoke(ctx context.Context, req rag.QueryRequest) (rag.QueryR
 	ctx = context.WithValue(ctx, spanCollectorKey{}, collector)
 	out, err := g.runner.Invoke(ctx, State{Request: req})
 	if err != nil {
-		spans := out.Spans
-		if len(spans) == 0 {
-			spans = collector.snapshot()
-		}
-		_ = g.storeTrace(ctx, req, traceID, g.profile(req.Profile), time.Since(start).Milliseconds(), spans)
+		_ = g.storeTrace(ctx, req, g.traceRecord(req, traceID, start, out, collector.snapshot(), true))
 		return rag.QueryResponse{}, err
 	}
 	resp := out.Response
-	if err := g.storeTrace(ctx, req, resp.TraceID, resp.Profile, resp.LatencyMS, out.Spans); err != nil {
+	if err := g.storeTrace(ctx, req, g.traceRecord(req, traceID, start, out, collector.snapshot(), false)); err != nil {
 		resp.Warnings = append(resp.Warnings, "trace store failed: "+err.Error())
 	}
 	return resp, nil
 }
 
-func (g *RAGGraph) storeTrace(ctx context.Context, req rag.QueryRequest, traceID string, profile rag.Profile, latencyMS int64, spans []NodeSpan) error {
-	if g.TraceStore == nil || traceID == "" {
+func (g *RAGGraph) traceRecord(req rag.QueryRequest, fallbackTraceID string, fallbackStart time.Time, st State, fallbackSpans []NodeSpan, deriveLatency bool) traceRecord {
+	traceID := strings.TrimSpace(st.TraceID)
+	if traceID == "" {
+		traceID = strings.TrimSpace(fallbackTraceID)
+	}
+	if traceID == "" {
+		traceID = strings.TrimSpace(req.TraceID)
+	}
+	profile := st.Profile
+	if profile == "" {
+		profile = st.Response.Profile
+	}
+	if profile == "" {
+		profile = g.profile(req.Profile)
+	}
+	latencyMS := st.Response.LatencyMS
+	if deriveLatency && latencyMS == 0 {
+		if !st.Start.IsZero() {
+			latencyMS = time.Since(st.Start).Milliseconds()
+		}
+		if latencyMS == 0 && !fallbackStart.IsZero() {
+			latencyMS = time.Since(fallbackStart).Milliseconds()
+		}
+	}
+	spans := st.Spans
+	if len(spans) == 0 {
+		spans = fallbackSpans
+	}
+	return traceRecord{
+		traceID:   traceID,
+		profile:   profile,
+		latencyMS: latencyMS,
+		spans:     spans,
+	}
+}
+
+func (g *RAGGraph) storeTrace(ctx context.Context, req rag.QueryRequest, rec traceRecord) error {
+	if g.TraceStore == nil || rec.traceID == "" {
 		return nil
 	}
-	return g.TraceStore.StoreTrace(ctx, req.TenantID, traceID, req.Query, profile, latencyMS, spans)
+	return g.TraceStore.StoreTrace(ctx, req.TenantID, rec.traceID, req.Query, rec.profile, rec.latencyMS, rec.spans)
 }
 
 func (g *RAGGraph) profile(requested rag.Profile) rag.Profile {

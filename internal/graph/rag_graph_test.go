@@ -183,7 +183,7 @@ func TestRAGGraphFailureLogIncludesCorrelationFieldsWithoutSensitiveContent(t *t
 	}
 }
 
-func TestRAGGraphInvokePersistsFailureSpans(t *testing.T) {
+func TestRAGGraphInvokePersistsTraceOnNodeFailure(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestService(t)
 	svc.Cache = nil
