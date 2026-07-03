@@ -716,7 +716,47 @@ func TestDocumentIngestionRequiresExistingKnowledgeBase(t *testing.T) {
 	assertNoChunks(t, app, missingKB)
 }
 
-func TestDocumentIngestionChecksKnowledgeBaseBeforeParsingBody(t *testing.T) {
+func TestImportDocumentRequiresExistingKnowledgeBase(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	jobs := &countingJobStore{delegate: ingest.NewMemoryJobStore()}
+	app.Ingest.Jobs = jobs
+	missingKB := "kb_missing_import"
+
+	resp := performJSON(h, "POST", "/v1/knowledge-bases/"+missingKB+"/documents:import", `{"name":"missing.md","source_uri":"test://missing","content":"valid json must not be ingested"}`, token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+	if strings.Contains(resp.Body, `"code":"ingest_failed"`) {
+		t.Fatalf("missing knowledge base returned ingest_failed: %s", resp.Body)
+	}
+	if jobs.createCalls != 0 {
+		t.Fatalf("import created %d ingestion jobs for missing knowledge base", jobs.createCalls)
+	}
+	assertNoChunks(t, app, missingKB)
+}
+
+func TestUploadDocumentRequiresExistingKnowledgeBase(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	jobs := &countingJobStore{delegate: ingest.NewMemoryJobStore()}
+	app.Ingest.Jobs = jobs
+	missingKB := "kb_missing_upload"
+
+	resp := performMultipartUpload(t, h, "/v1/knowledge-bases/"+missingKB+"/documents", "missing.md", "orphan chunks must not be created", token)
+	assertMissingKnowledgeBaseResponse(t, resp)
+	if strings.Contains(resp.Body, `"code":"ingest_failed"`) {
+		t.Fatalf("missing knowledge base returned ingest_failed: %s", resp.Body)
+	}
+	if jobs.createCalls != 0 {
+		t.Fatalf("upload created %d ingestion jobs for missing knowledge base", jobs.createCalls)
+	}
+	assertNoChunks(t, app, missingKB)
+}
+
+func TestImportDocumentInvalidJSONPrecedesKnowledgeBaseLookup(t *testing.T) {
 	h, app, closeApp := newTestHertzWithApp(t)
 	defer closeApp()
 
@@ -725,17 +765,27 @@ func TestDocumentIngestionChecksKnowledgeBaseBeforeParsingBody(t *testing.T) {
 	app.Ingest.Jobs = jobs
 	missingKB := "kb_missing_before_parse"
 
-	resp := performJSON(h, "POST", "/v1/knowledge-bases/"+missingKB+"/documents:import", `{`, token)
-	assertMissingKnowledgeBaseResponse(t, resp)
+	resp := performJSONWithTrace(h, "POST", "/v1/knowledge-bases/"+missingKB+"/documents:import", `{`, token, "trace_import_invalid_json")
+	assertErrorResponse(t, resp, 400, "invalid_json", "trace_import_invalid_json")
 	if jobs.createCalls != 0 {
-		t.Fatalf("import created %d ingestion jobs for missing knowledge base", jobs.createCalls)
+		t.Fatalf("import created %d ingestion jobs for invalid json", jobs.createCalls)
 	}
 	assertNoChunks(t, app, missingKB)
+}
 
-	resp = performJSON(h, "POST", "/v1/knowledge-bases/"+missingKB+"/documents", "", token)
-	assertMissingKnowledgeBaseResponse(t, resp)
+func TestUploadDocumentMissingFilePrecedesKnowledgeBaseLookup(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	jobs := &countingJobStore{delegate: ingest.NewMemoryJobStore()}
+	app.Ingest.Jobs = jobs
+	missingKB := "kb_missing_before_parse"
+
+	resp := performJSONWithTrace(h, "POST", "/v1/knowledge-bases/"+missingKB+"/documents", "", token, "trace_upload_missing_file")
+	assertErrorResponse(t, resp, 400, "invalid_request", "trace_upload_missing_file")
 	if jobs.createCalls != 0 {
-		t.Fatalf("upload created %d ingestion jobs for missing knowledge base", jobs.createCalls)
+		t.Fatalf("upload created %d ingestion jobs for missing file", jobs.createCalls)
 	}
 	assertNoChunks(t, app, missingKB)
 }

@@ -58,7 +58,7 @@ Content-Type: application/json
 }
 ```
 
-实现中如果 `name` 为空，会使用 `imported.md`。`content` 超过 `INGEST_MAX_DOCUMENT_BYTES` 时会返回 `413 payload_too_large`。
+实现中如果 `name` 为空，会使用 `imported.md`。如果 `{id}` 对应的知识库不存在或当前 tenant 不可访问，会返回 `404 knowledge_base_not_found`；`content` 超过 `INGEST_MAX_DOCUMENT_BYTES` 时会返回 `413 payload_too_large`。
 
 成功响应为 `202 Accepted`，包含：
 
@@ -76,7 +76,7 @@ Authorization: Bearer <access_token>
 Content-Type: multipart/form-data
 ```
 
-该入口用于上传文件。当前实现会复用同一套 parser、chunker、store 和 ingestion job 记录逻辑。
+该入口用于上传文件。当前实现会复用同一套 parser、chunker、store 和 ingestion job 记录逻辑。如果 `{id}` 对应的知识库不存在或当前 tenant 不可访问，会返回 `404 knowledge_base_not_found`。
 
 解析方法由服务端环境变量 `INGEST_PARSER_METHOD` 决定：
 
