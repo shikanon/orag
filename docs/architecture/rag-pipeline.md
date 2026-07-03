@@ -43,7 +43,7 @@ trace context (trace_id)
                 node_name, latency_ms, error, created_at
 ```
 
-`rag_traces` 表示一次完整 RAG 查询；`rag_node_spans` 表示 Graph 中关键节点的执行片段。node span 按 `created_at, id` 排序后可还原节点执行顺序；任一 span 的 `error` 非空时，CLI 查询结果会标记 `has_error=true` 并累计 `error_count`。当前持久化的是应用内 RAG trace，不是 OpenTelemetry span，也不是 LangFuse trace。
+`rag_traces` 表示一次完整 RAG 查询；`rag_node_spans` 表示 Graph 中关键节点的执行片段。node span 按 `created_at, id` 排序后可还原节点执行顺序；任一 span 的 `error` 非空时，CLI 查询结果会标记 `has_error=true` 并累计 `error_count`。如果调用方复用同一个 `X-Trace-ID`，持久化记录按最后完成的请求整体覆盖主记录和 node spans，不会把多次请求的 spans 追加到同一个 trace。当前持久化的是应用内 RAG trace，不是 OpenTelemetry span，也不是 LangFuse trace。
 
 ## 关键阶段
 

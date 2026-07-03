@@ -179,6 +179,44 @@ func TestQueryUsesRequestTraceID(t *testing.T) {
 	}
 }
 
+func TestQueryRepeatedTraceIDInvokesPipelinePerRequest(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	pipeline := &recordingPipeline{}
+	app.RAG.Pipeline = pipeline
+
+	token := loginToken(t, h)
+	traceID := "trace_query_reused"
+	for _, query := range []string{"first repeated trace query", "second repeated trace query"} {
+		resp := performJSONWithTrace(h, "POST", "/v1/query", `{"knowledge_base_id":"kb_default","query":"`+query+`"}`, token, traceID)
+		if resp.Code != 200 {
+			t.Fatalf("query status = %d body=%s", resp.Code, resp.Body)
+		}
+		var body rag.QueryResponse
+		if err := json.Unmarshal([]byte(resp.Body), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.TraceID != traceID {
+			t.Fatalf("query trace_id = %q, want %q", body.TraceID, traceID)
+		}
+		if resp.TraceIDHeader != traceID {
+			t.Fatalf("response trace header = %q, want %q", resp.TraceIDHeader, traceID)
+		}
+	}
+
+	if len(pipeline.requests) != 2 {
+		t.Fatalf("pipeline requests = %d, want 2", len(pipeline.requests))
+	}
+	for i, req := range pipeline.requests {
+		if req.TraceID != traceID {
+			t.Fatalf("pipeline request %d trace_id = %q, want %q", i+1, req.TraceID, traceID)
+		}
+	}
+	if pipeline.requests[0].Query == pipeline.requests[1].Query {
+		t.Fatalf("pipeline requests were not distinct: %#v", pipeline.requests)
+	}
+}
+
 type queryValidationCase struct {
 	name    string
 	body    string
@@ -1079,6 +1117,21 @@ type countingPipeline struct {
 func (p *countingPipeline) Invoke(context.Context, rag.QueryRequest) (rag.QueryResponse, error) {
 	p.calls++
 	return p.resp, p.err
+}
+
+type recordingPipeline struct {
+	requests []rag.QueryRequest
+}
+
+func (p *recordingPipeline) Invoke(_ context.Context, req rag.QueryRequest) (rag.QueryResponse, error) {
+	p.requests = append(p.requests, req)
+	return rag.QueryResponse{
+		Answer:      "ok",
+		TraceID:     req.TraceID,
+		CacheStatus: "miss",
+		Profile:     rag.ProfileRealtime,
+		LatencyMS:   1,
+	}, nil
 }
 
 type failingPipeline struct {
