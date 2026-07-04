@@ -110,6 +110,9 @@ func TestRunnerPersistsRunInMemoryRepository(t *testing.T) {
 	if _, ok, err := runner.Get(ctx, "tenant_default", result.ID); err != nil || !ok {
 		t.Fatalf("Get() ok=%v err=%v", ok, err)
 	}
+	if _, ok, err := runner.Get(ctx, "tenant_other", result.ID); err != nil || ok {
+		t.Fatalf("cross-tenant Get() ok=%v err=%v, want not found", ok, err)
+	}
 }
 
 func TestRunnerRejectsMissingRequiredIDs(t *testing.T) {
