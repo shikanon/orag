@@ -146,8 +146,8 @@ func (r *Repository) PutKnowledgeBase(ctx context.Context, item kb.KnowledgeBase
 	return err
 }
 
-func (r *Repository) ListKnowledgeBases(tenantID string) ([]kb.KnowledgeBase, error) {
-	rows, err := r.knowledgeBaseQueryer().Query(context.Background(), `
+func (r *Repository) ListKnowledgeBases(ctx context.Context, tenantID string) ([]kb.KnowledgeBase, error) {
+	rows, err := r.knowledgeBaseQueryer().Query(ctx, `
 		SELECT id, tenant_id, name, description, metadata, created_at, updated_at
 		FROM knowledge_bases
 		WHERE tenant_id=$1
@@ -170,8 +170,8 @@ func (r *Repository) ListKnowledgeBases(tenantID string) ([]kb.KnowledgeBase, er
 	return out, nil
 }
 
-func (r *Repository) GetKnowledgeBase(tenantID, id string) (kb.KnowledgeBase, bool, error) {
-	row := r.knowledgeBaseQueryer().QueryRow(context.Background(), `
+func (r *Repository) GetKnowledgeBase(ctx context.Context, tenantID, id string) (kb.KnowledgeBase, bool, error) {
+	row := r.knowledgeBaseQueryer().QueryRow(ctx, `
 		SELECT id, tenant_id, name, description, metadata, created_at, updated_at
 		FROM knowledge_bases
 		WHERE tenant_id=$1 AND id=$2`, tenantID, id)
@@ -250,6 +250,10 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 		doc.ID = existingID
 	}
 
+	if err := deleteDocumentSource(ctx, tx, doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI, doc.ContentHash); err != nil {
+		return err
+	}
+
 	_, err = tx.Exec(ctx, `
 		INSERT INTO documents(id, tenant_id, knowledge_base_id, source_uri, title, content_hash, metadata, created_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8)
@@ -282,6 +286,38 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+func (r *Repository) DeleteDocumentSource(ctx context.Context, tenantID, kbID, sourceURI string) error {
+	_, err := r.Pool.Exec(ctx, `
+		DELETE FROM chunks
+		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND source_uri=$3`, tenantID, kbID, sourceURI)
+	if err != nil {
+		return err
+	}
+	_, err = r.Pool.Exec(ctx, `
+		DELETE FROM documents
+		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND source_uri=$3`, tenantID, kbID, sourceURI)
+	return err
+}
+
+func deleteDocumentSource(ctx context.Context, tx pgx.Tx, tenantID, kbID, sourceURI, keepContentHash string) error {
+	if sourceURI == "" {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `
+		DELETE FROM chunks
+		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND document_id IN (
+			SELECT id FROM documents
+			WHERE tenant_id=$1 AND knowledge_base_id=$2 AND source_uri=$3 AND content_hash<>$4
+		)`, tenantID, kbID, sourceURI, keepContentHash)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
+		DELETE FROM documents
+		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND source_uri=$3 AND content_hash<>$4`, tenantID, kbID, sourceURI, keepContentHash)
+	return err
 }
 
 func (r *Repository) Activate(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {

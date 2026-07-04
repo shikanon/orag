@@ -30,20 +30,24 @@ func TestInMemorySemanticCacheIsolatesProfileAndTopK(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		profile Profile
-		topK    int
-		wantHit bool
+		name            string
+		tenantID        string
+		knowledgeBaseID string
+		profile         Profile
+		topK            int
+		wantHit         bool
 	}{
-		{name: "same profile and top_k", profile: ProfileRealtime, topK: 8, wantHit: true},
-		{name: "different profile", profile: ProfileHighPrecision, topK: 8, wantHit: false},
-		{name: "different top_k", profile: ProfileRealtime, topK: 16, wantHit: false},
+		{name: "same tenant knowledge base profile and top_k", tenantID: entry.TenantID, knowledgeBaseID: entry.KnowledgeBaseID, profile: ProfileRealtime, topK: 8, wantHit: true},
+		{name: "different tenant", tenantID: "tenant_other", knowledgeBaseID: entry.KnowledgeBaseID, profile: ProfileRealtime, topK: 8, wantHit: false},
+		{name: "different knowledge base", tenantID: entry.TenantID, knowledgeBaseID: "kb_other", profile: ProfileRealtime, topK: 8, wantHit: false},
+		{name: "different profile", tenantID: entry.TenantID, knowledgeBaseID: entry.KnowledgeBaseID, profile: ProfileHighPrecision, topK: 8, wantHit: false},
+		{name: "different top_k", tenantID: entry.TenantID, knowledgeBaseID: entry.KnowledgeBaseID, profile: ProfileRealtime, topK: 16, wantHit: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, ok, err := cache.Lookup(ctx, SemanticCacheLookupRequest{
-				TenantID:        entry.TenantID,
-				KnowledgeBaseID: entry.KnowledgeBaseID,
+				TenantID:        tt.tenantID,
+				KnowledgeBaseID: tt.knowledgeBaseID,
 				Query:           entry.Query,
 				Profile:         tt.profile,
 				TopK:            tt.topK,
@@ -70,9 +74,19 @@ func TestCacheKeyIncludesProfileAndTopK(t *testing.T) {
 	profileVariant.Profile = ProfileHighPrecision
 	topKVariant := base
 	topKVariant.TopK = 16
+	tenantVariant := base
+	tenantVariant.TenantID = "tenant_other"
+	knowledgeBaseVariant := base
+	knowledgeBaseVariant.KnowledgeBaseID = "kb_other"
 	queryWhitespaceVariant := base
 	queryWhitespaceVariant.Query = " qdrant vector   search "
 
+	if CacheKey(base) == CacheKey(tenantVariant) {
+		t.Fatalf("CacheKey() should differ by tenant")
+	}
+	if CacheKey(base) == CacheKey(knowledgeBaseVariant) {
+		t.Fatalf("CacheKey() should differ by knowledge base")
+	}
 	if CacheKey(base) == CacheKey(profileVariant) {
 		t.Fatalf("CacheKey() should differ by profile")
 	}

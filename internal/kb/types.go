@@ -68,6 +68,10 @@ type Indexer interface {
 	Store(ctx context.Context, doc Document, chunks []Chunk) error
 }
 
+type DocumentSourceDeleter interface {
+	DeleteDocumentSource(ctx context.Context, tenantID, kbID, sourceURI string) error
+}
+
 type MemoryStore struct {
 	mu        sync.RWMutex
 	kbs       map[string]KnowledgeBase
@@ -90,7 +94,7 @@ func (s *MemoryStore) PutKnowledgeBase(_ context.Context, kb KnowledgeBase) erro
 	return nil
 }
 
-func (s *MemoryStore) ListKnowledgeBases(tenantID string) ([]KnowledgeBase, error) {
+func (s *MemoryStore) ListKnowledgeBases(_ context.Context, tenantID string) ([]KnowledgeBase, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]KnowledgeBase, 0, len(s.kbs))
@@ -103,7 +107,7 @@ func (s *MemoryStore) ListKnowledgeBases(tenantID string) ([]KnowledgeBase, erro
 	return out, nil
 }
 
-func (s *MemoryStore) GetKnowledgeBase(tenantID, id string) (KnowledgeBase, bool, error) {
+func (s *MemoryStore) GetKnowledgeBase(_ context.Context, tenantID, id string) (KnowledgeBase, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	item, ok := s.kbs[id]
@@ -134,11 +138,36 @@ func (s *MemoryStore) DeleteKnowledgeBase(_ context.Context, tenantID, id string
 func (s *MemoryStore) Store(_ context.Context, doc Document, chunks []Chunk) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.deleteDocumentSourceLocked(doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI)
 	s.documents[doc.ID] = doc
 	for _, chunk := range chunks {
 		s.chunks[chunk.ID] = chunk
 	}
 	return nil
+}
+
+func (s *MemoryStore) DeleteDocumentSource(_ context.Context, tenantID, kbID, sourceURI string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deleteDocumentSourceLocked(tenantID, kbID, sourceURI)
+	return nil
+}
+
+func (s *MemoryStore) deleteDocumentSourceLocked(tenantID, kbID, sourceURI string) {
+	if sourceURI == "" {
+		return
+	}
+	for docID, doc := range s.documents {
+		if doc.TenantID != tenantID || doc.KnowledgeBaseID != kbID || doc.SourceURI != sourceURI {
+			continue
+		}
+		delete(s.documents, docID)
+		for chunkID, chunk := range s.chunks {
+			if chunk.TenantID == tenantID && chunk.KnowledgeBaseID == kbID && chunk.DocumentID == docID {
+				delete(s.chunks, chunkID)
+			}
+		}
+	}
 }
 
 func (s *MemoryStore) Chunks(tenantID, kbID string) []Chunk {

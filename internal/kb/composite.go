@@ -30,3 +30,16 @@ func (i CompositeIndexer) Store(ctx context.Context, doc Document, chunks []Chun
 	}
 	return nil
 }
+
+func (i CompositeIndexer) DeleteDocumentSource(ctx context.Context, tenantID, kbID, sourceURI string) error {
+	for _, indexer := range i.Indexers {
+		deleter, ok := indexer.(DocumentSourceDeleter)
+		if !ok || deleter == nil {
+			continue
+		}
+		if err := deleter.DeleteDocumentSource(ctx, tenantID, kbID, sourceURI); err != nil {
+			return err
+		}
+	}
+	return nil
+}

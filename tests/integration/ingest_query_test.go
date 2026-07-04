@@ -270,7 +270,7 @@ func TestDeleteKnowledgeBaseCleansPostgresAndQdrant(t *testing.T) {
 	if !deleted {
 		t.Fatal("DeleteKnowledgeBase deleted=false, want true")
 	}
-	if _, ok, err := app.KBStore.GetKnowledgeBase(testTenantID, kbID); err != nil {
+	if _, ok, err := app.KBStore.GetKnowledgeBase(context.Background(), testTenantID, kbID); err != nil {
 		t.Fatal(err)
 	} else if ok {
 		t.Fatal("deleted knowledge base is still readable")

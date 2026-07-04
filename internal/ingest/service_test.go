@@ -129,6 +129,51 @@ func TestIngestCreatesJobAndStableIDs(t *testing.T) {
 	}
 }
 
+func TestIngestReplacesOldChunksForSameSource(t *testing.T) {
+	ctx := context.Background()
+	store := kb.NewMemoryStore()
+	if err := store.PutKnowledgeBase(ctx, kb.KnowledgeBase{
+		ID:        "kb_default",
+		TenantID:  "tenant_default",
+		Name:      "Default",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{
+		Parser:         parser.BasicParser{},
+		Splitter:       chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder:       fakeEmbedder{},
+		KnowledgeBases: store,
+		Indexer:        store,
+		Jobs:           NewMemoryJobStore(),
+	}
+	req := Request{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		SourceURI:       "memory://replace.md",
+		Name:            "replace.md",
+		Content:         []byte("old replacement marker"),
+	}
+	first, err := svc.Ingest(ctx, req)
+	if err != nil {
+		t.Fatalf("first Ingest() error = %v", err)
+	}
+	req.Content = []byte("new replacement marker")
+	second, err := svc.Ingest(ctx, req)
+	if err != nil {
+		t.Fatalf("second Ingest() error = %v", err)
+	}
+	if first.Document.ID == second.Document.ID {
+		t.Fatalf("document IDs should differ after content change: %s", first.Document.ID)
+	}
+	got := store.Chunks("tenant_default", "kb_default")
+	if len(got) != 1 || got[0].DocumentID != second.Document.ID || got[0].Content != "new replacement marker" {
+		t.Fatalf("chunks after re-ingest = %#v", got)
+	}
+}
+
 func TestIngestFailedCompositeIndexDoesNotExposeSparseChunks(t *testing.T) {
 	ctx := context.Background()
 	store := newStagedSearchStore()
