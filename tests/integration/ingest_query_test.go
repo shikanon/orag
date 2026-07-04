@@ -262,6 +262,43 @@ func TestDeleteKnowledgeBaseCleansPostgresAndQdrant(t *testing.T) {
 	if count := countQdrantSemanticCachePoints(t, ctx, app, kbID); count == 0 {
 		t.Fatal("expected qdrant semantic cache points before delete")
 	}
+	datasetID := "ds_" + kbID
+	optimizationRunID := "opt_" + kbID
+	candidateID := "cand_" + kbID
+	harnessID := "harness_" + kbID
+	if _, err := app.Postgres.Exec(ctx, `
+		INSERT INTO datasets(id, tenant_id, name, kind, version)
+		VALUES($1, $2, $3, $4, $5)`,
+		datasetID, testTenantID, "delete integration dataset", "golden", kbID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Postgres.Exec(ctx, `
+		INSERT INTO optimization_runs(id, tenant_id, dataset_id, knowledge_base_id, status)
+		VALUES($1, $2, $3, $4, $5)`,
+		optimizationRunID, testTenantID, datasetID, kbID, "queued"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Postgres.Exec(ctx, `
+		INSERT INTO optimization_candidates(id, optimization_run_id, config, status)
+		VALUES($1, $2, '{}'::jsonb, $3)`,
+		candidateID, optimizationRunID, "queued"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Postgres.Exec(ctx, `
+		INSERT INTO harness_runs(id, tenant_id, candidate_id, harness_type)
+		VALUES($1, $2, $3, $4)`,
+		harnessID, testTenantID, candidateID, "integration"); err != nil {
+		t.Fatal(err)
+	}
+	if count := countOptimizationRuns(t, ctx, app, kbID); count == 0 {
+		t.Fatal("expected optimization runs before delete")
+	}
+	if count := countOptimizationCandidates(t, ctx, app, kbID); count == 0 {
+		t.Fatal("expected optimization candidates before delete")
+	}
+	if count := countHarnessRunsForCandidate(t, ctx, app, candidateID); count == 0 {
+		t.Fatal("expected harness runs before delete")
+	}
 
 	deleted, err := app.KBStore.DeleteKnowledgeBase(ctx, testTenantID, kbID)
 	if err != nil {
@@ -279,6 +316,15 @@ func TestDeleteKnowledgeBaseCleansPostgresAndQdrant(t *testing.T) {
 		if count := countPostgresRows(t, ctx, app, table, kbID); count != 0 {
 			t.Fatalf("%s rows after delete = %d", table, count)
 		}
+	}
+	if count := countOptimizationCandidates(t, ctx, app, kbID); count != 0 {
+		t.Fatalf("optimization_candidates rows after delete = %d", count)
+	}
+	if count := countOptimizationRuns(t, ctx, app, kbID); count != 0 {
+		t.Fatalf("optimization_runs rows after delete = %d", count)
+	}
+	if count := countHarnessRunsForCandidate(t, ctx, app, candidateID); count != 0 {
+		t.Fatalf("harness_runs rows after delete = %d", count)
 	}
 	if count := countQdrantPoints(t, ctx, app, kbID); count != 0 {
 		t.Fatalf("qdrant points after delete = %d", count)
@@ -301,6 +347,43 @@ func countPostgresRows(t *testing.T, ctx context.Context, app *core.App, table, 
 	}
 	var count int
 	if err := app.Postgres.QueryRow(ctx, fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", table, where), testTenantID, kbID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+func countOptimizationRuns(t *testing.T, ctx context.Context, app *core.App, kbID string) int {
+	t.Helper()
+	var count int
+	if err := app.Postgres.QueryRow(ctx, `
+		SELECT count(*)
+		FROM optimization_runs
+		WHERE tenant_id=$1 AND knowledge_base_id=$2`, testTenantID, kbID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+func countOptimizationCandidates(t *testing.T, ctx context.Context, app *core.App, kbID string) int {
+	t.Helper()
+	var count int
+	if err := app.Postgres.QueryRow(ctx, `
+		SELECT count(*)
+		FROM optimization_candidates c
+		JOIN optimization_runs r ON r.id = c.optimization_run_id
+		WHERE r.tenant_id=$1 AND r.knowledge_base_id=$2`, testTenantID, kbID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+func countHarnessRunsForCandidate(t *testing.T, ctx context.Context, app *core.App, candidateID string) int {
+	t.Helper()
+	var count int
+	if err := app.Postgres.QueryRow(ctx, `
+		SELECT count(*)
+		FROM harness_runs
+		WHERE tenant_id=$1 AND candidate_id=$2`, testTenantID, candidateID).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	return count
