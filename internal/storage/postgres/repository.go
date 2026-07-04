@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -295,16 +296,17 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 			chunk.DocumentID = existingID
 		}
 		_, err = tx.Exec(ctx, `
-			INSERT INTO chunks(id, tenant_id, knowledge_base_id, document_id, content, source_uri, page, section, offset_start, metadata, searchable)
-			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+			INSERT INTO chunks(id, tenant_id, knowledge_base_id, document_id, content, contextual_text, source_uri, page, section, offset_start, metadata, searchable)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 			ON CONFLICT (id) DO UPDATE SET
 				content=EXCLUDED.content,
+				contextual_text=EXCLUDED.contextual_text,
 				source_uri=EXCLUDED.source_uri,
 				page=EXCLUDED.page,
 				section=EXCLUDED.section,
 				offset_start=EXCLUDED.offset_start,
 				metadata=EXCLUDED.metadata`,
-			chunk.ID, chunk.TenantID, chunk.KnowledgeBaseID, chunk.DocumentID, chunk.Content, chunk.SourceURI, chunk.Page, chunk.Section, chunk.Offset, mustJSON(chunk.Metadata), !r.StageChunks)
+			chunk.ID, chunk.TenantID, chunk.KnowledgeBaseID, chunk.DocumentID, chunk.Content, chunk.ContextualText, chunk.SourceURI, chunk.Page, chunk.Section, chunk.Offset, mustJSON(chunk.Metadata), !r.StageChunks)
 		if err != nil {
 			return err
 		}
@@ -358,7 +360,7 @@ func (r *Repository) Activate(ctx context.Context, doc kb.Document, chunks []kb.
 
 func (r *Repository) Chunks(tenantID, kbID string) []kb.Chunk {
 	rows, err := r.Pool.Query(context.Background(), `
-		SELECT id, tenant_id, knowledge_base_id, document_id, content, source_uri, page, section, offset_start, metadata
+		SELECT id, tenant_id, knowledge_base_id, document_id, content, contextual_text, source_uri, page, section, offset_start, metadata
 		FROM chunks
 		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND searchable
 		ORDER BY id`, tenantID, kbID)
@@ -374,6 +376,97 @@ func (r *Repository) Chunks(tenantID, kbID string) []kb.Chunk {
 		}
 	}
 	return out
+}
+
+func (r *Repository) StoreGraphRelations(ctx context.Context, relations []kb.GraphRelation) error {
+	if len(relations) == 0 {
+		return nil
+	}
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	docIDs := map[string]bool{}
+	for _, relation := range relations {
+		if relation.DocumentID != "" {
+			docIDs[relation.DocumentID] = true
+		}
+	}
+	for docID := range docIDs {
+		if _, err := tx.Exec(ctx, `DELETE FROM graph_relations WHERE document_id=$1`, docID); err != nil {
+			return err
+		}
+	}
+	for _, relation := range relations {
+		if relation.Weight == 0 {
+			relation.Weight = 1
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO graph_relations(
+				tenant_id, knowledge_base_id, document_id, source_chunk_id, target_chunk_id,
+				subject, predicate, object, weight
+			)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+			relation.TenantID, relation.KnowledgeBaseID, relation.DocumentID, relation.SourceChunkID, relation.TargetChunkID,
+			relation.Subject, relation.Predicate, relation.Object, relation.Weight)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) ExpandGraph(ctx context.Context, req kb.GraphExpansionRequest) ([]kb.SearchResult, error) {
+	if len(req.Entities) == 0 {
+		return nil, nil
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 8
+	}
+	entities := make([]string, 0, len(req.Entities))
+	for _, entity := range req.Entities {
+		if value := strings.ToLower(strings.TrimSpace(entity)); value != "" {
+			entities = append(entities, value)
+		}
+	}
+	if len(entities) == 0 {
+		return nil, nil
+	}
+	rows, err := r.Pool.Query(ctx, `
+		WITH matched AS (
+			SELECT source_chunk_id AS chunk_id, weight
+			FROM graph_relations
+			WHERE tenant_id=$1 AND knowledge_base_id=$2
+			  AND (lower(subject)=ANY($3::text[]) OR lower(object)=ANY($3::text[]))
+			UNION ALL
+			SELECT target_chunk_id AS chunk_id, weight
+			FROM graph_relations
+			WHERE tenant_id=$1 AND knowledge_base_id=$2
+			  AND (lower(subject)=ANY($3::text[]) OR lower(object)=ANY($3::text[]))
+		)
+		SELECT c.id, c.tenant_id, c.knowledge_base_id, c.document_id, c.content, c.contextual_text,
+		       c.source_uri, c.page, c.section, c.offset_start, c.metadata, max(m.weight) AS score
+		FROM matched m
+		JOIN chunks c ON c.id=m.chunk_id
+		WHERE c.tenant_id=$1 AND c.knowledge_base_id=$2 AND c.searchable
+		GROUP BY c.id
+		ORDER BY score DESC, c.id
+		LIMIT $4`, req.TenantID, req.KnowledgeBaseID, entities, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []kb.SearchResult
+	for rows.Next() {
+		chunk, score, err := scanScoredChunk(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, kb.SearchResult{Chunk: chunk, Score: score, Rank: len(out) + 1, From: "graph"})
+	}
+	return out, rows.Err()
 }
 
 func (r *Repository) BootstrapDefaults(ctx context.Context, tenantID, kbID string) error {
@@ -427,7 +520,7 @@ func scanKnowledgeBase(row kbScanner) (kb.KnowledgeBase, error) {
 func scanChunk(row kbScanner) (kb.Chunk, error) {
 	var chunk kb.Chunk
 	var meta []byte
-	err := row.Scan(&chunk.ID, &chunk.TenantID, &chunk.KnowledgeBaseID, &chunk.DocumentID, &chunk.Content, &chunk.SourceURI, &chunk.Page, &chunk.Section, &chunk.Offset, &meta)
+	err := row.Scan(&chunk.ID, &chunk.TenantID, &chunk.KnowledgeBaseID, &chunk.DocumentID, &chunk.Content, &chunk.ContextualText, &chunk.SourceURI, &chunk.Page, &chunk.Section, &chunk.Offset, &meta)
 	if err != nil {
 		return chunk, err
 	}

@@ -37,9 +37,27 @@ func (n NodeSet) Init(ctx context.Context, st State) (State, error) {
 	})
 }
 
+func (n NodeSet) QueryRoute(ctx context.Context, st State) (State, error) {
+	return n.withSpan(ctx, "query_route", st, func(st *State) error {
+		route, warnings := n.Service.RouteQuery(ctx, st.Request)
+		st.Warnings = append(st.Warnings, warnings...)
+		if route == nil {
+			return nil
+		}
+		st.Route = route
+		switch route.Route {
+		case rag.QueryRouteSingleRetrieval:
+			st.Profile = rag.ProfileRealtime
+		case rag.QueryRouteMultiStepRetrieval:
+			st.Profile = rag.ProfileHighPrecision
+		}
+		return nil
+	})
+}
+
 func (n NodeSet) SemanticCacheLookup(ctx context.Context, st State) (State, error) {
 	return n.withSpan(ctx, "semantic_cache_lookup", st, func(st *State) error {
-		if n.Service.Cache == nil {
+		if st.isDirectRoute() || n.Service.Cache == nil {
 			return nil
 		}
 		embeddings, err := n.Service.Model.Embed(ctx, []string{st.Request.Query})
@@ -51,6 +69,9 @@ func (n NodeSet) SemanticCacheLookup(ctx context.Context, st State) (State, erro
 		}
 		st.Embedding = embeddings[0]
 		if cached, ok, warning := n.Service.LookupSemanticCache(ctx, st.Request, st.Embedding, st.TraceID, st.Profile, st.TopK, st.Start); ok {
+			if st.Route != nil && cached.Route == nil {
+				cached.Route = st.Route
+			}
 			st.Response = cached
 			st.Cached = true
 		} else if warning != "" {
@@ -62,7 +83,7 @@ func (n NodeSet) SemanticCacheLookup(ctx context.Context, st State) (State, erro
 
 func (n NodeSet) QueryRewrite(ctx context.Context, st State) (State, error) {
 	return n.withSpan(ctx, "query_rewrite", st, func(st *State) error {
-		if st.Cached || st.Profile != rag.ProfileHighPrecision || !n.Service.QueryRewriteEnabled {
+		if st.Cached || st.isDirectRoute() || st.isSingleRoute() || st.Profile != rag.ProfileHighPrecision || !n.Service.QueryRewriteEnabled {
 			return nil
 		}
 		rewritten, warnings := n.Service.RewriteQuery(ctx, st.Request, st.Profile)
@@ -76,7 +97,7 @@ func (n NodeSet) QueryRewrite(ctx context.Context, st State) (State, error) {
 
 func (n NodeSet) MultiQuery(ctx context.Context, st State) (State, error) {
 	return n.withSpan(ctx, "multi_query", st, func(st *State) error {
-		if st.Cached || st.Profile != rag.ProfileHighPrecision || (n.Service.MultiQueryCount <= 1 && !n.Service.HyDEEnabled) {
+		if st.Cached || st.isDirectRoute() || st.isSingleRoute() || st.Profile != rag.ProfileHighPrecision || (n.Service.MultiQueryCount <= 1 && !n.Service.HyDEEnabled) {
 			return nil
 		}
 		if st.RewrittenQuery == "" {
@@ -91,7 +112,7 @@ func (n NodeSet) MultiQuery(ctx context.Context, st State) (State, error) {
 
 func (n NodeSet) HybridRetrieve(ctx context.Context, st State) (State, error) {
 	return n.withSpan(ctx, "hybrid_retrieve", st, func(st *State) error {
-		if st.Cached {
+		if st.Cached || st.isDirectRoute() {
 			return nil
 		}
 		retrievalQueries := st.RetrievalQueries
@@ -155,12 +176,21 @@ func (n NodeSet) Generate(ctx context.Context, st State) (State, error) {
 		if st.Cached {
 			return nil
 		}
+		if st.isDirectRoute() {
+			resp, err := n.Service.GenerateDirect(ctx, st.Request, st.Profile, st.TraceID, st.Start, st.Warnings, st.Route)
+			if err != nil {
+				return err
+			}
+			st.Response = resp
+			return nil
+		}
 		if len(st.Results) == 0 {
 			st.Response = rag.QueryResponse{
 				Answer:      n.Service.NoContextAnswer,
 				TraceID:     st.TraceID,
 				CacheStatus: "miss",
 				Profile:     st.Profile,
+				Route:       st.Route,
 				Warnings:    append(st.Warnings, "no_retrieved_context"),
 				CreatedAt:   time.Now().UTC(),
 				LatencyMS:   time.Since(st.Start).Milliseconds(),
@@ -185,6 +215,7 @@ func (n NodeSet) Generate(ctx context.Context, st State) (State, error) {
 			TraceID:         st.TraceID,
 			CacheStatus:     "miss",
 			Profile:         st.Profile,
+			Route:           st.Route,
 			Warnings:        st.Warnings,
 			CreatedAt:       time.Now().UTC(),
 			LatencyMS:       time.Since(st.Start).Milliseconds(),

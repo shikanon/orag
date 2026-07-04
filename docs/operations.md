@@ -10,7 +10,7 @@
 - Ark/豆包模型接口：由 `ARK_API_KEY` 或 `VOLCENGINE_API_KEY`、`ARK_BASE_URL`、`ARK_CHAT_MODEL`、`ARK_EMBEDDING_MODEL`、`ARK_MULTIMODAL_MODEL`、`ARK_TIMEOUT` 和 `ARK_RETRY_TIMES` 配置。默认推荐火山 Doubao，默认 embedding 模型为 `doubao-embedding-vision-251215`，调用 `/embeddings/multimodal`。
 - Provider Endpoint：大多数 provider 内置默认 endpoint；Azure OpenAI 和 Google Cloud 需分别配置 `AZURE_OPENAI_BASE_URL`、`GOOGLE_CLOUD_BASE_URL`。其它 provider 如走代理、私有网关或不同区域，可用 `<PROVIDER>_BASE_URL` 覆盖默认值。
 - Rerank 接口：由 `LLM_RERANK_PROVIDER` 或兼容变量 `RERANK_PROVIDER` 选择 provider。火山/方舟使用 `ARK_RERANK_BASE_URL`、`ARK_RERANK_MODEL`；阿里云百炼/通义可使用 `ALIYUN_RERANK_API_KEY`、`ALIYUN_RERANK_BASE_URL`、`ALIYUN_RERANK_MODEL`。未配置所选 provider 的 key 时默认启动失败；deterministic mock 只允许显式测试模式启用。
-- 文档解析：默认 `INGEST_PARSER_METHOD=basic` 不依赖额外解析服务；PDF、图片和 DOCX 内嵌图片会通过 Ark 多模态模型生成描述。`mineru` 需要 `MINERU_APISERVER`，可选 `MINERU_SERVER_URL` 用于 VLM HTTP backend；`docling` 需要 `DOCLING_SERVER_URL`。
+- 文档解析：默认 `INGEST_PARSER_METHOD=basic` 不依赖额外解析服务；PDF、图片和 DOCX 内嵌图片会通过 Ark 多模态模型生成描述。`INGEST_CONTEXTUAL_RETRIEVAL_ENABLED=true` 会额外为每个 chunk 生成 contextual text，用于 embedding 和 FTS/BM25 表示，默认失败降级为原始 chunk。`INGEST_RAPTOR_ENABLED=true` 会生成递归摘要 chunk，`RAG_GRAPH_RETRIEVAL_ENABLED=true` 会抽取轻量实体关系并在查询时扩展相关 chunk。`mineru` 需要 `MINERU_APISERVER`，可选 `MINERU_SERVER_URL` 用于 VLM HTTP backend；`docling` 需要 `DOCLING_SERVER_URL`。
 - 对象存储和观测平台：默认 `OBJECT_STORAGE_PROVIDER=local`、`OBJECT_STORAGE_MOCK_UPLOAD=true`，`OTEL_EXPORTER_OTLP_ENDPOINT`、`LANGFUSE_*` 为空时不启用外部 exporter 或 LangFuse。
 
 系统默认不依赖 ES/Neo4j。`STORAGE_BACKEND=memory` 仅用于本地无依赖调试或单元测试，不作为生产配置。

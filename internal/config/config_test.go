@@ -48,6 +48,12 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Ingestion.ParserMethod != "basic" {
 		t.Fatalf("default parser method = %q", cfg.Ingestion.ParserMethod)
 	}
+	if cfg.Ingestion.ContextualRetrieval.Enabled {
+		t.Fatal("contextual retrieval should default to disabled")
+	}
+	if cfg.Ingestion.RAPTOR.Enabled {
+		t.Fatal("RAPTOR should default to disabled")
+	}
 	if !cfg.RAG.QueryRewriteEnabled {
 		t.Fatal("expected query rewrite default to be enabled")
 	}
@@ -56,6 +62,92 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if !cfg.RAG.HyDEEnabled {
 		t.Fatal("expected HyDE default to be enabled")
+	}
+	if cfg.RAG.QueryRouter.Enabled {
+		t.Fatal("query router should default to disabled")
+	}
+	if cfg.RAG.GraphRetrieval.Enabled {
+		t.Fatal("graph retrieval should default to disabled")
+	}
+}
+
+func TestLoadQueryRouterConfig(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "ark-test-key")
+	t.Setenv("RAG_QUERY_ROUTER_ENABLED", "true")
+	t.Setenv("RAG_QUERY_ROUTER_STRATEGY", "heuristic")
+	t.Setenv("RAG_QUERY_ROUTER_DIRECT_MAX_RUNES", "24")
+	t.Setenv("RAG_QUERY_ROUTER_COMPLEX_MIN_SIGNALS", "3")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got := cfg.RAG.QueryRouter
+	if !got.Enabled || got.Strategy != "heuristic" || got.DirectMaxRunes != 24 || got.ComplexMinSignals != 3 {
+		t.Fatalf("query router config = %#v", got)
+	}
+	env := cfg.RedactedEnv()
+	if env["RAG_QUERY_ROUTER_ENABLED"] != "true" || env["RAG_QUERY_ROUTER_STRATEGY"] != "heuristic" {
+		t.Fatalf("redacted query router env = %#v", env)
+	}
+}
+
+func TestLoadRAPTORConfig(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "ark-test-key")
+	t.Setenv("INGEST_RAPTOR_ENABLED", "true")
+	t.Setenv("INGEST_RAPTOR_BRANCH_FACTOR", "3")
+	t.Setenv("INGEST_RAPTOR_MAX_LEVELS", "4")
+	t.Setenv("INGEST_RAPTOR_MAX_SUMMARY_CHARS", "640")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got := cfg.Ingestion.RAPTOR
+	if !got.Enabled || got.BranchFactor != 3 || got.MaxLevels != 4 || got.MaxSummaryChars != 640 {
+		t.Fatalf("RAPTOR config = %#v", got)
+	}
+	env := cfg.RedactedEnv()
+	if env["INGEST_RAPTOR_ENABLED"] != "true" || env["INGEST_RAPTOR_MAX_LEVELS"] != "4" {
+		t.Fatalf("redacted RAPTOR env = %#v", env)
+	}
+}
+
+func TestLoadGraphRetrievalConfig(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "ark-test-key")
+	t.Setenv("RAG_GRAPH_RETRIEVAL_ENABLED", "true")
+	t.Setenv("RAG_GRAPH_RETRIEVAL_TOP_K", "12")
+	t.Setenv("INGEST_GRAPH_MAX_ENTITIES_PER_CHUNK", "5")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got := cfg.RAG.GraphRetrieval
+	if !got.Enabled || got.TopK != 12 || got.MaxEntitiesPerChunk != 5 {
+		t.Fatalf("graph retrieval config = %#v", got)
+	}
+	env := cfg.RedactedEnv()
+	if env["RAG_GRAPH_RETRIEVAL_ENABLED"] != "true" || env["RAG_GRAPH_RETRIEVAL_TOP_K"] != "12" {
+		t.Fatalf("redacted graph retrieval env = %#v", env)
+	}
+}
+
+func TestLoadContextualRetrievalConfig(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "ark-test-key")
+	t.Setenv("INGEST_CONTEXTUAL_RETRIEVAL_ENABLED", "true")
+	t.Setenv("INGEST_CONTEXTUAL_MAX_DOCUMENT_CHARS", "9000")
+	t.Setenv("INGEST_CONTEXTUAL_MAX_CHUNK_CHARS", "1500")
+	t.Setenv("INGEST_CONTEXTUAL_MAX_CONTEXT_CHARS", "320")
+	t.Setenv("INGEST_CONTEXTUAL_FAILURE_MODE", "fail")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got := cfg.Ingestion.ContextualRetrieval
+	if !got.Enabled || got.MaxDocumentChars != 9000 || got.MaxChunkChars != 1500 || got.MaxContextChars != 320 || got.FailureMode != "fail" {
+		t.Fatalf("contextual retrieval config = %#v", got)
 	}
 }
 

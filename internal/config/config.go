@@ -104,15 +104,47 @@ type RAGConfig struct {
 	NoContextAnswer          string
 	PromptCacheMode          string
 	RequireExternalProviders bool
+	QueryRouter              QueryRouterConfig
+	GraphRetrieval           GraphRetrievalConfig
+}
+
+type QueryRouterConfig struct {
+	Enabled           bool
+	Strategy          string
+	DirectMaxRunes    int
+	ComplexMinSignals int
+}
+
+type GraphRetrievalConfig struct {
+	Enabled             bool
+	TopK                int
+	MaxEntitiesPerChunk int
 }
 
 type IngestionConfig struct {
-	ChunkSizeTokens    int
-	ChunkOverlapTokens int
-	MaxDocumentBytes   int64
-	ParserMethod       string
-	MinerU             MinerUConfig
-	Docling            DoclingConfig
+	ChunkSizeTokens     int
+	ChunkOverlapTokens  int
+	MaxDocumentBytes    int64
+	ParserMethod        string
+	ContextualRetrieval ContextualRetrievalConfig
+	RAPTOR              RAPTORConfig
+	MinerU              MinerUConfig
+	Docling             DoclingConfig
+}
+
+type RAPTORConfig struct {
+	Enabled         bool
+	BranchFactor    int
+	MaxLevels       int
+	MaxSummaryChars int
+}
+
+type ContextualRetrievalConfig struct {
+	Enabled          bool
+	MaxDocumentChars int
+	MaxChunkChars    int
+	MaxContextChars  int
+	FailureMode      string
 }
 
 type MinerUConfig struct {
@@ -210,12 +242,36 @@ func Load() (Config, error) {
 			NoContextAnswer:          getenv("RAG_NO_CONTEXT_ANSWER", "未在知识库中检索到足够依据，无法基于上下文回答。"),
 			PromptCacheMode:          getenv("PROMPT_CACHE_MODE", "auto"),
 			RequireExternalProviders: getenvBool("REQUIRE_EXTERNAL_PROVIDERS", true),
+			QueryRouter: QueryRouterConfig{
+				Enabled:           getenvBool("RAG_QUERY_ROUTER_ENABLED", false),
+				Strategy:          strings.ToLower(strings.TrimSpace(getenv("RAG_QUERY_ROUTER_STRATEGY", "heuristic"))),
+				DirectMaxRunes:    getenvInt("RAG_QUERY_ROUTER_DIRECT_MAX_RUNES", 16),
+				ComplexMinSignals: getenvInt("RAG_QUERY_ROUTER_COMPLEX_MIN_SIGNALS", 2),
+			},
+			GraphRetrieval: GraphRetrievalConfig{
+				Enabled:             getenvBool("RAG_GRAPH_RETRIEVAL_ENABLED", false),
+				TopK:                getenvInt("RAG_GRAPH_RETRIEVAL_TOP_K", 8),
+				MaxEntitiesPerChunk: getenvInt("INGEST_GRAPH_MAX_ENTITIES_PER_CHUNK", 6),
+			},
 		},
 		Ingestion: IngestionConfig{
 			ChunkSizeTokens:    getenvInt("INGEST_CHUNK_SIZE_TOKENS", 800),
 			ChunkOverlapTokens: getenvInt("INGEST_CHUNK_OVERLAP_TOKENS", 120),
 			MaxDocumentBytes:   int64(getenvInt("INGEST_MAX_DOCUMENT_BYTES", 25*1024*1024)),
 			ParserMethod:       strings.ToLower(strings.TrimSpace(getenv("INGEST_PARSER_METHOD", "basic"))),
+			ContextualRetrieval: ContextualRetrievalConfig{
+				Enabled:          getenvBool("INGEST_CONTEXTUAL_RETRIEVAL_ENABLED", false),
+				MaxDocumentChars: getenvInt("INGEST_CONTEXTUAL_MAX_DOCUMENT_CHARS", 12000),
+				MaxChunkChars:    getenvInt("INGEST_CONTEXTUAL_MAX_CHUNK_CHARS", 2000),
+				MaxContextChars:  getenvInt("INGEST_CONTEXTUAL_MAX_CONTEXT_CHARS", 500),
+				FailureMode:      strings.ToLower(strings.TrimSpace(getenv("INGEST_CONTEXTUAL_FAILURE_MODE", "fallback"))),
+			},
+			RAPTOR: RAPTORConfig{
+				Enabled:         getenvBool("INGEST_RAPTOR_ENABLED", false),
+				BranchFactor:    getenvInt("INGEST_RAPTOR_BRANCH_FACTOR", 4),
+				MaxLevels:       getenvInt("INGEST_RAPTOR_MAX_LEVELS", 2),
+				MaxSummaryChars: getenvInt("INGEST_RAPTOR_MAX_SUMMARY_CHARS", 1000),
+			},
 			MinerU: MinerUConfig{
 				APIURL:      getenv("MINERU_API_URL", getenv("MINERU_APISERVER", "")),
 				ServerURL:   getenv("MINERU_SERVER_URL", ""),
@@ -305,6 +361,18 @@ func (c Config) Validate() error {
 	if c.Ingestion.ParserMethod != "basic" && c.Ingestion.ParserMethod != "mineru" && c.Ingestion.ParserMethod != "docling" {
 		return errors.New("INGEST_PARSER_METHOD must be basic, mineru, or docling")
 	}
+	if c.Ingestion.ContextualRetrieval.FailureMode != "fallback" && c.Ingestion.ContextualRetrieval.FailureMode != "fail" {
+		return errors.New("INGEST_CONTEXTUAL_FAILURE_MODE must be fallback or fail")
+	}
+	if c.Ingestion.RAPTOR.BranchFactor < 2 {
+		return errors.New("INGEST_RAPTOR_BRANCH_FACTOR must be at least 2")
+	}
+	if c.Ingestion.RAPTOR.MaxLevels <= 0 {
+		return errors.New("INGEST_RAPTOR_MAX_LEVELS must be positive")
+	}
+	if c.Ingestion.RAPTOR.MaxSummaryChars <= 0 {
+		return errors.New("INGEST_RAPTOR_MAX_SUMMARY_CHARS must be positive")
+	}
 	if c.Ingestion.ParserMethod == "mineru" && strings.TrimSpace(c.Ingestion.MinerU.APIURL) == "" {
 		return errors.New("MINERU_APISERVER or MINERU_API_URL is required when INGEST_PARSER_METHOD=mineru")
 	}
@@ -320,6 +388,21 @@ func (c Config) Validate() error {
 	if c.RAG.SemanticCacheThreshold <= 0 || c.RAG.SemanticCacheThreshold > 1 {
 		return errors.New("RAG_SEMANTIC_CACHE_THRESHOLD must be in (0, 1]")
 	}
+	if c.RAG.QueryRouter.Enabled && c.RAG.QueryRouter.Strategy != "heuristic" {
+		return errors.New("RAG_QUERY_ROUTER_STRATEGY must be heuristic")
+	}
+	if c.RAG.QueryRouter.DirectMaxRunes <= 0 {
+		return errors.New("RAG_QUERY_ROUTER_DIRECT_MAX_RUNES must be positive")
+	}
+	if c.RAG.QueryRouter.ComplexMinSignals <= 0 {
+		return errors.New("RAG_QUERY_ROUTER_COMPLEX_MIN_SIGNALS must be positive")
+	}
+	if c.RAG.GraphRetrieval.TopK <= 0 {
+		return errors.New("RAG_GRAPH_RETRIEVAL_TOP_K must be positive")
+	}
+	if c.RAG.GraphRetrieval.MaxEntitiesPerChunk <= 0 {
+		return errors.New("INGEST_GRAPH_MAX_ENTITIES_PER_CHUNK must be positive")
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
 	}
@@ -328,37 +411,45 @@ func (c Config) Validate() error {
 
 func (c Config) RedactedEnv() map[string]string {
 	return map[string]string{
-		"HOST":                             c.Server.Host,
-		"PORT":                             strconv.Itoa(c.Server.Port),
-		"DATABASE_URL":                     redact(c.Database.URL),
-		"STORAGE_BACKEND":                  c.Storage.Backend,
-		"QDRANT_HOST":                      c.Qdrant.Host,
-		"QDRANT_GRPC_PORT":                 strconv.Itoa(c.Qdrant.GRPCPort),
-		"QDRANT_COLLECTION":                c.Qdrant.Collection,
-		"QDRANT_SEMANTIC_CACHE_COLLECTION": c.Qdrant.SemanticCacheCollection,
-		"ARK_BASE_URL":                     c.Ark.BaseURL,
-		"ARK_API_KEY":                      redact(c.Ark.APIKey),
-		"ARK_CHAT_MODEL":                   c.Ark.ChatModel,
-		"ARK_EMBEDDING_MODEL":              c.Ark.EmbeddingModel,
-		"LLM_CHAT_PROVIDER":                c.Models.ChatProvider,
-		"LLM_EMBEDDING_PROVIDER":           c.Models.EmbeddingProvider,
-		"LLM_RERANK_PROVIDER":              c.Models.RerankProvider,
-		"LLM_MULTIMODAL_PROVIDER":          c.Models.MultimodalProvider,
-		"ALLOW_DETERMINISTIC_MOCK":         strconv.FormatBool(c.Models.AllowDeterministicMock),
-		"INGEST_PARSER_METHOD":             c.Ingestion.ParserMethod,
-		"MINERU_APISERVER":                 c.Ingestion.MinerU.APIURL,
-		"MINERU_SERVER_URL":                c.Ingestion.MinerU.ServerURL,
-		"MINERU_BACKEND":                   c.Ingestion.MinerU.Backend,
-		"MINERU_PARSE_METHOD":              c.Ingestion.MinerU.ParseMethod,
-		"DOCLING_SERVER_URL":               c.Ingestion.Docling.ServerURL,
-		"RERANK_PROVIDER":                  c.Ark.RerankProvider,
-		"ARK_RERANK_MODEL":                 c.Ark.RerankModel,
-		"ALIYUN_RERANK_API_KEY":            redact(c.Ark.RerankAPIKey),
-		"JWT_SECRET":                       redact(c.Auth.JWTSecret),
-		"RAG_QUERY_REWRITE_ENABLED":        strconv.FormatBool(c.RAG.QueryRewriteEnabled),
-		"RAG_MULTI_QUERY_COUNT":            strconv.Itoa(c.RAG.MultiQueryCount),
-		"RAG_HYDE_ENABLED":                 strconv.FormatBool(c.RAG.HyDEEnabled),
-		"PROMPT_CACHE_MODE":                c.RAG.PromptCacheMode,
+		"HOST":                                c.Server.Host,
+		"PORT":                                strconv.Itoa(c.Server.Port),
+		"DATABASE_URL":                        redact(c.Database.URL),
+		"STORAGE_BACKEND":                     c.Storage.Backend,
+		"QDRANT_HOST":                         c.Qdrant.Host,
+		"QDRANT_GRPC_PORT":                    strconv.Itoa(c.Qdrant.GRPCPort),
+		"QDRANT_COLLECTION":                   c.Qdrant.Collection,
+		"QDRANT_SEMANTIC_CACHE_COLLECTION":    c.Qdrant.SemanticCacheCollection,
+		"ARK_BASE_URL":                        c.Ark.BaseURL,
+		"ARK_API_KEY":                         redact(c.Ark.APIKey),
+		"ARK_CHAT_MODEL":                      c.Ark.ChatModel,
+		"ARK_EMBEDDING_MODEL":                 c.Ark.EmbeddingModel,
+		"LLM_CHAT_PROVIDER":                   c.Models.ChatProvider,
+		"LLM_EMBEDDING_PROVIDER":              c.Models.EmbeddingProvider,
+		"LLM_RERANK_PROVIDER":                 c.Models.RerankProvider,
+		"LLM_MULTIMODAL_PROVIDER":             c.Models.MultimodalProvider,
+		"ALLOW_DETERMINISTIC_MOCK":            strconv.FormatBool(c.Models.AllowDeterministicMock),
+		"INGEST_PARSER_METHOD":                c.Ingestion.ParserMethod,
+		"INGEST_CONTEXTUAL_RETRIEVAL_ENABLED": strconv.FormatBool(c.Ingestion.ContextualRetrieval.Enabled),
+		"INGEST_CONTEXTUAL_FAILURE_MODE":      c.Ingestion.ContextualRetrieval.FailureMode,
+		"INGEST_RAPTOR_ENABLED":               strconv.FormatBool(c.Ingestion.RAPTOR.Enabled),
+		"INGEST_RAPTOR_MAX_LEVELS":            strconv.Itoa(c.Ingestion.RAPTOR.MaxLevels),
+		"MINERU_APISERVER":                    c.Ingestion.MinerU.APIURL,
+		"MINERU_SERVER_URL":                   c.Ingestion.MinerU.ServerURL,
+		"MINERU_BACKEND":                      c.Ingestion.MinerU.Backend,
+		"MINERU_PARSE_METHOD":                 c.Ingestion.MinerU.ParseMethod,
+		"DOCLING_SERVER_URL":                  c.Ingestion.Docling.ServerURL,
+		"RERANK_PROVIDER":                     c.Ark.RerankProvider,
+		"ARK_RERANK_MODEL":                    c.Ark.RerankModel,
+		"ALIYUN_RERANK_API_KEY":               redact(c.Ark.RerankAPIKey),
+		"JWT_SECRET":                          redact(c.Auth.JWTSecret),
+		"RAG_QUERY_REWRITE_ENABLED":           strconv.FormatBool(c.RAG.QueryRewriteEnabled),
+		"RAG_MULTI_QUERY_COUNT":               strconv.Itoa(c.RAG.MultiQueryCount),
+		"RAG_HYDE_ENABLED":                    strconv.FormatBool(c.RAG.HyDEEnabled),
+		"RAG_QUERY_ROUTER_ENABLED":            strconv.FormatBool(c.RAG.QueryRouter.Enabled),
+		"RAG_QUERY_ROUTER_STRATEGY":           c.RAG.QueryRouter.Strategy,
+		"RAG_GRAPH_RETRIEVAL_ENABLED":         strconv.FormatBool(c.RAG.GraphRetrieval.Enabled),
+		"RAG_GRAPH_RETRIEVAL_TOP_K":           strconv.Itoa(c.RAG.GraphRetrieval.TopK),
+		"PROMPT_CACHE_MODE":                   c.RAG.PromptCacheMode,
 	}
 }
 

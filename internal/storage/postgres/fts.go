@@ -31,13 +31,13 @@ func (r FTSRetriever) Retrieve(ctx context.Context, req kb.SearchRequest) ([]kb.
 	}
 	rows, err := r.ftsQueryer().Query(ctx, `
 		WITH q AS (SELECT plainto_tsquery('simple', $3) AS query)
-		SELECT id, tenant_id, knowledge_base_id, document_id, content, source_uri, page, section, offset_start, metadata,
-		       ts_rank_cd(content_tsvector, (SELECT query FROM q)) AS score
+		SELECT id, tenant_id, knowledge_base_id, document_id, content, contextual_text, source_uri, page, section, offset_start, metadata,
+		       ts_rank_cd(search_text_tsvector, (SELECT query FROM q)) AS score
 		FROM chunks
 		WHERE tenant_id=$1
 		  AND knowledge_base_id=$2
 		  AND searchable
-		  AND content_tsvector @@ (SELECT query FROM q)
+		  AND search_text_tsvector @@ (SELECT query FROM q)
 		ORDER BY score DESC, id
 		LIMIT $4`, req.TenantID, req.KnowledgeBaseID, req.Query, limit)
 	if err != nil {
@@ -67,7 +67,7 @@ func scanScoredChunk(row kbScanner) (kb.Chunk, float64, error) {
 	var chunk kb.Chunk
 	var meta []byte
 	var score float64
-	err := row.Scan(&chunk.ID, &chunk.TenantID, &chunk.KnowledgeBaseID, &chunk.DocumentID, &chunk.Content, &chunk.SourceURI, &chunk.Page, &chunk.Section, &chunk.Offset, &meta, &score)
+	err := row.Scan(&chunk.ID, &chunk.TenantID, &chunk.KnowledgeBaseID, &chunk.DocumentID, &chunk.Content, &chunk.ContextualText, &chunk.SourceURI, &chunk.Page, &chunk.Section, &chunk.Offset, &meta, &score)
 	if err != nil {
 		return chunk, 0, err
 	}

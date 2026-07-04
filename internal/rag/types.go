@@ -31,6 +31,21 @@ type Citation struct {
 	Quote      string `json:"quote,omitempty"`
 }
 
+type QueryRoute string
+
+const (
+	QueryRouteDirect             QueryRoute = "direct"
+	QueryRouteSingleRetrieval    QueryRoute = "single_retrieval"
+	QueryRouteMultiStepRetrieval QueryRoute = "multi_step_retrieval"
+)
+
+type RouteDecision struct {
+	Route    QueryRoute `json:"route"`
+	Reason   string     `json:"reason,omitempty"`
+	Strategy string     `json:"strategy,omitempty"`
+	Signals  []string   `json:"signals,omitempty"`
+}
+
 const WarningCodeTraceStoreFailed = "trace_store_failed"
 
 type Warning struct {
@@ -51,6 +66,7 @@ type QueryResponse struct {
 	TraceID         string            `json:"trace_id"`
 	CacheStatus     string            `json:"cache_status"`
 	Profile         Profile           `json:"profile"`
+	Route           *RouteDecision    `json:"route,omitempty"`
 	Warnings        []string          `json:"warnings,omitempty"`
 	TraceWarnings   []Warning         `json:"trace_warnings,omitempty"`
 	TraceSummary    *TraceSummary     `json:"trace_summary,omitempty"`

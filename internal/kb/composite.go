@@ -43,3 +43,27 @@ func (i CompositeIndexer) DeleteDocumentSource(ctx context.Context, tenantID, kb
 	}
 	return nil
 }
+
+func (i CompositeIndexer) StoreGraphRelations(ctx context.Context, relations []GraphRelation) error {
+	for _, indexer := range i.Indexers {
+		store, ok := indexer.(GraphStore)
+		if !ok || store == nil {
+			continue
+		}
+		if err := store.StoreGraphRelations(ctx, relations); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (i CompositeIndexer) ExpandGraph(ctx context.Context, req GraphExpansionRequest) ([]SearchResult, error) {
+	for _, indexer := range i.Indexers {
+		store, ok := indexer.(GraphStore)
+		if !ok || store == nil {
+			continue
+		}
+		return store.ExpandGraph(ctx, req)
+	}
+	return nil, nil
+}

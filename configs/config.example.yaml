@@ -83,6 +83,15 @@ rag:
   query_rewrite_enabled: true
   multi_query_count: 3
   hyde_enabled: true
+  query_router:
+    enabled: false
+    strategy: heuristic
+    direct_max_runes: 16
+    complex_min_signals: 2
+  graph_retrieval:
+    enabled: false
+    top_k: 8
+    max_entities_per_chunk: 6
   no_context_answer: 未在知识库中检索到足够依据，无法基于上下文回答。
   prompt_cache_mode: auto
   require_external_providers: true
@@ -92,6 +101,17 @@ ingestion:
   chunk_overlap_tokens: 120
   max_document_bytes: 26214400
   parser_method: basic
+  contextual_retrieval:
+    enabled: false
+    max_document_chars: 12000
+    max_chunk_chars: 2000
+    max_context_chars: 500
+    failure_mode: fallback
+  raptor:
+    enabled: false
+    branch_factor: 4
+    max_levels: 2
+    max_summary_chars: 1000
   mineru:
     api_url: ""
     server_url: ""

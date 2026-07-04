@@ -36,7 +36,7 @@ func (r SparseRetriever) Retrieve(_ context.Context, req SearchRequest) ([]Searc
 	chunks := r.Store.Chunks(req.TenantID, req.KnowledgeBaseID)
 	results := make([]SearchResult, 0, len(chunks))
 	for _, chunk := range chunks {
-		score := lexicalScore(req.Query, chunk.Content)
+		score := lexicalScore(req.Query, chunk.SearchText())
 		if score > 0 {
 			results = append(results, SearchResult{Chunk: chunk, Score: score, From: "sparse"})
 		}

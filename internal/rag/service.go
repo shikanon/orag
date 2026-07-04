@@ -39,6 +39,7 @@ type Service struct {
 	QueryRewriteEnabled bool
 	MultiQueryCount     int
 	HyDEEnabled         bool
+	QueryRouter         QueryRouter
 	Logger              *slog.Logger
 }
 
@@ -66,6 +67,18 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 	if topK <= 0 {
 		topK = 50
 	}
+	route, routeWarnings := s.RouteQuery(ctx, req)
+	warnings := append([]string(nil), routeWarnings...)
+	if route != nil {
+		switch route.Route {
+		case QueryRouteDirect:
+			return s.GenerateDirect(ctx, req, profile, traceID, start, warnings, route)
+		case QueryRouteSingleRetrieval:
+			profile = ProfileRealtime
+		case QueryRouteMultiStepRetrieval:
+			profile = ProfileHighPrecision
+		}
+	}
 	embeddings, err := s.Model.Embed(ctx, []string{req.Query})
 	if err != nil {
 		s.logFailure(ctx, req, profile, traceID, "ark_embed", start, err)
@@ -76,8 +89,10 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		s.logFailure(ctx, req, profile, traceID, "ark_embed", start, err)
 		return QueryResponse{}, err
 	}
-	var warnings []string
 	if cached, ok, warning := s.LookupSemanticCache(ctx, req, embeddings[0], traceID, profile, topK, start); ok {
+		if route != nil && cached.Route == nil {
+			cached.Route = route
+		}
 		return cached, nil
 	} else if warning != "" {
 		warnings = append(warnings, warning)
@@ -98,6 +113,7 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 			TraceID:     traceID,
 			CacheStatus: "miss",
 			Profile:     profile,
+			Route:       route,
 			Warnings:    append(warnings, "no_retrieved_context"),
 			CreatedAt:   time.Now().UTC(),
 			LatencyMS:   time.Since(start).Milliseconds(),
@@ -132,6 +148,7 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		TraceID:         traceID,
 		CacheStatus:     "miss",
 		Profile:         profile,
+		Route:           route,
 		Warnings:        warnings,
 		CreatedAt:       time.Now().UTC(),
 		LatencyMS:       time.Since(start).Milliseconds(),
@@ -140,6 +157,42 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		resp.Warnings = append(resp.Warnings, warning)
 	}
 	return resp, nil
+}
+
+func (s *Service) RouteQuery(ctx context.Context, req QueryRequest) (*RouteDecision, []string) {
+	if s.QueryRouter == nil {
+		return nil, nil
+	}
+	decision, err := s.QueryRouter.Route(ctx, req)
+	if err != nil {
+		return nil, []string{"query router failed: " + err.Error()}
+	}
+	if decision.Route == "" {
+		decision.Route = QueryRouteSingleRetrieval
+	}
+	return &decision, nil
+}
+
+func (s *Service) GenerateDirect(ctx context.Context, req QueryRequest, profile Profile, traceID string, start time.Time, warnings []string, route *RouteDecision) (QueryResponse, error) {
+	system := "你是一个对话助手。当前问题不需要检索知识库，请直接、简洁地用中文回答。"
+	answer, err := s.Model.Chat(ctx, []ark.ChatMessage{
+		{Role: "system", Content: system},
+		{Role: "user", Content: req.Query},
+	})
+	if err != nil {
+		s.logFailure(ctx, req, profile, traceID, "ark_generate_direct", start, err)
+		return QueryResponse{}, err
+	}
+	return QueryResponse{
+		Answer:      strings.TrimSpace(answer),
+		TraceID:     traceID,
+		CacheStatus: "bypass",
+		Profile:     profile,
+		Route:       route,
+		Warnings:    warnings,
+		CreatedAt:   time.Now().UTC(),
+		LatencyMS:   time.Since(start).Milliseconds(),
+	}, nil
 }
 
 func (s *Service) logFailure(ctx context.Context, req QueryRequest, profile Profile, traceID, node string, start time.Time, err error) {

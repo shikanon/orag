@@ -179,13 +179,19 @@ OpenAPI 源文件为 `api/openapi.yaml`，服务内置文档入口为 `GET /docs
 | Rerank | `LLM_RERANK_PROVIDER`、`RERANK_PROVIDER`、`ARK_RERANK_BASE_URL`、`ARK_RERANK_MODEL`、`ALIYUN_RERANK_API_KEY`、`ALIYUN_RERANK_BASE_URL`、`ALIYUN_RERANK_MODEL` |
 | Other provider keys | `OPENAI_API_KEY`、`AZURE_OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`、`COHERE_API_KEY`、`JINA_API_KEY`、`VOYAGE_API_KEY` 等 |
 | Provider base URLs | `AZURE_OPENAI_BASE_URL`、`GOOGLE_CLOUD_BASE_URL`，以及可选的 `<PROVIDER>_BASE_URL` 覆盖 |
-| Ingestion parser | `INGEST_PARSER_METHOD`、`MINERU_APISERVER`、`MINERU_SERVER_URL`、`MINERU_BACKEND`、`MINERU_PARSE_METHOD`、`MINERU_LANG`、`MINERU_FORMULA_ENABLE`、`MINERU_TABLE_ENABLE`、`DOCLING_SERVER_URL`、`DOCLING_TIMEOUT` |
+| RAG routing | `RAG_QUERY_ROUTER_ENABLED`、`RAG_QUERY_ROUTER_STRATEGY`、`RAG_QUERY_ROUTER_DIRECT_MAX_RUNES`、`RAG_QUERY_ROUTER_COMPLEX_MIN_SIGNALS` |
+| Graph retrieval | `RAG_GRAPH_RETRIEVAL_ENABLED`、`RAG_GRAPH_RETRIEVAL_TOP_K`、`INGEST_GRAPH_MAX_ENTITIES_PER_CHUNK` |
+| Ingestion parser | `INGEST_PARSER_METHOD`、`INGEST_CONTEXTUAL_RETRIEVAL_ENABLED`、`INGEST_CONTEXTUAL_FAILURE_MODE`、`INGEST_RAPTOR_ENABLED`、`INGEST_RAPTOR_BRANCH_FACTOR`、`INGEST_RAPTOR_MAX_LEVELS`、`MINERU_APISERVER`、`MINERU_SERVER_URL`、`MINERU_BACKEND`、`MINERU_PARSE_METHOD`、`MINERU_LANG`、`MINERU_FORMULA_ENABLE`、`MINERU_TABLE_ENABLE`、`DOCLING_SERVER_URL`、`DOCLING_TIMEOUT` |
 
 默认 `.env.example` 中 `REQUIRE_EXTERNAL_PROVIDERS=false`，服务启动仍会校验所选 provider 的 API Key，除非显式启用 deterministic mock provider。`/readyz` 使用 `model_provider=configured` 或显式测试模式下的 `model_provider=mock` 表达模型层状态，不主动调用外部模型服务。
 
 支持的 provider registry 覆盖 OpenAI、Azure OpenAI、Anthropic、Gemini、Google Cloud、xAI、Mistral、Cohere、DeepSeek、Moonshot、MiniMax、BaiChuan、ZHIPU-AI、Tongyi-Qianwen、VolcEngine、Tencent Hunyuan、XunFei Spark、BaiduYiyan、Xiaomi、Perplexity、Voyage AI 和 Jina。
 
 `INGEST_PARSER_METHOD=basic` 是默认解析方法：文本、HTML 和 Office ZIP 文档在本进程内抽取文本，PDF、图片和 DOCX 内嵌图片会通过 `ARK_MULTIMODAL_MODEL` 生成 Markdown 描述。`INGEST_PARSER_METHOD=mineru` 会调用兼容 MinerU `/file_parse` 的远程服务；`INGEST_PARSER_METHOD=docling` 会调用 Docling Serve 的 `/v1/convert/source` 或 `/v1alpha/convert/source`。
+
+`INGEST_CONTEXTUAL_RETRIEVAL_ENABLED=true` 会在 chunk embedding 和 PostgreSQL FTS 索引前，为每个 chunk 生成简短定位上下文，并将 `contextual_text + chunk content` 作为检索表示。默认 `INGEST_CONTEXTUAL_FAILURE_MODE=fallback`，LLM 生成失败时继续使用原始 chunk 入库；生产启用前应评估额外模型调用成本。
+
+`INGEST_RAPTOR_ENABLED=true` 会在入库时生成递归摘要 chunk，摘要带 `raptor_summary` metadata 并与原始 chunk 一起进入 embedding/FTS 检索层。`RAG_QUERY_ROUTER_ENABLED=true` 会按 direct、single retrieval、multi-step retrieval 路由查询；direct 查询绕过检索直接生成，complex 查询会走高精检索扩展。`RAG_GRAPH_RETRIEVAL_ENABLED=true` 会在入库时抽取轻量实体关系，并在检索后按查询实体扩展相关 chunk。
 
 ## 验证
 

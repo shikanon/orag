@@ -357,6 +357,52 @@ func TestHighPrecisionMultiQueryAndHyDERunAdditionalRetrievals(t *testing.T) {
 	}
 }
 
+func TestRAGGraphDirectRouteEmitsRouteSpanAndBypassesRetrieval(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+	model := &scriptedGraphModel{}
+	retriever := &recordingGraphRetriever{}
+	svc.Cache = nil
+	svc.Model = model
+	svc.Retriever = retriever
+	svc.QueryRouter = fixedGraphRouter{
+		decision: rag.RouteDecision{Route: rag.QueryRouteDirect, Reason: "small talk", Strategy: "test"},
+	}
+	g, err := NewRAGGraph(ctx, svc)
+	if err != nil {
+		t.Fatalf("NewRAGGraph() error = %v", err)
+	}
+	store := &capturingTraceStore{}
+	g.TraceStore = store
+
+	resp, err := g.Invoke(ctx, rag.QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "你好",
+	})
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	if len(retriever.requests) != 0 {
+		t.Fatalf("retrieval calls = %d, want 0", len(retriever.requests))
+	}
+	if resp.Route == nil || resp.Route.Route != rag.QueryRouteDirect {
+		t.Fatalf("route = %#v, want direct route", resp.Route)
+	}
+	if resp.CacheStatus != "bypass" {
+		t.Fatalf("cache_status = %q, want bypass", resp.CacheStatus)
+	}
+	foundRouteSpan := false
+	for _, span := range store.spans {
+		if span.NodeName == "query_route" {
+			foundRouteSpan = true
+		}
+	}
+	if !foundRouteSpan {
+		t.Fatalf("expected query_route span, got %#v", store.spans)
+	}
+}
+
 type capturingTraceStore struct {
 	traceID     string
 	traceIDs    []string
@@ -372,6 +418,15 @@ func (s *capturingTraceStore) StoreTrace(_ context.Context, _, traceID, _ string
 	s.spans = append([]NodeSpan(nil), spans...)
 	s.spanBatches = append(s.spanBatches, append([]NodeSpan(nil), spans...))
 	return nil
+}
+
+type fixedGraphRouter struct {
+	decision rag.RouteDecision
+	err      error
+}
+
+func (r fixedGraphRouter) Route(context.Context, rag.QueryRequest) (rag.RouteDecision, error) {
+	return r.decision, r.err
 }
 
 type failingRetriever struct {

@@ -35,12 +35,25 @@ type Chunk struct {
 	KnowledgeBaseID string            `json:"knowledge_base_id"`
 	DocumentID      string            `json:"document_id"`
 	Content         string            `json:"content"`
+	ContextualText  string            `json:"contextual_text,omitempty"`
 	SourceURI       string            `json:"source_uri"`
 	Page            int               `json:"page,omitempty"`
 	Section         string            `json:"section,omitempty"`
 	Offset          int               `json:"offset,omitempty"`
 	Vector          []float64         `json:"-"`
 	Metadata        map[string]string `json:"metadata,omitempty"`
+}
+
+func (c Chunk) SearchText() string {
+	contextual := strings.TrimSpace(c.ContextualText)
+	content := strings.TrimSpace(c.Content)
+	if contextual == "" {
+		return content
+	}
+	if content == "" {
+		return contextual
+	}
+	return contextual + "\n\n" + content
 }
 
 type SearchRequest struct {
@@ -60,6 +73,30 @@ type SearchResult struct {
 	From  string  `json:"from"`
 }
 
+type GraphRelation struct {
+	TenantID        string
+	KnowledgeBaseID string
+	DocumentID      string
+	SourceChunkID   string
+	TargetChunkID   string
+	Subject         string
+	Predicate       string
+	Object          string
+	Weight          float64
+}
+
+type GraphExpansionRequest struct {
+	TenantID        string
+	KnowledgeBaseID string
+	Entities        []string
+	Limit           int
+}
+
+type GraphStore interface {
+	StoreGraphRelations(ctx context.Context, relations []GraphRelation) error
+	ExpandGraph(ctx context.Context, req GraphExpansionRequest) ([]SearchResult, error)
+}
+
 type Retriever interface {
 	Retrieve(ctx context.Context, req SearchRequest) ([]SearchResult, error)
 }
@@ -77,6 +114,7 @@ type MemoryStore struct {
 	kbs       map[string]KnowledgeBase
 	documents map[string]Document
 	chunks    map[string]Chunk
+	relations []GraphRelation
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -84,6 +122,7 @@ func NewMemoryStore() *MemoryStore {
 		kbs:       map[string]KnowledgeBase{},
 		documents: map[string]Document{},
 		chunks:    map[string]Chunk{},
+		relations: nil,
 	}
 }
 
@@ -132,6 +171,7 @@ func (s *MemoryStore) DeleteKnowledgeBase(_ context.Context, tenantID, id string
 			delete(s.chunks, chunkID)
 		}
 	}
+	s.deleteGraphRelationsLocked(tenantID, id, "")
 	return true, nil
 }
 
@@ -140,6 +180,7 @@ func (s *MemoryStore) Store(_ context.Context, doc Document, chunks []Chunk) err
 	defer s.mu.Unlock()
 	s.deleteDocumentSourceLocked(doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI)
 	s.documents[doc.ID] = doc
+	s.deleteGraphRelationsLocked(doc.TenantID, doc.KnowledgeBaseID, doc.ID)
 	for _, chunk := range chunks {
 		s.chunks[chunk.ID] = chunk
 	}
@@ -157,17 +198,91 @@ func (s *MemoryStore) deleteDocumentSourceLocked(tenantID, kbID, sourceURI strin
 	if sourceURI == "" {
 		return
 	}
+	var deletedDocIDs []string
 	for docID, doc := range s.documents {
 		if doc.TenantID != tenantID || doc.KnowledgeBaseID != kbID || doc.SourceURI != sourceURI {
 			continue
 		}
 		delete(s.documents, docID)
+		deletedDocIDs = append(deletedDocIDs, docID)
 		for chunkID, chunk := range s.chunks {
 			if chunk.TenantID == tenantID && chunk.KnowledgeBaseID == kbID && chunk.DocumentID == docID {
 				delete(s.chunks, chunkID)
 			}
 		}
 	}
+	for _, docID := range deletedDocIDs {
+		s.deleteGraphRelationsLocked(tenantID, kbID, docID)
+	}
+}
+
+func (s *MemoryStore) StoreGraphRelations(_ context.Context, relations []GraphRelation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, relation := range relations {
+		if relation.Weight == 0 {
+			relation.Weight = 1
+		}
+		s.relations = append(s.relations, relation)
+	}
+	return nil
+}
+
+func (s *MemoryStore) ExpandGraph(_ context.Context, req GraphExpansionRequest) ([]SearchResult, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	entities := normalizedEntitySet(req.Entities)
+	if len(entities) == 0 {
+		return nil, nil
+	}
+	seen := map[string]SearchResult{}
+	for _, relation := range s.relations {
+		if relation.TenantID != req.TenantID || relation.KnowledgeBaseID != req.KnowledgeBaseID {
+			continue
+		}
+		if !entities[NormalizeQuery(relation.Subject)] && !entities[NormalizeQuery(relation.Object)] {
+			continue
+		}
+		for _, chunkID := range []string{relation.SourceChunkID, relation.TargetChunkID} {
+			chunk, ok := s.chunks[chunkID]
+			if !ok {
+				continue
+			}
+			if _, exists := seen[chunk.ID]; exists {
+				continue
+			}
+			seen[chunk.ID] = SearchResult{Chunk: chunk, Score: relation.Weight, From: "graph"}
+		}
+	}
+	results := make([]SearchResult, 0, len(seen))
+	for _, result := range seen {
+		results = append(results, result)
+	}
+	return top(results, req.Limit), nil
+}
+
+func (s *MemoryStore) deleteGraphRelationsLocked(tenantID, kbID, documentID string) {
+	filtered := s.relations[:0]
+	for _, relation := range s.relations {
+		match := relation.TenantID == tenantID && relation.KnowledgeBaseID == kbID
+		if documentID != "" {
+			match = match && relation.DocumentID == documentID
+		}
+		if !match {
+			filtered = append(filtered, relation)
+		}
+	}
+	s.relations = filtered
+}
+
+func normalizedEntitySet(values []string) map[string]bool {
+	out := map[string]bool{}
+	for _, value := range values {
+		if normalized := NormalizeQuery(value); normalized != "" {
+			out[normalized] = true
+		}
+	}
+	return out
 }
 
 func (s *MemoryStore) Chunks(tenantID, kbID string) []Chunk {

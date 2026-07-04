@@ -22,6 +22,37 @@ func (fakeEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error
 	return out, nil
 }
 
+type recordingEmbedder struct {
+	texts []string
+}
+
+func (e *recordingEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
+	e.texts = append([]string(nil), texts...)
+	out := make([][]float64, len(texts))
+	for i := range texts {
+		out[i] = []float64{1, 0, 0, 0}
+	}
+	return out, nil
+}
+
+type fixedContextualizer struct {
+	contexts []string
+}
+
+func (c fixedContextualizer) Contextualize(_ context.Context, _ ContextualizationRequest) ([]string, []string, error) {
+	return c.contexts, nil, nil
+}
+
+type fixedRAPTORBuilder struct {
+	summaries []kb.Chunk
+	warnings  []string
+	err       error
+}
+
+func (b fixedRAPTORBuilder) Build(_ context.Context, _ RAPTORRequest) ([]kb.Chunk, []string, error) {
+	return b.summaries, b.warnings, b.err
+}
+
 type failingIndexer struct {
 	err error
 }
@@ -126,6 +157,113 @@ func TestIngestCreatesJobAndStableIDs(t *testing.T) {
 	}
 	if _, ok, err := jobs.GetJob(ctx, "tenant_default", first.Job.ID); err != nil || !ok {
 		t.Fatalf("job lookup ok=%v err=%v", ok, err)
+	}
+}
+
+func TestIngestEmbedsContextualSearchTextAndStoresContext(t *testing.T) {
+	ctx := context.Background()
+	store := kb.NewMemoryStore()
+	if err := store.PutKnowledgeBase(ctx, kb.KnowledgeBase{
+		ID:        "kb_default",
+		TenantID:  "tenant_default",
+		Name:      "Default",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	embedder := &recordingEmbedder{}
+	svc := &Service{
+		Parser:         parser.BasicParser{},
+		Splitter:       chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder:       embedder,
+		Contextualizer: fixedContextualizer{contexts: []string{"This chunk describes Qdrant benchmark results."}},
+		KnowledgeBases: store,
+		Indexer:        store,
+		Jobs:           NewMemoryJobStore(),
+	}
+
+	res, err := svc.Ingest(ctx, Request{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		SourceURI:       "memory://context.md",
+		Name:            "context.md",
+		Content:         []byte("it reduced latency by 30 percent"),
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	wantEmbeddingInput := "This chunk describes Qdrant benchmark results.\n\nit reduced latency by 30 percent"
+	if len(embedder.texts) != 1 || embedder.texts[0] != wantEmbeddingInput {
+		t.Fatalf("embedding inputs = %#v, want %q", embedder.texts, wantEmbeddingInput)
+	}
+	if len(res.Chunks) != 1 || res.Chunks[0].ContextualText != "This chunk describes Qdrant benchmark results." {
+		t.Fatalf("chunks = %#v", res.Chunks)
+	}
+	stored := store.Chunks("tenant_default", "kb_default")
+	if len(stored) != 1 || stored[0].ContextualText != "This chunk describes Qdrant benchmark results." {
+		t.Fatalf("stored chunks = %#v", stored)
+	}
+}
+
+func TestIngestIndexesRAPTORSummaryChunks(t *testing.T) {
+	ctx := context.Background()
+	store := kb.NewMemoryStore()
+	if err := store.PutKnowledgeBase(ctx, kb.KnowledgeBase{
+		ID:        "kb_default",
+		TenantID:  "tenant_default",
+		Name:      "Default",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	embedder := &recordingEmbedder{}
+	svc := &Service{
+		Parser:   parser.BasicParser{},
+		Splitter: chunker.Recursive{SizeTokens: 4, OverlapTokens: 0},
+		Embedder: embedder,
+		RAPTORBuilder: fixedRAPTORBuilder{summaries: []kb.Chunk{{
+			ID:       "raptor_doc_1_l1_0",
+			Content:  "summary: qdrant and postgres retrieval",
+			Metadata: map[string]string{"kind": "raptor_summary", "level": "1", "child_chunk_ids": "chunk_a,chunk_b"},
+		}}},
+		KnowledgeBases: store,
+		Indexer:        store,
+		Jobs:           NewMemoryJobStore(),
+	}
+
+	res, err := svc.Ingest(ctx, Request{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		SourceURI:       "memory://raptor.md",
+		Name:            "raptor.md",
+		Content:         []byte("qdrant vector search\n\npostgres sparse search"),
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if len(res.Chunks) < 2 {
+		t.Fatalf("chunks = %#v, want source chunk plus RAPTOR summary", res.Chunks)
+	}
+	var foundSummary bool
+	for _, chunk := range res.Chunks {
+		if chunk.Metadata["kind"] == "raptor_summary" {
+			foundSummary = true
+			if chunk.TenantID != "tenant_default" || chunk.KnowledgeBaseID != "kb_default" || chunk.DocumentID == "" {
+				t.Fatalf("summary ownership missing: %#v", chunk)
+			}
+		}
+	}
+	if !foundSummary {
+		t.Fatalf("no RAPTOR summary chunk in result: %#v", res.Chunks)
+	}
+	if len(embedder.texts) != len(res.Chunks) {
+		t.Fatalf("embedding inputs = %d, chunks = %d", len(embedder.texts), len(res.Chunks))
+	}
+	stored := store.Chunks("tenant_default", "kb_default")
+	if len(stored) != len(res.Chunks) {
+		t.Fatalf("stored chunks = %d, want %d", len(stored), len(res.Chunks))
 	}
 }
 

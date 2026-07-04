@@ -73,8 +73,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		DenseTopK:  cfg.RAG.DenseTopK,
 		SparseTopK: cfg.RAG.SparseTopK,
 	}
+	retriever := buildRAGRetriever(cfg, hybrid, backend.store)
 	ragSvc := &rag.Service{
-		Retriever:              hybrid,
+		Retriever:              retriever,
 		Model:                  model,
 		Cache:                  backend.cache,
 		Packer:                 rag.ContextPacker{MaxTokens: cfg.RAG.MaxContextTokens, TopN: cfg.RAG.ContextTopN},
@@ -88,6 +89,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		QueryRewriteEnabled: cfg.RAG.QueryRewriteEnabled,
 		MultiQueryCount:     cfg.RAG.MultiQueryCount,
 		HyDEEnabled:         cfg.RAG.HyDEEnabled,
+		QueryRouter:         buildQueryRouter(cfg),
 		Logger:              logger,
 	}
 	graphRunner, err := raggraph.NewRAGGraph(ctx, ragSvc)
@@ -100,6 +102,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Parser:           buildDocumentParser(cfg, model),
 		Splitter:         chunker.Recursive{SizeTokens: cfg.Ingestion.ChunkSizeTokens, OverlapTokens: cfg.Ingestion.ChunkOverlapTokens},
 		Embedder:         model,
+		Contextualizer:   buildContextualizer(cfg, model),
+		RAPTORBuilder:    buildRAPTORBuilder(cfg, model),
+		GraphBuilder:     buildGraphBuilder(cfg),
 		KnowledgeBases:   backend.store,
 		Indexer:          backend.indexer,
 		Jobs:             backend.jobs,
@@ -198,6 +203,59 @@ func buildDocumentParser(cfg config.Config, model ark.MultimodalParser) parser.P
 	})
 }
 
+func buildContextualizer(cfg config.Config, model ingest.ChatModel) ingest.Contextualizer {
+	if !cfg.Ingestion.ContextualRetrieval.Enabled {
+		return nil
+	}
+	return ingest.LLMContextualizer{
+		Model:            model,
+		MaxDocumentChars: cfg.Ingestion.ContextualRetrieval.MaxDocumentChars,
+		MaxChunkChars:    cfg.Ingestion.ContextualRetrieval.MaxChunkChars,
+		MaxContextChars:  cfg.Ingestion.ContextualRetrieval.MaxContextChars,
+		FailureMode:      ingest.ContextualFailureMode(cfg.Ingestion.ContextualRetrieval.FailureMode),
+	}
+}
+
+func buildRAPTORBuilder(cfg config.Config, model ingest.ChatModel) ingest.RAPTORBuilder {
+	if !cfg.Ingestion.RAPTOR.Enabled {
+		return nil
+	}
+	return ingest.LLMRAPTORBuilder{
+		Model:           model,
+		BranchFactor:    cfg.Ingestion.RAPTOR.BranchFactor,
+		MaxLevels:       cfg.Ingestion.RAPTOR.MaxLevels,
+		MaxSummaryChars: cfg.Ingestion.RAPTOR.MaxSummaryChars,
+	}
+}
+
+func buildGraphBuilder(cfg config.Config) ingest.GraphBuilder {
+	if !cfg.RAG.GraphRetrieval.Enabled {
+		return nil
+	}
+	return ingest.LightweightGraphBuilder{MaxEntitiesPerChunk: cfg.RAG.GraphRetrieval.MaxEntitiesPerChunk}
+}
+
+func buildRAGRetriever(cfg config.Config, base kb.Retriever, store kb.KnowledgeBaseRepository) kb.Retriever {
+	if !cfg.RAG.GraphRetrieval.Enabled {
+		return base
+	}
+	graphStore, ok := store.(kb.GraphStore)
+	if !ok {
+		return base
+	}
+	return kb.GraphRetriever{Base: base, Store: graphStore, TopK: cfg.RAG.GraphRetrieval.TopK}
+}
+
+func buildQueryRouter(cfg config.Config) rag.QueryRouter {
+	if !cfg.RAG.QueryRouter.Enabled {
+		return nil
+	}
+	return rag.HeuristicQueryRouter{
+		DirectMaxRunes:    cfg.RAG.QueryRouter.DirectMaxRunes,
+		ComplexMinSignals: cfg.RAG.QueryRouter.ComplexMinSignals,
+	}
+}
+
 type knowledgeBackend struct {
 	store         kb.KnowledgeBaseRepository
 	indexer       kb.Indexer
@@ -258,6 +316,22 @@ func (s knowledgeBaseStore) DeleteKnowledgeBase(ctx context.Context, tenantID, i
 		}
 	}
 	return s.primary.DeleteKnowledgeBase(ctx, tenantID, id)
+}
+
+func (s knowledgeBaseStore) StoreGraphRelations(ctx context.Context, relations []kb.GraphRelation) error {
+	store, ok := s.primary.(kb.GraphStore)
+	if !ok {
+		return nil
+	}
+	return store.StoreGraphRelations(ctx, relations)
+}
+
+func (s knowledgeBaseStore) ExpandGraph(ctx context.Context, req kb.GraphExpansionRequest) ([]kb.SearchResult, error) {
+	store, ok := s.primary.(kb.GraphStore)
+	if !ok {
+		return nil, nil
+	}
+	return store.ExpandGraph(ctx, req)
 }
 
 func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant string) (knowledgeBackend, error) {

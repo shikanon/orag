@@ -15,6 +15,7 @@ func TestPayloadRoundTrip(t *testing.T) {
 		KnowledgeBaseID: "kb_1",
 		DocumentID:      "doc_1",
 		Content:         "hello",
+		ContextualText:  "This chunk introduces the greeting example.",
 		SourceURI:       "memory://doc",
 		Page:            3,
 		Section:         "intro",
@@ -23,6 +24,9 @@ func TestPayloadRoundTrip(t *testing.T) {
 	got := chunkFromPayload(chunkPayload(chunk))
 	if got.ID != chunk.ID || got.TenantID != chunk.TenantID || got.Page != chunk.Page || got.Offset != chunk.Offset {
 		t.Fatalf("roundtrip mismatch: %#v", got)
+	}
+	if got.ContextualText != chunk.ContextualText {
+		t.Fatalf("contextual text = %q, want %q", got.ContextualText, chunk.ContextualText)
 	}
 }
 

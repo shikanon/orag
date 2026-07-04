@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/shikanon/orag/internal/ingest/chunker"
@@ -18,12 +19,33 @@ type Embedder interface {
 	Embed(ctx context.Context, texts []string) ([][]float64, error)
 }
 
+type Contextualizer interface {
+	Contextualize(ctx context.Context, req ContextualizationRequest) ([]string, []string, error)
+}
+
+type ContextualizationRequest struct {
+	DocumentName string
+	DocumentText string
+	Chunks       []chunker.Chunk
+}
+
+type RAPTORBuilder interface {
+	Build(ctx context.Context, req RAPTORRequest) ([]kb.Chunk, []string, error)
+}
+
+type GraphBuilder interface {
+	Build(ctx context.Context, req GraphBuildRequest) ([]kb.GraphRelation, []string, error)
+}
+
 var ErrKnowledgeBaseNotFound = errors.New("knowledge base not found")
 
 type Service struct {
 	Parser           parser.Parser
 	Splitter         chunker.Recursive
 	Embedder         Embedder
+	Contextualizer   Contextualizer
+	RAPTORBuilder    RAPTORBuilder
+	GraphBuilder     GraphBuilder
 	KnowledgeBases   kb.KnowledgeBaseRepository
 	Indexer          kb.Indexer
 	Jobs             JobStore
@@ -87,17 +109,6 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 		return fail(err)
 	}
 	split := s.Splitter.Split(parsed.Markdown)
-	texts := make([]string, len(split))
-	for i := range split {
-		texts[i] = split[i].Content
-	}
-	vectors, err := s.Embedder.Embed(ctx, texts)
-	if err != nil {
-		return fail(err)
-	}
-	if len(vectors) != len(split) {
-		return fail(fmt.Errorf("embedding count %d does not match chunks %d", len(vectors), len(split)))
-	}
 	hash := contentHash(req.Content)
 	doc := kb.Document{
 		ID:              documentID(req.TenantID, req.KnowledgeBaseID, hash),
@@ -109,6 +120,10 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 		Metadata:        parsed.Metadata,
 		CreatedAt:       now,
 	}
+	contextualTexts, contextualWarnings, err := s.contextualize(ctx, req.Name, parsed.Markdown, split)
+	if err != nil {
+		return fail(err)
+	}
 	chunks := make([]kb.Chunk, len(split))
 	for i := range split {
 		chunks[i] = kb.Chunk{
@@ -117,12 +132,31 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 			KnowledgeBaseID: req.KnowledgeBaseID,
 			DocumentID:      doc.ID,
 			Content:         split[i].Content,
+			ContextualText:  contextualTextAt(contextualTexts, i),
 			SourceURI:       req.SourceURI,
 			Section:         split[i].Section,
 			Offset:          split[i].Offset,
-			Vector:          vectors[i],
 			Metadata:        map[string]string{"document_title": req.Name},
 		}
+	}
+	raptorSummaries, raptorWarnings, err := s.buildRAPTOR(ctx, doc, chunks)
+	if err != nil {
+		return fail(err)
+	}
+	chunks = append(chunks, raptorSummaries...)
+	texts := make([]string, len(chunks))
+	for i := range chunks {
+		texts[i] = chunks[i].SearchText()
+	}
+	vectors, err := s.Embedder.Embed(ctx, texts)
+	if err != nil {
+		return fail(err)
+	}
+	if len(vectors) != len(chunks) {
+		return fail(fmt.Errorf("embedding count %d does not match chunks %d", len(vectors), len(chunks)))
+	}
+	for i := range chunks {
+		chunks[i].Vector = vectors[i]
 	}
 	if deleter, ok := s.Indexer.(kb.DocumentSourceDeleter); ok {
 		if err := deleter.DeleteDocumentSource(ctx, req.TenantID, req.KnowledgeBaseID, req.SourceURI); err != nil {
@@ -132,9 +166,17 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 	if err := s.Indexer.Store(ctx, doc, chunks); err != nil {
 		return fail(err)
 	}
+	graphWarnings, err := s.storeGraphRelations(ctx, doc, chunks)
+	if err != nil {
+		return fail(err)
+	}
 	job.Status = JobStatusSucceeded
 	job.DocumentID = doc.ID
 	job.ChunkCount = len(chunks)
+	warnings := append(append(contextualWarnings, raptorWarnings...), graphWarnings...)
+	if len(warnings) > 0 && job.Error == "" {
+		job.Error = strings.Join(warnings, "; ")
+	}
 	job.UpdatedAt = time.Now().UTC()
 	if s.Jobs != nil {
 		if err := s.Jobs.UpdateJob(ctx, job); err != nil {
@@ -142,6 +184,84 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 	return Result{Document: doc, Chunks: chunks, Job: job}, nil
+}
+
+func (s *Service) storeGraphRelations(ctx context.Context, doc kb.Document, chunks []kb.Chunk) ([]string, error) {
+	if s.GraphBuilder == nil {
+		return nil, nil
+	}
+	store, ok := s.Indexer.(kb.GraphStore)
+	if !ok {
+		return []string{"graph indexing skipped: indexer does not support graph storage"}, nil
+	}
+	relations, warnings, err := s.GraphBuilder.Build(ctx, GraphBuildRequest{Document: doc, Chunks: chunks})
+	if err != nil {
+		return warnings, err
+	}
+	if len(relations) == 0 {
+		return warnings, nil
+	}
+	if err := store.StoreGraphRelations(ctx, relations); err != nil {
+		return warnings, err
+	}
+	return warnings, nil
+}
+
+func (s *Service) buildRAPTOR(ctx context.Context, doc kb.Document, chunks []kb.Chunk) ([]kb.Chunk, []string, error) {
+	if s.RAPTORBuilder == nil || len(chunks) == 0 {
+		return nil, nil, nil
+	}
+	summaries, warnings, err := s.RAPTORBuilder.Build(ctx, RAPTORRequest{Document: doc, Chunks: chunks})
+	if err != nil {
+		return nil, warnings, err
+	}
+	for i := range summaries {
+		if summaries[i].TenantID == "" {
+			summaries[i].TenantID = doc.TenantID
+		}
+		if summaries[i].KnowledgeBaseID == "" {
+			summaries[i].KnowledgeBaseID = doc.KnowledgeBaseID
+		}
+		if summaries[i].DocumentID == "" {
+			summaries[i].DocumentID = doc.ID
+		}
+		if summaries[i].SourceURI == "" {
+			summaries[i].SourceURI = doc.SourceURI
+		}
+		if summaries[i].Metadata == nil {
+			summaries[i].Metadata = map[string]string{}
+		}
+		summaries[i].Metadata["document_title"] = doc.Title
+		if summaries[i].Metadata["kind"] == "" {
+			summaries[i].Metadata["kind"] = "raptor_summary"
+		}
+	}
+	return summaries, warnings, nil
+}
+
+func (s *Service) contextualize(ctx context.Context, name string, documentText string, chunks []chunker.Chunk) ([]string, []string, error) {
+	if s.Contextualizer == nil || len(chunks) == 0 {
+		return nil, nil, nil
+	}
+	contexts, warnings, err := s.Contextualizer.Contextualize(ctx, ContextualizationRequest{
+		DocumentName: name,
+		DocumentText: documentText,
+		Chunks:       chunks,
+	})
+	if err != nil {
+		return nil, warnings, err
+	}
+	if len(contexts) != len(chunks) {
+		return nil, warnings, fmt.Errorf("contextualization count %d does not match chunks %d", len(contexts), len(chunks))
+	}
+	return contexts, warnings, nil
+}
+
+func contextualTextAt(values []string, i int) string {
+	if i < 0 || i >= len(values) {
+		return ""
+	}
+	return values[i]
 }
 
 func contentHash(content []byte) string {

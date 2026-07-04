@@ -63,6 +63,7 @@ func NewRAGGraph(ctx context.Context, svc *rag.Service) (*RAGGraph, error) {
 		fn   func(context.Context, State) (State, error)
 	}{
 		{"init", nodes.Init},
+		{"query_route", nodes.QueryRoute},
 		{"semantic_cache_lookup", nodes.SemanticCacheLookup},
 		{"query_rewrite", nodes.QueryRewrite},
 		{"multi_query", nodes.MultiQuery},
@@ -79,7 +80,8 @@ func NewRAGGraph(ctx context.Context, svc *rag.Service) (*RAGGraph, error) {
 	}
 	edges := [][2]string{
 		{compose.START, "init"},
-		{"init", "semantic_cache_lookup"},
+		{"init", "query_route"},
+		{"query_route", "semantic_cache_lookup"},
 		{"semantic_cache_lookup", "query_rewrite"},
 		{"query_rewrite", "multi_query"},
 		{"multi_query", "hybrid_retrieve"},

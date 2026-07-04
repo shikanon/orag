@@ -40,6 +40,44 @@ func TestHybridRetrieverReturnsWarningsOnSingleSideFailure(t *testing.T) {
 	}
 }
 
+func TestSparseRetrieverSearchesContextualText(t *testing.T) {
+	store := NewMemoryStore()
+	if err := store.Store(context.Background(), Document{
+		ID:              "doc_1",
+		TenantID:        "tenant_1",
+		KnowledgeBaseID: "kb_1",
+		SourceURI:       "memory://doc.md",
+		Title:           "doc.md",
+		ContentHash:     "hash",
+	}, []Chunk{{
+		ID:              "chunk_1",
+		TenantID:        "tenant_1",
+		KnowledgeBaseID: "kb_1",
+		DocumentID:      "doc_1",
+		Content:         "it reduced latency by 30 percent",
+		ContextualText:  "Qdrant rollout performance benchmark",
+		SourceURI:       "memory://doc.md",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := (SparseRetriever{Store: store}).Retrieve(context.Background(), SearchRequest{
+		TenantID:        "tenant_1",
+		KnowledgeBaseID: "kb_1",
+		Query:           "qdrant benchmark",
+		TopK:            5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Chunk.ID != "chunk_1" {
+		t.Fatalf("results = %#v", results)
+	}
+	if results[0].Chunk.Content != "it reduced latency by 30 percent" {
+		t.Fatalf("retrieved content should remain original chunk content: %#v", results[0].Chunk)
+	}
+}
+
 func TestHybridRetrieverFailsWhenBothSidesFail(t *testing.T) {
 	hybrid := HybridRetriever{
 		Dense:  stubRetriever{err: errors.New("qdrant down")},

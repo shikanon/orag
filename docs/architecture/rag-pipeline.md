@@ -13,10 +13,12 @@ HTTP middleware: auth, tenant, trace, error model
         v
 rag.Service.Query
         |
+        +-- optional query route
         +-- semantic cache lookup
         +-- dense retrieval from Qdrant
         +-- sparse retrieval from PostgreSQL FTS
         +-- RRF fusion
+        +-- optional graph expansion
         +-- optional rerank
         +-- context packing
         +-- chat generation
@@ -52,9 +54,12 @@ trace context (trace_id)
 | 请求接入 | `../../internal/http` | 解析 JSON、校验 Bearer token、生成错误响应或 SSE 事件。 |
 | 查询服务 | `../../internal/rag/service.go` | 组织一次 RAG 查询主流程。 |
 | RAG Graph | `../../internal/graph` | 编排检索、融合、重排、打包、生成和引用节点，并记录 node span。 |
+| 查询路由 | `../../internal/rag/query_router.go` | 可选启发式路由 direct、single retrieval 和 multi-step retrieval；direct 查询绕过检索，multi-step 查询提升到高精检索路径。 |
 | 语义缓存 | `../../internal/rag/semantic_cache.go`、`../../internal/storage/qdrant/semantic_cache.go` | 查询相似历史问题，命中时可减少生成成本。 |
 | dense retrieval | `../../internal/kb/retrievers.go`、`../../internal/storage/qdrant` | 从 Qdrant 主 collection 检索向量候选。 |
-| sparse retrieval | `../../internal/storage/postgres/fts.go` | 使用 PostgreSQL FTS 检索文本候选。 |
+| sparse retrieval | `../../internal/storage/postgres/fts.go` | 使用 PostgreSQL FTS 检索文本候选；启用 Contextual Retrieval 时查询 `contextual_text + content` 生成的 search vector。 |
+| RAPTOR 摘要层 | `../../internal/ingest/raptor.go` | 可选生成递归摘要 chunk；摘要随普通 chunk 一起进入 embedding 和 FTS 检索。 |
+| 图扩展 | `../../internal/kb/graph.go`、`../../internal/ingest/graph.go` | 可选抽取 chunk 内实体共现关系，检索时按查询实体扩展相关 chunk。 |
 | 融合 | `../../internal/kb/rrf.go` | 使用 RRF 合并 dense 和 sparse 候选。 |
 | 重排 | `../../internal/llm/ark` | 通过 Ark rerank 或 mock rerank 调整候选顺序。 |
 | 上下文打包 | `../../internal/rag/context_pack.go` | 控制上下文数量和 token 预算。 |

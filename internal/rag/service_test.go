@@ -126,11 +126,59 @@ func TestRetrieveExpandedUsesConfiguredRRFK(t *testing.T) {
 	}
 }
 
+func TestExecuteDirectRouteBypassesRetrieval(t *testing.T) {
+	ctx := context.Background()
+	retriever := &recordingServiceRetriever{}
+	model := &scriptedServiceModel{}
+	service := Service{
+		Retriever:       retriever,
+		Model:           model,
+		Packer:          ContextPacker{MaxTokens: 512, TopN: 4},
+		PromptStrategy:  prompt.NewStrategy("auto"),
+		DefaultProfile:  ProfileRealtime,
+		NoContextAnswer: "no context",
+		TopK:            4,
+		QueryRouter: fixedQueryRouter{
+			decision: RouteDecision{Route: QueryRouteDirect, Reason: "small talk", Strategy: "test"},
+		},
+	}
+
+	resp, err := service.Execute(ctx, QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "你好",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(retriever.requests) != 0 {
+		t.Fatalf("retrieval calls = %d, want 0", len(retriever.requests))
+	}
+	if resp.Route == nil || resp.Route.Route != QueryRouteDirect {
+		t.Fatalf("route = %#v, want direct route", resp.Route)
+	}
+	if resp.CacheStatus != "bypass" {
+		t.Fatalf("cache_status = %q, want bypass", resp.CacheStatus)
+	}
+	if resp.Answer == "" || resp.Answer == service.NoContextAnswer {
+		t.Fatalf("answer = %q, want generated direct answer", resp.Answer)
+	}
+}
+
 type semanticCacheStub struct {
 	lookupReq SemanticCacheLookupRequest
 	resp      QueryResponse
 	hit       bool
 	err       error
+}
+
+type fixedQueryRouter struct {
+	decision RouteDecision
+	err      error
+}
+
+func (r fixedQueryRouter) Route(context.Context, QueryRequest) (RouteDecision, error) {
+	return r.decision, r.err
 }
 
 func (s *semanticCacheStub) Lookup(_ context.Context, req SemanticCacheLookupRequest) (QueryResponse, bool, error) {

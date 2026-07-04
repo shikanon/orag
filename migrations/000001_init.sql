@@ -50,7 +50,9 @@ CREATE TABLE IF NOT EXISTS chunks (
     knowledge_base_id TEXT NOT NULL REFERENCES knowledge_bases(id),
     document_id TEXT NOT NULL REFERENCES documents(id),
     content TEXT NOT NULL,
+    contextual_text TEXT NOT NULL DEFAULT '',
     content_tsvector TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED,
+    search_text_tsvector TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple', contextual_text || ' ' || content)) STORED,
     source_uri TEXT NOT NULL,
     page INT NOT NULL DEFAULT 0,
     section TEXT NOT NULL DEFAULT '',
@@ -62,6 +64,25 @@ CREATE TABLE IF NOT EXISTS chunks (
 
 CREATE INDEX IF NOT EXISTS chunks_tenant_kb_idx ON chunks (tenant_id, knowledge_base_id);
 CREATE INDEX IF NOT EXISTS chunks_content_tsv_idx ON chunks USING GIN (content_tsvector);
+CREATE INDEX IF NOT EXISTS chunks_search_text_tsv_idx ON chunks USING GIN (search_text_tsvector);
+
+CREATE TABLE IF NOT EXISTS graph_relations (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenants(id),
+    knowledge_base_id TEXT NOT NULL REFERENCES knowledge_bases(id),
+    document_id TEXT NOT NULL REFERENCES documents(id),
+    source_chunk_id TEXT NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+    target_chunk_id TEXT NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+    subject TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object TEXT NOT NULL,
+    weight DOUBLE PRECISION NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS graph_relations_subject_idx ON graph_relations (tenant_id, knowledge_base_id, (lower(subject)));
+CREATE INDEX IF NOT EXISTS graph_relations_object_idx ON graph_relations (tenant_id, knowledge_base_id, (lower(object)));
+CREATE INDEX IF NOT EXISTS graph_relations_document_idx ON graph_relations (tenant_id, knowledge_base_id, document_id);
 
 CREATE TABLE IF NOT EXISTS ingestion_jobs (
     id TEXT PRIMARY KEY,
@@ -174,6 +195,7 @@ DROP TABLE IF EXISTS semantic_cache_entries;
 DROP TABLE IF EXISTS messages;
 DROP TABLE IF EXISTS conversations;
 DROP TABLE IF EXISTS ingestion_jobs;
+DROP TABLE IF EXISTS graph_relations;
 DROP TABLE IF EXISTS chunks;
 DROP TABLE IF EXISTS documents;
 DROP TABLE IF EXISTS knowledge_bases;

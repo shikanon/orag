@@ -23,6 +23,7 @@ type State struct {
 	TraceID          string
 	Profile          rag.Profile
 	TopK             int
+	Route            *rag.RouteDecision
 	Cached           bool
 	Embedding        []float64
 	RewrittenQuery   string
@@ -33,4 +34,12 @@ type State struct {
 	PromptText       string
 	Warnings         []string
 	Spans            []NodeSpan
+}
+
+func (s State) isDirectRoute() bool {
+	return s.Route != nil && s.Route.Route == rag.QueryRouteDirect
+}
+
+func (s State) isSingleRoute() bool {
+	return s.Route != nil && s.Route.Route == rag.QueryRouteSingleRetrieval
 }
