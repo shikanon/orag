@@ -763,3 +763,57 @@ func assertMetric(t *testing.T, metrics map[string]float64, key string, want flo
 		t.Fatalf("metrics[%q] = %v (present=%v), want %v; metrics=%#v", key, got, ok, want, metrics)
 	}
 }
+
+func TestRunnerRejectsForeignTenantDatasetWithoutPersistingRun(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService()
+	ds, err := dsSvc.Create(ctx, "tenant_a", "regression", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dsSvc.AddItem(ctx, "tenant_a", ds.ID, dataset.Item{
+		Query:       "qdrant vector",
+		GroundTruth: "qdrant",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	evalRepo := NewMemoryRepository()
+	runner := Runner{Datasets: dsSvc, Repository: evalRepo}
+	_, err = runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_b",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Profile:         rag.ProfileRealtime,
+	})
+	if !apperrors.IsCode(err, apperrors.CodeNotFound) {
+		t.Fatalf("Run() err = %v, want dataset not found", err)
+	}
+	if len(evalRepo.runs) != 0 || len(evalRepo.results) != 0 {
+		t.Fatalf("foreign dataset run persisted runs=%d results=%d", len(evalRepo.runs), len(evalRepo.results))
+	}
+}
+
+func TestOptimizerRejectsForeignTenantDatasetWithoutPersistingRun(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService()
+	ds, err := dsSvc.Create(ctx, "tenant_a", "regression", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	evalRepo := NewMemoryRepository()
+	_, err = (Optimizer{Runner: Runner{Datasets: dsSvc, Repository: evalRepo}}).Optimize(ctx, OptimizeRequest{
+		TenantID:        "tenant_b",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Profiles:        []rag.Profile{rag.ProfileRealtime},
+		TopKs:           []int{8},
+	})
+	if !apperrors.IsCode(err, apperrors.CodeNotFound) {
+		t.Fatalf("Optimize() err = %v, want dataset not found", err)
+	}
+	if len(evalRepo.runs) != 0 || len(evalRepo.results) != 0 {
+		t.Fatalf("foreign dataset optimization persisted runs=%d results=%d", len(evalRepo.runs), len(evalRepo.results))
+	}
+}
