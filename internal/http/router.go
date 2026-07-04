@@ -188,6 +188,9 @@ func (s *Server) deleteKnowledgeBase(ctx context.Context, c *app.RequestContext)
 
 func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 	kbID := c.Param("id")
+	if !s.requireKnowledgeBase(c, kbID) {
+		return
+	}
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		writeError(c, consts.StatusBadRequest, "invalid_request", "multipart field file is required")
@@ -202,9 +205,6 @@ func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 	maxBytes := s.App.Config.Ingestion.MaxDocumentBytes
 	if maxBytes > 0 && fileHeader.Size > maxBytes {
 		writeError(c, http.StatusRequestEntityTooLarge, "payload_too_large", "document exceeds max size")
-		return
-	}
-	if !s.requireKnowledgeBase(c, kbID) {
 		return
 	}
 	body, err := readLimited(file, maxBytes)
@@ -228,6 +228,9 @@ func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 
 func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 	kbID := c.Param("id")
+	if !s.requireKnowledgeBase(c, kbID) {
+		return
+	}
 	var req struct {
 		SourceURI string `json:"source_uri"`
 		Name      string `json:"name"`
@@ -245,9 +248,6 @@ func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 	}
 	if maxBytes := s.App.Config.Ingestion.MaxDocumentBytes; maxBytes > 0 && int64(len(req.Content)) > maxBytes {
 		writeError(c, http.StatusRequestEntityTooLarge, "payload_too_large", "document exceeds max size")
-		return
-	}
-	if !s.requireKnowledgeBase(c, kbID) {
 		return
 	}
 	result, err := s.App.Ingest.Ingest(ctx, ingest.Request{
