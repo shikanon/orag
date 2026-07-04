@@ -67,6 +67,18 @@ func (noopIndexer) Store(context.Context, kb.Document, []kb.Chunk) error {
 	return nil
 }
 
+type capturingIndexer struct {
+	docs   []kb.Document
+	chunks [][]kb.Chunk
+}
+
+func (i *capturingIndexer) Store(_ context.Context, doc kb.Document, chunks []kb.Chunk) error {
+	i.docs = append(i.docs, doc)
+	copied := append([]kb.Chunk(nil), chunks...)
+	i.chunks = append(i.chunks, copied)
+	return nil
+}
+
 type stagedSearchStore struct {
 	pending map[string]kb.Chunk
 	active  map[string]kb.Chunk
@@ -157,6 +169,80 @@ func TestIngestCreatesJobAndStableIDs(t *testing.T) {
 	}
 	if _, ok, err := jobs.GetJob(ctx, "tenant_default", first.Job.ID); err != nil || !ok {
 		t.Fatalf("job lookup ok=%v err=%v", ok, err)
+	}
+}
+
+func TestIngestPropagatesJobIDToStoredDocumentAndChunks(t *testing.T) {
+	ctx := context.Background()
+	store := kb.NewMemoryStore()
+	if err := store.PutKnowledgeBase(ctx, kb.KnowledgeBase{
+		ID:        "kb_default",
+		TenantID:  "tenant_default",
+		Name:      "Default",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	indexer := &capturingIndexer{}
+	svc := &Service{
+		Parser:         parser.BasicParser{},
+		Splitter:       chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder:       fakeEmbedder{},
+		KnowledgeBases: store,
+		Indexer:        indexer,
+		Jobs:           NewMemoryJobStore(),
+	}
+	req := Request{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		SourceURI:       "memory://job-id.md",
+		Name:            "job-id.md",
+		Content:         []byte("stable ids must still carry per-job ingestion provenance"),
+	}
+
+	first, err := svc.Ingest(ctx, req)
+	if err != nil {
+		t.Fatalf("first Ingest() error = %v", err)
+	}
+	second, err := svc.Ingest(ctx, req)
+	if err != nil {
+		t.Fatalf("second Ingest() error = %v", err)
+	}
+
+	if len(indexer.docs) != 2 || len(indexer.chunks) != 2 {
+		t.Fatalf("captured stores docs=%d chunks=%d", len(indexer.docs), len(indexer.chunks))
+	}
+	if indexer.docs[0].IngestionJobID != first.Job.ID {
+		t.Fatalf("first stored doc ingestion job id = %q, want %q", indexer.docs[0].IngestionJobID, first.Job.ID)
+	}
+	if indexer.docs[1].IngestionJobID != second.Job.ID {
+		t.Fatalf("second stored doc ingestion job id = %q, want %q", indexer.docs[1].IngestionJobID, second.Job.ID)
+	}
+	if indexer.docs[0].ID != indexer.docs[1].ID {
+		t.Fatalf("document ids differ after same content: %q vs %q", indexer.docs[0].ID, indexer.docs[1].ID)
+	}
+	if len(indexer.chunks[0]) == 0 || len(indexer.chunks[0]) != len(indexer.chunks[1]) {
+		t.Fatalf("captured chunks = %#v", indexer.chunks)
+	}
+	for i, chunk := range indexer.chunks[0] {
+		if chunk.ID != indexer.chunks[1][i].ID {
+			t.Fatalf("chunk ids differ at %d: %q vs %q", i, chunk.ID, indexer.chunks[1][i].ID)
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		jobID  string
+		chunks []kb.Chunk
+	}{
+		{name: "first", jobID: first.Job.ID, chunks: indexer.chunks[0]},
+		{name: "second", jobID: second.Job.ID, chunks: indexer.chunks[1]},
+	} {
+		for _, chunk := range tc.chunks {
+			if chunk.IngestionJobID != tc.jobID {
+				t.Fatalf("%s stored chunk %s ingestion job id = %q, want %q", tc.name, chunk.ID, chunk.IngestionJobID, tc.jobID)
+			}
+		}
 	}
 }
 

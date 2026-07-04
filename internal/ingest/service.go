@@ -117,6 +117,7 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 		SourceURI:       req.SourceURI,
 		Title:           req.Name,
 		ContentHash:     hash,
+		IngestionJobID:  job.ID,
 		Metadata:        parsed.Metadata,
 		CreatedAt:       now,
 	}
@@ -137,6 +138,7 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 			Section:         split[i].Section,
 			Offset:          split[i].Offset,
 			Metadata:        map[string]string{"document_title": req.Name},
+			IngestionJobID:  job.ID,
 		}
 	}
 	raptorSummaries, raptorWarnings, err := s.buildRAPTOR(ctx, doc, chunks)
@@ -144,6 +146,9 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 		return fail(err)
 	}
 	chunks = append(chunks, raptorSummaries...)
+	for i := range chunks {
+		chunks[i].IngestionJobID = job.ID
+	}
 	texts := make([]string, len(chunks))
 	for i := range chunks {
 		texts[i] = chunks[i].SearchText()

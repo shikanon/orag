@@ -25,6 +25,7 @@ type Document struct {
 	SourceURI       string            `json:"source_uri"`
 	Title           string            `json:"title"`
 	ContentHash     string            `json:"content_hash"`
+	IngestionJobID  string            `json:"-"`
 	Metadata        map[string]string `json:"metadata,omitempty"`
 	CreatedAt       time.Time         `json:"created_at"`
 }
@@ -41,6 +42,7 @@ type Chunk struct {
 	Section         string            `json:"section,omitempty"`
 	Offset          int               `json:"offset,omitempty"`
 	Vector          []float64         `json:"-"`
+	IngestionJobID  string            `json:"-"`
 	Metadata        map[string]string `json:"metadata,omitempty"`
 }
 
