@@ -84,7 +84,7 @@ func TestCacheKeyIncludesProfileAndTopK(t *testing.T) {
 	}
 }
 
-func TestSemanticCacheStoreUsesResponseProfile(t *testing.T) {
+func TestSemanticCacheStoreUsesRequestProfile(t *testing.T) {
 	ctx := context.Background()
 	cache := &recordingSemanticCache{}
 	service := Service{Cache: cache}
@@ -106,11 +106,11 @@ func TestSemanticCacheStoreUsesResponseProfile(t *testing.T) {
 	if warning := service.StoreSemanticCache(ctx, req, []float64{0.1}, ProfileRealtime, 8, resp); warning != "" {
 		t.Fatalf("StoreSemanticCache() warning = %q", warning)
 	}
-	if cache.entry.Profile != ProfileHighPrecision {
-		t.Fatalf("stored profile = %q, want %q", cache.entry.Profile, ProfileHighPrecision)
+	if cache.entry.Profile != ProfileRealtime {
+		t.Fatalf("stored profile = %q, want %q", cache.entry.Profile, ProfileRealtime)
 	}
-	if cache.entry.Response.Profile != ProfileHighPrecision {
-		t.Fatalf("stored response profile = %q, want %q", cache.entry.Response.Profile, ProfileHighPrecision)
+	if cache.entry.Response.Profile != ProfileRealtime {
+		t.Fatalf("stored response profile = %q, want %q", cache.entry.Response.Profile, ProfileRealtime)
 	}
 
 	resp.Profile = ""

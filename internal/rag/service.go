@@ -198,16 +198,11 @@ func (s *Service) StoreSemanticCache(ctx context.Context, req QueryRequest, vect
 	if s.Cache == nil || len(resp.Citations) == 0 {
 		return ""
 	}
-	cacheProfile := resp.Profile
-	if cacheProfile == "" {
-		cacheProfile = profile
-	}
+	cacheProfile := profile
 	if cacheProfile == "" {
 		cacheProfile = s.Profile(req.Profile)
 	}
-	if resp.Profile == "" {
-		resp.Profile = cacheProfile
-	}
+	resp.Profile = cacheProfile
 	if err := s.Cache.Store(ctx, SemanticCacheEntry{
 		TenantID:        req.TenantID,
 		KnowledgeBaseID: req.KnowledgeBaseID,
