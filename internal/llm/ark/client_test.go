@@ -146,7 +146,7 @@ func TestAliyunRerank(t *testing.T) {
 	out, err := client.Rerank(context.Background(), "rag", []RerankDocument{
 		{Content: "nothing"},
 		{Content: "rag framework"},
-	}, 2)
+	}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,6 +3,7 @@ package observability
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/shikanon/orag/internal/platform/id"
 )
@@ -11,9 +12,22 @@ const TraceIDHeader = "X-Trace-ID"
 
 type traceIDContextKey struct{}
 
-type Span struct {
-	Name string
+type Tracer interface {
+	StartSpan(ctx context.Context, name string) (context.Context, Span)
 }
+
+type Span interface {
+	End(err error)
+}
+
+type noopTracer struct{}
+
+type noopSpan struct{}
+
+var (
+	tracerMu     sync.RWMutex
+	activeTracer Tracer = noopTracer{}
+)
 
 func NewTraceID() string {
 	return id.New("trace")
@@ -43,8 +57,41 @@ func EnsureTraceID(ctx context.Context) string {
 	return NewTraceID()
 }
 
-func StartSpan(ctx context.Context, name string) (context.Context, Span) {
-	return ctx, Span{Name: name}
+func SetTracer(tracer Tracer) func() {
+	if tracer == nil {
+		tracer = noopTracer{}
+	}
+	tracerMu.Lock()
+	previous := activeTracer
+	activeTracer = tracer
+	tracerMu.Unlock()
+
+	return func() {
+		tracerMu.Lock()
+		activeTracer = previous
+		tracerMu.Unlock()
+	}
 }
 
-func (Span) End(error) {}
+func StartSpan(ctx context.Context, name string) (context.Context, Span) {
+	tracerMu.RLock()
+	tracer := activeTracer
+	tracerMu.RUnlock()
+	if tracer == nil {
+		tracer = noopTracer{}
+	}
+	spanCtx, span := tracer.StartSpan(ctx, name)
+	if spanCtx == nil {
+		spanCtx = ctx
+	}
+	if span == nil {
+		span = noopSpan{}
+	}
+	return spanCtx, span
+}
+
+func (noopTracer) StartSpan(ctx context.Context, _ string) (context.Context, Span) {
+	return ctx, noopSpan{}
+}
+
+func (noopSpan) End(error) {}

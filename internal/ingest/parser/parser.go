@@ -58,12 +58,12 @@ func (p BasicParser) Parse(ctx context.Context, name string, content []byte) (Pa
 	case ".pdf", ".png", ".jpg", ".jpeg":
 		if p.Multimodal != nil {
 			md, err := p.Multimodal.MultimodalParse(ctx, name, content)
-			if err == nil && strings.TrimSpace(md) != "" {
+			if err != nil {
+				return ParsedDocument{}, fmt.Errorf("multimodal parse %s: %w", name, err)
+			}
+			if strings.TrimSpace(md) != "" {
 				text = md
 			}
-		}
-		if text == "" {
-			text = string(content)
 		}
 	default:
 		text = string(content)

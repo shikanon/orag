@@ -866,8 +866,8 @@ func TestRepositoryGetTraceFound(t *testing.T) {
 	reader := &fakeTraceReader{
 		row: fakeTraceRow{values: []any{"trace_1", "tenant_1", "realtime", int64(123), createdAt}},
 		rows: &fakeTraceRows{rows: [][]any{
-			{"span_1", "retrieve", int64(12), "", createdAt.Add(time.Millisecond)},
-			{"span_2", "generate", int64(111), "llm timeout", createdAt.Add(2 * time.Millisecond)},
+			{"span_1", "retrieve", 1, int64(12), "", createdAt, createdAt.Add(12 * time.Millisecond), createdAt.Add(time.Millisecond)},
+			{"span_2", "generate", 2, int64(111), "llm timeout", createdAt, createdAt.Add(111 * time.Millisecond), createdAt.Add(2 * time.Millisecond)},
 		}},
 	}
 	repo := &Repository{traceReader: reader}
@@ -888,7 +888,7 @@ func TestRepositoryGetTraceFound(t *testing.T) {
 	if len(got.NodeSpans) != 2 || got.NodeSpans[0].NodeName != "retrieve" || got.NodeSpans[1].Error != "llm timeout" {
 		t.Fatalf("GetTrace() spans = %#v", got.NodeSpans)
 	}
-	if !strings.Contains(reader.rowsSQL, "ORDER BY created_at, id") {
+	if !strings.Contains(reader.rowsSQL, "ORDER BY sequence, created_at, id") {
 		t.Fatalf("span query is not time ordered: %s", reader.rowsSQL)
 	}
 }
@@ -1007,7 +1007,7 @@ func (db *fakeTraceDB) Query(_ context.Context, sql string, args ...any) (traceR
 	traceID, _ := args[0].(string)
 	rows := make([][]any, 0, len(db.spans[traceID]))
 	for _, span := range db.spans[traceID] {
-		rows = append(rows, []any{span.ID, span.NodeName, span.LatencyMS, span.Error, span.CreatedAt})
+		rows = append(rows, []any{span.ID, span.NodeName, span.Sequence, span.LatencyMS, span.Error, span.StartedAt, span.EndedAt, span.CreatedAt})
 	}
 	return &fakeTraceRows{rows: rows}, nil
 }
@@ -1035,13 +1035,19 @@ func (tx *fakeTraceTx) Exec(_ context.Context, sql string, args ...any) (pgconn.
 		traceID, _ := args[1].(string)
 		spanID, _ := args[0].(string)
 		nodeName, _ := args[2].(string)
-		latencyMS, _ := args[3].(int64)
-		spanErr, _ := args[4].(string)
+		sequence, _ := args[3].(int)
+		latencyMS, _ := args[4].(int64)
+		spanErr, _ := args[5].(string)
+		startedAt, _ := args[6].(time.Time)
+		endedAt, _ := args[7].(time.Time)
 		tx.spans[traceID] = append(tx.spans[traceID], TraceNodeSpan{
 			ID:        spanID,
 			NodeName:  nodeName,
+			Sequence:  sequence,
 			LatencyMS: latencyMS,
 			Error:     spanErr,
+			StartedAt: startedAt,
+			EndedAt:   endedAt,
 			CreatedAt: tx.nextTime(),
 		})
 		return pgconn.NewCommandTag("INSERT 1"), nil

@@ -11,6 +11,7 @@ tags:
   - name: KnowledgeBases
   - name: Ingestion
   - name: Query
+  - name: Trace
   - name: Evaluation
 paths:
   /healthz:
@@ -318,6 +319,79 @@ paths:
             text/event-stream:
               schema:
                 type: string
+  /v1/traces:
+    get:
+      tags: [Trace]
+      operationId: listTraces
+      description: Lists persisted RAG traces for the current tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: profile
+          in: query
+          schema:
+            $ref: "#/components/schemas/Profile"
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: has_error
+          in: query
+          schema:
+            type: boolean
+        - name: slow_ms
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: Trace list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraceListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/traces/{trace_id}:
+    get:
+      tags: [Trace]
+      operationId: getTrace
+      description: Returns a persisted RAG trace and its node spans for the current tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TraceID"
+      responses:
+        "200":
+          description: Trace record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraceRecord"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /v1/datasets:
     post:
       tags: [Evaluation]
@@ -557,6 +631,12 @@ components:
   parameters:
     ID:
       name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    TraceID:
+      name: trace_id
       in: path
       required: true
       schema:
@@ -831,6 +911,62 @@ components:
         latency_ms:
           type: integer
           format: int64
+        created_at:
+          type: string
+          format: date-time
+    TraceListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraceRecord"
+    TraceRecord:
+      type: object
+      required: [trace_id, tenant_id, profile, latency_ms, created_at, has_error, error_count, node_spans]
+      properties:
+        trace_id:
+          type: string
+        tenant_id:
+          type: string
+        profile:
+          $ref: "#/components/schemas/Profile"
+        latency_ms:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        has_error:
+          type: boolean
+        error_count:
+          type: integer
+        node_spans:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraceNodeSpan"
+    TraceNodeSpan:
+      type: object
+      required: [id, node_name, sequence, latency_ms, started_at, ended_at, created_at]
+      properties:
+        id:
+          type: string
+        node_name:
+          type: string
+        sequence:
+          type: integer
+        latency_ms:
+          type: integer
+          format: int64
+        error:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
         created_at:
           type: string
           format: date-time

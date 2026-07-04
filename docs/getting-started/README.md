@@ -71,11 +71,22 @@ STORAGE_BACKEND=memory make run
 
 注意：`STORAGE_BACKEND=memory` 不验证 PostgreSQL、Qdrant、FTS、向量检索或数据持久化链路，不作为生产配置。
 
+## 示例入口
+
+完整示例索引见 [`../../examples/README.md`](../../examples/README.md)。服务模式示例需要保持 API 服务运行，按顺序执行 `examples/curl/05_health_ready.sh`、`examples/curl/00_login.sh`、知识库、入库、查询、SSE、trace、评估和优化脚本；脚本默认使用 `BASE_URL=http://localhost:8080`、`ADMIN_USERNAME=admin`、`ADMIN_PASSWORD=admin` 和 `.orag-demo/` 状态目录，均可通过环境变量覆盖。
+
+Go memory 示例用于无外部依赖体验入库、查询和 trace/response 元数据读取，不需要启动 PostgreSQL、Qdrant 或 Ark：
+
+```bash
+GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
+```
+
 ## 下一步
 
 | 想做什么 | 继续阅读 |
 | --- | --- |
-| 跑完整 API smoke | `api-smoke.md` |
+| 跑完整 API smoke 和示例 | `../../examples/README.md` |
+| 查看 smoke 说明 | `api-smoke.md` |
 | 理解 API 结构 | `../api/README.md` |
 | 理解 RAG 执行链路 | `../architecture/rag-pipeline.md` |
 | 排查启动失败 | `../operations/troubleshooting.md` |

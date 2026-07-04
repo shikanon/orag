@@ -137,6 +137,9 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float64, error)
 	if err := c.postJSON(ctx, strings.TrimRight(c.cfg.BaseURL, "/")+"/embeddings", reqBody, &resp); err != nil {
 		return nil, err
 	}
+	if len(resp.Data) != len(texts) {
+		return nil, fmt.Errorf("ark embedding response count %d does not match input count %d", len(resp.Data), len(texts))
+	}
 	out := make([][]float64, len(resp.Data))
 	for i := range resp.Data {
 		out[i] = resp.Data[i].Embedding

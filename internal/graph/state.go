@@ -9,8 +9,11 @@ import (
 
 type NodeSpan struct {
 	NodeName  string
+	Sequence  int
 	LatencyMS int64
 	Error     string
+	StartedAt time.Time
+	EndedAt   time.Time
 }
 
 type State struct {

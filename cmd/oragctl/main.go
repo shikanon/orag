@@ -8,6 +8,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
+	"time"
 
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/config"
@@ -101,23 +103,36 @@ type traceGetter interface {
 	GetTrace(ctx context.Context, traceID string) (postgres.TraceRecord, bool, error)
 }
 
+type traceReader interface {
+	traceGetter
+	ListTraces(ctx context.Context, filter postgres.TraceListFilter) ([]postgres.TraceRecord, error)
+	TraceNodeStats(ctx context.Context, filter postgres.TraceListFilter) ([]postgres.TraceNodeStat, error)
+}
+
 type traceLookupResult struct {
 	Found   bool                  `json:"found"`
 	TraceID string                `json:"trace_id,omitempty"`
 	Trace   *postgres.TraceRecord `json:"trace,omitempty"`
 }
 
+type traceListResult struct {
+	Traces []postgres.TraceRecord `json:"traces"`
+}
+
+type traceStatsResult struct {
+	NodeStats []postgres.TraceNodeStat `json:"node_stats"`
+}
+
+type traceOptions struct {
+	TraceID string
+	Stats   bool
+	Filter  postgres.TraceListFilter
+}
+
 func traceCmd(cfg config.Config, args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("trace", flag.ExitOnError)
-	traceID := fs.String("trace-id", "", "trace id")
-	if err := fs.Parse(args); err != nil {
+	opts, err := parseTraceOptions(args)
+	if err != nil {
 		return err
-	}
-	if *traceID == "" && fs.NArg() > 0 {
-		*traceID = fs.Arg(0)
-	}
-	if *traceID == "" {
-		return fmt.Errorf("trace id required")
 	}
 
 	pool, err := postgres.Open(context.Background(), cfg.Database.URL)
@@ -125,7 +140,71 @@ func traceCmd(cfg config.Config, args []string, out io.Writer) error {
 		return err
 	}
 	defer pool.Close()
-	return runTraceLookup(context.Background(), postgres.NewRepository(pool), *traceID, out)
+	return runTraceCommand(context.Background(), postgres.NewRepository(pool), opts, out)
+}
+
+func parseTraceOptions(args []string) (traceOptions, error) {
+	fs := flag.NewFlagSet("trace", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var opts traceOptions
+	var since string
+	var until string
+	var profile string
+	var hasError optionalBoolFlag
+	fs.StringVar(&opts.TraceID, "trace-id", "", "trace id")
+	fs.StringVar(&opts.Filter.TenantID, "tenant-id", "", "tenant id")
+	fs.StringVar(&since, "since", "", "inclusive trace creation time in RFC3339 format")
+	fs.StringVar(&until, "until", "", "inclusive trace creation time in RFC3339 format")
+	fs.StringVar(&profile, "profile", "", "rag profile")
+	fs.Var(&hasError, "has-error", "filter by traces with node errors")
+	fs.Int64Var(&opts.Filter.SlowMS, "slow-ms", 0, "minimum trace latency in milliseconds")
+	fs.IntVar(&opts.Filter.Limit, "limit", 0, "maximum traces to return")
+	fs.BoolVar(&opts.Stats, "stats", false, "aggregate trace node latency statistics")
+	if err := fs.Parse(args); err != nil {
+		return traceOptions{}, err
+	}
+	if opts.TraceID == "" && fs.NArg() > 0 {
+		opts.TraceID = fs.Arg(0)
+	}
+	if profile != "" {
+		opts.Filter.Profile = rag.Profile(profile)
+	}
+	if hasError.IsSet {
+		value := hasError.Value
+		opts.Filter.HasError = &value
+	}
+	parsedSince, err := parseTraceTime("since", since)
+	if err != nil {
+		return traceOptions{}, err
+	}
+	parsedUntil, err := parseTraceTime("until", until)
+	if err != nil {
+		return traceOptions{}, err
+	}
+	opts.Filter.Since = parsedSince
+	opts.Filter.Until = parsedUntil
+	return opts, nil
+}
+
+func parseTraceTime(name, value string) (time.Time, error) {
+	if value == "" {
+		return time.Time{}, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid %s %q: expected RFC3339 time", name, value)
+	}
+	return parsed, nil
+}
+
+func runTraceCommand(ctx context.Context, reader traceReader, opts traceOptions, out io.Writer) error {
+	if opts.TraceID != "" {
+		return runTraceLookup(ctx, reader, opts.TraceID, out)
+	}
+	if opts.Stats {
+		return runTraceStats(ctx, reader, opts.Filter, out)
+	}
+	return runTraceList(ctx, reader, opts.Filter, out)
 }
 
 func runTraceLookup(ctx context.Context, getter traceGetter, traceID string, out io.Writer) error {
@@ -141,6 +220,52 @@ func runTraceLookup(ctx context.Context, getter traceGetter, traceID string, out
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 	return enc.Encode(result)
+}
+
+func runTraceList(ctx context.Context, reader traceReader, filter postgres.TraceListFilter, out io.Writer) error {
+	traces, err := reader.ListTraces(ctx, filter)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	return enc.Encode(traceListResult{Traces: traces})
+}
+
+func runTraceStats(ctx context.Context, reader traceReader, filter postgres.TraceListFilter, out io.Writer) error {
+	stats, err := reader.TraceNodeStats(ctx, filter)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	return enc.Encode(traceStatsResult{NodeStats: stats})
+}
+
+type optionalBoolFlag struct {
+	IsSet bool
+	Value bool
+}
+
+func (f *optionalBoolFlag) Set(value string) error {
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("invalid boolean %q", value)
+	}
+	f.IsSet = true
+	f.Value = parsed
+	return nil
+}
+
+func (f optionalBoolFlag) String() string {
+	if !f.IsSet {
+		return ""
+	}
+	return strconv.FormatBool(f.Value)
+}
+
+func (f optionalBoolFlag) IsBoolFlag() bool {
+	return true
 }
 
 func usage() {
