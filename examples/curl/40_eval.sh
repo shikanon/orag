@@ -30,12 +30,13 @@ if [ -s "$DOCUMENT_ID_FILE" ]; then
   relevant_doc_ids="[\"$(json_escape "$document_id")\"]"
 fi
 
-curl -sS "$BASE_URL/v1/datasets/$dataset_id/items" \
-  -H "Authorization: Bearer $token" \
-  -H "Content-Type: application/json" \
-  -d "{\"query\":\"$(json_escape "$EVAL_QUERY")\",\"ground_truth\":\"$(json_escape "$GROUND_TRUTH")\",\"relevant_doc_ids\":$relevant_doc_ids}" >/dev/null
+request_json POST "/v1/datasets/$dataset_id/items" "{"query":"$(json_escape "$EVAL_QUERY")","ground_truth":"$(json_escape "$GROUND_TRUTH")","relevant_doc_ids":$relevant_doc_ids}" "$token" >/dev/null
 
-curl -sS "$BASE_URL/v1/evaluations" \
-  -H "Authorization: Bearer $token" \
-  -H "Content-Type: application/json" \
-  -d "{\"dataset_id\":\"$(json_escape "$dataset_id")\",\"knowledge_base_id\":\"$(json_escape "$kb_id")\",\"profile\":\"$(json_escape "$PROFILE")\",\"top_k\":$TOP_K}"
+eval_response="$(request_json POST /v1/evaluations "{"dataset_id":"$(json_escape "$dataset_id")","knowledge_base_id":"$(json_escape "$kb_id")","profile":"$(json_escape "$PROFILE")","top_k":$TOP_K}" "$token")"
+eval_id="$(printf '%s
+' "$eval_response" | extract_json_string id)"
+save_if_not_empty "$eval_id" "$EVAL_ID_FILE"
+[ "$eval_id" = "" ] || info "saved evaluation id to $EVAL_ID_FILE"
+info "response metrics include answer_accuracy, pairwise_accuracy as the primary quality metric, and retrieval diagnostics: ndcg_at_k, recall_at_k, mrr, map, coverage, retrieval_failure_rate, redundancy_rate, alpha_ndcg, aspect_coverage"
+printf '%s
+' "$eval_response"

@@ -44,6 +44,8 @@ type RunResult struct {
 	CreatedAt time.Time          `json:"created_at"`
 }
 
+const PrimaryMetricPairwiseAccuracy = "pairwise_accuracy"
+
 func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if strings.TrimSpace(req.DatasetID) == "" {
 		return RunResult{}, apperrors.New(apperrors.CodeValidation, "dataset_id is required")
@@ -66,10 +68,11 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if len(items) == 0 {
 		return RunResult{}, apperrors.New(apperrors.CodeValidation, "dataset is empty")
 	}
+
 	runID := id.New("eval")
 	var cacheHits int
 	latencies := make([]int64, 0, len(items))
-	var answerAccuracySum, citationHitSum, contextRecallSum, citationPrecisionSum float64
+	metricSums := map[string]float64{}
 	type itemResult struct {
 		itemID  string
 		answer  string
@@ -91,25 +94,32 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		if resp.CacheStatus == "hit" {
 			cacheHits++
 		}
-		itemMetrics := ScoreItem(item, resp)
-		answerAccuracySum += itemMetrics["answer_accuracy"]
-		citationHitSum += itemMetrics["citation_hit_rate"]
-		contextRecallSum += itemMetrics["context_recall"]
-		citationPrecisionSum += itemMetrics["citation_precision"]
+		itemMetrics := ScoreItemWithOptions(item, resp, ScoreOptions{TopK: req.TopK})
+		for name, value := range itemMetrics {
+			if shouldAggregateItemMetric(name) {
+				metricSums[name] += value
+			}
+		}
 		itemResults = append(itemResults, itemResult{itemID: item.ID, answer: resp.Answer, metrics: itemMetrics})
 	}
+
 	total := len(items)
-	answerScore := average(answerAccuracySum, total)
+	answerScore := average(metricSums["answer_accuracy"], total)
 	metrics := map[string]float64{
-		"answer_accuracy":    answerScore,
-		"accuracy":           answerScore,
-		"hit_rate":           answerScore,
-		"citation_hit_rate":  average(citationHitSum, total),
-		"context_recall":     average(contextRecallSum, total),
-		"citation_precision": average(citationPrecisionSum, total),
-		"latency_p95_ms":     float64(p95(latencies)),
-		"cache_hit_rate":     average(float64(cacheHits), total),
+		"answer_accuracy":             answerScore,
+		"accuracy":                    answerScore,
+		"hit_rate":                    answerScore,
+		PrimaryMetricPairwiseAccuracy: answerScore,
+		"latency_p95_ms":              float64(p95(latencies)),
+		"cache_hit_rate":              average(float64(cacheHits), total),
 	}
+	for name, sum := range metricSums {
+		metrics[name] = average(sum, total)
+	}
+	metrics["accuracy"] = answerScore
+	metrics["hit_rate"] = answerScore
+	metrics[PrimaryMetricPairwiseAccuracy] = answerScore
+
 	result := RunResult{
 		ID:        runID,
 		DatasetID: req.DatasetID,
@@ -131,6 +141,18 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		}
 	}
 	return result, nil
+}
+
+func shouldAggregateItemMetric(name string) bool {
+	switch name {
+	case "answer_accuracy", "accuracy", "citation_hit_rate", "context_recall", "citation_precision",
+		"ndcg_at_k", "recall_at_k", "mrr", "map", "coverage", "retrieval_failure_rate",
+		"redundancy_rate", "duplicate_count", "deduped_top_k_count",
+		"alpha_ndcg", "aspect_coverage":
+		return true
+	default:
+		return false
+	}
 }
 
 func (r Runner) Get(ctx context.Context, tenantID, id string) (RunResult, bool, error) {

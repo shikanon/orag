@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shikanon/orag/internal/dataset"
+	evalpkg "github.com/shikanon/orag/internal/eval"
 	raggraph "github.com/shikanon/orag/internal/graph"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/rag"
@@ -333,6 +335,69 @@ func TestRepositoryAddDatasetItemRequiresTenantDataset(t *testing.T) {
 		if !strings.Contains(queryer.execSQL, want) {
 			t.Fatalf("dataset item insert missing %q tenant guard: %s", want, queryer.execSQL)
 		}
+	}
+}
+
+func TestDatasetItemDiversityAnnotationsMigration(t *testing.T) {
+	body, err := os.ReadFile("../../../migrations/000006_dataset_item_diversity_annotations.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{
+		"ADD COLUMN IF NOT EXISTS diversity_annotations",
+		"JSONB NOT NULL DEFAULT '[]'::jsonb",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("migration missing %q: %s", required, text)
+		}
+	}
+}
+
+func TestEvaluationRunMetricsJSONBRoundTrip(t *testing.T) {
+	body, err := encodeEvaluationRunMetrics(evalpkg.RunResult{
+		Total:    2,
+		HitRate:  0.5,
+		Accuracy: 0.5,
+		Metrics: map[string]float64{
+			"ndcg_at_k":              0.75,
+			"recall_at_k":            0.5,
+			"redundancy_rate":        0.25,
+			"alpha_ndcg":             0.8,
+			"retrieval_failure_rate": 0.5,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]float64
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"total", "hit_rate", "accuracy", "ndcg_at_k", "recall_at_k", "redundancy_rate", "alpha_ndcg", "retrieval_failure_rate"} {
+		if _, ok := raw[key]; !ok {
+			t.Fatalf("encoded metric %q missing from %s", key, string(body))
+		}
+	}
+
+	var decoded evalpkg.RunResult
+	decodeEvaluationRunMetrics(body, &decoded)
+	if decoded.Total != 2 || decoded.HitRate != 0.5 || decoded.Accuracy != 0.5 {
+		t.Fatalf("decoded summary = %#v", decoded)
+	}
+	if decoded.Metrics["ndcg_at_k"] != 0.75 || decoded.Metrics["alpha_ndcg"] != 0.8 {
+		t.Fatalf("decoded metrics = %#v", decoded.Metrics)
+	}
+}
+
+func TestEvaluationRunMetricsDecodeOldJSONB(t *testing.T) {
+	var decoded evalpkg.RunResult
+	decodeEvaluationRunMetrics([]byte(`{"total":3,"hit_rate":0.6666666667,"accuracy":0.5}`), &decoded)
+	if decoded.Total != 3 || decoded.HitRate != 0.6666666667 || decoded.Accuracy != 0.5 {
+		t.Fatalf("decoded old summary = %#v", decoded)
+	}
+	if decoded.Metrics["total"] != 3 || decoded.Metrics["accuracy"] != 0.5 {
+		t.Fatalf("decoded old metrics = %#v", decoded.Metrics)
 	}
 }
 

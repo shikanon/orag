@@ -774,6 +774,11 @@ components:
           type: array
           items:
             type: string
+        diversity_annotations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
     DatasetItem:
       type: object
       required: [id, dataset_id, query, ground_truth, relevant_doc_ids]
@@ -790,6 +795,11 @@ components:
           type: array
           items:
             type: string
+        diversity_annotations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
     RunEvaluationRequest:
       type: object
       required: [dataset_id, knowledge_base_id]
@@ -805,6 +815,12 @@ components:
     RunEvaluationResponse:
       type: object
       required: [id, dataset_id, profile, total, hit_rate, accuracy, created_at]
+      description: |
+        Evaluation run summary. `accuracy` and `hit_rate` are answer-focused
+        compatibility fields equal to `metrics.answer_accuracy` for new runs.
+        `metrics.pairwise_accuracy` is the primary optimization quality metric;
+        current rule-based runs populate it from the same answer-focused signal
+        until pairwise judging is enabled.
       example:
         id: eval_xxx
         dataset_id: ds_xxx
@@ -816,9 +832,21 @@ components:
           answer_accuracy: 1
           accuracy: 1
           hit_rate: 1
+          pairwise_accuracy: 1
           citation_hit_rate: 1
           context_recall: 1
           citation_precision: 1
+          ndcg_at_k: 1
+          recall_at_k: 1
+          mrr: 1
+          map: 1
+          coverage: 1
+          retrieval_failure_rate: 0
+          redundancy_rate: 0
+          duplicate_count: 0
+          deduped_top_k_count: 1
+          alpha_ndcg: 1
+          aspect_coverage: 1
           latency_p95_ms: 42
           cache_hit_rate: 0
         created_at: "2026-06-29T10:04:00Z"
@@ -840,27 +868,101 @@ components:
           format: double
           description: Answer-focused compatibility alias for `answer_accuracy`.
         metrics:
-          type: object
-          description: |
-            Numeric metric snapshot. New runs include `answer_accuracy`, `accuracy`,
-            `hit_rate`, `citation_hit_rate`, `context_recall`, `citation_precision`,
-            `latency_p95_ms`, and `cache_hit_rate`. Historical stored runs may not
-            include `answer_accuracy` or `citation_hit_rate`.
-          additionalProperties:
-            type: number
-            format: double
-          example:
-            answer_accuracy: 1
-            accuracy: 1
-            hit_rate: 1
-            citation_hit_rate: 1
-            context_recall: 1
-            citation_precision: 1
-            latency_p95_ms: 42
-            cache_hit_rate: 0
+          $ref: "#/components/schemas/EvaluationMetrics"
         created_at:
           type: string
           format: date-time
+    EvaluationMetrics:
+      type: object
+      description: |
+        Aggregated evaluation metrics. Retrieval quality metrics are averaged
+        across dataset items; `latency_p95_ms` is the run-level P95 latency.
+        `pairwise_accuracy` is the primary quality metric for optimization
+        ranking semantics.
+      additionalProperties:
+        type: number
+        format: double
+      properties:
+        answer_accuracy:
+          type: number
+          format: double
+          description: Answer-focused deterministic rule score; citations do not increase this metric.
+        accuracy:
+          type: number
+          format: double
+          description: Deterministic rule-based hit rate for backward compatibility.
+        hit_rate:
+          type: number
+          format: double
+          description: Alias for deterministic rule-based accuracy.
+        pairwise_accuracy:
+          type: number
+          format: double
+          description: Primary optimization quality metric; currently populated from answer_accuracy when pairwise judging is unavailable.
+        citation_hit_rate:
+          type: number
+          format: double
+          description: Fraction of items where the response includes at least one citation; does not imply answer correctness.
+        context_recall:
+          type: number
+          format: double
+          description: Fraction of expected relevant documents observed in retrieved context.
+        citation_precision:
+          type: number
+          format: double
+          description: Fraction of citations that point to expected relevant documents.
+        ndcg_at_k:
+          type: number
+          format: double
+          description: Ranking quality normalized discounted cumulative gain at requested top_k.
+        recall_at_k:
+          type: number
+          format: double
+          description: Fraction of relevant documents retrieved within requested top_k.
+        mrr:
+          type: number
+          format: double
+          description: Mean reciprocal rank of the first relevant retrieved document.
+        map:
+          type: number
+          format: double
+          description: Mean average precision over relevant retrieved documents.
+        coverage:
+          type: number
+          format: double
+          description: Fraction of items with at least one relevant retrieved document.
+        retrieval_failure_rate:
+          type: number
+          format: double
+          description: Fraction of items with no relevant retrieved documents.
+        redundancy_rate:
+          type: number
+          format: double
+          description: Duplicate retrieved chunk ratio.
+        duplicate_count:
+          type: number
+          format: double
+          description: Average duplicate retrieved chunk count.
+        deduped_top_k_count:
+          type: number
+          format: double
+          description: Average non-duplicate retrieved chunk count.
+        alpha_ndcg:
+          type: number
+          format: double
+          description: Diversity-aware ranking quality when aspect annotations are available.
+        aspect_coverage:
+          type: number
+          format: double
+          description: Fraction of annotated aspects covered by retrieved context.
+        latency_p95_ms:
+          type: number
+          format: double
+          description: P95 end-to-end query latency in milliseconds.
+        cache_hit_rate:
+          type: number
+          format: double
+          description: Fraction of evaluation queries served from semantic cache.
     OptimizeRequest:
       type: object
       required: [dataset_id, knowledge_base_id]
@@ -879,7 +981,11 @@ components:
             type: integer
     CandidateResult:
       type: object
-      required: [profile, top_k, score, run_id]
+      required: [profile, top_k, score, pairwise_accuracy, run_id]
+      description: |
+        Optimization candidate summary. `score` is the primary ranking score and
+        has pairwise accuracy semantics; retrieval quality fields are diagnostic
+        metrics copied from the candidate evaluation run.
       properties:
         profile:
           $ref: "#/components/schemas/Profile"
@@ -888,7 +994,44 @@ components:
         score:
           type: number
           format: double
-          description: Candidate score from `answer_accuracy`, with fallback to legacy `accuracy` when the split metric is absent.
+          description: Primary ranking score; equivalent to pairwise_accuracy semantics and currently populated from answer_accuracy.
+        pairwise_accuracy:
+          type: number
+          format: double
+          description: Primary optimization quality metric.
+        ndcg_at_k:
+          type: number
+          format: double
+        recall_at_k:
+          type: number
+          format: double
+        mrr:
+          type: number
+          format: double
+        map:
+          type: number
+          format: double
+        retrieval_failure_rate:
+          type: number
+          format: double
+        redundancy_rate:
+          type: number
+          format: double
+        duplicate_count:
+          type: number
+          format: double
+        deduped_top_k_count:
+          type: number
+          format: double
+        alpha_ndcg:
+          type: number
+          format: double
+        aspect_coverage:
+          type: number
+          format: double
+        latency_p95_ms:
+          type: number
+          format: double
         run_id:
           type: string
     OptimizeResult:
@@ -901,15 +1044,51 @@ components:
           profile: high_precision
           top_k: 8
           score: 1
+          pairwise_accuracy: 1
+          ndcg_at_k: 1
+          recall_at_k: 1
+          mrr: 1
+          map: 1
+          retrieval_failure_rate: 0
+          redundancy_rate: 0
+          duplicate_count: 0
+          deduped_top_k_count: 8
+          alpha_ndcg: 1
+          aspect_coverage: 1
+          latency_p95_ms: 42
           run_id: eval_best
         candidates:
           - profile: realtime
             top_k: 5
             score: 0
+            pairwise_accuracy: 0
+            ndcg_at_k: 0.5
+            recall_at_k: 0.5
+            mrr: 0.5
+            map: 0.5
+            retrieval_failure_rate: 0.5
+            redundancy_rate: 0.2
+            duplicate_count: 1
+            deduped_top_k_count: 4
+            alpha_ndcg: 0.5
+            aspect_coverage: 0.5
+            latency_p95_ms: 30
             run_id: eval_realtime
           - profile: high_precision
             top_k: 8
             score: 1
+            pairwise_accuracy: 1
+            ndcg_at_k: 1
+            recall_at_k: 1
+            mrr: 1
+            map: 1
+            retrieval_failure_rate: 0
+            redundancy_rate: 0
+            duplicate_count: 0
+            deduped_top_k_count: 8
+            alpha_ndcg: 1
+            aspect_coverage: 1
+            latency_p95_ms: 42
             run_id: eval_best
       properties:
         id:

@@ -63,7 +63,7 @@ func TestRepositoryDatasetItemsEnforcesTenant(t *testing.T) {
 
 	db.row = fakeDatasetRow{values: []any{"ds_a", "tenant_a", "regression", "golden", "v1", time.Now().UTC()}}
 	db.rows = &fakePgxRows{rows: [][]any{
-		{"dsi_1", "ds_a", "q", "a", []byte(`["doc_1"]`)},
+		{"dsi_1", "ds_a", "q", "a", []byte(`["doc_1"]`), []byte(`[]`)},
 	}}
 	items, err := repo.DatasetItems(ctx, "tenant_a", "ds_a")
 	if err != nil {

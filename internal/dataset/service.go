@@ -21,11 +21,23 @@ type Dataset struct {
 }
 
 type Item struct {
-	ID             string   `json:"id"`
-	DatasetID      string   `json:"dataset_id"`
-	Query          string   `json:"query"`
-	GroundTruth    string   `json:"ground_truth"`
-	RelevantDocIDs []string `json:"relevant_doc_ids"`
+	ID                   string                `json:"id"`
+	DatasetID            string                `json:"dataset_id"`
+	Query                string                `json:"query"`
+	GroundTruth          string                `json:"ground_truth"`
+	RelevantDocIDs       []string              `json:"relevant_doc_ids"`
+	DiversityAnnotations []DiversityAnnotation `json:"diversity_annotations,omitempty"`
+}
+
+type DiversityAnnotation struct {
+	Aspect      string   `json:"aspect,omitempty"`
+	Subquestion string   `json:"subquestion,omitempty"`
+	ChunkID     string   `json:"chunk_id,omitempty"`
+	ChunkIDs    []string `json:"chunk_ids,omitempty"`
+	DocumentID  string   `json:"document_id,omitempty"`
+	DocumentIDs []string `json:"document_ids,omitempty"`
+	SourceURI   string   `json:"source_uri,omitempty"`
+	SourceURIs  []string `json:"source_uris,omitempty"`
 }
 
 type Repository interface {
