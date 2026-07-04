@@ -209,6 +209,40 @@ func TestRunnerPersistsRunInMemoryRepository(t *testing.T) {
 	}
 }
 
+func TestMemoryRepositoryRejectsUnknownRunMetric(t *testing.T) {
+	repo := NewMemoryRepository()
+
+	err := repo.StoreEvaluationRun(context.Background(), "tenant_default", RunResult{
+		ID:        "eval_unknown",
+		DatasetID: "ds_default",
+		Metrics: map[string]float64{
+			"answer_accuracy": 1,
+			"harness_custom":  0.5,
+		},
+	})
+	if !apperrors.IsCode(err, apperrors.CodeValidation) {
+		t.Fatalf("StoreEvaluationRun() error = %v, want validation", err)
+	}
+	if len(repo.runs) != 0 {
+		t.Fatalf("persisted runs = %d, want 0", len(repo.runs))
+	}
+}
+
+func TestMemoryRepositoryRejectsUnknownItemMetric(t *testing.T) {
+	repo := NewMemoryRepository()
+
+	err := repo.StoreEvaluationResult(context.Background(), "eval_default", "item_default", "answer", map[string]float64{
+		"answer_accuracy": 1,
+		"harness_custom":  0.5,
+	})
+	if !apperrors.IsCode(err, apperrors.CodeValidation) {
+		t.Fatalf("StoreEvaluationResult() error = %v, want validation", err)
+	}
+	if len(repo.results) != 0 {
+		t.Fatalf("persisted results = %d, want 0", len(repo.results))
+	}
+}
+
 func TestRunnerRejectsMissingRequiredIDs(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
@@ -375,6 +409,130 @@ func TestRunnerDoesNotCountCitationOnlyAsAnswerAccuracy(t *testing.T) {
 	assertMetric(t, persisted[0], "answer_accuracy", 0)
 	assertMetric(t, persisted[0], "accuracy", 0)
 	assertMetric(t, persisted[0], "citation_hit_rate", 1)
+}
+
+func TestRunnerPersistsOptionalJudgeAndQAGDetails(t *testing.T) {
+	ctx := context.Background()
+	dsRepo := dataset.NewMemoryRepository()
+	dsSvc := dataset.NewService(dsRepo)
+	ds, err := dsSvc.Create(ctx, "tenant_default", "judge-qag", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
+		Query:            "What does ORAG use?",
+		GroundTruth:      "qdrant",
+		RelevantDocIDs:   []string{"doc_1"},
+		ExpectedEvidence: []string{"qdrant evidence"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ragSvc := &rag.Service{
+		Pipeline: pipelineFunc(func(context.Context, rag.QueryRequest) (rag.QueryResponse, error) {
+			return rag.QueryResponse{
+				Answer: "ORAG uses qdrant evidence",
+				Citations: []rag.Citation{{
+					ChunkID:    "chk_1",
+					DocumentID: "doc_1",
+				}},
+				RetrievedChunks: []kb.SearchResult{{
+					Chunk: kb.Chunk{ID: "chk_1", DocumentID: "doc_1", Content: "qdrant evidence"},
+				}},
+				CacheStatus: "miss",
+				LatencyMS:   11,
+			}, nil
+		}),
+	}
+	evalRepo := NewMemoryRepository()
+	runner := Runner{
+		RAG:        ragSvc,
+		Datasets:   dsSvc,
+		Repository: evalRepo,
+		Judge:      fakeJudge{},
+		QAG:        fakeQAGJudge{},
+	}
+
+	result, err := runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Profile:         rag.ProfileRealtime,
+		Judge:           &JudgeConfig{Provider: "test", Model: "judge-model", PromptVersion: "pv1"},
+		QAG:             &JudgeConfig{Provider: "test", Model: "qag-model", PromptVersion: "pv1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Metrics["qag_score"] != 1 || result.Metrics["prompt_tokens"] != 17 || result.Metrics["total_tokens"] != 26 {
+		t.Fatalf("run metrics = %#v, want qag and token totals", result.Metrics)
+	}
+	if result.Metrics["cost_usd"] != 0.03 {
+		t.Fatalf("cost_usd = %v, want 0.03", result.Metrics["cost_usd"])
+	}
+
+	detail, ok, err := runner.GetDetail(ctx, "tenant_default", result.ID, EvaluationDetailOptions{
+		IncludeItems: true,
+		IncludeJudge: true,
+	})
+	if err != nil || !ok {
+		t.Fatalf("GetDetail() ok=%v err=%v", ok, err)
+	}
+	if len(detail.Items) != 1 || detail.Items[0].DatasetItemID != item.ID || detail.Items[0].Metrics["qag_score"] != 1 {
+		t.Fatalf("items = %#v, want persisted item metrics", detail.Items)
+	}
+	if len(detail.JudgeRuns) != 2 {
+		t.Fatalf("judge runs = %d, want judge and qag runs", len(detail.JudgeRuns))
+	}
+	if len(detail.JudgeResults) != 2 {
+		t.Fatalf("judge results = %#v, want judge and qag results", detail.JudgeResults)
+	}
+	seenRaw := false
+	seenParsed := false
+	seenTokenCost := false
+	for _, result := range detail.JudgeResults {
+		if result.RawResponse != "" {
+			seenRaw = true
+		}
+		if result.ParsedJSON["source"] != "" || result.ParsedJSON["score"] != nil {
+			seenParsed = true
+		}
+		if result.TokenUsage.TotalTokens > 0 && result.CostUSD > 0 {
+			seenTokenCost = true
+		}
+	}
+	if !seenRaw || !seenParsed || !seenTokenCost {
+		t.Fatalf("judge results missing raw/parsed/token/cost separation: %#v", detail.JudgeResults)
+	}
+}
+
+func TestRunnerRejectsRequestedJudgeWhenNotConfigured(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService(dataset.NewMemoryRepository())
+	ds, err := dsSvc.Create(ctx, "tenant_default", "judge-missing", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{Query: "q", GroundTruth: "a"}); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := Runner{
+		RAG: &rag.Service{Pipeline: pipelineFunc(func(context.Context, rag.QueryRequest) (rag.QueryResponse, error) {
+			return rag.QueryResponse{Answer: "a"}, nil
+		})},
+		Datasets: dsSvc,
+	}
+	_, err = runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Judge:           &JudgeConfig{},
+	})
+	if !apperrors.IsCode(err, apperrors.CodeValidation) {
+		t.Fatalf("Run() error = %v, want validation for missing judge", err)
+	}
 }
 
 func TestOptimizerCandidatesDoNotReuseSemanticCacheAcrossProfileOrTopK(t *testing.T) {
@@ -567,6 +725,36 @@ type pipelineFunc func(context.Context, rag.QueryRequest) (rag.QueryResponse, er
 
 func (f pipelineFunc) Invoke(ctx context.Context, req rag.QueryRequest) (rag.QueryResponse, error) {
 	return f(ctx, req)
+}
+
+type fakeJudge struct{}
+
+func (fakeJudge) Judge(_ context.Context, input JudgeInput) (JudgeOutput, error) {
+	return JudgeOutput{
+		Scores:      map[string]float64{"faithfulness": 0.9},
+		Labels:      map[string]string{"faithfulness": "good"},
+		Pass:        true,
+		Rationale:   "supported",
+		Findings:    []JudgeFinding{{Metric: "faithfulness", Label: "good", Message: input.Query}},
+		RawResponse: `{"scores":{"faithfulness":0.9},"pass":true}`,
+		ParsedJSON:  map[string]any{"source": "judge"},
+		TokenUsage:  TokenUsage{PromptTokens: 10, CompletionTokens: 4, TotalTokens: 14},
+		CostUSD:     0.01,
+	}, nil
+}
+
+type fakeQAGJudge struct{}
+
+func (fakeQAGJudge) ScoreQAG(_ context.Context, input JudgeInput) (QAGOutput, error) {
+	return QAGOutput{
+		Score:       1,
+		Metrics:     map[string]float64{"qag_score": 1, "qag_claim_coverage": 1, "qag_question_count": 1, "qag_unverifiable_rate": 0},
+		Claims:      []QAGClaim{{Claim: input.Answer, Question: "supported?", Verdict: "supported", Evidence: "qdrant evidence"}},
+		RawResponse: `{"score":1,"claims":[{"verdict":"supported"}]}`,
+		ParsedJSON:  map[string]any{"score": float64(1)},
+		TokenUsage:  TokenUsage{PromptTokens: 7, CompletionTokens: 5, TotalTokens: 12},
+		CostUSD:     0.02,
+	}, nil
 }
 
 func assertMetric(t *testing.T, metrics map[string]float64, key string, want float64) {

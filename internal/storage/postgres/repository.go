@@ -19,10 +19,11 @@ type Repository struct {
 	traceReader     traceQueryer
 	traceTxBeginner traceTxBeginner
 	datasetRunner   datasetQueryer
+	evalQueryer     evalQueryer
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{Pool: pool, kbQueryer: pool, traceReader: pgxTraceQueryer{pool: pool}, datasetRunner: pgxDatasetQueryer{pool: pool}}
+	return &Repository{Pool: pool, kbQueryer: pool, traceReader: pgxTraceQueryer{pool: pool}, datasetRunner: pgxDatasetQueryer{pool: pool}, evalQueryer: pgxEvalQueryer{pool: pool}}
 }
 
 type knowledgeBaseQueryer interface {
@@ -100,6 +101,35 @@ func (q pgxDatasetQueryer) Query(ctx context.Context, sql string, args ...any) (
 
 func (q pgxDatasetQueryer) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	return q.pool.QueryRow(ctx, sql, args...)
+}
+
+type evalQueryer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+type pgxEvalQueryer struct {
+	pool *pgxpool.Pool
+}
+
+func (q pgxEvalQueryer) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	return q.pool.Exec(ctx, sql, args...)
+}
+
+func (q pgxEvalQueryer) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return q.pool.Query(ctx, sql, args...)
+}
+
+func (q pgxEvalQueryer) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	return q.pool.QueryRow(ctx, sql, args...)
+}
+
+func (r *Repository) evaluationQueryer() evalQueryer {
+	if r.evalQueryer != nil {
+		return r.evalQueryer
+	}
+	return r.Pool
 }
 
 func (r *Repository) PutKnowledgeBase(ctx context.Context, item kb.KnowledgeBase) error {

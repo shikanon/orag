@@ -29,3 +29,50 @@ func TestServiceRequiresTenantForItems(t *testing.T) {
 		t.Fatalf("cross-tenant AddItem inserted %d items", len(items))
 	}
 }
+
+func TestServiceDatasetItemEvaluationMetadata(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService()
+	ds, err := svc.Create(ctx, "tenant_a", "golden", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldItem, err := svc.AddItem(ctx, "tenant_a", ds.ID, Item{Query: "legacy q", GroundTruth: "legacy a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldItem.Split != DatasetSplitEval || oldItem.Weight != 1 {
+		t.Fatalf("legacy item metadata = %#v, want eval split and weight 1", oldItem)
+	}
+
+	_, err = svc.AddItem(ctx, "tenant_a", ds.ID, Item{
+		Query:            "calibration q",
+		GroundTruth:      "calibration a",
+		Split:            DatasetSplitGold,
+		Weight:           2.5,
+		ExpectedEvidence: []string{"chunk_1", "chunk_2"},
+		HumanScores:      map[string]float64{"faithfulness": 0.9},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := svc.Items(ctx, "tenant_a", ds.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("Items() len = %d, want 2", len(items))
+	}
+	got := items[1]
+	if got.Split != DatasetSplitGold || got.Weight != 2.5 {
+		t.Fatalf("metadata = split:%s weight:%v, want gold/2.5", got.Split, got.Weight)
+	}
+	if len(got.ExpectedEvidence) != 2 || got.ExpectedEvidence[0] != "chunk_1" {
+		t.Fatalf("expected evidence = %#v", got.ExpectedEvidence)
+	}
+	if got.HumanScores["faithfulness"] != 0.9 {
+		t.Fatalf("human scores = %#v", got.HumanScores)
+	}
+}

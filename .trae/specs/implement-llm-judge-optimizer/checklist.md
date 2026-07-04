@@ -1,0 +1,23 @@
+- [x] 数据集样本支持 split、weight、expected_evidence、human_scores，并保持旧数据兼容和 tenant 隔离。
+- [x] 所有新增数据库迁移均拆分为 up/down，可回滚，且 schema-only 发布不改变旧行为。
+- [x] metric registry 能拒绝未知指标名，所有 deterministic、Judge、QAG、harness score map 在落库和 objective 计算前都经过白名单校验。
+- [x] Pairwise Judge 支持 A/B 顺序交换、unstable 标记、ensemble/repeat 聚合、token/cost 记录和 raw/parsed 响应分离。
+- [x] Judge provider 调用具备并发闸、429/503 backoff、timeout、retry cap、circuit breaker 和预算硬上限。
+- [x] QAG Score 能输出 supported、contradicted、unverifiable、qag_claim_coverage、qag_question_count、qag_unverifiable_rate，并覆盖关键 claim 漏检测试。
+- [x] Gold-set 校准能计算 Spearman、Cohen’s κ、QAG claim coverage，并按 evidence-checkable/subjective 维度应用不同阈值和 waiver。
+- [x] Evaluation Runner 在无 Judge/QAG 请求时保持现有 rule-based 行为兼容，在开启时能持久化 Judge/QAG 明细。
+- [x] `GET /v1/evaluations/{id}?include_items=true&include_judge=true&include_pairwise=true` 能返回 item-level answer、deterministic metrics、Judge/QAG 结果、rationale/findings、token/cost。
+- [x] Objective 表达式只允许白名单变量和 `+ - * / ()`，拒绝函数调用、属性访问、索引、插值和未知变量。
+- [x] Objective 支持 pairwise win-rate、constraints、tie-breaker、fixed-budget latency/cost normalization 和显著性晋级判断。
+- [x] Search space 支持 deterministic candidate ID、seeded random、small-grid、successive halving、dependency-aware pruning 和大笛卡尔积警告。
+- [x] Internal candidate runner 使用配置 overlay，不修改生产 RAG 配置；index-affecting candidate 使用临时 namespace 并能 cleanup/GC。
+- [x] External harness runner 只支持 argv-array 执行，禁止 shell 模板和 `${VAR}` 插值，并对 env/argv/stdout/stderr/artifact manifest 脱敏。
+- [x] Harness 输出指标经过 metric registry 校验，未知指标不能进入评分和持久化。
+- [x] 异步 optimizer service 支持提交后后台执行、状态轮询、取消和续跑；HTTP `202` 接口留给 Task 13 接入。
+- [x] Optimizer checkpoint 能在 worker 中断后跳过已完成候选，仅重试未完成候选，并保留 token/cost/temp namespace/call counters。
+- [x] Optimizer 能执行 holdout 复评，且 holdout 不参与 candidate proposal、mutation、search 或 selection。
+- [x] OpenAPI、API 文档、评估文档、curl 示例覆盖 Judge/QAG/异步优化/harness 安全语义。
+- [x] 单元测试覆盖 `internal/eval` 和 `internal/optimizer` 的核心模块，并通过指定 Go 测试命令。
+- [x] 存储、HTTP、契约测试覆盖迁移、API 兼容、异步优化接口，并通过指定 Go 测试命令。
+- [x] 全量 `CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./...` 通过，或记录明确环境限制并修复可修复问题。
+- [x] 代码已提交到远程分支，并创建 PR 到远程代码仓库。

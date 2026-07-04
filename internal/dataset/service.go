@@ -27,7 +27,20 @@ type Item struct {
 	GroundTruth          string                `json:"ground_truth"`
 	RelevantDocIDs       []string              `json:"relevant_doc_ids"`
 	DiversityAnnotations []DiversityAnnotation `json:"diversity_annotations,omitempty"`
+	Split                DatasetSplit          `json:"split,omitempty"`
+	Weight               float64               `json:"weight,omitempty"`
+	ExpectedEvidence     []string              `json:"expected_evidence,omitempty"`
+	HumanScores          map[string]float64    `json:"human_scores,omitempty"`
 }
+
+type DatasetSplit string
+
+const (
+	DatasetSplitTrain   DatasetSplit = "train"
+	DatasetSplitEval    DatasetSplit = "eval"
+	DatasetSplitHoldout DatasetSplit = "holdout"
+	DatasetSplitGold    DatasetSplit = "gold"
+)
 
 type DiversityAnnotation struct {
 	Aspect      string   `json:"aspect,omitempty"`
@@ -78,6 +91,7 @@ func (s *Service) AddItem(ctx context.Context, tenantID, datasetID string, item 
 	}
 	item.ID = id.New("dsi")
 	item.DatasetID = datasetID
+	item = NormalizeItemMetadata(item)
 	return s.repo.AddDatasetItem(ctx, tenantID, item)
 }
 
@@ -125,6 +139,7 @@ func (r *MemoryRepository) AddDatasetItem(_ context.Context, tenantID string, it
 	if !ok || ds.TenantID != tenantID {
 		return Item{}, ErrDatasetNotFound
 	}
+	item = NormalizeItemMetadata(item)
 	r.items[item.DatasetID] = append(r.items[item.DatasetID], item)
 	return item, nil
 }
@@ -137,4 +152,20 @@ func (r *MemoryRepository) DatasetItems(_ context.Context, tenantID, datasetID s
 		return nil, ErrDatasetNotFound
 	}
 	return append([]Item(nil), r.items[datasetID]...), nil
+}
+
+func NormalizeItemMetadata(item Item) Item {
+	if item.Split == "" {
+		item.Split = DatasetSplitEval
+	}
+	if item.Weight <= 0 {
+		item.Weight = 1
+	}
+	if item.ExpectedEvidence == nil {
+		item.ExpectedEvidence = []string{}
+	}
+	if item.HumanScores == nil {
+		item.HumanScores = map[string]float64{}
+	}
+	return item
 }

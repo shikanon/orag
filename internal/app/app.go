@@ -19,6 +19,7 @@ import (
 	"github.com/shikanon/orag/internal/llm/ark"
 	modelprovider "github.com/shikanon/orag/internal/llm/provider"
 	"github.com/shikanon/orag/internal/observability"
+	"github.com/shikanon/orag/internal/optimizer"
 	"github.com/shikanon/orag/internal/platform/httpclient"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/prompt"
@@ -28,15 +29,16 @@ import (
 )
 
 type App struct {
-	Config   config.Config
-	Logger   *slog.Logger
-	Auth     *auth.Service
-	KBStore  kb.KnowledgeBaseRepository
-	Ingest   *ingest.Service
-	RAG      *rag.Service
-	Datasets *dataset.Service
-	Eval     eval.Runner
-	Metrics  *observability.Metrics
+	Config    config.Config
+	Logger    *slog.Logger
+	Auth      *auth.Service
+	KBStore   kb.KnowledgeBaseRepository
+	Ingest    *ingest.Service
+	RAG       *rag.Service
+	Datasets  *dataset.Service
+	Eval      eval.Runner
+	Optimizer *optimizer.Service
+	Metrics   *observability.Metrics
 
 	Postgres *pgxpool.Pool
 	Qdrant   *qdrantstore.Client
@@ -97,6 +99,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		MaxDocumentBytes: cfg.Ingestion.MaxDocumentBytes,
 	}
 	datasets := dataset.NewService(backend.datasetRepo)
+	evalRunner := eval.Runner{RAG: ragSvc, Datasets: datasets, Repository: backend.evalRepo}
+	optimizerRunner := optimizer.InternalRAGRunner{
+		BaseRAG:    ragSvc,
+		Datasets:   datasets,
+		Repository: backend.evalRepo,
+		Namespaces: optimizer.NewTempNamespaceManager(nil),
+	}
 	return &App{
 		Config:   cfg,
 		Logger:   logger,
@@ -105,7 +114,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Ingest:   ingestSvc,
 		RAG:      ragSvc,
 		Datasets: datasets,
-		Eval:     eval.Runner{RAG: ragSvc, Datasets: datasets, Repository: backend.evalRepo},
+		Eval:     evalRunner,
+		Optimizer: &optimizer.Service{
+			Repository: backend.optimizerRepo,
+			Runner:     optimizerRunner,
+		},
 		Metrics:  observability.NewMetrics(),
 		Postgres: backend.pool,
 		Qdrant:   backend.qdrant,
@@ -178,18 +191,19 @@ func buildDocumentParser(cfg config.Config, model ark.MultimodalParser) parser.P
 }
 
 type knowledgeBackend struct {
-	store       kb.KnowledgeBaseRepository
-	indexer     kb.Indexer
-	dense       kb.Retriever
-	sparse      kb.Retriever
-	cache       rag.SemanticCacheStore
-	jobs        ingest.JobStore
-	traceStore  raggraph.TraceStore
-	datasetRepo dataset.Repository
-	evalRepo    eval.Repository
-	pool        *pgxpool.Pool
-	qdrant      *qdrantstore.Client
-	closers     []func() error
+	store         kb.KnowledgeBaseRepository
+	indexer       kb.Indexer
+	dense         kb.Retriever
+	sparse        kb.Retriever
+	cache         rag.SemanticCacheStore
+	jobs          ingest.JobStore
+	traceStore    raggraph.TraceStore
+	datasetRepo   dataset.Repository
+	evalRepo      eval.Repository
+	optimizerRepo optimizer.Repository
+	pool          *pgxpool.Pool
+	qdrant        *qdrantstore.Client
+	closers       []func() error
 }
 
 type knowledgeBaseVectorDeleter interface {
@@ -244,14 +258,15 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			return knowledgeBackend{}, err
 		}
 		return knowledgeBackend{
-			store:       store,
-			indexer:     store,
-			dense:       kb.DenseRetriever{Store: store},
-			sparse:      kb.SparseRetriever{Store: store},
-			cache:       rag.NewSemanticCache(cfg.RAG.SemanticCacheMaxEntries),
-			jobs:        ingest.NewMemoryJobStore(),
-			datasetRepo: dataset.NewMemoryRepository(),
-			evalRepo:    eval.NewMemoryRepository(),
+			store:         store,
+			indexer:       store,
+			dense:         kb.DenseRetriever{Store: store},
+			sparse:        kb.SparseRetriever{Store: store},
+			cache:         rag.NewSemanticCache(cfg.RAG.SemanticCacheMaxEntries),
+			jobs:          ingest.NewMemoryJobStore(),
+			datasetRepo:   dataset.NewMemoryRepository(),
+			evalRepo:      eval.NewMemoryRepository(),
+			optimizerRepo: optimizer.NewMemoryRepository(),
 		}, nil
 	}
 
@@ -294,17 +309,18 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 	indexer := kb.CompositeIndexer{Indexers: []kb.Indexer{repo, vectors}}
 	cache := qdrantstore.SemanticCache{Client: qdrantClient, Collection: cfg.Qdrant.SemanticCacheCollection, Threshold: cfg.RAG.SemanticCacheThreshold}
 	return knowledgeBackend{
-		store:       knowledgeBaseStore{primary: repo, vectorDeleter: vectors, semanticCacheDeleter: cache},
-		indexer:     indexer,
-		dense:       vectors,
-		sparse:      postgres.NewFTSRetriever(repo),
-		cache:       cache,
-		jobs:        repo,
-		traceStore:  repo,
-		datasetRepo: repo,
-		evalRepo:    repo,
-		pool:        pool,
-		qdrant:      qdrantClient,
+		store:         knowledgeBaseStore{primary: repo, vectorDeleter: vectors, semanticCacheDeleter: cache},
+		indexer:       indexer,
+		dense:         vectors,
+		sparse:        postgres.NewFTSRetriever(repo),
+		cache:         cache,
+		jobs:          repo,
+		traceStore:    repo,
+		datasetRepo:   repo,
+		evalRepo:      repo,
+		optimizerRepo: repo,
+		pool:          pool,
+		qdrant:        qdrantClient,
 		closers: []func() error{
 			qdrantClient.Conn.Close,
 			func() error {

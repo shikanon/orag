@@ -32,6 +32,7 @@ func (r *Repository) GetDataset(ctx context.Context, tenantID, id string) (datas
 }
 
 func (r *Repository) AddDatasetItem(ctx context.Context, tenantID string, item dataset.Item) (dataset.Item, error) {
+	item = dataset.NormalizeItemMetadata(item)
 	relevantBody, err := json.Marshal(item.RelevantDocIDs)
 	if err != nil {
 		return dataset.Item{}, err
@@ -40,14 +41,22 @@ func (r *Repository) AddDatasetItem(ctx context.Context, tenantID string, item d
 	if err != nil {
 		return dataset.Item{}, err
 	}
+	expectedBody, err := json.Marshal(item.ExpectedEvidence)
+	if err != nil {
+		return dataset.Item{}, err
+	}
+	humanScoresBody, err := json.Marshal(item.HumanScores)
+	if err != nil {
+		return dataset.Item{}, err
+	}
 	tag, err := r.datasetDB().Exec(ctx, `
-		INSERT INTO dataset_items(id, dataset_id, query, ground_truth, relevant_doc_ids, diversity_annotations)
-		SELECT $1, $2, $3, $4, $5, $7
+		INSERT INTO dataset_items(id, dataset_id, query, ground_truth, relevant_doc_ids, diversity_annotations, split, weight, expected_evidence, human_scores)
+		SELECT $1, $2, $3, $4, $5, $7, $8, $9, $10, $11
 		WHERE EXISTS (
 			SELECT 1 FROM datasets
 			WHERE tenant_id=$6 AND id=$2
 		)`,
-		item.ID, item.DatasetID, item.Query, item.GroundTruth, relevantBody, tenantID, diversityBody)
+		item.ID, item.DatasetID, item.Query, item.GroundTruth, relevantBody, tenantID, diversityBody, item.Split, item.Weight, expectedBody, humanScoresBody)
 	if err != nil {
 		return dataset.Item{}, err
 	}
@@ -64,7 +73,7 @@ func (r *Repository) DatasetItems(ctx context.Context, tenantID, datasetID strin
 		return nil, dataset.ErrDatasetNotFound
 	}
 	rows, err := r.datasetDB().Query(ctx, `
-		SELECT i.id, i.dataset_id, i.query, i.ground_truth, i.relevant_doc_ids, i.diversity_annotations
+		SELECT i.id, i.dataset_id, i.query, i.ground_truth, i.relevant_doc_ids, i.diversity_annotations, i.split, i.weight, i.expected_evidence, i.human_scores
 		FROM dataset_items i
 		JOIN datasets d ON d.id=i.dataset_id
 		WHERE d.tenant_id=$1 AND i.dataset_id=$2
@@ -76,13 +85,15 @@ func (r *Repository) DatasetItems(ctx context.Context, tenantID, datasetID strin
 	var out []dataset.Item
 	for rows.Next() {
 		var item dataset.Item
-		var relevant, diversity []byte
-		if err := rows.Scan(&item.ID, &item.DatasetID, &item.Query, &item.GroundTruth, &relevant, &diversity); err != nil {
+		var relevant, diversity, expectedEvidence, humanScores []byte
+		if err := rows.Scan(&item.ID, &item.DatasetID, &item.Query, &item.GroundTruth, &relevant, &diversity, &item.Split, &item.Weight, &expectedEvidence, &humanScores); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(relevant, &item.RelevantDocIDs)
 		_ = json.Unmarshal(diversity, &item.DiversityAnnotations)
-		out = append(out, item)
+		_ = json.Unmarshal(expectedEvidence, &item.ExpectedEvidence)
+		_ = json.Unmarshal(humanScores, &item.HumanScores)
+		out = append(out, dataset.NormalizeItemMetadata(item))
 	}
 	return out, rows.Err()
 }

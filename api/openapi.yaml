@@ -401,13 +401,30 @@ paths:
         - bearerAuth: []
       parameters:
         - $ref: "#/components/parameters/ID"
+        - name: include_items
+          in: query
+          schema:
+            type: boolean
+          description: Include per-item evaluation results.
+        - name: include_judge
+          in: query
+          schema:
+            type: boolean
+          description: Include LLM Judge, QAG and calibration records.
+        - name: include_pairwise
+          in: query
+          schema:
+            type: boolean
+          description: Include pairwise judge records.
       responses:
         "200":
-          description: Evaluation run result.
+          description: Evaluation run summary or requested detail envelope.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RunEvaluationResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/RunEvaluationResponse"
+                  - $ref: "#/components/schemas/EvaluationDetail"
         "401":
           $ref: "#/components/responses/Error"
         "404":
@@ -427,11 +444,88 @@ paths:
               $ref: "#/components/schemas/OptimizeRequest"
       responses:
         "202":
-          description: Optimization result.
+          description: Optimization accepted for asynchronous execution.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OptimizeResult"
+                $ref: "#/components/schemas/OptimizationAcceptedResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/optimizations/{id}:
+    get:
+      tags: [Evaluation]
+      operationId: getOptimization
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Optimization run status and candidates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizationStatusResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  "/v1/optimizations/{id}:cancel":
+    post:
+      tags: [Evaluation]
+      operationId: cancelOptimization
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptimizationCancelRequest"
+      responses:
+        "202":
+          description: Cancel request accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizationAcceptedResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  "/v1/optimizations/{id}:resume":
+    post:
+      tags: [Evaluation]
+      operationId: resumeOptimization
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptimizeRequest"
+      responses:
+        "202":
+          description: Resume request accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizationAcceptedResponse"
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -812,6 +906,10 @@ components:
           $ref: "#/components/schemas/Profile"
         top_k:
           type: integer
+        judge:
+          $ref: "#/components/schemas/JudgeConfig"
+        qag:
+          $ref: "#/components/schemas/JudgeConfig"
     RunEvaluationResponse:
       type: object
       required: [id, dataset_id, profile, total, hit_rate, accuracy, created_at]
@@ -963,14 +1061,173 @@ components:
           type: number
           format: double
           description: Fraction of evaluation queries served from semantic cache.
+    JudgeMetric:
+      type: string
+      enum:
+        - faithfulness
+        - groundedness
+        - answer_relevance
+        - hallucination
+        - completeness
+        - citation_support
+        - instruction_following
+        - safety
+    JudgeConfig:
+      type: object
+      description: Optional LLM-as-Judge or QAG configuration. When supplied, the evaluation runner records raw/parsed judge outputs, token usage and cost.
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        prompt_version:
+          type: string
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/JudgeMetric"
+        rubric:
+          $ref: "#/components/schemas/JudgeRubric"
+        temperature:
+          type: number
+          format: double
+        max_tokens:
+          type: integer
+        repeat:
+          type: integer
+        pairwise_swap:
+          type: boolean
+        strict_json:
+          type: boolean
+        ensemble:
+          type: array
+          items:
+            $ref: "#/components/schemas/JudgeModelConfig"
+        max_judge_calls:
+          type: integer
+        extra_params:
+          type: object
+          additionalProperties: true
+        prompt_template:
+          type: string
+    JudgeModelConfig:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        temperature:
+          type: number
+          format: double
+        max_tokens:
+          type: integer
+        params:
+          type: object
+          additionalProperties: true
+    JudgeRubric:
+      type: object
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        criteria:
+          type: array
+          items:
+            $ref: "#/components/schemas/RubricCriterion"
+    RubricCriterion:
+      type: object
+      required: [metric]
+      properties:
+        metric:
+          $ref: "#/components/schemas/JudgeMetric"
+        description:
+          type: string
+        weight:
+          type: number
+          format: double
+        scale:
+          type: array
+          items:
+            type: string
+    EvaluationDetail:
+      type: object
+      required: [run]
+      properties:
+        run:
+          $ref: "#/components/schemas/RunEvaluationResponse"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvaluationItemDetail"
+        judge_runs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        judge_results:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        pairwise_judge_results:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        judge_calibration_runs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    EvaluationItemDetail:
+      type: object
+      required: [run_id, dataset_item_id, answer]
+      properties:
+        run_id:
+          type: string
+        dataset_item_id:
+          type: string
+        answer:
+          type: string
+        metrics:
+          $ref: "#/components/schemas/EvaluationMetrics"
     OptimizeRequest:
       type: object
       required: [dataset_id, knowledge_base_id]
+      description: |
+        Asynchronous target-driven optimizer request. `profiles` and `top_ks`
+        are accepted as a backward-compatible shortcut and are mapped into an
+        internal RAG runner profile and retrieval top-k search space.
       properties:
         dataset_id:
           type: string
         knowledge_base_id:
           type: string
+        objective:
+          $ref: "#/components/schemas/ObjectiveSpec"
+        search_space:
+          $ref: "#/components/schemas/SearchSpace"
+        search:
+          $ref: "#/components/schemas/SearchSpec"
+        budget:
+          $ref: "#/components/schemas/OptimizerBudget"
+        profile:
+          $ref: "#/components/schemas/Profile"
+        top_k:
+          type: integer
+        namespace_ttl_seconds:
+          type: integer
+        selection_split:
+          type: string
+          example: eval
+        holdout_split:
+          type: string
+          example: holdout
+        runner:
+          type: object
+          additionalProperties: true
         profiles:
           type: array
           items:
@@ -979,6 +1236,138 @@ components:
           type: array
           items:
             type: integer
+    ObjectiveSpec:
+      type: object
+      properties:
+        maximize:
+          type: string
+          example: pairwise_accuracy
+        constraints:
+          type: array
+          items:
+            $ref: "#/components/schemas/ObjectiveConstraint"
+        tie_breakers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ObjectiveTieBreaker"
+        budget:
+          $ref: "#/components/schemas/ObjectiveBudget"
+        baseline_id:
+          type: string
+        bootstrap_iterations:
+          type: integer
+        significance_alpha:
+          type: number
+          format: double
+    ObjectiveConstraint:
+      type: object
+      required: [expression]
+      properties:
+        expression:
+          type: string
+          example: latency_p95_ms <= 1000
+    ObjectiveTieBreaker:
+      type: object
+      required: [metric]
+      properties:
+        metric:
+          type: string
+          example: latency_p95_ms
+        direction:
+          type: string
+          enum: [asc, desc]
+    ObjectiveBudget:
+      type: object
+      properties:
+        latency_p95_limit_ms:
+          type: number
+          format: double
+        cost_limit_usd:
+          type: number
+          format: double
+    OptimizerBudget:
+      type: object
+      properties:
+        max_judge_calls:
+          type: integer
+        max_cost_usd:
+          type: number
+          format: double
+        max_wall_time_seconds:
+          type: integer
+    SearchSpec:
+      type: object
+      properties:
+        strategy:
+          type: string
+          enum: [grid, seeded_random, successive_halving]
+        max_candidates:
+          type: integer
+        seed:
+          type: integer
+          format: int64
+        large_space_warning_threshold:
+          type: integer
+          format: int64
+    SearchSpace:
+      type: object
+      properties:
+        prompts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        chunking:
+          type: object
+          additionalProperties: true
+        embedding:
+          type: object
+          additionalProperties: true
+        reranker:
+          type: object
+          additionalProperties: true
+        retrieval:
+          $ref: "#/components/schemas/RetrievalSearchSpace"
+        graph:
+          type: object
+          additionalProperties: true
+        harness:
+          type: array
+          items:
+            $ref: "#/components/schemas/HarnessCandidate"
+    RetrievalSearchSpace:
+      type: object
+      properties:
+        dense_top_k:
+          type: array
+          items:
+            type: integer
+        sparse_top_k:
+          type: array
+          items:
+            type: integer
+        rrf_k:
+          type: array
+          items:
+            type: integer
+        semantic_cache_thresholds:
+          type: array
+          items:
+            type: number
+            format: double
+    HarnessCandidate:
+      type: object
+      description: External harness config. Use argv array only; shell command strings and `${VAR}` interpolation are rejected.
+      properties:
+        kind:
+          type: string
+        argv:
+          type: array
+          items:
+            type: string
+        command:
+          type: string
+          deprecated: true
     CandidateResult:
       type: object
       required: [profile, top_k, score, pairwise_accuracy, run_id]
@@ -1036,6 +1425,7 @@ components:
           type: string
     OptimizeResult:
       type: object
+      deprecated: true
       required: [id, status, best, candidates]
       example:
         id: opt_xxx
@@ -1101,3 +1491,145 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CandidateResult"
+    OptimizationAcceptedResponse:
+      type: object
+      required: [run_id, status, poll_url, cancel_url, resume_url]
+      properties:
+        run_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, canceling, canceled, budget_stopped, failed]
+        poll_url:
+          type: string
+          example: /v1/optimizations/opt_xxx
+        cancel_url:
+          type: string
+          example: /v1/optimizations/opt_xxx:cancel
+        resume_url:
+          type: string
+          example: /v1/optimizations/opt_xxx:resume
+    OptimizationCancelRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    OptimizationStatusResponse:
+      type: object
+      required: [run, candidates]
+      properties:
+        run:
+          $ref: "#/components/schemas/OptimizationRun"
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptimizationCandidate"
+    OptimizationRun:
+      type: object
+      required: [id, dataset_id, knowledge_base_id, objective, search_space, status, sampling_strategy, search_space_size, sampled_candidate_count, completed_candidate_count, checkpoint, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        dataset_id:
+          type: string
+        knowledge_base_id:
+          type: string
+        objective:
+          $ref: "#/components/schemas/ObjectiveSpec"
+        search_space:
+          $ref: "#/components/schemas/SearchSpace"
+        runner:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum: [queued, running, completed, canceling, canceled, budget_stopped, failed]
+        status_reason:
+          type: string
+        best_candidate_id:
+          type: string
+        holdout_candidate_id:
+          type: string
+        sampling_strategy:
+          type: string
+        search_space_size:
+          type: integer
+          format: int64
+        sampled_candidate_count:
+          type: integer
+        completed_candidate_count:
+          type: integer
+        checkpoint:
+          type: object
+          additionalProperties: true
+        cost_usd:
+          type: number
+          format: double
+        cost_budget_usd:
+          type: number
+          format: double
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OptimizationCandidate:
+      type: object
+      required: [id, optimization_run_id, config, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        optimization_run_id:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum: [queued, running, evaluated, judged, scored, promoted, holdout_evaluated, cleanup_done, failed]
+        evaluation_run_id:
+          type: string
+        judge_run_id:
+          type: string
+        objective_score:
+          type: number
+          format: double
+        holdout_score:
+          type: number
+          format: double
+        confidence:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+        metrics:
+          $ref: "#/components/schemas/EvaluationMetrics"
+        token_usage:
+          type: object
+          additionalProperties: true
+        cost_usd:
+          type: number
+          format: double
+        artifacts:
+          type: object
+          additionalProperties: true
+        temp_namespaces:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        cleanup_status:
+          type: string
+          enum: [not_required, pending, done, failed]
+        expires_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time

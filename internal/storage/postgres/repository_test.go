@@ -16,6 +16,7 @@ import (
 	evalpkg "github.com/shikanon/orag/internal/eval"
 	raggraph "github.com/shikanon/orag/internal/graph"
 	"github.com/shikanon/orag/internal/kb"
+	optimizerpkg "github.com/shikanon/orag/internal/optimizer"
 	"github.com/shikanon/orag/internal/rag"
 )
 
@@ -32,6 +33,22 @@ DROP TABLE example;`)
 	}
 	if !strings.Contains(got, "CREATE TABLE example") {
 		t.Fatalf("up migration missing create statement: %q", got)
+	}
+}
+
+func TestExtractGooseDown(t *testing.T) {
+	got, err := extractGooseDown(`-- +goose Up
+CREATE TABLE example(id TEXT);
+-- +goose Down
+DROP TABLE example;`)
+	if err != nil {
+		t.Fatalf("extractGooseDown() error = %v", err)
+	}
+	if strings.Contains(got, "CREATE TABLE") {
+		t.Fatalf("down migration contains up section: %q", got)
+	}
+	if !strings.Contains(got, "DROP TABLE example") {
+		t.Fatalf("down migration missing drop statement: %q", got)
 	}
 }
 
@@ -354,6 +371,101 @@ func TestDatasetItemDiversityAnnotationsMigration(t *testing.T) {
 	}
 }
 
+func TestTask1MetadataAndPersistenceMigrationsAreReversible(t *testing.T) {
+	tests := []struct {
+		file         string
+		upRequired   []string
+		downRequired []string
+	}{
+		{
+			file: "000007_dataset_eval_metadata.sql",
+			upRequired: []string{
+				"ADD COLUMN IF NOT EXISTS split TEXT NOT NULL DEFAULT 'eval'",
+				"ADD COLUMN IF NOT EXISTS weight DOUBLE PRECISION NOT NULL DEFAULT 1",
+				"expected_evidence JSONB NOT NULL DEFAULT '[]'::jsonb",
+				"human_scores JSONB NOT NULL DEFAULT '{}'::jsonb",
+			},
+			downRequired: []string{
+				"DROP COLUMN IF EXISTS human_scores",
+				"DROP COLUMN IF EXISTS expected_evidence",
+				"DROP COLUMN IF EXISTS weight",
+				"DROP COLUMN IF EXISTS split",
+			},
+		},
+		{
+			file: "000008_judge_results.sql",
+			upRequired: []string{
+				"CREATE TABLE IF NOT EXISTS judge_runs",
+				"CREATE TABLE IF NOT EXISTS judge_results",
+				"CREATE TABLE IF NOT EXISTS pairwise_judge_results",
+				"CREATE TABLE IF NOT EXISTS judge_calibration_runs",
+				"CREATE INDEX IF NOT EXISTS judge_runs_eval_idx",
+			},
+			downRequired: []string{
+				"DROP INDEX IF EXISTS judge_runs_eval_idx",
+				"DROP TABLE IF EXISTS judge_calibration_runs",
+				"DROP TABLE IF EXISTS pairwise_judge_results",
+				"DROP TABLE IF EXISTS judge_results",
+				"DROP TABLE IF EXISTS judge_runs",
+			},
+		},
+		{
+			file: "000009_optimizer_runs.sql",
+			upRequired: []string{
+				"CREATE TABLE IF NOT EXISTS optimization_runs",
+				"CREATE TABLE IF NOT EXISTS optimization_candidates",
+				"CREATE INDEX IF NOT EXISTS optimization_runs_tenant_status_idx",
+				"temp_namespaces JSONB NOT NULL DEFAULT '[]'::jsonb",
+			},
+			downRequired: []string{
+				"DROP INDEX IF EXISTS optimization_runs_tenant_status_idx",
+				"DROP TABLE IF EXISTS optimization_candidates",
+				"DROP TABLE IF EXISTS optimization_runs",
+			},
+		},
+		{
+			file: "000010_harness_runs.sql",
+			upRequired: []string{
+				"CREATE TABLE IF NOT EXISTS harness_runs",
+				"argv JSONB NOT NULL DEFAULT '[]'::jsonb",
+				"env_redacted JSONB NOT NULL DEFAULT '{}'::jsonb",
+				"CREATE INDEX IF NOT EXISTS harness_runs_candidate_idx",
+			},
+			downRequired: []string{
+				"DROP INDEX IF EXISTS harness_runs_candidate_idx",
+				"DROP TABLE IF EXISTS harness_runs",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			body, err := os.ReadFile("../../../migrations/" + tt.file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			up, err := extractGooseUp(string(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			down, err := extractGooseDown(string(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range tt.upRequired {
+				if !strings.Contains(up, want) {
+					t.Fatalf("up migration missing %q: %s", want, up)
+				}
+			}
+			for _, want := range tt.downRequired {
+				if !strings.Contains(down, want) {
+					t.Fatalf("down migration missing %q: %s", want, down)
+				}
+			}
+		})
+	}
+}
+
 func TestEvaluationRunMetricsJSONBRoundTrip(t *testing.T) {
 	body, err := encodeEvaluationRunMetrics(evalpkg.RunResult{
 		Total:    2,
@@ -387,6 +499,260 @@ func TestEvaluationRunMetricsJSONBRoundTrip(t *testing.T) {
 	}
 	if decoded.Metrics["ndcg_at_k"] != 0.75 || decoded.Metrics["alpha_ndcg"] != 0.8 {
 		t.Fatalf("decoded metrics = %#v", decoded.Metrics)
+	}
+}
+
+func TestEvaluationRunMetricsRejectsUnknownMetric(t *testing.T) {
+	_, err := encodeEvaluationRunMetrics(evalpkg.RunResult{
+		Total:    1,
+		HitRate:  1,
+		Accuracy: 1,
+		Metrics: map[string]float64{
+			"answer_accuracy": 1,
+			"harness_custom":  0.5,
+		},
+	})
+	if err == nil {
+		t.Fatal("encodeEvaluationRunMetrics() error = nil, want validation")
+	}
+	if !strings.Contains(err.Error(), "harness_custom") {
+		t.Fatalf("encodeEvaluationRunMetrics() error = %v, want metric name", err)
+	}
+}
+
+func TestRepositoryStoresJudgeRunAndResults(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{}
+	repo := &Repository{evalQueryer: queryer}
+	now := time.Date(2026, 7, 4, 8, 0, 0, 0, time.UTC)
+
+	err := repo.StoreJudgeRun(context.Background(), "tenant_1", evalpkg.JudgeRunRecord{
+		ID:              "judge_1",
+		EvaluationRunID: "eval_1",
+		Provider:        "test-provider",
+		Model:           "judge-model",
+		PromptVersion:   "prompt-v1",
+		RubricHash:      "rubric_hash",
+		PromptHash:      "prompt_hash",
+		ConfigHash:      "config_hash",
+		Mode:            "llm_judge",
+		ComparisonMode:  "absolute",
+		CreatedAt:       now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(queryer.execSQL, "INSERT INTO judge_runs") {
+		t.Fatalf("StoreJudgeRun SQL = %s, want judge_runs insert", queryer.execSQL)
+	}
+	if len(queryer.execArgs) != 15 || queryer.execArgs[0] != "judge_1" || queryer.execArgs[1] != "tenant_1" {
+		t.Fatalf("StoreJudgeRun args = %#v", queryer.execArgs)
+	}
+
+	err = repo.StoreJudgeResult(context.Background(), evalpkg.JudgeResultRecord{
+		ID:            "judger_1",
+		JudgeRunID:    "judge_1",
+		DatasetItemID: "dsi_1",
+		Scores:        map[string]float64{"faithfulness": 0.9},
+		Pass:          true,
+		Rationale:     "supported",
+		Findings:      []evalpkg.JudgeFinding{{Metric: "faithfulness", Label: "good"}},
+		RawResponse:   `{"scores":{"faithfulness":0.9}}`,
+		ParsedJSON:    map[string]any{"scores": map[string]any{"faithfulness": 0.9}},
+		TokenUsage:    evalpkg.TokenUsage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15},
+		CostUSD:       0.02,
+		CreatedAt:     now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(queryer.execSQL, "INSERT INTO judge_results") {
+		t.Fatalf("StoreJudgeResult SQL = %s, want judge_results insert", queryer.execSQL)
+	}
+	rawResponse, _ := queryer.execArgs[8].(string)
+	if rawResponse == "" || !strings.Contains(rawResponse, "faithfulness") {
+		t.Fatalf("raw response arg = %#v, want unparsed raw response", queryer.execArgs[8])
+	}
+	tokenUsage, _ := queryer.execArgs[11].([]byte)
+	if !strings.Contains(string(tokenUsage), "total_tokens") {
+		t.Fatalf("token usage arg = %s", string(tokenUsage))
+	}
+	if queryer.execArgs[12] != 0.02 {
+		t.Fatalf("cost arg = %#v, want 0.02", queryer.execArgs[12])
+	}
+}
+
+func TestRepositoryStoresPairwiseAndCalibrationJudgeDetails(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{}
+	repo := &Repository{evalQueryer: queryer}
+	now := time.Date(2026, 7, 4, 8, 0, 0, 0, time.UTC)
+
+	err := repo.StorePairwiseJudgeResult(context.Background(), evalpkg.PairwiseJudgeResultRecord{
+		ID:            "pair_1",
+		JudgeRunID:    "judge_1",
+		DatasetItemID: "dsi_1",
+		CandidateAID:  "candidate_a",
+		CandidateBID:  "candidate_b",
+		Winner:        "A",
+		Preference:    "A_better",
+		Reasons:       []evalpkg.JudgeFinding{{Metric: "pairwise", Label: "A"}},
+		RawResponse:   `{"winner":"A"}`,
+		ParsedJSON:    map[string]any{"winner": "A"},
+		TokenUsage:    evalpkg.TokenUsage{TotalTokens: 3},
+		CostUSD:       0.01,
+		CreatedAt:     now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(queryer.execSQL, "INSERT INTO pairwise_judge_results") {
+		t.Fatalf("StorePairwiseJudgeResult SQL = %s", queryer.execSQL)
+	}
+
+	err = repo.StoreJudgeCalibrationRun(context.Background(), "tenant_1", evalpkg.JudgeCalibrationRunRecord{
+		ID:                "cal_1",
+		DatasetID:         "ds_1",
+		JudgeConfigHash:   "config_hash",
+		HumanScoreVersion: "gold-v1",
+		Spearman:          0.9,
+		CohenKappa:        0.8,
+		SampleCount:       10,
+		Metrics:           map[string]float64{"faithfulness": 0.9},
+		CreatedAt:         now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(queryer.execSQL, "INSERT INTO judge_calibration_runs") {
+		t.Fatalf("StoreJudgeCalibrationRun SQL = %s", queryer.execSQL)
+	}
+	if queryer.execArgs[1] != "tenant_1" || queryer.execArgs[7] != 10 {
+		t.Fatalf("calibration args = %#v", queryer.execArgs)
+	}
+}
+
+func TestRepositoryStoresOptimizationRunAndCandidate(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{}
+	repo := &Repository{evalQueryer: queryer}
+	now := time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC)
+	costBudget := 2.0
+
+	run := optimizerpkg.OptimizationRun{
+		ID:              "opt_1",
+		TenantID:        "tenant_1",
+		DatasetID:       "ds_1",
+		KnowledgeBaseID: "kb_1",
+		Objective:       optimizerpkg.ObjectiveSpec{Maximize: "pairwise_accuracy"},
+		SearchSpace: optimizerpkg.SearchSpace{Retrieval: optimizerpkg.RetrievalSpace{
+			DenseTopK: []int{4, 8},
+		}},
+		Status:                optimizerpkg.RunStatusQueued,
+		SamplingStrategy:      optimizerpkg.SearchStrategyGrid,
+		SearchSpaceSize:       2,
+		SampledCandidateCount: 2,
+		Checkpoint: optimizerpkg.Checkpoint{
+			Stage:                 "submitted",
+			CompletedCandidateIDs: []string{"cand_done"},
+			CostUSD:               0.5,
+		},
+		CostUSD:       0.5,
+		CostBudgetUSD: &costBudget,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := repo.CreateOptimizationRun(context.Background(), run); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(queryer.execSQL, "INSERT INTO optimization_runs") {
+		t.Fatalf("CreateOptimizationRun SQL = %s", queryer.execSQL)
+	}
+	checkpoint, _ := queryer.execArgs[15].([]byte)
+	if !strings.Contains(string(checkpoint), "completed_candidate_ids") || queryer.execArgs[18] != &costBudget {
+		t.Fatalf("run args = %#v checkpoint=%s", queryer.execArgs, string(checkpoint))
+	}
+
+	expiresAt := now.Add(time.Hour)
+	candidate := optimizerpkg.OptimizationCandidate{
+		ID:                "cand_1",
+		OptimizationRunID: "opt_1",
+		Config:            optimizerpkg.CandidateConfig{Retrieval: optimizerpkg.RetrievalCandidate{DenseTopK: 8}},
+		Status:            optimizerpkg.CandidateStatusScored,
+		EvaluationRunID:   "eval_1",
+		ObjectiveScore:    0.9,
+		Confidence:        map[string]float64{"pairwise_win_rate": 0.75},
+		Metrics:           map[string]float64{"pairwise_accuracy": 0.9},
+		CostUSD:           0.1,
+		Artifacts:         map[string]any{"path": "/tmp/out.json"},
+		TempNamespaces: []optimizerpkg.TempNamespace{{
+			Name:      "tmp_ns",
+			OwnerID:   "cand_1",
+			Kind:      "index",
+			Status:    optimizerpkg.CleanupPending,
+			ExpiresAt: expiresAt,
+		}},
+		CleanupStatus: optimizerpkg.CleanupPending,
+		ExpiresAt:     &expiresAt,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := repo.CreateOptimizationCandidate(context.Background(), candidate); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(queryer.execSQL, "INSERT INTO optimization_candidates") {
+		t.Fatalf("CreateOptimizationCandidate SQL = %s", queryer.execSQL)
+	}
+	metrics, _ := queryer.execArgs[9].([]byte)
+	namespaces, _ := queryer.execArgs[13].([]byte)
+	if !strings.Contains(string(metrics), "pairwise_accuracy") || !strings.Contains(string(namespaces), "tmp_ns") {
+		t.Fatalf("candidate metrics/namespaces = %s / %s", string(metrics), string(namespaces))
+	}
+}
+
+func TestRepositoryListsOptimizationCandidatesWithTenantGuard(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{queryRows: &fakeTraceRows{}}
+	repo := &Repository{evalQueryer: queryer}
+	if _, err := repo.ListOptimizationCandidates(context.Background(), "tenant_1", "opt_1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"JOIN optimization_runs r", "r.tenant_id=$1", "c.optimization_run_id=$2"} {
+		if !strings.Contains(queryer.querySQL, want) {
+			t.Fatalf("ListOptimizationCandidates query missing %q: %s", want, queryer.querySQL)
+		}
+	}
+}
+
+func TestRepositoryStoresHarnessRun(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{}
+	repo := &Repository{evalQueryer: queryer}
+	now := time.Date(2026, 7, 4, 9, 30, 0, 0, time.UTC)
+	ended := now.Add(time.Second)
+
+	err := repo.StoreHarnessRun(context.Background(), optimizerpkg.HarnessRunRecord{
+		ID:             "harness_1",
+		TenantID:       "tenant_1",
+		CandidateID:    "cand_1",
+		HarnessType:    "codex-cli",
+		Argv:           []string{"codex", "eval"},
+		WorkingDir:     "/tmp/harness",
+		EnvRedacted:    map[string]string{"TOKEN": "[REDACTED]"},
+		StdoutRedacted: `{"metrics":{"faithfulness":0.9}}`,
+		StderrRedacted: "ok",
+		ParsedMetrics:  map[string]float64{"faithfulness": 0.9},
+		ExitCode:       0,
+		Metrics:        map[string]float64{"faithfulness": 0.9},
+		Artifacts:      map[string]any{"path": "/tmp/out.json"},
+		StartedAt:      now,
+		EndedAt:        &ended,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(queryer.execSQL, "INSERT INTO harness_runs") {
+		t.Fatalf("StoreHarnessRun SQL = %s", queryer.execSQL)
+	}
+	argv, _ := queryer.execArgs[4].([]byte)
+	env, _ := queryer.execArgs[6].([]byte)
+	if !strings.Contains(string(argv), "codex") || !strings.Contains(string(env), "[REDACTED]") {
+		t.Fatalf("harness argv/env = %s / %s", string(argv), string(env))
 	}
 }
 
@@ -550,6 +916,7 @@ type fakeKnowledgeBaseQueryer struct {
 	execTag   pgconn.CommandTag
 	execCtx   context.Context
 	execSQL   string
+	execArgs  []any
 	execCalls int
 	queryRows pgx.Rows
 	queryErr  error
@@ -730,9 +1097,10 @@ func (f *fakeKnowledgeBaseTx) Rollback(context.Context) error {
 	return f.rollbackErr
 }
 
-func (f *fakeKnowledgeBaseQueryer) Exec(ctx context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
+func (f *fakeKnowledgeBaseQueryer) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	f.execCtx = ctx
 	f.execSQL = sql
+	f.execArgs = append([]any(nil), args...)
 	err := f.execErr
 	if f.execCalls < len(f.execErrs) {
 		err = f.execErrs[f.execCalls]

@@ -40,6 +40,9 @@ func TestOpenAPI(t *testing.T) {
 		{http.MethodPost, "/v1/evaluations"},
 		{http.MethodGet, "/v1/evaluations/{id}"},
 		{http.MethodPost, "/v1/optimizations"},
+		{http.MethodGet, "/v1/optimizations/{id}"},
+		{http.MethodPost, "/v1/optimizations/{id}:cancel"},
+		{http.MethodPost, "/v1/optimizations/{id}:resume"},
 	} {
 		item := doc.Paths.Find(route.path)
 		if item == nil {
@@ -65,6 +68,14 @@ func TestOpenAPI(t *testing.T) {
 		"EvaluationMetrics",
 		"OptimizeRequest",
 		"OptimizeResult",
+		"OptimizationAcceptedResponse",
+		"OptimizationStatusResponse",
+		"OptimizationRun",
+		"OptimizationCandidate",
+		"JudgeConfig",
+		"JudgeRubric",
+		"SearchSpace",
+		"ObjectiveSpec",
 		"ReadinessResponse",
 	} {
 		if doc.Components.Schemas[schema] == nil {
@@ -84,6 +95,9 @@ func TestOpenAPI(t *testing.T) {
 		{http.MethodPost, "/v1/knowledge-bases/{id}/documents:import", http.StatusNotFound},
 		{http.MethodPost, "/v1/query", http.StatusNotFound},
 		{http.MethodPost, "/v1/query:stream", http.StatusNotFound},
+		{http.MethodGet, "/v1/optimizations/{id}", http.StatusNotFound},
+		{http.MethodPost, "/v1/optimizations/{id}:cancel", http.StatusNotFound},
+		{http.MethodPost, "/v1/optimizations/{id}:resume", http.StatusNotFound},
 	} {
 		op := doc.Paths.Find(route.path).GetOperation(route.method)
 		if op.Responses.Get(route.status) == nil {
@@ -100,6 +114,49 @@ func TestOpenAPI(t *testing.T) {
 				t.Fatalf("%s %s missing bearerAuth security", method, path)
 			}
 		}
+	}
+}
+
+func TestOptimizationAndJudgeSchemasExposeAsyncContract(t *testing.T) {
+	doc, err := openapi3.NewLoader().LoadFromFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Validate(context.Background()); err != nil {
+		t.Fatalf("openapi validation failed: %v", err)
+	}
+
+	evalReq := requireSchema(t, doc, "RunEvaluationRequest")
+	for _, name := range []string{"judge", "qag"} {
+		ref, ok := evalReq.Properties[name]
+		if !ok {
+			t.Fatalf("RunEvaluationRequest missing %s", name)
+		}
+		if ref.Ref != "#/components/schemas/JudgeConfig" {
+			t.Fatalf("%s ref = %q, want JudgeConfig", name, ref.Ref)
+		}
+	}
+
+	optReq := requireSchema(t, doc, "OptimizeRequest")
+	for _, name := range []string{"objective", "search_space", "search", "budget", "profiles", "top_ks"} {
+		if _, ok := optReq.Properties[name]; !ok {
+			t.Fatalf("OptimizeRequest missing %s", name)
+		}
+	}
+
+	postOp := doc.Paths.Find("/v1/optimizations").Post
+	if got := postOp.Responses.Get(http.StatusAccepted).Value.Content.Get("application/json").Schema.Ref; got != "#/components/schemas/OptimizationAcceptedResponse" {
+		t.Fatalf("POST /v1/optimizations 202 schema = %q", got)
+	}
+	accepted := requireSchema(t, doc, "OptimizationAcceptedResponse")
+	for _, name := range []string{"run_id", "poll_url", "cancel_url", "resume_url"} {
+		if _, ok := accepted.Properties[name]; !ok {
+			t.Fatalf("OptimizationAcceptedResponse missing %s", name)
+		}
+	}
+	status := requireSchema(t, doc, "OptimizationStatusResponse")
+	if status.Properties["run"].Ref != "#/components/schemas/OptimizationRun" {
+		t.Fatalf("OptimizationStatusResponse.run ref = %q", status.Properties["run"].Ref)
 	}
 }
 

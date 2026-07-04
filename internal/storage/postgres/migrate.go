@@ -75,3 +75,15 @@ func extractGooseUp(sql string) (string, error) {
 	}
 	return sql, nil
 }
+
+func extractGooseDown(sql string) (string, error) {
+	start := strings.Index(sql, "-- +goose Down")
+	if start < 0 {
+		return "", fmt.Errorf("missing -- +goose Down marker")
+	}
+	sql = strings.TrimSpace(sql[start+len("-- +goose Down"):])
+	if sql == "" {
+		return "", fmt.Errorf("empty down migration")
+	}
+	return sql, nil
+}
