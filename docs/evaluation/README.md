@@ -1,6 +1,6 @@
 # 评估文档
 
-本目录面向质量评估、算法调参和回归门禁维护。ORAG 当前评估模块复用线上 RAG 查询路径，避免线上线下漂移。
+本目录面向质量评估、算法调参和回归门禁维护。ORAG 当前评估模块复用线上 RAG 查询路径，默认提供 deterministic rule-based metrics；请求携带 `judge`/`qag` 配置时会额外执行 LLM-as-Judge 和 QAG claim verification，避免线上线下漂移。
 
 ## 当前能力
 
@@ -9,21 +9,25 @@
 | 数据集 | 支持创建数据集和写入样本。 |
 | 评估运行 | `POST /v1/evaluations` 对数据集样本逐条调用 RAG 查询。 |
 | 结果持久化 | 默认 `qdrant_postgres` 后端会写入 PostgreSQL。 |
-| 指标 | 当前是 deterministic rule-based metrics。 |
-| Optimizer | 对候选 `profiles` 和 `top_ks` 做确定性网格搜索。 |
+| 指标 | 默认 deterministic rule-based metrics；启用 Judge/QAG 时写入 faithfulness、groundedness、citation_support、qag_score、token/cost 等增强指标。 |
+| LLM-as-Judge/QAG | 支持 pairwise judge、A/B 顺序交换、raw/parsed 响应分离、QAG claim verdict、gold-set 校准和成本记录。 |
+| Optimizer | 支持目标驱动异步优化、objective/constraints/tie-breaker、搜索空间、checkpoint、cancel/resume 和 holdout 复评；旧 `profiles/top_ks` 请求仍兼容。 |
 
 ## 数据模型
 
 | 表或概念 | 说明 |
 | --- | --- |
 | `datasets` | 数据集元信息，包含 `kind` 和 `version`。 |
-| `dataset_items` | 样本，包含 `query`、`ground_truth`、`relevant_doc_ids`。 |
+| `dataset_items` | 样本，包含 `query`、`ground_truth`、`relevant_doc_ids`，并支持 `split`、`weight`、`expected_evidence`、`human_scores` 等评估元数据。 |
 | `evaluation_runs` | 一次评估运行的汇总结果。 |
 | `evaluation_results` | 每个样本的答案和逐样本指标。 |
+| `judge_runs` / `judge_results` / `pairwise_judge_results` | 可选 Judge/QAG 运行、逐样本结果和 pairwise 比较明细。 |
+| `judge_calibration_runs` | gold-set 校准结果，记录 Spearman、Cohen's kappa、QAG coverage 和 waiver。 |
+| `optimization_runs` / `optimization_candidates` / `harness_runs` | 异步优化 run、候选、checkpoint、预算、状态、holdout 和 external harness 结果。 |
 
 数据集样本写入、评估运行和 optimizer 都会先按当前 tenant 校验 `dataset_id`。数据集不存在或属于其他 tenant 时返回 `404 dataset_not_found`，不会写入样本或评估结果。
 
-`GET /v1/evaluations/{id}` 当前查询的是运行级汇总，不返回逐样本明细。
+`GET /v1/evaluations/{id}` 默认查询运行级汇总；传 `include_items=true`、`include_judge=true`、`include_pairwise=true` 时返回逐样本、Judge/QAG 和 pairwise 明细。
 
 ## 指标边界
 
@@ -31,7 +35,7 @@
 | --- | --- | --- |
 | `answer_accuracy` | 答案包含 ground truth 关键项时命中。 | 弱规则指标，不把 citation 存在性计入答案正确。 |
 | `accuracy` / `hit_rate` | 新运行中与 `answer_accuracy` 保持一致。 | 兼容别名；历史已存运行可能没有新增指标键。 |
-| `pairwise_accuracy` | 优化器主质量指标；当前未接入 pairwise judge 时由 `answer_accuracy` 填充。 | 推荐作为候选排序主指标，但当前仍是规则命中率语义，不等价于人工或 LLM 成对评审。 |
+| `pairwise_accuracy` | 优化器主质量指标；未执行 pairwise judge 时由 `answer_accuracy` 填充，启用成对比较后表示候选在 pairwise 比较中的胜出或不输比例。 | 推荐作为候选排序主指标；判读时区分 deterministic fallback 与真实 pairwise judge 来源。 |
 | `citation_hit_rate` | 响应中存在至少一个 citation 时命中。 | 只说明证据存在性，不证明答案正确。 |
 | `context_recall` | 检查 retrieved chunks 覆盖相关文档 ID 的比例。 | 只看文档 ID，不验证 chunk 内容是否真正支撑答案。 |
 | `citation_precision` | 检查引用文档 ID 是否落在相关文档列表中。 | 不验证引用位置与回答论断的一致性。 |
@@ -48,6 +52,8 @@
 | `aspect_coverage` | 召回证据覆盖 aspect/subquestion 的比例。 | 依赖 `diversity_annotations`，缺少有效标注时跳过。 |
 | `latency_p95_ms` | 本次评估内样本查询延迟 P95。 | 来自 RAG 响应的 `LatencyMS`。 |
 | `cache_hit_rate` | `CacheStatus == "hit"` 的样本比例。 | 依赖语义缓存状态。 |
+| `faithfulness` / `groundedness` / `citation_support` / `hallucination` / `completeness` | LLM-as-Judge 根据证据、答案和 rubric 输出的质量指标。 | 仅在请求包含 `judge` 时产生；主观维度应结合 gold-set 校准。 |
+| `qag_score` / `qag_claim_coverage` / `qag_question_count` / `qag_unverifiable_rate` | QAG 基于答案 claim 生成问题、用 context-only answer 校验支撑情况后的指标。 | 仅在请求包含 `qag` 时产生；用于识别 contradicted/unverifiable claim 和关键 claim 漏检。 |
 
 缺失标注行为：
 
@@ -58,27 +64,29 @@
 ## Optimizer 流程
 
 ```text
-profiles x top_ks
+POST /v1/optimizations
         |
         v
-run evaluation for each candidate
+create queued run + candidate set
         |
         v
-score = metrics.pairwise_accuracy
+async worker evaluates candidates and checkpoints progress
         |
         v
-return candidates + best
+score objective + constraints + tie-breakers
+        |
+        v
+optional holdout re-evaluation, then poll/cancel/resume by run_id
 ```
 
-当历史运行缺少 `pairwise_accuracy` 时，optimizer 会回退到 `answer_accuracy`，再回退到 `run.Accuracy`。
+旧 `profiles/top_ks` 请求会映射为 profile 与 retrieval top-k 搜索空间；当历史运行缺少 `pairwise_accuracy` 时，optimizer 仍会回退到 `answer_accuracy`，再回退到 `run.Accuracy`。
 
 当前 optimizer 的边界：
 
-- 只优化 `profile` 和 `top_k`。
-- 不自动调整 prompt、embedding、reranker、chunk 策略、模型或索引参数。
-- 不做 Bayesian optimization、bandit、早停或成本约束搜索。
-- optimization result 只在本次响应中返回；可追溯数据来自候选关联的 `run_id`。
-- 候选排序使用 `pairwise_accuracy`；Recall@k、NDCG@k、MRR、MAP、失败率、冗余度、多样性和 `latency_p95_ms` 是诊断字段。
+- HTTP internal runner 已支持 retrieval top-k、reranker top-n、graph 开关等 overlay；涉及重分块、embedding 或索引变更的候选会注册临时 namespace，真实重建索引成本仍需离线控制。
+- 搜索策略以 grid、seeded random 和 successive halving 计划为主，不是完整 Bayesian optimization 或 bandit。
+- External harness runner 已实现 argv-array、安全 allowlist、脱敏和指标白名单；HTTP 示例默认使用 internal RAG runner。
+- 候选排序由 `objective.maximize`、constraints 和 tie-breakers 决定；使用 rule-based `pairwise_accuracy` fallback 时，不应等价为完整业务满意度。
 
 ## 延迟权衡
 
@@ -90,14 +98,14 @@ return candidates + best
 | --- | --- |
 | PR 回归 | 准备小型 deterministic 数据集，观察 `answer_accuracy`、`pairwise_accuracy`、IR 指标、冗余度、多样性和 `latency_p95_ms` 是否退化。 |
 | profile 对比 | 使用相同数据集跑 `realtime` 和 `high_precision`。 |
-| top_k 调参 | 用 optimizer 枚举少量候选，优先看 `pairwise_accuracy`，再用 `latency_p95_ms` 和冗余度做约束。 |
-| 真实质量评审 | 结合人工检查或后续 LLM-as-Judge，不要只看当前 rule-based `answer_accuracy`。 |
+| top_k 调参 | 用 optimizer 枚举少量候选，优先看 `objective` 得分和 `pairwise_accuracy`，再用 `latency_p95_ms` 和冗余度做约束。 |
+| 真实质量评审 | 在 deterministic 指标之外启用 `judge`/`qag`，结合 `faithfulness`、`groundedness`、`citation_support`、`qag_score`、raw/parsed 明细和人工抽检判断答案质量。 |
 
-## 后续增强方向
-
-后续可在保持 deterministic 门禁的基础上，增加可选 Ark LLM-as-Judge：
+## Judge/QAG 使用建议
 
 - `faithfulness`：答案是否被检索证据支撑。
 - `groundedness`：回答是否避免未引用事实。
 - `answer_relevance`：答案是否真正回应用户问题。
-- `judge_explanation`：保留 judge 理由、prompt 版本和模型版本，避免跨版本不可比。
+- `citation_support`：引用是否支撑对应回答论断。
+- `qag_score`：claim 级别的上下文支撑比例。
+- `judge`/`qag` 输出会保留 provider/model、prompt/rubric/config hash、raw/parsed response、token usage 和 cost，便于跨版本追踪和校准。

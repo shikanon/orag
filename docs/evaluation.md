@@ -48,12 +48,12 @@
 
 ## 当前指标
 
-当前实现是 deterministic rule-based metrics，不依赖真实 Ark Key：
+未传 `judge`/`qag` 时，评估会执行 deterministic rule-based metrics，不依赖真实 Ark Key：
 
 - `answer_accuracy`：逐样本答案包含 `ground_truth` 中长度大于 3 的关键项时为 1，否则为 0；响应中存在 citation 不会提升该指标。运行级 `answer_accuracy` 是答案命中样本数除以样本总数。
 - `accuracy`：新运行中与 `answer_accuracy` 保持一致，是面向答案正确性的兼容别名。
 - `hit_rate`：新运行中与 `answer_accuracy` 保持一致，是面向答案命中的兼容别名。
-- `pairwise_accuracy`：当前优化器主质量指标。在未接入真实 pairwise judge 前，该字段由 `answer_accuracy` 填充；后续接入 A/B judge 后应表示候选回答在成对比较中胜出或不输基线的比例。
+- `pairwise_accuracy`：当前优化器主质量指标。未执行 pairwise judge 时由 `answer_accuracy` 填充；启用 A/B pairwise judge 后表示候选回答在成对比较中胜出或不输基线的比例。
 - `citation_hit_rate`：逐样本响应中存在至少一个 citation 时为 1，否则为 0；运行级指标是有 citation 样本数除以样本总数。
 - `context_recall`：当 `relevant_doc_ids` 非空时，统计 retrieved chunks 覆盖了多少不同的相关文档 ID；当 `relevant_doc_ids` 为空时，有任意 retrieved chunk 记为 1，否则为 0。
 - `citation_precision`：当响应有引用且 `relevant_doc_ids` 非空时，统计引用文档 ID 落在相关文档列表中的比例；没有引用时为 0，样本未标注 `relevant_doc_ids` 且存在引用时为 1。
@@ -74,12 +74,12 @@
 适用边界：
 
 - 适合做基础回归门禁、不同 profile / `top_k` 的粗粒度对比，以及检索排序、覆盖率、冗余度、多样性、引用、延迟和 cache 行为的冒烟检查。
-- `pairwise_accuracy` 是当前优化器主指标；在真正的 pairwise judge 接入前，它仍由 answer-focused 规则命中率填充，因此只能代表当前 deterministic 质量信号。
+- `pairwise_accuracy` 是当前优化器主指标；未执行 pairwise judge 时它由 answer-focused 规则命中率填充，只代表 deterministic fallback 信号。启用 pairwise judge 后应结合 raw/parsed 明细、稳定性标记和校准结果判读。
 - `answer_accuracy` / `accuracy` 仍是弱规则指标，只基于 `ground_truth` 文本包含关系；它不再把任意引用计为答案正确，但仍对同义改写、复杂推理、多语种细粒度表达不敏感。
 - `citation_hit_rate` 只说明响应带有引用，不能单独证明答案正确或引用相关。
 - `context_recall` 和 `citation_precision` 只检查文档 ID，不验证 chunk 内容是否真的支撑答案，也不验证引用位置与回答论断的一致性。
 - IR 指标依赖 `relevant_doc_ids`，多样性指标依赖 `diversity_annotations`。缺少标注时相关指标会返回 0 或跳过聚合，不应与完整标注数据集直接比较。
-- LLM-as-Judge/QAG 是可选增强路径；未传 `judge`/`qag` 时仍只执行 deterministic rule-based metrics。主观指标上线前仍应使用 gold set 校准，并避免把低相关性的 judge 分数用于自动晋级。
+- LLM-as-Judge/QAG 已作为可选增强路径接入；未传 `judge`/`qag` 时仍只执行 deterministic rule-based metrics。主观指标用于自动晋级前应使用 gold set 校准，并避免把低相关性的 judge 分数用于 promotion。
 
 ## 延迟与复杂召回策略权衡
 

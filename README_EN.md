@@ -226,13 +226,13 @@ LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,
 | `docs/getting-started/` | New developers and API smoke users | Local startup, dependency notes, API smoke flow, and state directory usage. |
 | `docs/api/` | API consumers, SDK developers, frontend developers | Authentication, error model, knowledge bases, ingestion, query, and SSE. |
 | `docs/architecture/` | Backend developers and architecture reviewers | Module map, runtime dependencies, and RAG pipeline. |
-| `docs/evaluation/` | Evaluation, algorithm, and quality owners | Dataset structure, rule-based metrics, optimizer, and LLM-as-Judge boundaries. |
+| `docs/evaluation/` | Evaluation, algorithm, and quality owners | Dataset structure, rule-based metrics, LLM-as-Judge/QAG, and the goal-driven optimizer. |
 | `docs/operations/` | Operators, SREs, deployment owners | Runtime dependencies, health checks, metrics, configuration security, and troubleshooting. |
 
 ## Project Scope
 
 - ES/Neo4j are not started by default. The current real backend is PostgreSQL + Qdrant.
-- Current evaluation metrics are deterministic rule-based metrics and are not a full LLM-as-Judge replacement.
+- Evaluation keeps deterministic rule-based metrics as the default baseline. Requests that provide `judge` or `qag` configuration enable LLM-as-Judge, QAG details, and calibration-related metrics.
 - `/readyz` does not actively call external model services. `model_provider=configured` only means required keys for the selected providers are present.
 - `STORAGE_BACKEND=memory` is for local debugging and tests only, not production.
 - MinerU and Docling are integrated as remote parsing services. ORAG does not start their Python runtimes inside the API process.

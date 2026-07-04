@@ -226,13 +226,13 @@ LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,
 | `docs/getting-started/` | 新开发者、API smoke 使用者 | 本地启动、依赖说明、API smoke 和状态目录。 |
 | `docs/api/` | API 调用方、SDK/前端开发者 | 认证、错误模型、知识库、入库、查询和 SSE。 |
 | `docs/architecture/` | 后端开发者、架构评审者 | 模块地图、运行时依赖和 RAG pipeline。 |
-| `docs/evaluation/` | 评估/算法/质量负责人 | 数据集结构、rule-based metrics、optimizer 和 LLM-as-Judge 增强边界。 |
+| `docs/evaluation/` | 评估/算法/质量负责人 | 数据集结构、rule-based metrics、LLM-as-Judge/QAG 和目标驱动 optimizer。 |
 | `docs/operations/` | 运维、SRE、部署负责人 | 部署依赖、健康检查、metrics、配置安全和故障排查。 |
 
 ## 项目边界
 
 - 默认不启动 ES/Neo4j；当前真实后端是 PostgreSQL + Qdrant。
-- 当前评估指标是 deterministic rule-based metrics，不等价于完整 LLM-as-Judge。
+- 评估默认保留 deterministic rule-based metrics；请求提供 `judge`/`qag` 配置时会启用 LLM-as-Judge、QAG 明细和校准相关指标。
 - `/readyz` 不主动调用外部模型服务，`model_provider=configured` 只表示所选 provider 的必需 key 已注入。
 - `STORAGE_BACKEND=memory` 只用于本地调试和单测，不作为生产配置。
 - MinerU 和 Docling 作为远程解析服务接入，ORAG 不在 API 进程内启动它们的 Python runtime。

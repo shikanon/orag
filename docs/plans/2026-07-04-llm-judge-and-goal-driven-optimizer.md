@@ -10,49 +10,45 @@
 
 ---
 
-## Current Project Status After Remote Sync
+## Current Project Status After Merge
 
-Remote sync status on 2026-07-04:
+Merge status on 2026-07-04:
 
-- Current branch is `main`.
-- `git fetch origin --prune` completed successfully.
-- `git pull --ff-only` returned `Already up to date`, so the local branch matches `origin/main`.
-- The only local uncommitted change is this untracked plan file: `docs/plans/2026-07-04-llm-judge-and-goal-driven-optimizer.md`.
-- The previous `codex/multimodal-doc-parsers` branch context is no longer the active working branch for this status section.
+- The LLM-as-Judge and goal-driven optimizer design has been implemented and merged into the main project line.
+- This document now serves as the implementation design record and capability reference, not as a list of missing features.
 
 Current evaluation implementation:
 
 - `internal/eval.Runner` runs the existing production RAG query path over all dataset items.
-- Evaluation input currently supports `dataset_id`, `knowledge_base_id`, `profile`, and `top_k`.
+- Evaluation input supports `dataset_id`, `knowledge_base_id`, `profile`, `top_k`, optional `judge`, and optional `qag` configuration.
 - The runner validates `dataset_id` and `knowledge_base_id`, verifies dataset existence under the current tenant, and rejects empty datasets before running RAG queries.
-- The runner computes deterministic metrics only. There is no implemented LLM-as-Judge, QAG Score, pairwise judge, judge ensemble, judge calibration, or confidence interval pipeline yet.
-- Current run-level metrics include `answer_accuracy`, `accuracy`, `hit_rate`, `pairwise_accuracy`, `latency_p95_ms`, `cache_hit_rate`, plus aggregated retrieval/diversity metrics.
-- Current item-level metrics include `answer_accuracy`, `accuracy`, `citation_hit_rate`, `context_recall`, `citation_precision`, `latency_ms`, `cache_hit`, `ndcg_at_k`, `recall_at_k`, `mrr`, `map`, redundancy metrics, and diversity metrics when annotations exist.
-- `pairwise_accuracy` is currently a compatibility metric name mapped from rule-based `answer_accuracy`, not a true pairwise LLM comparison.
+- The runner keeps deterministic metrics as the default baseline and, when requested, executes LLM-as-Judge, QAG Score, pairwise judge, judge ensemble/repeat aggregation, and gold-set calibration support.
+- Current run-level metrics include `answer_accuracy`, `accuracy`, `hit_rate`, `pairwise_accuracy`, `latency_p95_ms`, `cache_hit_rate`, aggregated retrieval/diversity metrics, and optional Judge/QAG token/cost metrics.
+- Current item-level metrics include deterministic answer/retrieval/diversity metrics plus optional Judge/QAG results, findings, rationales, raw/parsed responses, pairwise details, and token/cost usage.
+- `pairwise_accuracy` remains available as a deterministic fallback when pairwise judge is not requested; with pairwise judge enabled, it represents pairwise preference outcomes.
 
 Current dataset implementation:
 
-- Dataset items currently contain `query`, `ground_truth`, `relevant_doc_ids`, and optional `diversity_annotations`.
+- Dataset items contain `query`, `ground_truth`, `relevant_doc_ids`, optional `diversity_annotations`, and evaluation metadata such as `split`, `weight`, `expected_evidence`, and `human_scores`.
 - Dataset repository methods are tenant-aware: adding and listing items checks that the dataset belongs to the current tenant.
 - `dataset.ErrDatasetNotFound` is used to distinguish missing datasets from internal failures.
-- Dataset split fields such as `train`, `eval`, `holdout`, and `gold` are not implemented yet.
-- Human scores, expected evidence, per-item weights, and calibration metadata are not implemented yet.
+- Dataset splits such as `train`, `eval`, `holdout`, and `gold` are supported for optimizer selection, holdout reporting, and judge calibration.
 
 Current optimizer implementation:
 
-- `internal/eval.Optimizer` only enumerates `profiles × top_ks`.
-- Default candidates are `realtime` and `high_precision` with `top_k=8`.
-- Candidate score is based on `pairwise_accuracy`, which currently falls back to `answer_accuracy` and then `accuracy` if needed.
-- There is no objective DSL, pairwise win-rate, bootstrap significance test, holdout re-evaluation, random/Bayesian sampling, dependency-aware search, external harness runner, or temporary namespace cleanup yet.
+- The goal-driven optimizer runs asynchronously through `POST /v1/optimizations`, persists run/candidate state, and supports polling, cancel, resume, checkpoint, budget controls, and holdout re-evaluation.
+- Candidate scoring uses objective expressions, constraints, tie-breakers, fixed-budget normalization, pairwise win-rate, and bootstrap-style promotion checks.
+- Search supports deterministic candidate IDs, grid, seeded random, successive halving plans, dependency-aware pruning, and internal RAG candidate overlays.
+- External harness execution uses argv arrays only, executable allowlists, timeout/workdir isolation, redaction, and metric registry validation.
+- Legacy `profiles × top_ks` requests remain accepted and are mapped into the newer search-space path.
 
 Current persistence/API implementation:
 
-- PostgreSQL persistence stores `evaluation_runs` and `evaluation_results`.
-- There are no `judge_runs`, `judge_results`, `pairwise_judge_results`, `judge_calibration_runs`, `optimization_runs`, `optimization_candidates`, or `harness_runs` tables yet.
-- HTTP APIs currently expose dataset creation, tenant-checked dataset item append, evaluation run, evaluation summary lookup, and simple optimization.
-- `GET /v1/evaluations/{id}` returns run-level summary only; item-level judge details are not implemented.
+- PostgreSQL persistence stores `evaluation_runs`, `evaluation_results`, `judge_runs`, `judge_results`, `pairwise_judge_results`, `judge_calibration_runs`, `optimization_runs`, `optimization_candidates`, and `harness_runs`.
+- HTTP APIs expose dataset creation, tenant-checked dataset item append, evaluation run, evaluation detail query, asynchronous optimization submit/status/cancel/resume, and legacy optimization compatibility.
+- `GET /v1/evaluations/{id}` defaults to run-level summary and supports `include_items`, `include_judge`, and `include_pairwise` for item-level and Judge/QAG details.
 
-This plan therefore describes the target architecture and migration path from the current deterministic evaluation and simple optimizer to a reliable LLM-as-Judge and goal-driven optimizer system.
+This plan records the architecture and migration path from the deterministic evaluation and simple optimizer baseline to the merged LLM-as-Judge and goal-driven optimizer system.
 
 ---
 
@@ -1589,9 +1585,9 @@ git commit -m "test: add judge optimizer validation"
 
 ---
 
-## Suggested First Milestone
+## Delivered Vertical Slice
 
-Deliver a minimal but complete vertical slice:
+The merged implementation delivers the following vertical slice:
 
 1. Add judge types and interface.
 2. Implement fake/rule-based judge.
@@ -1606,4 +1602,4 @@ Deliver a minimal but complete vertical slice:
 11. Add `GET /v1/evaluations/{id}?include_items=true&include_judge=true`.
 12. Update OpenAPI and docs.
 
-This milestone gives users reliable LLM-as-Judge evaluation before the broader optimizer is implemented.
+This delivered slice gives users reliable LLM-as-Judge evaluation together with the goal-driven optimizer path, while preserving deterministic metrics as the CI-safe baseline.

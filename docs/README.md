@@ -9,7 +9,7 @@
 | 第一次运行项目 | `../README.md` -> `getting-started/README.md` -> `getting-started/api-smoke.md` | 完成本地启动、登录、建库、入库、查询和评估 smoke。 |
 | 接入 API 或编写 SDK | `api/README.md` -> `api/auth-and-errors.md` -> `api/ingestion-and-query.md` -> `../api/openapi.yaml` | 对齐认证、请求体、响应体、错误码和主业务 API。 |
 | 理解 RAG 内部链路 | `architecture/README.md` -> `architecture/rag-pipeline.md` -> `Go-RAG-框架技术方案.md` | 理解 HTTP、检索、重排、生成、引用、缓存和存储边界。 |
-| 做 RAG 质量回归 | `evaluation/README.md` -> `api/ingestion-and-query.md` | 理解数据集、评估运行、指标边界和 optimizer 行为。 |
+| 做 RAG 质量回归 | `evaluation/README.md` -> `api/ingestion-and-query.md` | 理解数据集、评估运行、deterministic/Judge/QAG 指标和 optimizer 行为。 |
 | 部署或排障 | `operations/README.md` -> `operations/troubleshooting.md` -> `development.md` | 明确依赖、配置、健康检查、metrics 和常见故障处理。 |
 
 ## 分层文档地图
@@ -19,7 +19,7 @@
 | `getting-started/` | 快速上手 | 本地启动、依赖说明、API smoke、状态目录和常见 smoke 失败。 |
 | `api/` | API 集成 | 认证、错误模型、知识库、入库任务、JSON 查询和 SSE 查询。 |
 | `architecture/` | 架构设计 | 模块地图、运行时依赖、RAG pipeline 和排查切入点。 |
-| `evaluation/` | 评估与优化 | 数据集、评估运行、rule-based metrics、optimizer 和后续 LLM-as-Judge 边界。 |
+| `evaluation/` | 评估与优化 | 数据集、评估运行、rule-based metrics、LLM-as-Judge/QAG 和目标驱动 optimizer。 |
 | `operations/` | 运维排障 | 健康检查、metrics、部署检查清单、Docker 配置和故障排查。 |
 
 ## 兼容长文
