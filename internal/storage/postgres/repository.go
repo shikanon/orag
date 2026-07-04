@@ -205,6 +205,30 @@ func (r *Repository) DeleteKnowledgeBase(ctx context.Context, tenantID, id strin
 	}
 
 	if _, err = tx.Exec(ctx, `
+		DELETE FROM harness_runs
+		WHERE tenant_id=$1
+		  AND candidate_id IN (
+			SELECT c.id
+			FROM optimization_candidates c
+			JOIN optimization_runs r ON r.id = c.optimization_run_id
+			WHERE r.tenant_id=$1 AND r.knowledge_base_id=$2
+		  )`, tenantID, id); err != nil {
+		return false, err
+	}
+	if _, err = tx.Exec(ctx, `
+		DELETE FROM optimization_candidates c
+		USING optimization_runs r
+		WHERE c.optimization_run_id = r.id
+		  AND r.tenant_id=$1
+		  AND r.knowledge_base_id=$2`, tenantID, id); err != nil {
+		return false, err
+	}
+	if _, err = tx.Exec(ctx, `
+		DELETE FROM optimization_runs
+		WHERE tenant_id=$1 AND knowledge_base_id=$2`, tenantID, id); err != nil {
+		return false, err
+	}
+	if _, err = tx.Exec(ctx, `
 		DELETE FROM chunks
 		WHERE tenant_id=$1 AND knowledge_base_id=$2`, tenantID, id); err != nil {
 		return false, err

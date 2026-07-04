@@ -179,6 +179,9 @@ func TestRepositoryDeleteKnowledgeBaseLocksAndDeletesChildrenInTransaction(t *te
 			pgconn.NewCommandTag("DELETE 1"),
 			pgconn.NewCommandTag("DELETE 1"),
 			pgconn.NewCommandTag("DELETE 1"),
+			pgconn.NewCommandTag("DELETE 1"),
+			pgconn.NewCommandTag("DELETE 1"),
+			pgconn.NewCommandTag("DELETE 1"),
 		},
 	}
 	beginner := &fakeKnowledgeBaseTxBeginner{tx: tx}
@@ -201,7 +204,7 @@ func TestRepositoryDeleteKnowledgeBaseLocksAndDeletesChildrenInTransaction(t *te
 			t.Fatalf("lock query missing %q: %s", want, tx.queryRowSQL)
 		}
 	}
-	wantTables := []string{"chunks", "documents", "ingestion_jobs", "knowledge_bases"}
+	wantTables := []string{"harness_runs", "optimization_candidates", "optimization_runs", "chunks", "documents", "ingestion_jobs", "knowledge_bases"}
 	if len(tx.execSQLs) != len(wantTables) {
 		t.Fatalf("Exec calls = %d, want %d: %#v", len(tx.execSQLs), len(wantTables), tx.execSQLs)
 	}
@@ -209,9 +212,24 @@ func TestRepositoryDeleteKnowledgeBaseLocksAndDeletesChildrenInTransaction(t *te
 		if !strings.Contains(tx.execSQLs[i], "DELETE FROM "+table) {
 			t.Fatalf("delete %d SQL = %s, want table %s", i, tx.execSQLs[i], table)
 		}
-		if table == "knowledge_bases" {
+		switch table {
+		case "knowledge_bases":
 			if !strings.Contains(tx.execSQLs[i], "tenant_id=$1 AND id=$2") {
 				t.Fatalf("knowledge base delete missing tenant guard: %s", tx.execSQLs[i])
+			}
+			continue
+		case "harness_runs":
+			for _, want := range []string{"tenant_id=$1", "candidate_id IN", "r.tenant_id=$1", "r.knowledge_base_id=$2"} {
+				if !strings.Contains(tx.execSQLs[i], want) {
+					t.Fatalf("harness delete missing %q: %s", want, tx.execSQLs[i])
+				}
+			}
+			continue
+		case "optimization_candidates":
+			for _, want := range []string{"USING optimization_runs", "r.tenant_id=$1", "r.knowledge_base_id=$2"} {
+				if !strings.Contains(tx.execSQLs[i], want) {
+					t.Fatalf("optimization candidate delete missing %q: %s", want, tx.execSQLs[i])
+				}
 			}
 			continue
 		}
