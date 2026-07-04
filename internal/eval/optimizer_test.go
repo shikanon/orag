@@ -182,6 +182,33 @@ func TestOptimizerRanksCandidatesByPairwiseAccuracy(t *testing.T) {
 	}
 }
 
+func TestOptimizerRejectsUnknownMetricBeforeCandidateScoring(t *testing.T) {
+	runner := &fakeOptimizationRunner{
+		runs: []RunResult{{
+			ID:       "run_unknown_metric",
+			Accuracy: 1,
+			Metrics: map[string]float64{
+				PrimaryMetricPairwiseAccuracy: 1,
+				"harness_custom":              0.5,
+			},
+		}},
+	}
+
+	result, err := (Optimizer{Runner: runner}).Optimize(context.Background(), OptimizeRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       "dataset_default",
+		KnowledgeBaseID: "kb_default",
+		Profiles:        []rag.Profile{rag.ProfileRealtime},
+		TopKs:           []int{4},
+	})
+	if !apperrors.IsCode(err, apperrors.CodeValidation) {
+		t.Fatalf("Optimize() error = %v, want validation", err)
+	}
+	if len(result.Candidates) != 0 {
+		t.Fatalf("candidates = %d, want 0", len(result.Candidates))
+	}
+}
+
 type fakeOptimizationRunner struct {
 	runs []RunResult
 	next int

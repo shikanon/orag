@@ -11,6 +11,10 @@ EVAL_QUERY="${EVAL_QUERY:-ORAG 使用什么向量库？}"
 GROUND_TRUTH="${GROUND_TRUTH:-Qdrant}"
 PROFILE="${PROFILE:-realtime}"
 TOP_K="${TOP_K:-8}"
+ENABLE_JUDGE="${ENABLE_JUDGE:-false}"
+ENABLE_QAG="${ENABLE_QAG:-false}"
+JUDGE_PROVIDER="${JUDGE_PROVIDER:-ark}"
+JUDGE_MODEL="${JUDGE_MODEL:-doubao-pro}"
 
 dataset_response="$(curl -sS "$BASE_URL/v1/datasets" \
   -H "Authorization: Bearer $token" \
@@ -30,13 +34,23 @@ if [ -s "$DOCUMENT_ID_FILE" ]; then
   relevant_doc_ids="[\"$(json_escape "$document_id")\"]"
 fi
 
-request_json POST "/v1/datasets/$dataset_id/items" "{"query":"$(json_escape "$EVAL_QUERY")","ground_truth":"$(json_escape "$GROUND_TRUTH")","relevant_doc_ids":$relevant_doc_ids}" "$token" >/dev/null
+item_payload='{"query":"'"$(json_escape "$EVAL_QUERY")"'","ground_truth":"'"$(json_escape "$GROUND_TRUTH")"'","relevant_doc_ids":'"$relevant_doc_ids"'}'
+request_json POST "/v1/datasets/$dataset_id/items" "$item_payload" "$token" >/dev/null
 
-eval_response="$(request_json POST /v1/evaluations "{"dataset_id":"$(json_escape "$dataset_id")","knowledge_base_id":"$(json_escape "$kb_id")","profile":"$(json_escape "$PROFILE")","top_k":$TOP_K}" "$token")"
-eval_id="$(printf '%s
-' "$eval_response" | extract_json_string id)"
+judge_json=""
+if [ "$ENABLE_JUDGE" = "true" ]; then
+  judge_json=',"judge":{"provider":"'"$(json_escape "$JUDGE_PROVIDER")"'","model":"'"$(json_escape "$JUDGE_MODEL")"'","metrics":["faithfulness","groundedness","citation_support"],"strict_json":true}'
+fi
+
+qag_json=""
+if [ "$ENABLE_QAG" = "true" ]; then
+  qag_json=',"qag":{"provider":"'"$(json_escape "$JUDGE_PROVIDER")"'","model":"'"$(json_escape "$JUDGE_MODEL")"'","strict_json":true}'
+fi
+
+eval_payload='{"dataset_id":"'"$(json_escape "$dataset_id")"'","knowledge_base_id":"'"$(json_escape "$kb_id")"'","profile":"'"$(json_escape "$PROFILE")"'","top_k":'"$TOP_K$judge_json$qag_json"'}'
+eval_response="$(request_json POST /v1/evaluations "$eval_payload" "$token")"
+eval_id="$(printf '%s\n' "$eval_response" | extract_json_string id)"
 save_if_not_empty "$eval_id" "$EVAL_ID_FILE"
 [ "$eval_id" = "" ] || info "saved evaluation id to $EVAL_ID_FILE"
-info "response metrics include answer_accuracy, pairwise_accuracy as the primary quality metric, and retrieval diagnostics: ndcg_at_k, recall_at_k, mrr, map, coverage, retrieval_failure_rate, redundancy_rate, alpha_ndcg, aspect_coverage"
-printf '%s
-' "$eval_response"
+info "response metrics include answer_accuracy, pairwise_accuracy, optional judge/QAG metrics, and retrieval diagnostics: ndcg_at_k, recall_at_k, mrr, map, coverage, retrieval_failure_rate, redundancy_rate, alpha_ndcg, aspect_coverage"
+printf '%s\n' "$eval_response"

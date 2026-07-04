@@ -15,6 +15,7 @@ import (
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/config"
 	"github.com/shikanon/orag/internal/dataset"
+	evalpkg "github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
@@ -555,6 +556,228 @@ func TestDatasetItemEvaluationAndOptimizationUseTokenTenant(t *testing.T) {
 	resp = performJSON(h, "POST", "/v1/evaluations", evalBody, tenantAToken)
 	if resp.Code != 202 {
 		t.Fatalf("tenant evaluation status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
+func TestGetEvaluationIncludesItemsJudgeAndPairwiseDetails(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	app.RAG.Pipeline = &countingPipeline{resp: rag.QueryResponse{
+		Answer:      "qdrant answer",
+		CacheStatus: "miss",
+		LatencyMS:   5,
+		RetrievedChunks: []kb.SearchResult{{
+			Chunk: kb.Chunk{ID: "chk_1", DocumentID: "doc_1", Content: "qdrant evidence"},
+		}},
+		Citations: []rag.Citation{{ChunkID: "chk_1", DocumentID: "doc_1"}},
+	}}
+	app.Eval.Judge = httpFakeJudge{}
+	app.Eval.QAG = httpFakeQAGJudge{}
+
+	token := loginToken(t, h)
+	ds, err := app.Datasets.Create(ctx, "tenant_default", "judge-http", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Datasets.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
+		Query:            "qdrant",
+		GroundTruth:      "qdrant",
+		RelevantDocIDs:   []string{"doc_1"},
+		ExpectedEvidence: []string{"qdrant evidence"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := performJSON(h, "POST", "/v1/evaluations", `{"dataset_id":"`+ds.ID+`","knowledge_base_id":"kb_default","profile":"realtime","judge":{"provider":"test","model":"judge"},"qag":{"provider":"test","model":"qag"}}`, token)
+	if resp.Code != 202 {
+		t.Fatalf("evaluation status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" {
+		t.Fatalf("evaluation response missing id: %s", resp.Body)
+	}
+
+	resp = performJSON(h, "GET", "/v1/evaluations/"+created.ID+"?include_items=true&include_judge=true&include_pairwise=true", "", token)
+	if resp.Code != 200 {
+		t.Fatalf("detail status = %d body=%s", resp.Code, resp.Body)
+	}
+	var detail evalpkg.EvaluationDetail
+	if err := json.Unmarshal([]byte(resp.Body), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.Run.ID != created.ID || len(detail.Items) != 1 {
+		t.Fatalf("detail run/items = %#v", detail)
+	}
+	if len(detail.JudgeRuns) != 2 || len(detail.JudgeResults) != 2 {
+		t.Fatalf("judge detail = runs:%#v results:%#v", detail.JudgeRuns, detail.JudgeResults)
+	}
+	if detail.JudgeResults[0].RawResponse == "" || detail.JudgeResults[0].TokenUsage.TotalTokens == 0 {
+		t.Fatalf("judge result missing raw/token: %#v", detail.JudgeResults)
+	}
+	if detail.Items[0].Metrics["qag_score"] != 1 {
+		t.Fatalf("item metrics = %#v, want qag_score", detail.Items[0].Metrics)
+	}
+}
+
+func TestGetEvaluationDefaultReturnsSummaryOnly(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	token := loginToken(t, h)
+	ds, err := app.Datasets.Create(ctx, "tenant_default", "summary-only", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Datasets.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{Query: "q", GroundTruth: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	app.RAG.Pipeline = &countingPipeline{resp: rag.QueryResponse{Answer: "a", CacheStatus: "miss"}}
+
+	resp := performJSON(h, "POST", "/v1/evaluations", `{"dataset_id":"`+ds.ID+`","knowledge_base_id":"kb_default","profile":"realtime"}`, token)
+	if resp.Code != 202 {
+		t.Fatalf("evaluation status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+	resp = performJSON(h, "GET", "/v1/evaluations/"+created.ID, "", token)
+	if resp.Code != 200 {
+		t.Fatalf("summary status = %d body=%s", resp.Code, resp.Body)
+	}
+	if strings.Contains(resp.Body, `"items"`) || strings.Contains(resp.Body, `"judge_results"`) {
+		t.Fatalf("default evaluation response leaked details: %s", resp.Body)
+	}
+}
+
+func TestOptimizationAsyncHTTPLifecycle(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	app.Optimizer.DisableAutoStart = true
+	app.RAG.Pipeline = &countingPipeline{resp: rag.QueryResponse{Answer: "Qdrant", CacheStatus: "miss", LatencyMS: 7}}
+
+	token := loginToken(t, h)
+	ds, err := app.Datasets.Create(ctx, "tenant_default", "async-optimizer", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Datasets.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{Query: "vector store?", GroundTruth: "Qdrant"}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{
+		"dataset_id":"` + ds.ID + `",
+		"knowledge_base_id":"kb_default",
+		"profile":"realtime",
+		"objective":{"maximize":"pairwise_accuracy"},
+		"search_space":{"retrieval":{"dense_top_k":[1,2]}},
+		"search":{"strategy":"grid","max_candidates":2},
+		"budget":{"max_judge_calls":3},
+		"selection_split":"eval",
+		"holdout_split":"holdout"
+	}`
+	resp := performJSON(h, "POST", "/v1/optimizations", body, token)
+	if resp.Code != 202 {
+		t.Fatalf("submit status = %d body=%s", resp.Code, resp.Body)
+	}
+	var accepted struct {
+		RunID     string `json:"run_id"`
+		Status    string `json:"status"`
+		PollURL   string `json:"poll_url"`
+		CancelURL string `json:"cancel_url"`
+		ResumeURL string `json:"resume_url"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &accepted); err != nil {
+		t.Fatal(err)
+	}
+	if accepted.RunID == "" || accepted.Status != "queued" || accepted.PollURL == "" || accepted.CancelURL == "" || accepted.ResumeURL == "" {
+		t.Fatalf("unexpected accepted response: %#v body=%s", accepted, resp.Body)
+	}
+
+	resp = performJSON(h, "GET", accepted.PollURL, "", token)
+	if resp.Code != 200 {
+		t.Fatalf("get status = %d body=%s", resp.Code, resp.Body)
+	}
+	var status struct {
+		Run struct {
+			ID                    string `json:"id"`
+			Status                string `json:"status"`
+			SampledCandidateCount int    `json:"sampled_candidate_count"`
+			Objective             struct {
+				Maximize string `json:"maximize"`
+			} `json:"objective"`
+			Runner map[string]any `json:"runner"`
+		} `json:"run"`
+		Candidates []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+			Config struct {
+				Retrieval struct {
+					DenseTopK int `json:"dense_top_k"`
+				} `json:"retrieval"`
+			} `json:"config"`
+		} `json:"candidates"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Run.ID != accepted.RunID || status.Run.Status != "queued" || status.Run.SampledCandidateCount != 2 || len(status.Candidates) != 2 {
+		t.Fatalf("unexpected optimization status: %#v body=%s", status, resp.Body)
+	}
+	if status.Run.Objective.Maximize != "pairwise_accuracy" || status.Run.Runner["type"] != "internal_rag" {
+		t.Fatalf("missing objective/runner metadata: %#v", status.Run)
+	}
+
+	resp = performJSON(h, "POST", accepted.CancelURL, `{"reason":"user requested"}`, token)
+	if resp.Code != 202 || !strings.Contains(resp.Body, `"status":"canceling"`) {
+		t.Fatalf("cancel status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "POST", accepted.ResumeURL, `{}`, token)
+	if resp.Code != 202 || !strings.Contains(resp.Body, `"status":"queued"`) {
+		t.Fatalf("resume status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
+func TestOptimizationAcceptsLegacyProfilesTopKsShortcut(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	app.Optimizer.DisableAutoStart = true
+
+	token := loginToken(t, h)
+	ds, err := app.Datasets.Create(ctx, "tenant_default", "legacy-optimizer", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Datasets.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{Query: "q", GroundTruth: "a"}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := performJSON(h, "POST", "/v1/optimizations", `{"dataset_id":"`+ds.ID+`","knowledge_base_id":"kb_default","profiles":["high_precision"],"top_ks":[3,5]}`, token)
+	if resp.Code != 202 {
+		t.Fatalf("legacy submit status = %d body=%s", resp.Code, resp.Body)
+	}
+	var accepted struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &accepted); err != nil {
+		t.Fatal(err)
+	}
+	resp = performJSON(h, "GET", "/v1/optimizations/"+accepted.RunID, "", token)
+	if resp.Code != 200 {
+		t.Fatalf("legacy status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"profile":"high_precision"`) || !strings.Contains(resp.Body, `"dense_top_k":3`) || !strings.Contains(resp.Body, `"dense_top_k":5`) {
+		t.Fatalf("legacy shortcut did not map profile/top_ks into async run: %s", resp.Body)
 	}
 }
 
@@ -1140,4 +1363,33 @@ type failingPipeline struct {
 
 func (p failingPipeline) Invoke(context.Context, rag.QueryRequest) (rag.QueryResponse, error) {
 	return rag.QueryResponse{}, p.err
+}
+
+type httpFakeJudge struct{}
+
+func (httpFakeJudge) Judge(_ context.Context, input evalpkg.JudgeInput) (evalpkg.JudgeOutput, error) {
+	return evalpkg.JudgeOutput{
+		Scores:      map[string]float64{"faithfulness": 1},
+		Labels:      map[string]string{"faithfulness": "good"},
+		Pass:        true,
+		Rationale:   input.Query,
+		RawResponse: `{"scores":{"faithfulness":1},"pass":true}`,
+		ParsedJSON:  map[string]any{"scores": map[string]any{"faithfulness": float64(1)}},
+		TokenUsage:  evalpkg.TokenUsage{PromptTokens: 2, CompletionTokens: 1, TotalTokens: 3},
+		CostUSD:     0.01,
+	}, nil
+}
+
+type httpFakeQAGJudge struct{}
+
+func (httpFakeQAGJudge) ScoreQAG(_ context.Context, input evalpkg.JudgeInput) (evalpkg.QAGOutput, error) {
+	return evalpkg.QAGOutput{
+		Score:       1,
+		Metrics:     map[string]float64{"qag_score": 1, "qag_claim_coverage": 1, "qag_question_count": 1, "qag_unverifiable_rate": 0},
+		Claims:      []evalpkg.QAGClaim{{Claim: input.Answer, Verdict: "supported"}},
+		RawResponse: `{"score":1}`,
+		ParsedJSON:  map[string]any{"score": float64(1)},
+		TokenUsage:  evalpkg.TokenUsage{PromptTokens: 2, CompletionTokens: 2, TotalTokens: 4},
+		CostUSD:     0.02,
+	}, nil
 }

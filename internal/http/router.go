@@ -18,6 +18,7 @@ import (
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
+	"github.com/shikanon/orag/internal/optimizer"
 	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
@@ -66,6 +67,8 @@ func (s *Server) Hertz() *server.Hertz {
 	v1.POST("/evaluations", s.runEvaluation)
 	v1.GET("/evaluations/:id", s.getEvaluation)
 	v1.POST("/optimizations", s.optimize)
+	v1.GET("/optimizations/:id", s.getOptimization)
+	v1.POST("/optimizations/*action", s.optimizationAction)
 	return h
 }
 
@@ -470,6 +473,24 @@ func (s *Server) runEvaluation(ctx context.Context, c *app.RequestContext) {
 }
 
 func (s *Server) getEvaluation(ctx context.Context, c *app.RequestContext) {
+	options := eval.EvaluationDetailOptions{
+		IncludeItems:    queryBool(c, "include_items"),
+		IncludeJudge:    queryBool(c, "include_judge"),
+		IncludePairwise: queryBool(c, "include_pairwise"),
+	}
+	if options.IncludeItems || options.IncludeJudge || options.IncludePairwise {
+		detail, ok, err := s.App.Eval.GetDetail(ctx, tenantID(c), c.Param("id"), options)
+		if err != nil {
+			writeError(c, consts.StatusInternalServerError, "evaluation_lookup_failed", err.Error())
+			return
+		}
+		if !ok {
+			writeError(c, consts.StatusNotFound, "evaluation_not_found", "evaluation not found")
+			return
+		}
+		c.JSON(consts.StatusOK, detail)
+		return
+	}
 	result, ok, err := s.App.Eval.Get(ctx, tenantID(c), c.Param("id"))
 	if err != nil {
 		writeError(c, consts.StatusInternalServerError, "evaluation_lookup_failed", err.Error())
@@ -482,22 +503,352 @@ func (s *Server) getEvaluation(ctx context.Context, c *app.RequestContext) {
 	c.JSON(consts.StatusOK, result)
 }
 
+func queryBool(c *app.RequestContext, key string) bool {
+	value := strings.ToLower(strings.TrimSpace(string(c.QueryArgs().Peek(key))))
+	return value == "true" || value == "1" || value == "yes"
+}
+
+type optimizeRequest struct {
+	DatasetID           string                  `json:"dataset_id"`
+	KnowledgeBaseID     string                  `json:"knowledge_base_id"`
+	Objective           optimizer.ObjectiveSpec `json:"objective,omitempty"`
+	SearchSpace         optimizer.SearchSpace   `json:"search_space,omitempty"`
+	Search              optimizer.SearchSpec    `json:"search,omitempty"`
+	Budget              optimizer.Budget        `json:"budget,omitempty"`
+	Profile             rag.Profile             `json:"profile,omitempty"`
+	TopK                int                     `json:"top_k,omitempty"`
+	NamespaceTTLSeconds int                     `json:"namespace_ttl_seconds,omitempty"`
+	SelectionSplit      string                  `json:"selection_split,omitempty"`
+	HoldoutSplit        string                  `json:"holdout_split,omitempty"`
+	Runner              map[string]any          `json:"runner,omitempty"`
+	Profiles            []rag.Profile           `json:"profiles,omitempty"`
+	TopKs               []int                   `json:"top_ks,omitempty"`
+}
+
+type optimizationAcceptedResponse struct {
+	RunID     string `json:"run_id"`
+	Status    string `json:"status"`
+	PollURL   string `json:"poll_url"`
+	CancelURL string `json:"cancel_url"`
+	ResumeURL string `json:"resume_url"`
+}
+
+type optimizationStatusResponse struct {
+	Run        optimizationRunResponse         `json:"run"`
+	Candidates []optimizationCandidateResponse `json:"candidates"`
+}
+
+type optimizationRunResponse struct {
+	ID                      string                   `json:"id"`
+	DatasetID               string                   `json:"dataset_id"`
+	KnowledgeBaseID         string                   `json:"knowledge_base_id"`
+	Objective               optimizer.ObjectiveSpec  `json:"objective"`
+	SearchSpace             optimizer.SearchSpace    `json:"search_space"`
+	Runner                  map[string]any           `json:"runner,omitempty"`
+	Status                  optimizer.RunStatus      `json:"status"`
+	StatusReason            string                   `json:"status_reason,omitempty"`
+	BestCandidateID         string                   `json:"best_candidate_id,omitempty"`
+	HoldoutCandidateID      string                   `json:"holdout_candidate_id,omitempty"`
+	SamplingStrategy        optimizer.SearchStrategy `json:"sampling_strategy"`
+	SearchSpaceSize         int64                    `json:"search_space_size"`
+	SampledCandidateCount   int                      `json:"sampled_candidate_count"`
+	CompletedCandidateCount int                      `json:"completed_candidate_count"`
+	Checkpoint              optimizer.Checkpoint     `json:"checkpoint"`
+	CostUSD                 float64                  `json:"cost_usd,omitempty"`
+	CostBudgetUSD           *float64                 `json:"cost_budget_usd,omitempty"`
+	CreatedAt               time.Time                `json:"created_at"`
+	UpdatedAt               time.Time                `json:"updated_at"`
+}
+
+type optimizationCandidateResponse struct {
+	ID                string                    `json:"id"`
+	OptimizationRunID string                    `json:"optimization_run_id"`
+	Config            optimizer.CandidateConfig `json:"config"`
+	Status            optimizer.CandidateStatus `json:"status"`
+	EvaluationRunID   string                    `json:"evaluation_run_id,omitempty"`
+	JudgeRunID        string                    `json:"judge_run_id,omitempty"`
+	ObjectiveScore    float64                   `json:"objective_score,omitempty"`
+	HoldoutScore      *float64                  `json:"holdout_score,omitempty"`
+	Confidence        map[string]float64        `json:"confidence,omitempty"`
+	Metrics           map[string]float64        `json:"metrics,omitempty"`
+	TokenUsage        optimizer.TokenUsage      `json:"token_usage,omitempty"`
+	CostUSD           float64                   `json:"cost_usd,omitempty"`
+	Artifacts         map[string]any            `json:"artifacts,omitempty"`
+	TempNamespaces    []optimizer.TempNamespace `json:"temp_namespaces,omitempty"`
+	CleanupStatus     optimizer.CleanupStatus   `json:"cleanup_status,omitempty"`
+	ExpiresAt         *time.Time                `json:"expires_at,omitempty"`
+	Error             string                    `json:"error,omitempty"`
+	CreatedAt         time.Time                 `json:"created_at"`
+	UpdatedAt         time.Time                 `json:"updated_at"`
+}
+
 func (s *Server) optimize(ctx context.Context, c *app.RequestContext) {
-	var req eval.OptimizeRequest
+	var req optimizeRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	req.TenantID = tenantID(c)
-	result, err := eval.Optimizer{Runner: s.App.Eval}.Optimize(ctx, req)
-	if err != nil {
-		if errors.Is(err, dataset.ErrDatasetNotFound) {
-			writeDatasetNotFound(c)
-			return
-		}
-		writeError(c, consts.StatusInternalServerError, "optimization_failed", err.Error())
+	submitReq, ok := s.optimizationSubmitRequest(ctx, c, req)
+	if !ok {
 		return
 	}
-	c.JSON(consts.StatusAccepted, result)
+	run, err := s.App.Optimizer.Submit(ctx, submitReq)
+	if err != nil {
+		writeOptimizationError(c, err)
+		return
+	}
+	c.JSON(consts.StatusAccepted, optimizationAccepted(run.ID, run.Status))
+}
+
+func (s *Server) getOptimization(ctx context.Context, c *app.RequestContext) {
+	status, ok, err := s.App.Optimizer.Get(ctx, tenantID(c), c.Param("id"))
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "optimization_lookup_failed", err.Error())
+		return
+	}
+	if !ok {
+		writeOptimizationNotFound(c)
+		return
+	}
+	c.JSON(consts.StatusOK, optimizationStatus(status))
+}
+
+func (s *Server) optimizationAction(ctx context.Context, c *app.RequestContext) {
+	switch action := optimizationActionName(c); action {
+	case "cancel":
+		s.cancelOptimization(ctx, c)
+	case "resume":
+		s.resumeOptimization(ctx, c)
+	default:
+		writeError(c, consts.StatusNotFound, "optimization_action_not_found", "optimization action not found")
+	}
+}
+
+func (s *Server) cancelOptimization(ctx context.Context, c *app.RequestContext) {
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if len(c.Request.Body()) > 0 && !bindJSON(c, &req) {
+		return
+	}
+	runID := optimizationActionID(c, "cancel")
+	run, err := s.App.Optimizer.Cancel(ctx, tenantID(c), runID, req.Reason)
+	if err != nil {
+		writeOptimizationError(c, err)
+		return
+	}
+	c.JSON(consts.StatusAccepted, optimizationAccepted(run.ID, run.Status))
+}
+
+func (s *Server) resumeOptimization(ctx context.Context, c *app.RequestContext) {
+	runID := optimizationActionID(c, "resume")
+	status, ok, err := s.App.Optimizer.Get(ctx, tenantID(c), runID)
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "optimization_lookup_failed", err.Error())
+		return
+	}
+	if !ok {
+		writeOptimizationNotFound(c)
+		return
+	}
+	req := optimizeRequest{
+		DatasetID:       status.Run.DatasetID,
+		KnowledgeBaseID: status.Run.KnowledgeBaseID,
+		Objective:       status.Run.Objective,
+		SearchSpace:     status.Run.SearchSpace,
+		Runner:          status.Run.Runner,
+	}
+	if len(c.Request.Body()) > 0 && !bindJSON(c, &req) {
+		return
+	}
+	submitReq, ok := s.optimizationSubmitRequest(ctx, c, req)
+	if !ok {
+		return
+	}
+	run, err := s.App.Optimizer.Resume(ctx, tenantID(c), runID, submitReq)
+	if err != nil {
+		writeOptimizationError(c, err)
+		return
+	}
+	c.JSON(consts.StatusAccepted, optimizationAccepted(run.ID, run.Status))
+}
+
+func (s *Server) optimizationSubmitRequest(ctx context.Context, c *app.RequestContext, req optimizeRequest) (optimizer.SubmitRequest, bool) {
+	if strings.TrimSpace(req.DatasetID) == "" {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "dataset_id is required")
+		return optimizer.SubmitRequest{}, false
+	}
+	if strings.TrimSpace(req.KnowledgeBaseID) == "" {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "knowledge_base_id is required")
+		return optimizer.SubmitRequest{}, false
+	}
+	if _, ok, err := s.App.Datasets.Get(ctx, tenantID(c), req.DatasetID); err != nil {
+		writeDatasetError(c, "dataset_lookup_failed", err)
+		return optimizer.SubmitRequest{}, false
+	} else if !ok {
+		writeDatasetNotFound(c)
+		return optimizer.SubmitRequest{}, false
+	}
+	if !s.requireKnowledgeBase(c, req.KnowledgeBaseID) {
+		return optimizer.SubmitRequest{}, false
+	}
+	req.applyLegacyShortcutDefaults()
+	if req.Objective.Maximize == "" {
+		req.Objective.Maximize = eval.PrimaryMetricPairwiseAccuracy
+	}
+	if req.Profile == "" && len(req.Profiles) > 0 {
+		req.Profile = req.Profiles[0]
+	}
+	if req.Profile == "" {
+		req.Profile = rag.ProfileRealtime
+	}
+	if req.TopK <= 0 && len(req.TopKs) > 0 {
+		req.TopK = req.TopKs[0]
+	}
+	runner := req.Runner
+	if runner == nil {
+		runner = map[string]any{}
+	}
+	runner["type"] = "internal_rag"
+	runner["profile"] = string(req.Profile)
+	if req.TopK > 0 {
+		runner["top_k"] = req.TopK
+	}
+	return optimizer.SubmitRequest{
+		TenantID:        tenantID(c),
+		DatasetID:       req.DatasetID,
+		KnowledgeBaseID: req.KnowledgeBaseID,
+		Objective:       req.Objective,
+		SearchSpace:     req.SearchSpace,
+		Search:          req.Search,
+		Budget:          req.Budget,
+		Profile:         req.Profile,
+		TopK:            req.TopK,
+		NamespaceTTL:    time.Duration(req.NamespaceTTLSeconds) * time.Second,
+		SelectionSplit:  req.SelectionSplit,
+		HoldoutSplit:    req.HoldoutSplit,
+		Runner:          runner,
+	}, true
+}
+
+func (req *optimizeRequest) applyLegacyShortcutDefaults() {
+	if len(req.SearchSpace.Retrieval.DenseTopK) == 0 && len(req.TopKs) > 0 {
+		req.SearchSpace.Retrieval.DenseTopK = append([]int(nil), req.TopKs...)
+	}
+	if len(req.SearchSpace.Retrieval.DenseTopK) == 0 && req.TopK > 0 {
+		req.SearchSpace.Retrieval.DenseTopK = []int{req.TopK}
+	}
+	if len(req.SearchSpace.Retrieval.DenseTopK) == 0 {
+		req.SearchSpace.Retrieval.DenseTopK = []int{8}
+	}
+}
+
+func optimizationAccepted(runID string, status optimizer.RunStatus) optimizationAcceptedResponse {
+	return optimizationAcceptedResponse{
+		RunID:     runID,
+		Status:    string(status),
+		PollURL:   "/v1/optimizations/" + runID,
+		CancelURL: "/v1/optimizations/" + runID + ":cancel",
+		ResumeURL: "/v1/optimizations/" + runID + ":resume",
+	}
+}
+
+func optimizationStatus(status optimizer.OptimizationStatus) optimizationStatusResponse {
+	candidates := make([]optimizationCandidateResponse, 0, len(status.Candidates))
+	for _, candidate := range status.Candidates {
+		candidates = append(candidates, optimizationCandidateResponse{
+			ID:                candidate.ID,
+			OptimizationRunID: candidate.OptimizationRunID,
+			Config:            candidate.Config,
+			Status:            candidate.Status,
+			EvaluationRunID:   candidate.EvaluationRunID,
+			JudgeRunID:        candidate.JudgeRunID,
+			ObjectiveScore:    candidate.ObjectiveScore,
+			HoldoutScore:      candidate.HoldoutScore,
+			Confidence:        candidate.Confidence,
+			Metrics:           candidate.Metrics,
+			TokenUsage:        candidate.TokenUsage,
+			CostUSD:           candidate.CostUSD,
+			Artifacts:         candidate.Artifacts,
+			TempNamespaces:    candidate.TempNamespaces,
+			CleanupStatus:     candidate.CleanupStatus,
+			ExpiresAt:         candidate.ExpiresAt,
+			Error:             candidate.Error,
+			CreatedAt:         candidate.CreatedAt,
+			UpdatedAt:         candidate.UpdatedAt,
+		})
+	}
+	run := status.Run
+	return optimizationStatusResponse{
+		Run: optimizationRunResponse{
+			ID:                      run.ID,
+			DatasetID:               run.DatasetID,
+			KnowledgeBaseID:         run.KnowledgeBaseID,
+			Objective:               run.Objective,
+			SearchSpace:             run.SearchSpace,
+			Runner:                  run.Runner,
+			Status:                  run.Status,
+			StatusReason:            run.StatusReason,
+			BestCandidateID:         run.BestCandidateID,
+			HoldoutCandidateID:      run.HoldoutCandidateID,
+			SamplingStrategy:        run.SamplingStrategy,
+			SearchSpaceSize:         run.SearchSpaceSize,
+			SampledCandidateCount:   run.SampledCandidateCount,
+			CompletedCandidateCount: run.CompletedCandidateCount,
+			Checkpoint:              run.Checkpoint,
+			CostUSD:                 run.CostUSD,
+			CostBudgetUSD:           run.CostBudgetUSD,
+			CreatedAt:               run.CreatedAt,
+			UpdatedAt:               run.UpdatedAt,
+		},
+		Candidates: candidates,
+	}
+}
+
+func optimizationActionID(c *app.RequestContext, action string) string {
+	id := c.Param("id")
+	if id != "" {
+		return strings.TrimSuffix(id, ":"+action)
+	}
+	path := strings.TrimPrefix(string(c.Path()), "/v1/optimizations/")
+	return strings.TrimSuffix(path, ":"+action)
+}
+
+func optimizationActionName(c *app.RequestContext) string {
+	action := c.Param("action")
+	if action == "" {
+		action = strings.TrimPrefix(string(c.Path()), "/v1/optimizations/")
+	}
+	action = strings.TrimPrefix(action, "/")
+	if strings.HasSuffix(action, ":cancel") {
+		return "cancel"
+	}
+	if strings.HasSuffix(action, ":resume") {
+		return "resume"
+	}
+	return ""
+}
+
+func writeOptimizationError(c *app.RequestContext, err error) {
+	if errors.Is(err, dataset.ErrDatasetNotFound) {
+		writeDatasetNotFound(c)
+		return
+	}
+	if errors.Is(err, optimizer.ErrOptimizationNotFound) {
+		writeOptimizationNotFound(c)
+		return
+	}
+	switch {
+	case apperrors.IsCode(err, apperrors.CodeValidation):
+		writeError(c, consts.StatusBadRequest, "invalid_request", err.Error())
+	case apperrors.IsCode(err, apperrors.CodeNotFound):
+		writeError(c, consts.StatusNotFound, "not_found", err.Error())
+	default:
+		writeError(c, consts.StatusInternalServerError, "optimization_failed", err.Error())
+	}
+}
+
+func writeOptimizationNotFound(c *app.RequestContext) {
+	writeError(c, consts.StatusNotFound, "optimization_not_found", "optimization run not found")
 }
 
 func writeDatasetError(c *app.RequestContext, fallbackCode string, err error) {

@@ -10,6 +10,8 @@ KB_ID_FILE="$STATE_DIR/kb_id"
 DATASET_ID_FILE="$STATE_DIR/dataset_id"
 DOCUMENT_ID_FILE="$STATE_DIR/document_id"
 JOB_ID_FILE="$STATE_DIR/job_id"
+EVAL_ID_FILE="$STATE_DIR/evaluation_id"
+OPTIMIZATION_ID_FILE="$STATE_DIR/optimization_id"
 
 mkdir -p "$STATE_DIR"
 
@@ -51,4 +53,27 @@ get_kb_id() {
   fi
   printf '%s\n' "missing KB_ID; run examples/curl/10_create_kb.sh first" >&2
   exit 1
+}
+
+info() {
+  printf '%s\n' "$*" >&2
+}
+
+save_if_not_empty() {
+  value="$1"
+  file="$2"
+  if [ "$value" != "" ]; then
+    printf '%s\n' "$value" > "$file"
+  fi
+}
+
+request_json() {
+  method="$1"
+  path="$2"
+  body="$3"
+  token="$4"
+  curl -sS -X "$method" "$BASE_URL$path" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d "$body"
 }

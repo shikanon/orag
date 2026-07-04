@@ -72,6 +72,9 @@ func (o Optimizer) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeR
 			if err != nil {
 				return OptimizeResult{}, err
 			}
+			if err := ValidateMetricMap(run.Metrics); err != nil {
+				return OptimizeResult{}, err
+			}
 			out.Candidates = append(out.Candidates, candidateFromRun(profile, topK, run))
 		}
 	}

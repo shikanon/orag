@@ -10,10 +10,11 @@
 | `examples/curl/10_create_kb.sh` | `POST /v1/knowledge-bases` | 使用 `KB_NAME`、`KB_DESCRIPTION`，写入 `.orag-demo/kb_id`。 |
 | `examples/curl/20_upload_doc.sh` | `POST /v1/knowledge-bases/{id}/documents:import` | 使用 `DOC_NAME`、`DOC_SOURCE_URI`、`DOC_CONTENT`，写入 `.orag-demo/document_id` 和 `.orag-demo/job_id`。 |
 | `examples/curl/30_query.sh` | `POST /v1/query` | 使用 `QUERY`、`PROFILE`，默认查询 `realtime` profile。 |
-| `examples/curl/40_eval.sh` | `POST /v1/datasets`、`POST /v1/datasets/{id}/items`、`POST /v1/evaluations` | 使用 `DATASET_NAME`、`DATASET_KIND`、`EVAL_QUERY`、`GROUND_TRUTH`、`PROFILE`、`TOP_K`。 |
+| `examples/curl/40_eval.sh` | `POST /v1/datasets`、`POST /v1/datasets/{id}/items`、`POST /v1/evaluations` | 使用 `DATASET_NAME`、`DATASET_KIND`、`EVAL_QUERY`、`GROUND_TRUTH`、`PROFILE`、`TOP_K`；可用 `ENABLE_JUDGE=true`、`ENABLE_QAG=true` 附加 Judge/QAG 配置。 |
+| `examples/curl/50_optimize.sh` | `POST /v1/optimizations`、`GET /v1/optimizations/{id}` | 提交目标驱动异步优化 run，保存 `.orag-demo/optimization_id` 并轮询状态。 |
 | `examples/curl/lib.sh` | 无直接业务端点 | 提供 `BASE_URL`、`.orag-demo/` 状态文件、`TOKEN`/`KB_ID` 覆盖和简单 JSON 转义。 |
 
-未被 curl 脚本覆盖但已实现的接口包括：`GET /v1/knowledge-bases`、`GET /v1/knowledge-bases/{id}`、`DELETE /v1/knowledge-bases/{id}`、`POST /v1/knowledge-bases/{id}/documents`、`GET /v1/ingestion-jobs/{id}`、`POST /v1/query:stream`、`GET /v1/evaluations/{id}` 和 `POST /v1/optimizations`。
+未被 curl 脚本覆盖但已实现的接口包括：`GET /v1/knowledge-bases`、`GET /v1/knowledge-bases/{id}`、`DELETE /v1/knowledge-bases/{id}`、`POST /v1/knowledge-bases/{id}/documents`、`GET /v1/ingestion-jobs/{id}`、`POST /v1/query:stream`、`GET /v1/evaluations/{id}`、`POST /v1/optimizations/{id}:cancel` 和 `POST /v1/optimizations/{id}:resume`。
 
 ## 通用约定
 
@@ -544,11 +545,13 @@ POST /v1/evaluations
 }
 ```
 
-当前评估 runner 会对数据集中的每个样本调用同一条 `POST /v1/query` 背后的 RAG 查询链路，并计算运行级汇总指标：
+当前评估 runner 会对数据集中的每个样本调用同一条 `POST /v1/query` 背后的 RAG 查询链路，并计算运行级汇总指标。请求可选 `judge` 和 `qag` 配置；启用后会额外执行 LLM-as-Judge 或 QAG claim verification，并持久化 judge run、raw/parsed response、token usage 和 cost。
 
 - `answer_accuracy`：答案包含 `ground_truth` 中长度大于 3 的关键项时记为命中，citation 不会提升该指标。
 - `accuracy` / `hit_rate`：新运行中与 `answer_accuracy` 保持一致，作为兼容字段保留；历史已存运行可能没有 `answer_accuracy`、`citation_hit_rate` 或 `pairwise_accuracy`。
-- `pairwise_accuracy`：优化器主质量指标；当前未接入 pairwise judge 时由 `answer_accuracy` 填充，后续接入 A/B judge 后表示候选在成对比较中的胜出或不输比例。
+- `pairwise_accuracy`：优化器主质量指标；未执行 pairwise judge 时由 `answer_accuracy` 填充，启用成对比较后表示候选在成对比较中的胜出或不输比例。
+- `faithfulness`、`groundedness`、`citation_support`、`hallucination`、`completeness` 等 Judge 指标：仅当请求包含 `judge` 时产生，分数和理由会进入评估明细。
+- `qag_score`、`qag_claim_coverage`、`qag_question_count`、`qag_unverifiable_rate`：仅当请求包含 `qag` 时产生，用于基于 claim 的上下文支撑验证。
 - `citation_hit_rate`：响应存在至少一个 citation 时记为 `1`，用于单独观察证据存在性。
 - `context_recall`：召回 chunk 的 `document_id` 覆盖 `relevant_doc_ids` 的比例；如果样本没有 `relevant_doc_ids`，但有召回结果，则记为 `1`。
 - `citation_precision`：citation 命中 `relevant_doc_ids` 的比例；如果样本没有 `relevant_doc_ids` 且存在 citation，则记为 `1`。
@@ -567,15 +570,17 @@ POST /v1/evaluations
 GET /v1/evaluations/{id}
 ```
 
-响应体同运行评估响应。找不到评估结果时返回 `404 evaluation_not_found`。
+默认响应体同运行评估响应。传 `include_items=true` 会返回逐样本明细；传 `include_judge=true` 会返回 Judge/QAG run 和结果；传 `include_pairwise=true` 会返回 pairwise judge 结果。找不到评估结果时返回 `404 evaluation_not_found`。
 
 ## 优化
 
-### 运行参数优化
+### 提交异步优化
 
 ```http
 POST /v1/optimizations
 ```
+
+目标驱动 optimizer 是异步任务。提交成功返回 `202 Accepted`、`run_id` 和轮询/取消/续跑 URL；调用方用 `GET /v1/optimizations/{id}` 查询状态和候选明细。
 
 请求：
 
@@ -583,78 +588,63 @@ POST /v1/optimizations
 {
   "dataset_id": "ds_xxx",
   "knowledge_base_id": "kb_xxx",
-  "profiles": ["realtime", "high_precision"],
-  "top_ks": [5, 8]
+  "profile": "realtime",
+  "objective": {
+    "maximize": "pairwise_accuracy",
+    "constraints": [
+      {"expression": "latency_p95_ms <= 1000"}
+    ],
+    "tie_breakers": [
+      {"metric": "latency_p95_ms", "direction": "asc"}
+    ]
+  },
+  "search_space": {
+    "retrieval": {
+      "dense_top_k": [5, 8]
+    }
+  },
+  "search": {
+    "strategy": "grid",
+    "max_candidates": 4
+  },
+  "budget": {
+    "max_judge_calls": 20,
+    "max_cost_usd": 1.0
+  },
+  "selection_split": "eval",
+  "holdout_split": "holdout"
 }
 ```
 
-`profiles` 和 `top_ks` 都是可选字段。未传 `profiles` 时，优化器默认尝试 `realtime` 和 `high_precision`；未传 `top_ks` 时，默认尝试 `[8]`。
+兼容旧请求：仍可提交 `profiles` 和 `top_ks`。HTTP 层会把第一个 `profiles` 值作为内部 RAG runner profile，并把 `top_ks` 映射为 `search_space.retrieval.dense_top_k`。建议新调用方直接使用 `objective` 和 `search_space`。
 
 如果 `dataset_id` 不存在或不属于当前 tenant，返回 `404 dataset_not_found`，不会创建候选评估运行。
 
-响应 `202 Accepted`：
+提交响应 `202 Accepted`：
 
 ```json
 {
-  "id": "opt_xxx",
-  "status": "completed",
-  "best": {
-    "profile": "high_precision",
-    "top_k": 8,
-    "score": 1,
-    "pairwise_accuracy": 1,
-    "ndcg_at_k": 1,
-    "recall_at_k": 1,
-    "mrr": 1,
-    "map": 1,
-    "retrieval_failure_rate": 0,
-    "redundancy_rate": 0,
-    "duplicate_count": 0,
-    "deduped_top_k_count": 1,
-    "alpha_ndcg": 1,
-    "aspect_coverage": 1,
-    "latency_p95_ms": 42,
-    "run_id": "eval_best"
-  },
-  "candidates": [
-    {
-      "profile": "realtime",
-      "top_k": 5,
-      "score": 0.8,
-      "pairwise_accuracy": 0.8,
-      "ndcg_at_k": 0.7,
-      "recall_at_k": 0.8,
-      "mrr": 1,
-      "map": 0.8,
-      "retrieval_failure_rate": 0,
-      "redundancy_rate": 0.2,
-      "duplicate_count": 1,
-      "deduped_top_k_count": 4,
-      "alpha_ndcg": 0.7,
-      "aspect_coverage": 0.8,
-      "latency_p95_ms": 30,
-      "run_id": "eval_xxx"
-    },
-    {
-      "profile": "high_precision",
-      "top_k": 8,
-      "score": 1,
-      "pairwise_accuracy": 1,
-      "ndcg_at_k": 1,
-      "recall_at_k": 1,
-      "mrr": 1,
-      "map": 1,
-      "retrieval_failure_rate": 0,
-      "redundancy_rate": 0,
-      "duplicate_count": 0,
-      "deduped_top_k_count": 8,
-      "alpha_ndcg": 1,
-      "aspect_coverage": 1,
-      "latency_p95_ms": 42,
-      "run_id": "eval_best"
-    }
-  ]
+  "run_id": "opt_xxx",
+  "status": "queued",
+  "poll_url": "/v1/optimizations/opt_xxx",
+  "cancel_url": "/v1/optimizations/opt_xxx:cancel",
+  "resume_url": "/v1/optimizations/opt_xxx:resume"
 }
 ```
 
-优化器会对 `profiles × top_ks` 做确定性网格枚举，每个候选都会运行一次评估；候选 `score` 使用该次评估的 `metrics.pairwise_accuracy`，该字段当前由 `answer_accuracy` 填充，历史运行缺失时回退到 `answer_accuracy`/`accuracy`。Recall@k、NDCG@k、MRR、MAP、失败率、冗余度、多样性和 `latency_p95_ms` 是诊断字段，用于解释主指标收益是否值得额外召回复杂度和尾延迟成本。当前优化结果即时返回，不额外提供 `GET /v1/optimizations/{id}` 查询端点。
+状态查询：
+
+```http
+GET /v1/optimizations/{id}
+```
+
+响应包含 `run` 和 `candidates`。`run.status` 取值包括 `queued`、`running`、`completed`、`canceling`、`canceled`、`budget_stopped`、`failed`；每个 candidate 包含配置、状态、关联 `evaluation_run_id`、指标、objective score、holdout score、token/cost 和临时 namespace 清理状态。
+
+取消与续跑：
+
+```http
+POST /v1/optimizations/{id}:cancel
+POST /v1/optimizations/{id}:resume
+```
+
+取消会把 run 标记为 `canceling` 并写入 checkpoint；worker 观察到取消请求后停止调度新候选。续跑会清除取消标记，并从 checkpoint 跳过已完成候选，仅重试未完成候选。

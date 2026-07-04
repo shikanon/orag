@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -35,16 +36,48 @@ func TestRepositoryAddDatasetItemEnforcesTenant(t *testing.T) {
 
 	db.execTag = pgconn.NewCommandTag("INSERT 0 1")
 	got, err := repo.AddDatasetItem(ctx, "tenant_a", dataset.Item{
-		ID:          "dsi_2",
-		DatasetID:   "ds_a",
-		Query:       "q",
-		GroundTruth: "a",
+		ID:               "dsi_2",
+		DatasetID:        "ds_a",
+		Query:            "q",
+		GroundTruth:      "a",
+		Split:            dataset.DatasetSplitGold,
+		Weight:           2.5,
+		ExpectedEvidence: []string{"chunk_1"},
+		HumanScores:      map[string]float64{"faithfulness": 0.9},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.ID != "dsi_2" || got.DatasetID != "ds_a" {
 		t.Fatalf("created item = %#v", got)
+	}
+	for _, want := range []string{"split", "weight", "expected_evidence", "human_scores"} {
+		if !strings.Contains(db.execSQL, want) {
+			t.Fatalf("AddDatasetItem() SQL missing metadata column %q: %s", want, db.execSQL)
+		}
+	}
+	if got.Split != dataset.DatasetSplitGold || got.Weight != 2.5 {
+		t.Fatalf("created metadata = %#v", got)
+	}
+	if got := db.execArgs[7]; got != dataset.DatasetSplitGold {
+		t.Fatalf("split arg = %v, want gold", got)
+	}
+	if got := db.execArgs[8]; got != 2.5 {
+		t.Fatalf("weight arg = %v, want 2.5", got)
+	}
+	var expected []string
+	if err := json.Unmarshal(db.execArgs[9].([]byte), &expected); err != nil {
+		t.Fatal(err)
+	}
+	if len(expected) != 1 || expected[0] != "chunk_1" {
+		t.Fatalf("expected evidence JSON = %#v", expected)
+	}
+	var humanScores map[string]float64
+	if err := json.Unmarshal(db.execArgs[10].([]byte), &humanScores); err != nil {
+		t.Fatal(err)
+	}
+	if humanScores["faithfulness"] != 0.9 {
+		t.Fatalf("human scores JSON = %#v", humanScores)
 	}
 }
 
@@ -63,7 +96,7 @@ func TestRepositoryDatasetItemsEnforcesTenant(t *testing.T) {
 
 	db.row = fakeDatasetRow{values: []any{"ds_a", "tenant_a", "regression", "golden", "v1", time.Now().UTC()}}
 	db.rows = &fakePgxRows{rows: [][]any{
-		{"dsi_1", "ds_a", "q", "a", []byte(`["doc_1"]`), []byte(`[]`)},
+		{"dsi_1", "ds_a", "q", "a", []byte(`["doc_1"]`), []byte(`[]`), "gold", 1.5, []byte(`["chunk_1"]`), []byte(`{"faithfulness":0.8}`)},
 	}}
 	items, err := repo.DatasetItems(ctx, "tenant_a", "ds_a")
 	if err != nil {
@@ -75,8 +108,19 @@ func TestRepositoryDatasetItemsEnforcesTenant(t *testing.T) {
 	if !strings.Contains(db.querySQL, "JOIN datasets d ON d.id=i.dataset_id") || !strings.Contains(db.querySQL, "d.tenant_id=$1 AND i.dataset_id=$2") {
 		t.Fatalf("DatasetItems() SQL missing tenant join: %s", db.querySQL)
 	}
+	for _, want := range []string{"i.split", "i.weight", "i.expected_evidence", "i.human_scores"} {
+		if !strings.Contains(db.querySQL, want) {
+			t.Fatalf("DatasetItems() SQL missing metadata column %q: %s", want, db.querySQL)
+		}
+	}
 	if got := db.queryArgs[0]; got != "tenant_a" {
 		t.Fatalf("tenant arg = %v, want tenant_a", got)
+	}
+	if items[0].Split != dataset.DatasetSplitGold || items[0].Weight != 1.5 {
+		t.Fatalf("DatasetItems() metadata = %#v", items[0])
+	}
+	if items[0].ExpectedEvidence[0] != "chunk_1" || items[0].HumanScores["faithfulness"] != 0.8 {
+		t.Fatalf("DatasetItems() metadata JSON = %#v", items[0])
 	}
 }
 
