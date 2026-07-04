@@ -178,6 +178,9 @@ func TestFailedQdrantIngestKeepsPostgresChunksUnsearchable(t *testing.T) {
 
 func TestHTTPIngestMissingKnowledgeBaseWithPostgresQdrant(t *testing.T) {
 	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	h := oraghttp.NewServer(app).Hertz().Engine
 	token := loginHTTPToken(t, h, app.Config.Auth.AdminDefaultUsername, app.Config.Auth.AdminDefaultPassword)
 	missingKB := fmt.Sprintf("kb_missing_http_%d", time.Now().UnixNano())
@@ -185,10 +188,12 @@ func TestHTTPIngestMissingKnowledgeBaseWithPostgresQdrant(t *testing.T) {
 	status, body := performIntegrationJSON(h, "POST", "/v1/knowledge-bases/"+missingKB+"/documents:import", `{"name":"missing.md","source_uri":"integration://missing-http","content":"missing knowledge bases must return 404"}`, token)
 	assertMissingKBHTTPResponse(t, status, body)
 	assertNoStoredChunks(t, app.KBStore, missingKB)
+	assertNoPostgresIngestRows(t, ctx, app, missingKB)
 
 	status, body = performIntegrationUpload(t, h, "/v1/knowledge-bases/"+missingKB+"/documents", "missing.md", "missing knowledge bases must return 404", token)
 	assertMissingKBHTTPResponse(t, status, body)
 	assertNoStoredChunks(t, app.KBStore, missingKB)
+	assertNoPostgresIngestRows(t, ctx, app, missingKB)
 }
 
 func TestDeleteKnowledgeBaseCleansPostgresAndQdrant(t *testing.T) {
@@ -462,6 +467,15 @@ func assertNoStoredChunks(t *testing.T, store any, kbID string) {
 	}
 	if got := chunks.Chunks(testTenantID, kbID); len(got) != 0 {
 		t.Fatalf("chunks created for missing knowledge base: %#v", got)
+	}
+}
+
+func assertNoPostgresIngestRows(t *testing.T, ctx context.Context, app *core.App, kbID string) {
+	t.Helper()
+	for _, table := range []string{"ingestion_jobs", "documents", "chunks"} {
+		if count := countPostgresRows(t, ctx, app, table, kbID); count != 0 {
+			t.Fatalf("%s rows for missing knowledge base %s = %d", table, kbID, count)
+		}
 	}
 }
 
