@@ -42,6 +42,8 @@ type RunResult struct {
 	CreatedAt time.Time          `json:"created_at"`
 }
 
+const PrimaryMetricPairwiseAccuracy = "pairwise_accuracy"
+
 func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	items, err := r.Datasets.Items(ctx, req.DatasetID)
 	if err != nil {
@@ -50,7 +52,7 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	runID := id.New("eval")
 	var hits, cacheHits int
 	latencies := make([]int64, 0, len(items))
-	var contextRecallSum, citationPrecisionSum float64
+	metricSums := map[string]float64{}
 	type itemResult struct {
 		itemID  string
 		answer  string
@@ -75,9 +77,12 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		if resp.CacheStatus == "hit" {
 			cacheHits++
 		}
-		itemMetrics := ScoreItem(item, resp)
-		contextRecallSum += itemMetrics["context_recall"]
-		citationPrecisionSum += itemMetrics["citation_precision"]
+		itemMetrics := ScoreItemWithOptions(item, resp, ScoreOptions{TopK: req.TopK})
+		for name, value := range itemMetrics {
+			if shouldAggregateItemMetric(name) {
+				metricSums[name] += value
+			}
+		}
 		itemResults = append(itemResults, itemResult{itemID: item.ID, answer: resp.Answer, metrics: itemMetrics})
 	}
 	total := len(items)
@@ -86,12 +91,14 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		score = float64(hits) / float64(total)
 	}
 	metrics := map[string]float64{
-		"accuracy":           score,
-		"hit_rate":           score,
-		"context_recall":     average(contextRecallSum, total),
-		"citation_precision": average(citationPrecisionSum, total),
-		"latency_p95_ms":     float64(p95(latencies)),
-		"cache_hit_rate":     average(float64(cacheHits), total),
+		"accuracy":          score,
+		"hit_rate":          score,
+		PrimaryMetricPairwiseAccuracy: score,
+		"latency_p95_ms":    float64(p95(latencies)),
+		"cache_hit_rate":    average(float64(cacheHits), total),
+	}
+	for name, sum := range metricSums {
+		metrics[name] = average(sum, total)
 	}
 	result := RunResult{
 		ID:        runID,
@@ -114,6 +121,18 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		}
 	}
 	return result, nil
+}
+
+func shouldAggregateItemMetric(name string) bool {
+	switch name {
+	case "accuracy", "context_recall", "citation_precision",
+		"ndcg_at_k", "recall_at_k", "mrr", "map", "coverage", "retrieval_failure_rate",
+		"redundancy_rate", "duplicate_count", "deduped_top_k_count",
+		"alpha_ndcg", "aspect_coverage":
+		return true
+	default:
+		return false
+	}
 }
 
 func (r Runner) Get(ctx context.Context, tenantID, id string) (RunResult, bool, error) {

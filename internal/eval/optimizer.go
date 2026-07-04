@@ -2,6 +2,7 @@ package eval
 
 import (
 	"context"
+	"sort"
 
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
@@ -16,10 +17,22 @@ type OptimizeRequest struct {
 }
 
 type CandidateResult struct {
-	Profile rag.Profile `json:"profile"`
-	TopK    int         `json:"top_k"`
-	Score   float64     `json:"score"`
-	RunID   string      `json:"run_id"`
+	Profile              rag.Profile `json:"profile"`
+	TopK                 int         `json:"top_k"`
+	Score                float64     `json:"score"`
+	PairwiseAccuracy     float64     `json:"pairwise_accuracy"`
+	NDCGAtK              float64     `json:"ndcg_at_k"`
+	RecallAtK            float64     `json:"recall_at_k"`
+	MRR                  float64     `json:"mrr"`
+	MAP                  float64     `json:"map"`
+	RetrievalFailureRate float64     `json:"retrieval_failure_rate"`
+	RedundancyRate       float64     `json:"redundancy_rate"`
+	DuplicateCount       float64     `json:"duplicate_count"`
+	DedupedTopKCount     float64     `json:"deduped_top_k_count"`
+	AlphaNDCG            float64     `json:"alpha_ndcg"`
+	AspectCoverage       float64     `json:"aspect_coverage"`
+	LatencyP95MS         float64     `json:"latency_p95_ms"`
+	RunID                string      `json:"run_id"`
 }
 
 type OptimizeResult struct {
@@ -30,7 +43,11 @@ type OptimizeResult struct {
 }
 
 type Optimizer struct {
-	Runner Runner
+	Runner EvaluationRunner
+}
+
+type EvaluationRunner interface {
+	Run(ctx context.Context, req RunRequest) (RunResult, error)
 }
 
 func (o Optimizer) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeResult, error) {
@@ -55,12 +72,40 @@ func (o Optimizer) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeR
 			if err != nil {
 				return OptimizeResult{}, err
 			}
-			candidate := CandidateResult{Profile: profile, TopK: topK, Score: run.Accuracy, RunID: run.ID}
+			candidate := candidateFromRun(profile, topK, run)
 			out.Candidates = append(out.Candidates, candidate)
-			if candidate.Score >= out.Best.Score {
-				out.Best = candidate
-			}
 		}
 	}
+	sort.SliceStable(out.Candidates, func(i, j int) bool {
+		return out.Candidates[i].Score > out.Candidates[j].Score
+	})
+	if len(out.Candidates) > 0 {
+		out.Best = out.Candidates[0]
+	}
 	return out, nil
+}
+
+func candidateFromRun(profile rag.Profile, topK int, run RunResult) CandidateResult {
+	pairwiseAccuracy := run.Metrics["pairwise_accuracy"]
+	if _, ok := run.Metrics["pairwise_accuracy"]; !ok {
+		pairwiseAccuracy = run.Accuracy
+	}
+	return CandidateResult{
+		Profile:              profile,
+		TopK:                 topK,
+		Score:                pairwiseAccuracy,
+		PairwiseAccuracy:     pairwiseAccuracy,
+		NDCGAtK:              run.Metrics["ndcg_at_k"],
+		RecallAtK:            run.Metrics["recall_at_k"],
+		MRR:                  run.Metrics["mrr"],
+		MAP:                  run.Metrics["map"],
+		RetrievalFailureRate: run.Metrics["retrieval_failure_rate"],
+		RedundancyRate:       run.Metrics["redundancy_rate"],
+		DuplicateCount:       run.Metrics["duplicate_count"],
+		DedupedTopKCount:     run.Metrics["deduped_top_k_count"],
+		AlphaNDCG:            run.Metrics["alpha_ndcg"],
+		AspectCoverage:       run.Metrics["aspect_coverage"],
+		LatencyP95MS:         run.Metrics["latency_p95_ms"],
+		RunID:                run.ID,
+	}
 }

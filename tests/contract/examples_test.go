@@ -117,6 +117,25 @@ func TestExamplesCurlEndpointsMatchOpenAPI(t *testing.T) {
 	}
 }
 
+func TestEvalCurlDocumentsQualityMetrics(t *testing.T) {
+	script := readRepoFile(t, "examples/curl/40_eval.sh")
+
+	for _, want := range []string{
+		"pairwise_accuracy",
+		"primary quality metric",
+		"ndcg_at_k",
+		"recall_at_k",
+		"retrieval_failure_rate",
+		"redundancy_rate",
+		"alpha_ndcg",
+		"aspect_coverage",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("examples/curl/40_eval.sh missing quality metric hint %q", want)
+		}
+	}
+}
+
 func readExamplesReadme(t *testing.T) string {
 	t.Helper()
 

@@ -34,5 +34,5 @@ eval_response="$(request_json POST /v1/evaluations "{\"dataset_id\":\"$(json_esc
 eval_id="$(printf '%s\n' "$eval_response" | extract_json_string id)"
 save_if_not_empty "$eval_id" "$EVAL_ID_FILE"
 [ "$eval_id" = "" ] || info "saved evaluation id to $EVAL_ID_FILE"
+info "response metrics include pairwise_accuracy as the primary quality metric plus retrieval diagnostics: ndcg_at_k, recall_at_k, mrr, map, coverage, retrieval_failure_rate, redundancy_rate, alpha_ndcg, aspect_coverage"
 printf '%s\n' "$eval_response"
-

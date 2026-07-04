@@ -495,7 +495,13 @@ POST /v1/datasets/{id}/items
 {
   "query": "ORAG 使用什么向量库？",
   "ground_truth": "Qdrant",
-  "relevant_doc_ids": ["doc_xxx"]
+  "relevant_doc_ids": ["doc_xxx"],
+  "diversity_annotations": [
+    {
+      "aspect": "vector store",
+      "document_ids": ["doc_xxx"]
+    }
+  ]
 }
 ```
 
@@ -507,11 +513,17 @@ POST /v1/datasets/{id}/items
   "dataset_id": "ds_xxx",
   "query": "ORAG 使用什么向量库？",
   "ground_truth": "Qdrant",
-  "relevant_doc_ids": ["doc_xxx"]
+  "relevant_doc_ids": ["doc_xxx"],
+  "diversity_annotations": [
+    {
+      "aspect": "vector store",
+      "document_ids": ["doc_xxx"]
+    }
+  ]
 }
 ```
 
-`examples/curl/40_eval.sh` 会先创建数据集，再添加一个样本；如果 `.orag-demo/document_id` 存在，会把该文档 ID 放入 `relevant_doc_ids`。
+`relevant_doc_ids` 是检索质量和引用质量指标的主要标注来源；`diversity_annotations` 是可选多样性标注，可用 `aspect` 或 `subquestion` 绑定 `chunk_id` / `chunk_ids`、`document_id` / `document_ids` 或 `source_uri` / `source_uris`。`examples/curl/40_eval.sh` 会先创建数据集，再添加一个样本；如果 `.orag-demo/document_id` 存在，会把该文档 ID 放入 `relevant_doc_ids`。
 
 ## 评估
 
@@ -545,8 +557,20 @@ POST /v1/evaluations
   "metrics": {
     "accuracy": 1,
     "hit_rate": 1,
+    "pairwise_accuracy": 1,
     "context_recall": 1,
     "citation_precision": 1,
+    "ndcg_at_k": 1,
+    "recall_at_k": 1,
+    "mrr": 1,
+    "map": 1,
+    "coverage": 1,
+    "retrieval_failure_rate": 0,
+    "redundancy_rate": 0,
+    "duplicate_count": 0,
+    "deduped_top_k_count": 1,
+    "alpha_ndcg": 1,
+    "aspect_coverage": 1,
     "latency_p95_ms": 42,
     "cache_hit_rate": 0
   },
@@ -554,13 +578,20 @@ POST /v1/evaluations
 }
 ```
 
-当前评估 runner 会对数据集中的每个样本调用同一条 `POST /v1/query` 背后的 RAG 查询链路，并计算 rule-based 指标：
+当前评估 runner 会对数据集中的每个样本调用同一条 `POST /v1/query` 背后的 RAG 查询链路，并计算运行级汇总指标：
 
-- `accuracy` / `hit_rate`：答案包含 `ground_truth`，或响应存在 citation 时记为命中。
+- `pairwise_accuracy`：优化器主质量指标；当前未接入 pairwise judge 时由 deterministic `accuracy` 填充，后续接入 A/B judge 后表示候选在成对比较中的胜出或不输比例。
+- `accuracy` / `hit_rate`：兼容字段，答案包含 `ground_truth`，或响应存在 citation 时记为命中。
 - `context_recall`：召回 chunk 的 `document_id` 覆盖 `relevant_doc_ids` 的比例；如果样本没有 `relevant_doc_ids`，但有召回结果，则记为 `1`。
 - `citation_precision`：citation 命中 `relevant_doc_ids` 的比例；如果样本没有 `relevant_doc_ids` 且存在 citation，则记为 `1`。
+- `ndcg_at_k` / `recall_at_k` / `mrr` / `map`：基于 `relevant_doc_ids` 的 IR 排序指标；缺失标注时为 `0`。
+- `coverage` / `retrieval_failure_rate`：基于 `relevant_doc_ids` 判断是否至少召回一个相关文档；未标注时不会报失败。
+- `redundancy_rate` / `duplicate_count` / `deduped_top_k_count`：基于 chunk ID、hash/dedupe key 或规范化文本判断重复召回，不依赖人工标注。
+- `alpha_ndcg` / `aspect_coverage`：基于 `diversity_annotations` 的多样性指标；缺少有效 aspect/subquestion 标注时跳过，不参与运行级聚合。
 - `latency_p95_ms`：样本查询延迟的 p95。
 - `cache_hit_rate`：查询响应中 `cache_status=hit` 的比例。
+
+`pairwise_accuracy` 是候选排序的主指标，`accuracy` 和 `hit_rate` 保留用于向后兼容。复杂召回策略如更大的 `top_k`、高精度 profile、融合召回或 rerank 可能提升 `pairwise_accuracy`、`ndcg_at_k`、`recall_at_k`，但也可能提高 `latency_p95_ms`；线上调参时建议先按 `pairwise_accuracy` 选候选，再用 `latency_p95_ms` 约束尾延迟是否满足业务 SLO。
 
 ### 查询评估结果
 
@@ -601,6 +632,18 @@ POST /v1/optimizations
     "profile": "high_precision",
     "top_k": 8,
     "score": 1,
+    "pairwise_accuracy": 1,
+    "ndcg_at_k": 1,
+    "recall_at_k": 1,
+    "mrr": 1,
+    "map": 1,
+    "retrieval_failure_rate": 0,
+    "redundancy_rate": 0,
+    "duplicate_count": 0,
+    "deduped_top_k_count": 1,
+    "alpha_ndcg": 1,
+    "aspect_coverage": 1,
+    "latency_p95_ms": 42,
     "run_id": "eval_best"
   },
   "candidates": [
@@ -608,16 +651,40 @@ POST /v1/optimizations
       "profile": "realtime",
       "top_k": 5,
       "score": 0.8,
+      "pairwise_accuracy": 0.8,
+      "ndcg_at_k": 0.7,
+      "recall_at_k": 0.8,
+      "mrr": 1,
+      "map": 0.8,
+      "retrieval_failure_rate": 0,
+      "redundancy_rate": 0.2,
+      "duplicate_count": 1,
+      "deduped_top_k_count": 4,
+      "alpha_ndcg": 0.7,
+      "aspect_coverage": 0.8,
+      "latency_p95_ms": 30,
       "run_id": "eval_xxx"
     },
     {
       "profile": "high_precision",
       "top_k": 8,
       "score": 1,
+      "pairwise_accuracy": 1,
+      "ndcg_at_k": 1,
+      "recall_at_k": 1,
+      "mrr": 1,
+      "map": 1,
+      "retrieval_failure_rate": 0,
+      "redundancy_rate": 0,
+      "duplicate_count": 0,
+      "deduped_top_k_count": 8,
+      "alpha_ndcg": 1,
+      "aspect_coverage": 1,
+      "latency_p95_ms": 42,
       "run_id": "eval_best"
     }
   ]
 }
 ```
 
-优化器会对 `profiles × top_ks` 做确定性网格枚举，每个候选都会运行一次评估；候选 `score` 使用该次评估的 `accuracy`，`run_id` 是对应的 evaluation run ID。当前优化结果即时返回，不额外提供 `GET /v1/optimizations/{id}` 查询端点。
+优化器会对 `profiles × top_ks` 做确定性网格枚举，每个候选都会运行一次评估；候选 `score` 使用该次评估的 `metrics.pairwise_accuracy`，`pairwise_accuracy` 是显式主质量字段，`run_id` 是对应的 evaluation run ID。Recall@k、NDCG@k、MRR、MAP、失败率、冗余度、多样性和 `latency_p95_ms` 是诊断字段，用于解释主指标收益是否值得额外召回复杂度和尾延迟成本。当前优化结果即时返回，不额外提供 `GET /v1/optimizations/{id}` 查询端点。

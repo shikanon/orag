@@ -919,6 +919,11 @@ components:
     RunEvaluationResponse:
       type: object
       required: [id, dataset_id, profile, total, hit_rate, accuracy, created_at]
+      description: |
+        Evaluation run summary. `accuracy` and `hit_rate` are deterministic
+        rule-based compatibility fields. The primary optimization quality metric
+        is `metrics.pairwise_accuracy`; current rule-based runs populate it from
+        the same deterministic hit signal until pairwise judging is enabled.
       properties:
         id:
           type: string
@@ -931,17 +936,99 @@ components:
         hit_rate:
           type: number
           format: double
+          description: Backward-compatible alias for deterministic rule-based accuracy.
         accuracy:
           type: number
           format: double
+          description: Backward-compatible deterministic rule-based accuracy.
         metrics:
-          type: object
-          additionalProperties:
-            type: number
-            format: double
+          $ref: "#/components/schemas/EvaluationMetrics"
         created_at:
           type: string
           format: date-time
+    EvaluationMetrics:
+      type: object
+      description: |
+        Aggregated evaluation metrics. Retrieval quality metrics are averaged
+        across dataset items; `latency_p95_ms` is the run-level P95 latency.
+        `pairwise_accuracy` is the primary quality metric for optimization
+        ranking semantics.
+      additionalProperties:
+        type: number
+        format: double
+      properties:
+        accuracy:
+          type: number
+          format: double
+          description: Deterministic rule-based hit rate for backward compatibility.
+        hit_rate:
+          type: number
+          format: double
+          description: Alias for deterministic rule-based accuracy.
+        pairwise_accuracy:
+          type: number
+          format: double
+          description: Primary optimization quality metric; currently populated from deterministic accuracy when pairwise judging is unavailable.
+        context_recall:
+          type: number
+          format: double
+          description: Fraction of expected relevant documents observed in retrieved context.
+        citation_precision:
+          type: number
+          format: double
+          description: Fraction of citations that point to expected relevant documents.
+        ndcg_at_k:
+          type: number
+          format: double
+          description: Ranking quality normalized discounted cumulative gain at requested top_k.
+        recall_at_k:
+          type: number
+          format: double
+          description: Fraction of relevant documents retrieved within requested top_k.
+        mrr:
+          type: number
+          format: double
+          description: Mean reciprocal rank of the first relevant retrieved document.
+        map:
+          type: number
+          format: double
+          description: Mean average precision over relevant retrieved documents.
+        coverage:
+          type: number
+          format: double
+          description: Fraction of items with at least one relevant retrieved document.
+        retrieval_failure_rate:
+          type: number
+          format: double
+          description: Fraction of items with no relevant retrieved documents.
+        redundancy_rate:
+          type: number
+          format: double
+          description: Duplicate retrieved chunk ratio.
+        duplicate_count:
+          type: number
+          format: double
+          description: Average duplicate retrieved chunk count.
+        deduped_top_k_count:
+          type: number
+          format: double
+          description: Average non-duplicate retrieved chunk count.
+        alpha_ndcg:
+          type: number
+          format: double
+          description: Diversity-aware ranking quality when aspect annotations are available.
+        aspect_coverage:
+          type: number
+          format: double
+          description: Fraction of annotated aspects covered by retrieved context.
+        latency_p95_ms:
+          type: number
+          format: double
+          description: P95 end-to-end query latency in milliseconds.
+        cache_hit_rate:
+          type: number
+          format: double
+          description: Fraction of evaluation queries served from semantic cache.
     OptimizeRequest:
       type: object
       required: [dataset_id, knowledge_base_id]
@@ -960,13 +1047,55 @@ components:
             type: integer
     CandidateResult:
       type: object
-      required: [profile, top_k, score, run_id]
+      required: [profile, top_k, score, pairwise_accuracy, run_id]
+      description: |
+        Optimization candidate summary. `score` is the primary ranking score and
+        has pairwise accuracy semantics; retrieval quality fields are diagnostic
+        metrics copied from the candidate evaluation run.
       properties:
         profile:
           $ref: "#/components/schemas/Profile"
         top_k:
           type: integer
         score:
+          type: number
+          format: double
+          description: Primary ranking score; equivalent to pairwise_accuracy semantics.
+        pairwise_accuracy:
+          type: number
+          format: double
+          description: Primary optimization quality metric.
+        ndcg_at_k:
+          type: number
+          format: double
+        recall_at_k:
+          type: number
+          format: double
+        mrr:
+          type: number
+          format: double
+        map:
+          type: number
+          format: double
+        retrieval_failure_rate:
+          type: number
+          format: double
+        redundancy_rate:
+          type: number
+          format: double
+        duplicate_count:
+          type: number
+          format: double
+        deduped_top_k_count:
+          type: number
+          format: double
+        alpha_ndcg:
+          type: number
+          format: double
+        aspect_coverage:
+          type: number
+          format: double
+        latency_p95_ms:
           type: number
           format: double
         run_id:
