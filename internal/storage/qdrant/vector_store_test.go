@@ -1,6 +1,7 @@
 package qdrantstore
 
 import (
+	"context"
 	"testing"
 
 	qdrant "github.com/qdrant/go-client/qdrant"
@@ -67,6 +68,46 @@ func TestKnowledgeBaseFilterIncludesTenantAndKnowledgeBase(t *testing.T) {
 	}
 	if got["tenant_id"] != "tenant_1" || got["knowledge_base_id"] != "kb_1" {
 		t.Fatalf("unexpected filter: %#v", got)
+	}
+}
+
+func TestDocumentSourceFilterIncludesTenantKnowledgeBaseAndSource(t *testing.T) {
+	filter := documentSourceFilter("tenant_1", "kb_1", "memory://doc.md")
+	if len(filter.GetMust()) != 3 {
+		t.Fatalf("filter must conditions = %d", len(filter.GetMust()))
+	}
+	got := map[string]string{}
+	for _, cond := range filter.GetMust() {
+		field := cond.GetField()
+		got[field.GetKey()] = field.GetMatch().GetKeyword()
+	}
+	if got["tenant_id"] != "tenant_1" || got["knowledge_base_id"] != "kb_1" || got["source_uri"] != "memory://doc.md" {
+		t.Fatalf("unexpected filter: %#v", got)
+	}
+}
+
+func TestDeleteDocumentSourceUsesTenantScopedSourceFilter(t *testing.T) {
+	points := &recordingPointsClient{}
+	store := VectorStore{Client: &Client{Points: points}, Collection: "chunks"}
+
+	if err := store.DeleteDocumentSource(context.Background(), "tenant_1", "kb_1", "memory://doc.md"); err != nil {
+		t.Fatal(err)
+	}
+	if points.deleteReq == nil {
+		t.Fatal("DeleteDocumentSource did not call Qdrant delete")
+	}
+	if got := points.deleteReq.GetCollectionName(); got != "chunks" {
+		t.Fatalf("collection = %q", got)
+	}
+	filter := points.deleteReq.GetPoints().GetFilter()
+	if got := filterKeyword(t, filter, "tenant_id"); got != "tenant_1" {
+		t.Fatalf("tenant filter = %q", got)
+	}
+	if got := filterKeyword(t, filter, "knowledge_base_id"); got != "kb_1" {
+		t.Fatalf("knowledge base filter = %q", got)
+	}
+	if got := filterKeyword(t, filter, "source_uri"); got != "memory://doc.md" {
+		t.Fatalf("source URI filter = %q", got)
 	}
 }
 

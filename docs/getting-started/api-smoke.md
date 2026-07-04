@@ -39,6 +39,16 @@ examples/curl/40_eval.sh
 | `30_query.sh` | `POST /v1/query` | 读取 token 和 knowledge base ID |
 | `40_eval.sh` | `POST /v1/datasets`、`POST /v1/datasets/{id}/items`、`POST /v1/evaluations` | `.orag-demo/dataset_id` |
 
+## Go 调用示例
+
+如果调用方是其他 Go 服务或 Go 库，可以参考 `examples/go/basic`，用标准库 HTTP client 以 SDK 风格封装 ORAG API。示例覆盖登录、创建知识库、导入文本、轮询 ingestion job 和查询，不依赖仓库内的 `internal/` 包：
+
+```bash
+go run ./examples/go/basic
+```
+
+更多环境变量和封装建议见 `examples/go/README.md`。
+
 ## 常用覆盖变量
 
 | 变量 | 默认值 | 用途 |

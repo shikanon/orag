@@ -50,6 +50,18 @@ func (s VectorStore) DeleteKnowledgeBaseVectors(ctx context.Context, tenantID, k
 	return err
 }
 
+func (s VectorStore) DeleteDocumentSource(ctx context.Context, tenantID, kbID, sourceURI string) error {
+	wait := true
+	_, err := s.Client.Points.Delete(ctx, &qdrant.DeletePoints{
+		CollectionName: s.Collection,
+		Wait:           &wait,
+		Points: &qdrant.PointsSelector{PointsSelectorOneOf: &qdrant.PointsSelector_Filter{
+			Filter: documentSourceFilter(tenantID, kbID, sourceURI),
+		}},
+	})
+	return err
+}
+
 func (s VectorStore) Retrieve(ctx context.Context, req kb.SearchRequest) ([]kb.SearchResult, error) {
 	limit := req.TopK
 	if req.DenseTopK > 0 {
@@ -84,6 +96,14 @@ func knowledgeBaseFilter(tenantID, kbID string) *qdrant.Filter {
 	return &qdrant.Filter{Must: []*qdrant.Condition{
 		matchKeyword("tenant_id", tenantID),
 		matchKeyword("knowledge_base_id", kbID),
+	}}
+}
+
+func documentSourceFilter(tenantID, kbID, sourceURI string) *qdrant.Filter {
+	return &qdrant.Filter{Must: []*qdrant.Condition{
+		matchKeyword("tenant_id", tenantID),
+		matchKeyword("knowledge_base_id", kbID),
+		matchKeyword("source_uri", sourceURI),
 	}}
 }
 

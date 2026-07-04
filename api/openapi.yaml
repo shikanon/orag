@@ -104,6 +104,8 @@ paths:
                 $ref: "#/components/schemas/KnowledgeBaseListResponse"
         "401":
           $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
     post:
       tags: [KnowledgeBases]
       operationId: createKnowledgeBase
@@ -147,6 +149,8 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
     delete:
       tags: [KnowledgeBases]
       operationId: deleteKnowledgeBase
@@ -156,7 +160,7 @@ paths:
         - $ref: "#/components/parameters/ID"
       responses:
         "204":
-          description: Knowledge base and related indexed data deleted.
+          description: Tenant-scoped knowledge base deleted; directly owned documents, chunks, ingestion jobs, vector points, and semantic-cache entries are removed.
         "401":
           $ref: "#/components/responses/Error"
         "404":

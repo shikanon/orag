@@ -151,8 +151,8 @@ func (s *Server) createKnowledgeBase(ctx context.Context, c *app.RequestContext)
 	c.JSON(consts.StatusCreated, item)
 }
 
-func (s *Server) listKnowledgeBases(_ context.Context, c *app.RequestContext) {
-	items, err := s.App.KBStore.ListKnowledgeBases(tenantID(c))
+func (s *Server) listKnowledgeBases(ctx context.Context, c *app.RequestContext) {
+	items, err := s.App.KBStore.ListKnowledgeBases(ctx, tenantID(c))
 	if err != nil {
 		writeError(c, consts.StatusInternalServerError, "knowledge_base_list_failed", err.Error())
 		return
@@ -160,8 +160,8 @@ func (s *Server) listKnowledgeBases(_ context.Context, c *app.RequestContext) {
 	c.JSON(consts.StatusOK, map[string]any{"items": items})
 }
 
-func (s *Server) getKnowledgeBase(_ context.Context, c *app.RequestContext) {
-	item, ok, err := s.App.KBStore.GetKnowledgeBase(tenantID(c), c.Param("id"))
+func (s *Server) getKnowledgeBase(ctx context.Context, c *app.RequestContext) {
+	item, ok, err := s.App.KBStore.GetKnowledgeBase(ctx, tenantID(c), c.Param("id"))
 	if err != nil {
 		writeError(c, consts.StatusInternalServerError, "knowledge_base_lookup_failed", err.Error())
 		return
@@ -188,7 +188,7 @@ func (s *Server) deleteKnowledgeBase(ctx context.Context, c *app.RequestContext)
 
 func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 	kbID := c.Param("id")
-	if !s.requireKnowledgeBase(c, kbID) {
+	if !s.requireKnowledgeBase(ctx, c, kbID) {
 		return
 	}
 	fileHeader, err := c.FormFile("file")
@@ -228,7 +228,7 @@ func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 
 func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 	kbID := c.Param("id")
-	if !s.requireKnowledgeBase(c, kbID) {
+	if !s.requireKnowledgeBase(ctx, c, kbID) {
 		return
 	}
 	var req struct {
@@ -264,8 +264,8 @@ func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 	c.JSON(consts.StatusAccepted, map[string]any{"document": result.Document, "chunks": len(result.Chunks), "job": result.Job})
 }
 
-func (s *Server) requireKnowledgeBase(c *app.RequestContext, kbID string) bool {
-	if _, ok, err := s.App.KBStore.GetKnowledgeBase(tenantID(c), kbID); err != nil {
+func (s *Server) requireKnowledgeBase(ctx context.Context, c *app.RequestContext, kbID string) bool {
+	if _, ok, err := s.App.KBStore.GetKnowledgeBase(ctx, tenantID(c), kbID); err != nil {
 		writeError(c, consts.StatusInternalServerError, "knowledge_base_lookup_failed", err.Error())
 		return false
 	} else if ok {
@@ -313,7 +313,7 @@ func (s *Server) query(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	ragReq := req.ragRequest()
-	if !s.requireKnowledgeBase(c, ragReq.KnowledgeBaseID) {
+	if !s.requireKnowledgeBase(ctx, c, ragReq.KnowledgeBaseID) {
 		return
 	}
 	start := time.Now()
@@ -340,7 +340,7 @@ func (s *Server) queryStream(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	ragReq := req.ragRequest()
-	if !s.requireKnowledgeBase(c, ragReq.KnowledgeBaseID) {
+	if !s.requireKnowledgeBase(ctx, c, ragReq.KnowledgeBaseID) {
 		return
 	}
 	start := time.Now()
@@ -688,7 +688,7 @@ func (s *Server) optimizationSubmitRequest(ctx context.Context, c *app.RequestCo
 		writeDatasetNotFound(c)
 		return optimizer.SubmitRequest{}, false
 	}
-	if !s.requireKnowledgeBase(c, req.KnowledgeBaseID) {
+	if !s.requireKnowledgeBase(ctx, c, req.KnowledgeBaseID) {
 		return optimizer.SubmitRequest{}, false
 	}
 	req.applyLegacyShortcutDefaults()

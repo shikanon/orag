@@ -46,7 +46,7 @@ type Result struct {
 
 func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 	if s.KnowledgeBases != nil {
-		if _, ok, err := s.KnowledgeBases.GetKnowledgeBase(req.TenantID, req.KnowledgeBaseID); err != nil {
+		if _, ok, err := s.KnowledgeBases.GetKnowledgeBase(ctx, req.TenantID, req.KnowledgeBaseID); err != nil {
 			return Result{}, err
 		} else if !ok {
 			return Result{}, fmt.Errorf("%w: %s/%s", ErrKnowledgeBaseNotFound, req.TenantID, req.KnowledgeBaseID)
@@ -122,6 +122,11 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 			Offset:          split[i].Offset,
 			Vector:          vectors[i],
 			Metadata:        map[string]string{"document_title": req.Name},
+		}
+	}
+	if deleter, ok := s.Indexer.(kb.DocumentSourceDeleter); ok {
+		if err := deleter.DeleteDocumentSource(ctx, req.TenantID, req.KnowledgeBaseID, req.SourceURI); err != nil {
+			return fail(err)
 		}
 	}
 	if err := s.Indexer.Store(ctx, doc, chunks); err != nil {

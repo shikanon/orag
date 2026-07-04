@@ -93,8 +93,10 @@ func TestRepositoryListKnowledgeBasesReturnsRowsAndKeepsOrderingSQL(t *testing.T
 		knowledgeBaseRow("kb_2", createdAt.Add(time.Hour)),
 	}}}
 	repo := &Repository{kbQueryer: queryer}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	got, err := repo.ListKnowledgeBases("tenant_1")
+	got, err := repo.ListKnowledgeBases(ctx, "tenant_1")
 	if err != nil {
 		t.Fatalf("ListKnowledgeBases() error = %v", err)
 	}
@@ -107,13 +109,16 @@ func TestRepositoryListKnowledgeBasesReturnsRowsAndKeepsOrderingSQL(t *testing.T
 	if !strings.Contains(queryer.querySQL, "ORDER BY created_at") {
 		t.Fatalf("list query does not preserve created_at ordering: %s", queryer.querySQL)
 	}
+	if queryer.queryCtx != ctx {
+		t.Fatal("ListKnowledgeBases() did not pass caller context to Query")
+	}
 }
 
 func TestRepositoryListKnowledgeBasesReturnsQueryError(t *testing.T) {
 	want := errors.New("query failed")
 	repo := &Repository{kbQueryer: &fakeKnowledgeBaseQueryer{queryErr: want}}
 
-	got, err := repo.ListKnowledgeBases("tenant_1")
+	got, err := repo.ListKnowledgeBases(context.Background(), "tenant_1")
 	if !errors.Is(err, want) {
 		t.Fatalf("ListKnowledgeBases() error = %v, want %v", err, want)
 	}
@@ -130,7 +135,7 @@ func TestRepositoryListKnowledgeBasesReturnsScanError(t *testing.T) {
 		scanErr: want,
 	}}}
 
-	_, err := repo.ListKnowledgeBases("tenant_1")
+	_, err := repo.ListKnowledgeBases(context.Background(), "tenant_1")
 	if !errors.Is(err, want) {
 		t.Fatalf("ListKnowledgeBases() error = %v, want %v", err, want)
 	}
@@ -140,21 +145,27 @@ func TestRepositoryListKnowledgeBasesReturnsRowsError(t *testing.T) {
 	want := errors.New("rows failed")
 	repo := &Repository{kbQueryer: &fakeKnowledgeBaseQueryer{queryRows: &fakeTraceRows{err: want}}}
 
-	_, err := repo.ListKnowledgeBases("tenant_1")
+	_, err := repo.ListKnowledgeBases(context.Background(), "tenant_1")
 	if !errors.Is(err, want) {
 		t.Fatalf("ListKnowledgeBases() error = %v, want %v", err, want)
 	}
 }
 
 func TestRepositoryGetKnowledgeBaseNotFound(t *testing.T) {
-	repo := &Repository{kbQueryer: &fakeKnowledgeBaseQueryer{row: fakeTraceRow{err: pgx.ErrNoRows}}}
+	queryer := &fakeKnowledgeBaseQueryer{row: fakeTraceRow{err: pgx.ErrNoRows}}
+	repo := &Repository{kbQueryer: queryer}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	got, found, err := repo.GetKnowledgeBase("tenant_1", "kb_missing")
+	got, found, err := repo.GetKnowledgeBase(ctx, "tenant_1", "kb_missing")
 	if err != nil {
 		t.Fatalf("GetKnowledgeBase() error = %v", err)
 	}
 	if found {
 		t.Fatalf("GetKnowledgeBase() found = true, item = %#v", got)
+	}
+	if queryer.rowCtx != ctx {
+		t.Fatal("GetKnowledgeBase() did not pass caller context to QueryRow")
 	}
 }
 
@@ -162,7 +173,7 @@ func TestRepositoryGetKnowledgeBaseReturnsScanError(t *testing.T) {
 	want := errors.New("scan failed")
 	repo := &Repository{kbQueryer: &fakeKnowledgeBaseQueryer{row: fakeTraceRow{err: want}}}
 
-	_, found, err := repo.GetKnowledgeBase("tenant_1", "kb_1")
+	_, found, err := repo.GetKnowledgeBase(context.Background(), "tenant_1", "kb_1")
 	if !errors.Is(err, want) {
 		t.Fatalf("GetKnowledgeBase() error = %v, want %v", err, want)
 	}
@@ -938,7 +949,9 @@ type fakeKnowledgeBaseQueryer struct {
 	execCalls int
 	queryRows pgx.Rows
 	queryErr  error
+	queryCtx  context.Context
 	querySQL  string
+	rowCtx    context.Context
 	row       pgx.Row
 }
 
@@ -1127,12 +1140,14 @@ func (f *fakeKnowledgeBaseQueryer) Exec(ctx context.Context, sql string, args ..
 	return f.execTag, err
 }
 
-func (f *fakeKnowledgeBaseQueryer) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+func (f *fakeKnowledgeBaseQueryer) Query(ctx context.Context, sql string, _ ...any) (pgx.Rows, error) {
+	f.queryCtx = ctx
 	f.querySQL = sql
 	return f.queryRows, f.queryErr
 }
 
-func (f *fakeKnowledgeBaseQueryer) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
+func (f *fakeKnowledgeBaseQueryer) QueryRow(ctx context.Context, _ string, _ ...any) pgx.Row {
+	f.rowCtx = ctx
 	if f.row == nil {
 		return fakeTraceRow{err: pgx.ErrNoRows}
 	}

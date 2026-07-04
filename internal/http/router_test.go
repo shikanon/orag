@@ -1299,11 +1299,11 @@ func (r fakeKnowledgeBaseRepository) PutKnowledgeBase(context.Context, kb.Knowle
 	return r.putErr
 }
 
-func (r fakeKnowledgeBaseRepository) ListKnowledgeBases(string) ([]kb.KnowledgeBase, error) {
+func (r fakeKnowledgeBaseRepository) ListKnowledgeBases(context.Context, string) ([]kb.KnowledgeBase, error) {
 	return r.listItems, r.listErr
 }
 
-func (r fakeKnowledgeBaseRepository) GetKnowledgeBase(string, string) (kb.KnowledgeBase, bool, error) {
+func (r fakeKnowledgeBaseRepository) GetKnowledgeBase(context.Context, string, string) (kb.KnowledgeBase, bool, error) {
 	return r.getItem, r.getFound, r.getErr
 }
 

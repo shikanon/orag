@@ -36,7 +36,7 @@ func TestKnowledgeBaseStoreWithPointCleanupDeletesPointsBeforeMetadata(t *testin
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", calls, wantCalls)
 	}
-	if _, ok, err := repo.GetKnowledgeBase("tenant_1", "kb_1"); err != nil || ok {
+	if _, ok, err := repo.GetKnowledgeBase(context.Background(), "tenant_1", "kb_1"); err != nil || ok {
 		t.Fatal("knowledge base metadata still exists")
 	}
 }
@@ -73,7 +73,7 @@ func TestKnowledgeBaseStoreWithPointCleanupSkipsMissingKBAndStopsOnPointError(t 
 	if deleted {
 		t.Fatal("DeleteKnowledgeBase() deleted = true after point delete error")
 	}
-	if _, ok, err := repo.GetKnowledgeBase("tenant_1", "kb_1"); err != nil || !ok {
+	if _, ok, err := repo.GetKnowledgeBase(context.Background(), "tenant_1", "kb_1"); err != nil || !ok {
 		t.Fatal("metadata was deleted after point delete error")
 	}
 }
@@ -104,7 +104,7 @@ func TestKnowledgeBaseStoreWithPointCleanupStopsOnSemanticCacheError(t *testing.
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", calls, wantCalls)
 	}
-	if _, ok, err := repo.GetKnowledgeBase("tenant_1", "kb_1"); err != nil || !ok {
+	if _, ok, err := repo.GetKnowledgeBase(context.Background(), "tenant_1", "kb_1"); err != nil || !ok {
 		t.Fatal("metadata was deleted after semantic cache delete error")
 	}
 }
@@ -127,7 +127,7 @@ func (r *fakeKnowledgeBaseRepo) PutKnowledgeBase(_ context.Context, item kb.Know
 	return nil
 }
 
-func (r *fakeKnowledgeBaseRepo) ListKnowledgeBases(tenantID string) ([]kb.KnowledgeBase, error) {
+func (r *fakeKnowledgeBaseRepo) ListKnowledgeBases(_ context.Context, tenantID string) ([]kb.KnowledgeBase, error) {
 	var out []kb.KnowledgeBase
 	for _, item := range r.items {
 		if item.TenantID == tenantID {
@@ -137,13 +137,13 @@ func (r *fakeKnowledgeBaseRepo) ListKnowledgeBases(tenantID string) ([]kb.Knowle
 	return out, nil
 }
 
-func (r *fakeKnowledgeBaseRepo) GetKnowledgeBase(tenantID, id string) (kb.KnowledgeBase, bool, error) {
+func (r *fakeKnowledgeBaseRepo) GetKnowledgeBase(_ context.Context, tenantID, id string) (kb.KnowledgeBase, bool, error) {
 	item, ok := r.items[tenantID+"/"+id]
 	return item, ok, nil
 }
 
 func (r *fakeKnowledgeBaseRepo) DeleteKnowledgeBase(_ context.Context, tenantID, id string) (bool, error) {
-	if _, ok, err := r.GetKnowledgeBase(tenantID, id); err != nil || !ok {
+	if _, ok, err := r.GetKnowledgeBase(context.Background(), tenantID, id); err != nil || !ok {
 		return false, nil
 	}
 	*r.calls = append(*r.calls, "metadata:"+tenantID+"/"+id)

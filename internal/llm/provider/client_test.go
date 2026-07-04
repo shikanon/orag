@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/shikanon/orag/internal/llm/ark"
@@ -154,6 +155,23 @@ func TestClientAllowsDeterministicMockOnlyWhenExplicit(t *testing.T) {
 	}
 	if len(vectors) != 1 || len(vectors[0]) != 4 {
 		t.Fatalf("vectors = %#v", vectors)
+	}
+}
+
+func TestClientRequiresAPIKeyForRealProvider(t *testing.T) {
+	_, err := NewClient(Config{
+		ChatProvider:        OpenAI,
+		EmbeddingProvider:   OpenAI,
+		RerankProvider:      OpenAI,
+		MultimodalProvider:  OpenAI,
+		BaseURLs:            map[Name]string{OpenAI: "http://example.test/v1"},
+		EmbeddingDimensions: 4,
+	}, nil)
+	if err == nil {
+		t.Fatal("expected missing API key error")
+	}
+	if !strings.Contains(err.Error(), "missing API key") || !strings.Contains(err.Error(), string(OpenAI)) {
+		t.Fatalf("unexpected error = %v", err)
 	}
 }
 

@@ -40,6 +40,15 @@ Content-Type: application/json
 
 `name` 是必填字段。响应中会返回 `id`，后续文档入库和查询都需要使用该知识库 ID。
 
+## 删除知识库
+
+```http
+DELETE /v1/knowledge-bases/{id}
+Authorization: Bearer <access_token>
+```
+
+成功删除当前 tenant 拥有的知识库时返回 `204 No Content`。删除会清理该知识库直接拥有的 documents、chunks、ingestion jobs、Qdrant 向量点和语义缓存条目；缺失或其他 tenant 的知识库返回 `404 knowledge_base_not_found`，不会影响其他 tenant 数据。
+
 ## 文本导入
 
 ```http

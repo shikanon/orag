@@ -224,16 +224,16 @@ func (s knowledgeBaseStore) PutKnowledgeBase(ctx context.Context, item kb.Knowle
 	return s.primary.PutKnowledgeBase(ctx, item)
 }
 
-func (s knowledgeBaseStore) ListKnowledgeBases(tenantID string) ([]kb.KnowledgeBase, error) {
-	return s.primary.ListKnowledgeBases(tenantID)
+func (s knowledgeBaseStore) ListKnowledgeBases(ctx context.Context, tenantID string) ([]kb.KnowledgeBase, error) {
+	return s.primary.ListKnowledgeBases(ctx, tenantID)
 }
 
-func (s knowledgeBaseStore) GetKnowledgeBase(tenantID, id string) (kb.KnowledgeBase, bool, error) {
-	return s.primary.GetKnowledgeBase(tenantID, id)
+func (s knowledgeBaseStore) GetKnowledgeBase(ctx context.Context, tenantID, id string) (kb.KnowledgeBase, bool, error) {
+	return s.primary.GetKnowledgeBase(ctx, tenantID, id)
 }
 
 func (s knowledgeBaseStore) DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error) {
-	if _, ok, err := s.primary.GetKnowledgeBase(tenantID, id); err != nil {
+	if _, ok, err := s.primary.GetKnowledgeBase(ctx, tenantID, id); err != nil {
 		return false, err
 	} else if !ok {
 		return false, nil
