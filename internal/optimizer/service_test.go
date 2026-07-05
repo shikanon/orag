@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/shikanon/orag/internal/eval"
+	"github.com/shikanon/orag/internal/rag"
 )
 
 func TestServiceSubmitRunsAsyncAndEvaluatesHoldout(t *testing.T) {
@@ -103,6 +104,58 @@ func TestServiceBudgetStopAndResumeSkipsCompletedCandidate(t *testing.T) {
 	}
 	if len(runner.selectionIDs()) != 2 {
 		t.Fatalf("runner calls = %#v, resume should skip completed and run incomplete once", runner.calls)
+	}
+}
+
+func TestServiceEmptyResumeUsesStoredRunConfig(t *testing.T) {
+	repo := newMemoryOptimizationRepository()
+	now := time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
+	runner := &recordingCandidateRunner{
+		afterCall: func(CandidateRunRequest) {
+			now = now.Add(2 * time.Second)
+		},
+	}
+	service := &Service{
+		Repository:       repo,
+		Runner:           runner,
+		DisableAutoStart: true,
+		Now: func() time.Time {
+			return now
+		},
+	}
+	req := basicSubmitRequest()
+	req.Budget = Budget{MaxWallTimeSeconds: 1}
+	req.Profile = rag.ProfileHighPrecision
+	req.TopK = 7
+	req.NamespaceTTL = 45 * time.Second
+
+	run, err := service.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	if err := service.RunPending(context.Background(), "tenant_a", run.ID, req); err != nil {
+		t.Fatalf("RunPending() error = %v", err)
+	}
+	status, _, _ := service.Get(context.Background(), "tenant_a", run.ID)
+	if status.Run.Status != RunStatusBudgetStopped {
+		t.Fatalf("status = %q, want budget_stopped", status.Run.Status)
+	}
+
+	if _, err := service.Resume(context.Background(), "tenant_a", run.ID, SubmitRequest{}); err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if err := service.RunPending(context.Background(), "tenant_a", run.ID, SubmitRequest{}); err != nil {
+		t.Fatalf("RunPending(resume) error = %v", err)
+	}
+	status, _, _ = service.Get(context.Background(), "tenant_a", run.ID)
+	if status.Run.Status != RunStatusCompleted {
+		t.Fatalf("status after resume = %q, want completed", status.Run.Status)
+	}
+	if status.Run.HoldoutCandidateID == "" {
+		t.Fatalf("holdout candidate id was not set after empty resume: %#v", status.Run)
+	}
+	if !runner.sawConfigured(PhaseHoldout, "holdout", rag.ProfileHighPrecision, 7, 45*time.Second) {
+		t.Fatalf("runner calls = %#v, want holdout with stored profile/top_k/namespace ttl", runner.calls)
 	}
 }
 
@@ -248,9 +301,12 @@ func (r *memoryOptimizationRepository) StoreHarnessRun(_ context.Context, run Ha
 }
 
 type runnerCall struct {
-	CandidateID string
-	Phase       string
-	Split       string
+	CandidateID  string
+	Phase        string
+	Split        string
+	Profile      rag.Profile
+	TopK         int
+	NamespaceTTL time.Duration
 }
 
 type recordingCandidateRunner struct {
@@ -259,6 +315,7 @@ type recordingCandidateRunner struct {
 	err          error
 	blockOnFirst chan struct{}
 	releaseFirst chan struct{}
+	afterCall    func(CandidateRunRequest)
 }
 
 func (r *recordingCandidateRunner) RunCandidate(ctx context.Context, req CandidateRunRequest) (CandidateRunResult, error) {
@@ -266,7 +323,14 @@ func (r *recordingCandidateRunner) RunCandidate(ctx context.Context, req Candida
 	if len(r.calls) == 0 && r.blockOnFirst != nil {
 		close(r.blockOnFirst)
 	}
-	r.calls = append(r.calls, runnerCall{CandidateID: req.Candidate.ID, Phase: req.Phase, Split: req.Split})
+	r.calls = append(r.calls, runnerCall{
+		CandidateID:  req.Candidate.ID,
+		Phase:        req.Phase,
+		Split:        req.Split,
+		Profile:      req.Profile,
+		TopK:         req.TopK,
+		NamespaceTTL: req.NamespaceTTL,
+	})
 	callIndex := len(r.calls)
 	r.mu.Unlock()
 	if callIndex == 1 && r.releaseFirst != nil {
@@ -278,6 +342,9 @@ func (r *recordingCandidateRunner) RunCandidate(ctx context.Context, req Candida
 	}
 	if r.err != nil {
 		return CandidateRunResult{}, r.err
+	}
+	if r.afterCall != nil {
+		r.afterCall(req)
 	}
 	metrics := metricsForRequest(req)
 	return CandidateRunResult{
@@ -307,6 +374,17 @@ func (r *recordingCandidateRunner) saw(candidateID, phase, split string) bool {
 	defer r.mu.Unlock()
 	for _, call := range r.calls {
 		if call.CandidateID == candidateID && call.Phase == phase && call.Split == split {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *recordingCandidateRunner) sawConfigured(phase, split string, profile rag.Profile, topK int, ttl time.Duration) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, call := range r.calls {
+		if call.Phase == phase && call.Split == split && call.Profile == profile && call.TopK == topK && call.NamespaceTTL == ttl {
 			return true
 		}
 	}

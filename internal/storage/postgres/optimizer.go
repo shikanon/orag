@@ -17,7 +17,7 @@ func (r *Repository) CreateOptimizationRun(ctx context.Context, run optimizer.Op
 	if err != nil {
 		return err
 	}
-	runner, err := json.Marshal(run.Runner)
+	runner, err := json.Marshal(run.RunnerWithConfig())
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func (r *Repository) UpdateOptimizationRun(ctx context.Context, run optimizer.Op
 	if err != nil {
 		return err
 	}
-	runner, err := json.Marshal(run.Runner)
+	runner, err := json.Marshal(run.RunnerWithConfig())
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,12 @@ func scanOptimizationRun(row optimizationRunScanner) (optimizer.OptimizationRun,
 	}
 	_ = json.Unmarshal(objective, &run.Objective)
 	_ = json.Unmarshal(searchSpace, &run.SearchSpace)
-	_ = json.Unmarshal(runner, &run.Runner)
+	if err := json.Unmarshal(runner, &run.Runner); err != nil {
+		return optimizer.OptimizationRun{}, err
+	}
+	if err := run.LoadConfigFromRunner(); err != nil {
+		return optimizer.OptimizationRun{}, err
+	}
 	_ = json.Unmarshal(checkpoint, &run.Checkpoint)
 	_ = json.Unmarshal(tokenUsage, &run.TokenUsage)
 	return run, nil

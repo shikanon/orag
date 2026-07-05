@@ -760,13 +760,7 @@ func (s *Server) resumeOptimization(ctx context.Context, c *app.RequestContext) 
 		writeOptimizationNotFound(c)
 		return
 	}
-	req := optimizeRequest{
-		DatasetID:       status.Run.DatasetID,
-		KnowledgeBaseID: status.Run.KnowledgeBaseID,
-		Objective:       status.Run.Objective,
-		SearchSpace:     status.Run.SearchSpace,
-		Runner:          status.Run.Runner,
-	}
+	req := optimizationRequestFromSubmit(status.Run.StoredSubmitRequest())
 	if len(c.Request.Body()) > 0 && !bindJSON(c, &req) {
 		return
 	}
@@ -838,6 +832,23 @@ func (s *Server) optimizationSubmitRequest(ctx context.Context, c *app.RequestCo
 		HoldoutSplit:    req.HoldoutSplit,
 		Runner:          runner,
 	}, true
+}
+
+func optimizationRequestFromSubmit(req optimizer.SubmitRequest) optimizeRequest {
+	return optimizeRequest{
+		DatasetID:           req.DatasetID,
+		KnowledgeBaseID:     req.KnowledgeBaseID,
+		Objective:           req.Objective,
+		SearchSpace:         req.SearchSpace,
+		Search:              req.Search,
+		Budget:              req.Budget,
+		Profile:             req.Profile,
+		TopK:                req.TopK,
+		NamespaceTTLSeconds: int(req.NamespaceTTL / time.Second),
+		SelectionSplit:      req.SelectionSplit,
+		HoldoutSplit:        req.HoldoutSplit,
+		Runner:              req.Runner,
+	}
 }
 
 func (req *optimizeRequest) applyLegacyShortcutDefaults() {
