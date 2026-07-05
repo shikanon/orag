@@ -5,17 +5,23 @@
 ## 主路径
 
 ```text
-login -> create knowledge base -> import document -> query -> evaluate
+health/ready -> login -> create knowledge base -> import/upload document -> query/SSE -> trace -> evaluate -> optimize
 ```
 
 对应脚本：
 
 ```bash
+examples/curl/05_health_ready.sh
 examples/curl/00_login.sh
 examples/curl/10_create_kb.sh
 examples/curl/20_upload_doc.sh
+examples/curl/25_upload_file.sh
 examples/curl/30_query.sh
+examples/curl/35_query_stream.sh
+examples/curl/36_trace_lookup.sh
 examples/curl/40_eval.sh
+examples/curl/45_optimize.sh
+examples/curl/50_optimize.sh
 ```
 
 ## 创建知识库
@@ -135,7 +141,14 @@ Content-Type: application/json
 | `cache_status` | 语义缓存状态，例如 `hit` 或非命中状态。 |
 | `warnings` | 查询过程中的非致命提醒。 |
 
-`trace_id` 会贯穿本次 HTTP 请求、RAG pipeline、结构化日志和 PostgreSQL trace 记录。需要查看持久化 trace 时运行：
+`trace_id` 会贯穿本次 HTTP 请求、RAG pipeline、结构化日志和 PostgreSQL trace 记录。需要查看持久化 trace 时，可用 HTTP API 查询当前 tenant 内的记录：
+
+```http
+GET /v1/traces/{trace_id}
+Authorization: Bearer <access_token>
+```
+
+也可以在本地直接运行 CLI：
 
 ```bash
 oragctl trace --trace-id trace_xxx

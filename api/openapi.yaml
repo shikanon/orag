@@ -257,9 +257,9 @@ paths:
       description: |
         Executes a RAG query. The response includes `trace_id`, which is the
         same request trace propagated through logs and persisted PostgreSQL
-        RAG trace records. Use `oragctl trace --trace-id <trace_id>` to inspect
-        persisted trace metadata and node spans; there is no HTTP trace lookup
-        endpoint in the current API surface.
+        RAG trace records. Use `GET /v1/traces/{trace_id}` or
+        `oragctl trace --trace-id <trace_id>` to inspect persisted trace
+        metadata and node spans.
       security:
         - bearerAuth: []
       requestBody:

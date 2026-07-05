@@ -1,13 +1,13 @@
 # 开发指南
 
-本文面向本地后端开发和验证，所有命令默认从仓库根目录 `/Users/bytedance/Documents/orag` 执行。当前仓库的默认真实后端为 `STORAGE_BACKEND=qdrant_postgres`，依赖 PostgreSQL 和 Qdrant；无依赖调试可临时切到 `STORAGE_BACKEND=memory`。
+本文面向本地后端开发和验证，所有命令默认从仓库根目录 [`/Users/bytedance/Documents/orag`](..) 执行。当前仓库的默认真实后端为 `STORAGE_BACKEND=qdrant_postgres`，依赖 PostgreSQL 和 Qdrant；无依赖调试可临时切到 `STORAGE_BACKEND=memory`。
 
 ## 本地环境准备
 
 本机需要准备：
 
 - macOS + Docker Desktop，并确保 `docker compose` 可用。
-- Go 1.26，仓库 `go.mod` 声明 `go 1.26`。
+- Go 1.26，仓库 [`go.mod`](../go.mod) 声明 `go 1.26`。
 - `make`、`curl`，用于执行 Makefile 目标和健康检查。
 
 初始化本地配置模板：
@@ -16,7 +16,7 @@
 cp .env.example .env
 ```
 
-`.env.example` 记录了本地默认配置，例如 `PORT=8080`、`DATABASE_URL=postgres://orag:orag@localhost:5432/orag?sslmode=disable`、`QDRANT_HOST=localhost`、`QDRANT_GRPC_PORT=6334` 和模型 provider 变量。当前 Go 进程通过环境变量和代码默认值读取配置，直接执行 `make run` 或 `go run` 时如需覆盖默认值，请在命令前传入或先 `export`；`deployments/docker-compose.yml` 中的 `orag-api` 容器会读取 `../.env`。
+[`.env.example`](../.env.example) 记录了本地默认配置，例如 `PORT=8080`、`DATABASE_URL=postgres://orag:orag@localhost:5432/orag?sslmode=disable`、`QDRANT_HOST=localhost`、`QDRANT_GRPC_PORT=6334` 和模型 provider 变量。当前 Go 进程通过环境变量和代码默认值读取配置，直接执行 `make run` 或 `go run` 时如需覆盖默认值，请在命令前传入或先 `export`；[`deployments/docker-compose.yml`](../deployments/docker-compose.yml) 中的 `orag-api` 容器会读取 `../.env`。
 
 示例：
 
@@ -52,7 +52,7 @@ make dev-up
 scripts/dev-up.sh
 ```
 
-`make dev-up` 只启动 `deployments/docker-compose.yml` 中的 `postgres` 和 `qdrant`，不启动 ES/Neo4j，也不启动 `orag-api` 容器。本地端口如下：
+`make dev-up` 只启动 [`deployments/docker-compose.yml`](../deployments/docker-compose.yml) 中的 `postgres` 和 `qdrant`，不启动 ES/Neo4j，也不启动 `orag-api` 容器。本地端口如下：
 
 | 依赖 | 地址 | 说明 |
 | --- | --- | --- |
@@ -87,7 +87,7 @@ DEV_DOWN_VOLUMES=1 scripts/dev-down.sh
 make migrate
 ```
 
-`make migrate` 执行 `go run ./cmd/oragctl migrate`，使用当前 `DATABASE_URL` 连接 PostgreSQL，并按顺序执行 `migrations/*.sql` 中的 `-- +goose Up` 片段。默认数据库地址来自 `.env.example` 和代码默认值：
+`make migrate` 执行 `go run ./cmd/oragctl migrate`，使用当前 `DATABASE_URL` 连接 PostgreSQL，并按顺序执行 `migrations/*.sql` 中的 `-- +goose Up` 片段。默认数据库地址来自 [`.env.example`](../.env.example) 和代码默认值：
 
 ```bash
 postgres://orag:orag@localhost:5432/orag?sslmode=disable
@@ -127,7 +127,7 @@ ALLOW_DETERMINISTIC_MOCK=true LLM_CHAT_PROVIDER=mock LLM_EMBEDDING_PROVIDER=mock
 
 说明：
 
-- `DEBUG=true` 会让 `internal/platform/logger` 输出 debug 级别 JSON 日志。
+- `DEBUG=true` 会让 [`internal/platform/logger`](../internal/platform/logger) 输出 debug 级别 JSON 日志。
 - `PORT`、`HOST`、`PUBLIC_BASE_URL` 可覆盖服务监听和外部访问地址。
 - `STORAGE_BACKEND=memory` 可用于排查 HTTP 层、认证、API smoke 或单测问题；它不代表生产配置，也不会验证 PostgreSQL/Qdrant 链路。
 - 服务内置入口包括 `GET /healthz`、`GET /readyz`、`GET /metrics` 和 `GET /docs`。
@@ -139,7 +139,7 @@ make docker-build
 make docker-run
 ```
 
-`make docker-build` 使用 `deployments/Dockerfile`，构建阶段基于 `golang:1.26-alpine`，运行阶段基于 `alpine:3.20`。
+`make docker-build` 使用 [`deployments/Dockerfile`](../deployments/Dockerfile)，构建阶段基于 `golang:1.26-alpine`，运行阶段基于 `alpine:3.20`。
 
 ## 测试矩阵
 
@@ -173,7 +173,7 @@ make openapi-validate
 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/contract -run TestOpenAPI -v
 ```
 
-该测试读取 `api/openapi.yaml`，用于验证 OpenAPI 文档结构和关键安全约束，不会启动外部服务。
+该测试读取 [`api/openapi.yaml`](../api/openapi.yaml)，用于验证 OpenAPI 文档结构和关键安全约束，不会启动外部服务。
 
 ### 集成测试
 
@@ -185,7 +185,7 @@ make test-integration
 make test-integration-down
 ```
 
-`make test-integration-up` 使用 `deployments/docker-compose.test.yml`，测试端口和 collection 与日常开发环境隔离：
+`make test-integration-up` 使用 [`deployments/docker-compose.test.yml`](../deployments/docker-compose.test.yml)，测试端口和 collection 与日常开发环境隔离：
 
 | 依赖 | 地址或名称 |
 | --- | --- |
@@ -226,7 +226,7 @@ go test ./tests/integration -v
 LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/live -v
 ```
 
-当前 `tests/live/ark_live_test.go` 仍要求已开通的模型 endpoint 配置；没有补齐真实 endpoint 时，即使设置 `LIVE_ARK_TESTS=1` 也会按测试内逻辑 skip。不要把真实 `ARK_API_KEY` 提交到仓库。
+当前 [`tests/live/ark_live_test.go`](../tests/live/ark_live_test.go) 仍要求已开通的模型 endpoint 配置；没有补齐真实 endpoint 时，即使设置 `LIVE_ARK_TESTS=1` 也会按测试内逻辑 skip。不要把真实 `ARK_API_KEY` 提交到仓库。
 
 ## 常用 API smoke
 
@@ -258,7 +258,7 @@ examples/curl/45_optimize.sh
 Go memory 示例展示无外部依赖的入库、查询和 trace/response 元数据读取，适合快速验证示例包可编译运行：
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
 ```
 
 ## Mac、Go 1.26 和 Hertz 构建注意事项

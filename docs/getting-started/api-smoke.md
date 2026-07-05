@@ -1,6 +1,6 @@
 # API Smoke 流程
 
-本页说明如何用 `examples/curl/` 完成一轮本地端到端验证。它适合确认认证、知识库创建、文档入库、查询和评估主路径是否可用。
+本页说明如何用 [`examples/curl/`](../../examples/curl) 完成一轮本地端到端验证。它适合确认健康检查、认证、知识库创建、文档入库、普通查询、SSE 查询、trace 查询、评估和优化主路径是否可用。
 
 ## 前置状态
 
@@ -25,8 +25,13 @@ PATH="/usr/local/go/bin:/opt/homebrew/bin:$PATH" make run
 examples/curl/00_login.sh
 examples/curl/10_create_kb.sh
 examples/curl/20_upload_doc.sh
+examples/curl/25_upload_file.sh
 examples/curl/30_query.sh
+examples/curl/35_query_stream.sh
+examples/curl/36_trace_lookup.sh
 examples/curl/40_eval.sh
+examples/curl/45_optimize.sh
+examples/curl/50_optimize.sh
 ```
 
 每个脚本的职责如下：
@@ -36,18 +41,23 @@ examples/curl/40_eval.sh
 | `00_login.sh` | `POST /v1/auth/login` | `.orag-demo/token` |
 | `10_create_kb.sh` | `POST /v1/knowledge-bases` | `.orag-demo/kb_id` |
 | `20_upload_doc.sh` | `POST /v1/knowledge-bases/{id}/documents:import` | `.orag-demo/document_id`、`.orag-demo/job_id` |
-| `30_query.sh` | `POST /v1/query` | 读取 token 和 knowledge base ID |
+| `25_upload_file.sh` | `POST /v1/knowledge-bases/{id}/documents` | `.orag-demo/document_id`、`.orag-demo/job_id` |
+| `30_query.sh` | `POST /v1/query` | `.orag-demo/trace_id` |
+| `35_query_stream.sh` | `POST /v1/query:stream` | `.orag-demo/trace_id` |
+| `36_trace_lookup.sh` | `GET /v1/traces`、`GET /v1/traces/{trace_id}` | 读取 `.orag-demo/trace_id` |
 | `40_eval.sh` | `POST /v1/datasets`、`POST /v1/datasets/{id}/items`、`POST /v1/evaluations` | `.orag-demo/dataset_id` |
+| `45_optimize.sh` | `POST /v1/optimizations` | 读取 `.orag-demo/dataset_id` |
+| `50_optimize.sh` | `POST /v1/optimizations`、`GET /v1/optimizations/{id}` | `.orag-demo/optimization_id` |
 
 ## Go 调用示例
 
-如果调用方是其他 Go 服务或 Go 库，可以参考 `examples/go/basic`，用标准库 HTTP client 以 SDK 风格封装 ORAG API。示例覆盖登录、创建知识库、导入文本、轮询 ingestion job 和查询，不依赖仓库内的 `internal/` 包：
+如果调用方是其他 Go 服务或 Go 库，可以参考 [`examples/go/basic`](../../examples/go/basic)，用标准库 HTTP client 以 SDK 风格封装 ORAG API。示例覆盖登录、创建知识库、导入文本、轮询 ingestion job 和查询，不依赖仓库内的 [`internal/`](../../internal) 包：
 
 ```bash
 go run ./examples/go/basic
 ```
 
-更多环境变量和封装建议见 `examples/go/README.md`。
+更多环境变量和封装建议见 [`examples/go/README.md`](../../examples/go/README.md)。
 
 ## 常用覆盖变量
 
@@ -82,7 +92,7 @@ rm -rf .orag-demo
 
 | 现象 | 可能原因 | 处理 |
 | --- | --- | --- |
-| `missing_bearer_token` | 未先运行登录脚本，或 `.orag-demo/token` 不存在。 | 重新运行 `examples/curl/00_login.sh`。 |
+| `missing_bearer_token` | 未先运行登录脚本，或 `.orag-demo/token` 不存在。 | 重新运行 [`examples/curl/00_login.sh`](../../examples/curl/00_login.sh)。 |
 | `knowledge_base_not_found` | `.orag-demo/kb_id` 已过期或后端数据被清空。 | 重新运行建库和入库脚本。 |
-| `/readyz` 不通过 | PostgreSQL、Qdrant 或 collection 未就绪。 | 查看 `../operations/troubleshooting.md`。 |
+| `/readyz` 不通过 | PostgreSQL、Qdrant 或 collection 未就绪。 | 查看 [`../operations/troubleshooting.md`](../operations/troubleshooting.md)。 |
 | 查询无上下文 | 文档未成功入库或 collection 为空。 | 查询 `.orag-demo/job_id` 对应的 ingestion job。 |

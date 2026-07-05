@@ -148,11 +148,16 @@ After the service starts, run the scripts in order:
 examples/curl/00_login.sh
 examples/curl/10_create_kb.sh
 examples/curl/20_upload_doc.sh
+examples/curl/25_upload_file.sh
 examples/curl/30_query.sh
+examples/curl/35_query_stream.sh
+examples/curl/36_trace_lookup.sh
 examples/curl/40_eval.sh
+examples/curl/45_optimize.sh
+examples/curl/50_optimize.sh
 ```
 
-The scripts use `BASE_URL=http://localhost:8080` by default. Override it with `BASE_URL` if needed. Runtime state is stored in `.orag-demo/`, including the token, knowledge base ID, document ID, dataset ID, and ingestion job ID. Do not commit that directory.
+The scripts use `BASE_URL=http://localhost:8080` by default. Override it with `BASE_URL` if needed. Runtime state is stored in `.orag-demo/`, including the token, knowledge base ID, document ID, ingestion job ID, trace ID, dataset ID, evaluation ID, and optimization ID. Do not commit that directory.
 
 ### Go client example
 

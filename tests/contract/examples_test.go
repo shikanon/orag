@@ -21,8 +21,8 @@ func TestExamplesReadmeIndex(t *testing.T) {
 		"## Service/Curl Examples",
 		"## Go Examples",
 		"## Covered Modules",
-		"GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run TestExamples -v",
-		"GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory",
+		"GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run TestExamples -v",
+		"GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory",
 		"public `pkg/memory` facade",
 	} {
 		if !strings.Contains(readme, want) {

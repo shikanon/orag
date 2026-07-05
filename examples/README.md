@@ -1,11 +1,11 @@
 # ORAG Examples
 
 This directory is the smoke-test entry point for trying ORAG core capabilities in service mode.
-Task 2 expands the curl examples so they exercise the public HTTP API end-to-end with shared state, helpers, and actionable failures.
+The curl examples exercise the public HTTP API end-to-end with shared state, helpers, and actionable failures.
 
 ## Prerequisites
 
-- Go 1.22 with `GOTOOLCHAIN=local`.
+- Go 1.26. Use `GOTOOLCHAIN=go1.26.4` when the local default toolchain is older.
 - Docker, when using `scripts/dev-up.sh` to start PostgreSQL and Qdrant.
 - `curl` on `PATH` for every service-mode script.
 - A running ORAG API service at `BASE_URL`, defaulting to `http://localhost:8080`.
@@ -51,7 +51,7 @@ Stop local dependencies when finished:
 Validate this examples index, script paths, and endpoint drift against `api/openapi.yaml`:
 
 ```sh
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run TestExamples -v
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run TestExamples -v
 ```
 
 ## Service/Curl Examples
@@ -79,13 +79,13 @@ The Go memory example at `examples/go/memory/main.go` demonstrates dependency-fr
 Run it directly:
 
 ```sh
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
 ```
 
 Or run the example package test:
 
 ```sh
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./examples/go/memory -v
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./examples/go/memory -v
 ```
 
 Expected output includes `document_id=doc_`, `trace_id=trace_example_memory`, `cache_status=disabled`, trace summary fields, and citation counts.

@@ -17,7 +17,7 @@
 
 ## 配置安全
 
-真实 `.env` 已被 `.gitignore` 忽略，不应提交。示例变量维护在 `.env.example`，结构化配置示例维护在 `configs/config.example.yaml`。
+真实 `.env` 已被 `.gitignore` 忽略，不应提交。示例变量维护在 [`.env.example`](../.env.example)，结构化配置示例维护在 [`configs/config.example.yaml`](../configs/config.example.yaml)。
 
 生产环境建议：
 
@@ -68,13 +68,21 @@
 
 HTTP 请求完成日志使用 `http_request_completed`，包含 `method`、`route`、`path`、`status`、`latency`、`trace_id`，错误响应会额外包含 `error_code`。RAG/Graph 失败日志会携带 `trace_id`、tenant、profile、node、latency 和 error 字段中的一部分；日志不应输出 token、原始 prompt、文档内容或模型响应。
 
-RAG 查询响应、SSE `trace`/`error` 事件和统一错误响应都会返回 `trace_id`。查询 PostgreSQL 中的持久化 trace：
+RAG 查询响应、SSE `trace`/`error` 事件和统一错误响应都会返回 `trace_id`。排查持久化 trace 时，HTTP API 可查询当前 Bearer token 所属 tenant 内的 trace：
+
+```http
+GET /v1/traces?limit=20
+GET /v1/traces/{trace_id}
+Authorization: Bearer <access_token>
+```
+
+本地也可以直接查询 PostgreSQL：
 
 ```bash
 oragctl trace --trace-id trace_xxx
 ```
 
-命中时输出 `trace` 对象，包含 `tenant_id`、`profile`、`latency_ms`、`has_error`、`error_count` 和按时间排序的 `node_spans`；未命中时输出 `found=false` 和查询的 `trace_id`。当前只支持 CLI 按单个 `trace_id` 精确查询，不支持 HTTP trace 查询、列表、时间范围过滤或跨服务拓扑。
+命中时输出 `trace` 对象，包含 `tenant_id`、`profile`、`latency_ms`、`has_error`、`error_count` 和按时间排序的 `node_spans`；未命中时输出 `404 trace_not_found` 或 CLI 的 `found=false`。当前支持 HTTP 列表/详情和 CLI 单条/列表/统计查询；仍不提供跨租户聚合、采样、跨服务拓扑或外部 APM 跳转。
 
 `OTEL_EXPORTER_OTLP_ENDPOINT` 和 `LANGFUSE_*` 当前只是配置边界：服务未创建 OTel tracer/provider，不导出 OTel spans 或 metrics；也未创建 LangFuse client，不上传 prompt、completion、score 或 trace。后续如需接入，应先明确脱敏、采样、留存和 `OBSERVABILITY_RECORD_PROMPTS` 策略。
 
@@ -124,7 +132,7 @@ QDRANT_HOST=qdrant
 QDRANT_GRPC_PORT=6334
 ```
 
-如果在 Mac 宿主机直接运行 API，则继续使用 `.env.example` 风格的 `localhost`：
+如果在 Mac 宿主机直接运行 API，则继续使用 [`.env.example`](../.env.example) 风格的 `localhost`：
 
 ```dotenv
 DATABASE_URL=postgres://orag:orag@localhost:5432/orag?sslmode=disable

@@ -36,10 +36,10 @@ Excluded:
 ## Task 1: Persist Failed Graph Traces
 
 **Files:**
-- Modify: `internal/graph/rag_graph.go`
-- Modify: `internal/graph/state.go`
-- Modify: `internal/graph/nodes.go`
-- Test: `internal/graph/rag_graph_test.go`
+- Modify: [`internal/graph/rag_graph.go`](../../internal/graph/rag_graph.go)
+- Modify: [`internal/graph/state.go`](../../internal/graph/state.go)
+- Modify: [`internal/graph/nodes.go`](../../internal/graph/nodes.go)
+- Test: [`internal/graph/rag_graph_test.go`](../../internal/graph/rag_graph_test.go)
 
 **Step 1: Write failing graph test**
 
@@ -89,9 +89,9 @@ git commit -m "feat: persist failed rag traces"
 ## Task 2: Make Trace Writes Idempotent
 
 **Files:**
-- Modify: `internal/storage/postgres/trace.go`
+- Modify: [`internal/storage/postgres/trace.go`](../../internal/storage/postgres/trace.go)
 - Create: `migrations/000004_trace_span_idempotency.sql`
-- Test: `internal/storage/postgres/repository_test.go`
+- Test: [`internal/storage/postgres/repository_test.go`](../../internal/storage/postgres/repository_test.go)
 
 **Step 1: Write failing repository tests**
 
@@ -144,12 +144,12 @@ git commit -m "feat: make trace storage idempotent"
 ## Task 3: Add Stable Span Ordering And Timing
 
 **Files:**
-- Modify: `internal/graph/state.go`
-- Modify: `internal/graph/nodes.go`
-- Modify: `internal/storage/postgres/trace.go`
+- Modify: [`internal/graph/state.go`](../../internal/graph/state.go)
+- Modify: [`internal/graph/nodes.go`](../../internal/graph/nodes.go)
+- Modify: [`internal/storage/postgres/trace.go`](../../internal/storage/postgres/trace.go)
 - Create: `migrations/000005_trace_span_timing.sql`
-- Test: `internal/graph/rag_graph_test.go`
-- Test: `internal/storage/postgres/repository_test.go`
+- Test: [`internal/graph/rag_graph_test.go`](../../internal/graph/rag_graph_test.go)
+- Test: [`internal/storage/postgres/repository_test.go`](../../internal/storage/postgres/repository_test.go)
 
 **Step 1: Write failing tests**
 
@@ -217,7 +217,7 @@ git commit -m "feat: add ordered trace span timing"
 
 **Files:**
 - Create: `migrations/000006_trace_read_indexes.sql`
-- Test: `tests/contract/openapi_test.go` only if API docs change in later tasks.
+- Test: [`tests/contract/openapi_test.go`](../../tests/contract/openapi_test.go) only if API docs change in later tasks.
 
 **Step 1: Add migration**
 
@@ -258,8 +258,8 @@ git commit -m "perf: add trace read indexes"
 ## Task 5: Add Trace List Repository API
 
 **Files:**
-- Modify: `internal/storage/postgres/trace.go`
-- Test: `internal/storage/postgres/repository_test.go`
+- Modify: [`internal/storage/postgres/trace.go`](../../internal/storage/postgres/trace.go)
+- Test: [`internal/storage/postgres/repository_test.go`](../../internal/storage/postgres/repository_test.go)
 
 **Step 1: Define list query model**
 
@@ -329,8 +329,8 @@ git commit -m "feat: add trace list repository api"
 ## Task 6: Add Slow Node Statistics
 
 **Files:**
-- Modify: `internal/storage/postgres/trace.go`
-- Test: `internal/storage/postgres/repository_test.go`
+- Modify: [`internal/storage/postgres/trace.go`](../../internal/storage/postgres/trace.go)
+- Test: [`internal/storage/postgres/repository_test.go`](../../internal/storage/postgres/repository_test.go)
 
 **Step 1: Define stats model**
 
@@ -388,11 +388,11 @@ git commit -m "feat: add trace node latency stats"
 ## Task 7: Structure Trace Warnings
 
 **Files:**
-- Modify: `internal/rag/types.go`
-- Modify: `internal/graph/rag_graph.go`
-- Modify: `internal/http/sse.go`
-- Test: `internal/graph/rag_graph_test.go`
-- Test: `internal/http/router_test.go`
+- Modify: [`internal/rag/types.go`](../../internal/rag/types.go)
+- Modify: [`internal/graph/rag_graph.go`](../../internal/graph/rag_graph.go)
+- Modify: [`internal/http/sse.go`](../../internal/http/sse.go)
+- Test: [`internal/graph/rag_graph_test.go`](../../internal/graph/rag_graph_test.go)
+- Test: [`internal/http/router_test.go`](../../internal/http/router_test.go)
 
 **Step 1: Add warning model**
 
@@ -440,11 +440,11 @@ git commit -m "feat: structure trace warnings"
 ## Task 8: Add HTTP Trace Read API
 
 **Files:**
-- Modify: `api/openapi.yaml`
-- Modify: `internal/http/router.go`
-- Test: `internal/http/router_test.go`
-- Test: `tests/contract/openapi_test.go`
-- Doc: `docs/api.md`
+- Modify: [`api/openapi.yaml`](../../api/openapi.yaml)
+- Modify: [`internal/http/router.go`](../../internal/http/router.go)
+- Test: [`internal/http/router_test.go`](../../internal/http/router_test.go)
+- Test: [`tests/contract/openapi_test.go`](../../tests/contract/openapi_test.go)
+- Doc: [`docs/api.md`](../api.md)
 
 **Step 1: Add OpenAPI paths**
 
@@ -476,7 +476,7 @@ Keep output JSON aligned with CLI trace output where practical.
 
 **Step 4: Update docs**
 
-Document examples in `docs/api.md`.
+Document examples in [`docs/api.md`](../api.md).
 
 **Step 5: Run tests**
 
@@ -498,9 +498,9 @@ git commit -m "feat: add trace http api"
 ## Task 9: Enrich SSE Trace Summary
 
 **Files:**
-- Modify: `internal/rag/types.go`
-- Modify: `internal/http/sse.go`
-- Test: `internal/http/router_test.go`
+- Modify: [`internal/rag/types.go`](../../internal/rag/types.go)
+- Modify: [`internal/http/sse.go`](../../internal/http/sse.go)
+- Test: [`internal/http/router_test.go`](../../internal/http/router_test.go)
 
 **Step 1: Define response summary**
 
@@ -546,8 +546,8 @@ git commit -m "feat: enrich sse trace summary"
 ## Task 10: Extend oragctl Trace
 
 **Files:**
-- Modify: `cmd/oragctl/main.go`
-- Test: `cmd/oragctl/main_test.go`
+- Modify: [`cmd/oragctl/main.go`](../../cmd/oragctl/main.go)
+- Test: [`cmd/oragctl/main_test.go`](../../cmd/oragctl/main_test.go)
 
 **Step 1: Add flags**
 
@@ -596,10 +596,10 @@ git commit -m "feat: extend trace cli queries"
 ## Task 11: Add Memory Trace Store
 
 **Files:**
-- Modify: `internal/kb/types.go`
-- Modify: `internal/app/app.go`
-- Test: `internal/kb/store_test.go`
-- Test: `internal/app/app_test.go`
+- Modify: [`internal/kb/types.go`](../../internal/kb/types.go)
+- Modify: [`internal/app/app.go`](../../internal/app/app.go)
+- Test: [`internal/kb/store_test.go`](../../internal/kb/store_test.go)
+- Test: [`internal/app/app_test.go`](../../internal/app/app_test.go)
 
 **Step 1: Define in-memory trace methods**
 
@@ -641,10 +641,10 @@ git commit -m "feat: add memory trace store"
 ## Task 12: Add OpenTelemetry Bridge Points
 
 **Files:**
-- Modify: `internal/observability/tracing.go`
-- Modify: `internal/graph/nodes.go`
-- Test: `internal/observability/tracing_test.go`
-- Test: `internal/graph/rag_graph_test.go`
+- Modify: [`internal/observability/tracing.go`](../../internal/observability/tracing.go)
+- Modify: [`internal/graph/nodes.go`](../../internal/graph/nodes.go)
+- Test: [`internal/observability/tracing_test.go`](../../internal/observability/tracing_test.go)
+- Test: [`internal/graph/rag_graph_test.go`](../../internal/graph/rag_graph_test.go)
 
 **Step 1: Define minimal tracer abstraction**
 
