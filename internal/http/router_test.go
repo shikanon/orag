@@ -74,6 +74,20 @@ func TestAuthMiddlewareAndInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestRalphLoopHTTPRuntimeIsPlannedOnly(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSONWithTrace(h, "POST", "/v1/ralph-loop", `{"task_spec_path":"tasks.md","task_id":"Task 1","mode":"focused","max_rounds":1}`, token, "trace_ralph_loop_planned_only")
+	if resp.Code != 404 {
+		t.Fatalf("ralph-loop status = %d, want 404 for planned-only runtime boundary body=%s", resp.Code, resp.Body)
+	}
+	if strings.Contains(resp.Body, `"verdict"`) || strings.Contains(resp.Body, `"status":"completed"`) {
+		t.Fatalf("planned-only endpoint returned runnable Ralph Loop payload: %s", resp.Body)
+	}
+}
+
 func TestCreateKnowledgeBaseMemoryBackendReturnsCreated(t *testing.T) {
 	h, closeApp := newTestHertz(t)
 	defer closeApp()

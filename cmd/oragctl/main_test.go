@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,6 +153,50 @@ func TestParseTraceOptionsHasErrorFalse(t *testing.T) {
 	}
 	if opts.Filter.HasError == nil || *opts.Filter.HasError {
 		t.Fatalf("parseTraceOptions() has_error = %#v, want false", opts.Filter.HasError)
+	}
+}
+
+func TestGenerateAgentArtifactsCmdWritesMCPAndSkillOutputs(t *testing.T) {
+	dir := t.TempDir()
+	var out bytes.Buffer
+
+	err := generateAgentArtifactsCmd([]string{
+		"--openapi", filepath.Join("..", "..", "api", "openapi.yaml"),
+		"--out", dir,
+	}, &out)
+	if err != nil {
+		t.Fatalf("generateAgentArtifactsCmd() error = %v", err)
+	}
+
+	for _, path := range []string{
+		".mcp/tools/ralph-loop.json",
+		".codex/skills/ralph-loop/SKILL.md",
+		".claude/skills/ralph-loop/SKILL.md",
+		".trae/skills/ralph-loop/SKILL.md",
+	} {
+		if !strings.Contains(out.String(), "generated ") || !strings.Contains(out.String(), path) {
+			t.Fatalf("command output missing %s\n%s", path, out.String())
+		}
+		body, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatalf("read generated %s: %v", path, err)
+		}
+		if !strings.Contains(string(body), "Ralph Loop") && !strings.Contains(string(body), "ralph_loop_run") {
+			t.Fatalf("generated %s missing expected content\n%s", path, string(body))
+		}
+	}
+
+	out.Reset()
+	err = generateAgentArtifactsCmd([]string{
+		"--openapi", filepath.Join("..", "..", "api", "openapi.yaml"),
+		"--out", dir,
+		"--check",
+	}, &out)
+	if err != nil {
+		t.Fatalf("generateAgentArtifactsCmd(--check) error = %v", err)
+	}
+	if !strings.Contains(out.String(), "checked mcp .mcp/tools/ralph-loop.json") {
+		t.Fatalf("check output missing MCP artifact\n%s", out.String())
 	}
 }
 

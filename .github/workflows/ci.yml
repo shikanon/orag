@@ -17,6 +17,7 @@ jobs:
           go-version: "1.26.4"
       - run: go mod download
       - run: gofmt -w $(find . -name '*.go' -not -path './vendor/*') && git diff --exit-code
+      - run: make agent-sync-check
       - run: go test ./...
       - run: go vet ./...
       - run: go test ./tests/contract -run TestOpenAPI -v

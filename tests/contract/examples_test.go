@@ -19,11 +19,14 @@ func TestExamplesReadmeIndex(t *testing.T) {
 		"## Prerequisites",
 		"## Commands",
 		"## Service/Curl Examples",
+		"## MCP and Skill Examples",
 		"## Go Examples",
 		"## Covered Modules",
 		"GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run TestExamples -v",
 		"GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory",
+		"GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check",
 		"public `pkg/memory` facade",
+		"ralph_loop_run",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("examples README missing %q", want)
@@ -40,6 +43,10 @@ func TestExamplesReadmeIndex(t *testing.T) {
 		"Trace list/detail",
 		"Dataset and evaluation",
 		"Optimization",
+		"MCP stdio",
+		"Codex Skill",
+		"Claude Code Skill",
+		"Trae Skill",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("examples README missing covered module %q", want)
@@ -66,8 +73,62 @@ func TestExamplesScriptPaths(t *testing.T) {
 		"examples/curl/40_eval.sh",
 		"examples/curl/45_optimize.sh",
 		"examples/go/memory/main.go",
+		"examples/mcp/README.md",
+		"examples/mcp/stdio-client-config.json",
+		"examples/mcp/ralph-loop-stdio-smoke.jsonl",
+		"examples/skills/README.md",
+		"examples/skills/codex-ralph-loop.md",
+		"examples/skills/claude-code-ralph-loop.md",
+		"examples/skills/trae-ralph-loop.md",
 	} {
 		assertReferencedPathExists(t, readme, path)
+	}
+}
+
+func TestMCPAndSkillExamplesDocumentRalphLoop(t *testing.T) {
+	mcpSmoke := readRepoFile(t, "examples/mcp/ralph-loop-stdio-smoke.jsonl")
+	for _, want := range []string{
+		`"method":"initialize"`,
+		`"method":"tools/list"`,
+		`"method":"tools/call"`,
+		`"name":"ralph_loop_run"`,
+		`"task_id":"Task 5"`,
+	} {
+		if !strings.Contains(mcpSmoke, want) {
+			t.Fatalf("MCP smoke example missing %q", want)
+		}
+	}
+
+	clientConfig := readRepoFile(t, "examples/mcp/stdio-client-config.json")
+	for _, want := range []string{
+		`"orag-ralph-loop"`,
+		`"./cmd/orag-mcp"`,
+		`"ORAG_API_BASE_URL"`,
+		`"ORAG_API_TOKEN"`,
+		`"ORAG_TENANT_ID"`,
+	} {
+		if !strings.Contains(clientConfig, want) {
+			t.Fatalf("MCP client config missing %q", want)
+		}
+	}
+
+	for _, path := range []string{
+		"examples/skills/codex-ralph-loop.md",
+		"examples/skills/claude-code-ralph-loop.md",
+		"examples/skills/trae-ralph-loop.md",
+	} {
+		body := readRepoFile(t, path)
+		for _, want := range []string{
+			"ORAG_API_BASE_URL",
+			"ORAG_API_TOKEN",
+			"ORAG_TENANT_ID",
+			"Task 5",
+			"trace_id",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s missing %q", path, want)
+			}
+		}
 	}
 }
 

@@ -8,9 +8,11 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
+	"github.com/shikanon/orag/internal/agentsync"
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/config"
 	evalpkg "github.com/shikanon/orag/internal/eval"
@@ -24,17 +26,15 @@ func main() {
 		usage()
 		return
 	}
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("load config: %v", err)
-	}
 	switch os.Args[1] {
 	case "migrate":
+		cfg := mustConfig()
 		if err := migrateCmd(cfg); err != nil {
 			log.Fatalf("migrate: %v", err)
 		}
 		fmt.Println("migrations completed")
 	case "eval":
+		cfg := mustConfig()
 		app := mustApp(cfg)
 		defer func() {
 			if err := app.Close(); err != nil {
@@ -43,6 +43,7 @@ func main() {
 		}()
 		evalCmd(app, os.Args[2:])
 	case "token":
+		cfg := mustConfig()
 		app := mustApp(cfg)
 		defer func() {
 			if err := app.Close(); err != nil {
@@ -51,12 +52,25 @@ func main() {
 		}()
 		fmt.Println(app.BootstrapToken())
 	case "trace":
+		cfg := mustConfig()
 		if err := traceCmd(cfg, os.Args[2:], os.Stdout); err != nil {
 			log.Fatalf("trace: %v", err)
+		}
+	case "generate-agent-artifacts", "generate-skills":
+		if err := generateAgentArtifactsCmd(os.Args[2:], os.Stdout); err != nil {
+			log.Fatalf("%s: %v", os.Args[1], err)
 		}
 	default:
 		usage()
 	}
+}
+
+func mustConfig() config.Config {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+	return cfg
 }
 
 func migrateCmd(cfg config.Config) error {
@@ -66,6 +80,37 @@ func migrateCmd(cfg config.Config) error {
 	}
 	defer pool.Close()
 	return postgres.Migrate(context.Background(), pool, "migrations")
+}
+
+func generateAgentArtifactsCmd(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("generate-agent-artifacts", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	openAPIPath := fs.String("openapi", filepath.Join("api", "openapi.yaml"), "OpenAPI document path")
+	outputDir := fs.String("out", ".", "directory where generated MCP and Skill files are written")
+	check := fs.Bool("check", false, "verify generated files are in sync without writing")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	files, err := agentsync.GenerateFromOpenAPI(context.Background(), *openAPIPath)
+	if err != nil {
+		return err
+	}
+	if *check {
+		if err := agentsync.CheckFiles(*outputDir, files); err != nil {
+			return err
+		}
+		for _, file := range files {
+			fmt.Fprintf(out, "checked %s %s\n", file.Target, file.Path)
+		}
+		return nil
+	}
+	if err := agentsync.WriteFiles(*outputDir, files); err != nil {
+		return err
+	}
+	for _, file := range files {
+		fmt.Fprintf(out, "generated %s %s\n", file.Target, file.Path)
+	}
+	return nil
 }
 
 func mustApp(cfg config.Config) *core.App {
@@ -269,5 +314,5 @@ func (f optionalBoolFlag) IsBoolFlag() bool {
 }
 
 func usage() {
-	fmt.Println("usage: oragctl [migrate|eval|token|trace]")
+	fmt.Println("usage: oragctl [migrate|eval|token|trace|generate-agent-artifacts|generate-skills]")
 }

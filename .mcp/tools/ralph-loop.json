@@ -1,0 +1,148 @@
+{
+  "generated_from": "api/openapi.yaml",
+  "manifest_extension": "x-orag-agent-capabilities",
+  "protocol_version": "2024-11-05",
+  "tools": [
+    {
+      "name": "ralph_loop_run",
+      "description": "Execute a Ralph Loop task verification workflow through the ORAG API contract.",
+      "inputSchema": {
+        "description": "Input contract for the Ralph Loop agent capability. The Task 1\ncapability manifest marks the runtime endpoint as planned; MCP tools\nand Skill manifests use this schema as their input source of truth.\n",
+        "properties": {
+          "base_ref": {
+            "description": "Optional git base ref used for diff-aware verification.",
+            "example": "origin/main",
+            "type": "string"
+          },
+          "max_rounds": {
+            "description": "Maximum Ralph Loop verification rounds allowed for this invocation.",
+            "example": 1,
+            "maximum": 20,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "description": "Focused verifies the requested task only; broad verifies dependent surfaces too.",
+            "enum": [
+              "focused",
+              "broad"
+            ],
+            "example": "focused",
+            "type": "string"
+          },
+          "notes": {
+            "description": "Optional operator instructions that must not override the task boundary.",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task label to verify, for example `Task 1`.",
+            "example": "Task 1",
+            "type": "string"
+          },
+          "task_spec_path": {
+            "description": "Repository-relative path to the spec tasks file or task directory.",
+            "example": ".trae/specs/add-ralph-loop-mcp-skills/tasks.md",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_spec_path",
+          "task_id",
+          "mode",
+          "max_rounds"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "description": "Ralph Loop result envelope returned to MCP clients and generated Skills.",
+        "properties": {
+          "artifacts": {
+            "description": "Files or commands that provide evidence for the verdict.",
+            "items": {
+              "$ref": "#/components/schemas/RalphLoopArtifact"
+            },
+            "type": "array"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          },
+          "run_id": {
+            "example": "ralph_loop_20260705_task1",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "example": "completed",
+            "type": "string"
+          },
+          "summary": {
+            "description": "Human-readable verification summary.",
+            "type": "string"
+          },
+          "trace_id": {
+            "description": "Request trace identifier correlated with logs and trace lookup.",
+            "example": "trace_ralph_loop_example",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "fail",
+              "blocked"
+            ],
+            "example": "pass",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "verdict",
+          "summary",
+          "trace_id",
+          "artifacts"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "auth": {
+          "env": [
+            "ORAG_API_BASE_URL",
+            "ORAG_API_TOKEN",
+            "ORAG_TENANT_ID"
+          ],
+          "required": true,
+          "scheme": "bearerAuth"
+        },
+        "examples": [
+          {
+            "expected_output": {
+              "status": "completed",
+              "trace_id": "trace_ralph_loop_example",
+              "verdict": "pass"
+            },
+            "input": {
+              "max_rounds": 1,
+              "mode": "focused",
+              "task_id": "Task 1",
+              "task_spec_path": ".trae/specs/add-ralph-loop-mcp-skills/tasks.md"
+            },
+            "name": "verify-task1"
+          }
+        ],
+        "orag_capability_id": "ralph-loop",
+        "orag_display_name": "Ralph Loop",
+        "trace": {
+          "request_header": "X-Trace-ID",
+          "response_field": "trace_id",
+          "response_header": "X-Trace-ID"
+        }
+      }
+    }
+  ]
+}

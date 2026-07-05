@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"orag-local-smoke","version":"0.1.0"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ralph_loop_run","arguments":{"task_spec_path":".trae/specs/add-ralph-loop-mcp-skills/tasks.md","task_id":"Task 5","mode":"focused","max_rounds":1},"_meta":{"trace_id":"trace_ralph_loop_task5_smoke"}}}

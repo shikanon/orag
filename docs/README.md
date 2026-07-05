@@ -7,7 +7,7 @@
 | 场景 | 推荐顺序 | 目标 |
 | --- | --- | --- |
 | 第一次运行项目 | [`../README.md`](../README.md) -> [`getting-started/README.md`](./getting-started/README.md) -> [`getting-started/api-smoke.md`](./getting-started/api-smoke.md) | 完成本地启动、健康检查、登录、建库、入库、查询、trace、评估和优化 smoke。 |
-| 接入 API 或编写 SDK | [`api/README.md`](./api/README.md) -> [`api/auth-and-errors.md`](./api/auth-and-errors.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) -> [`../api/openapi.yaml`](../api/openapi.yaml) | 对齐认证、请求体、响应体、错误码和主业务 API。 |
+| 接入 API、MCP 或编写 SDK | [`api/README.md`](./api/README.md) -> [`api/auth-and-errors.md`](./api/auth-and-errors.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) -> [`api/agent-integrations.md`](./api/agent-integrations.md) -> [`../api/openapi.yaml`](../api/openapi.yaml) | 对齐认证、请求体、响应体、错误码、主业务 API、Ralph Loop MCP 和 Skill 集成。 |
 | 理解 RAG 内部链路 | [`architecture/README.md`](./architecture/README.md) -> [`architecture/rag-pipeline.md`](./architecture/rag-pipeline.md) -> [`Go-RAG-框架技术方案.md`](./Go-RAG-框架技术方案.md) | 理解 HTTP、检索、重排、生成、引用、缓存和存储边界。 |
 | 做 RAG 质量回归 | [`evaluation/README.md`](./evaluation/README.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) | 理解数据集、评估运行、deterministic/Judge/QAG 指标和 optimizer 行为。 |
 | 部署或排障 | [`operations/README.md`](./operations/README.md) -> [`operations/troubleshooting.md`](./operations/troubleshooting.md) -> [`development.md`](./development.md) | 明确依赖、配置、健康检查、metrics 和常见故障处理。 |
@@ -17,7 +17,7 @@
 | 目录 | 主题 | 覆盖内容 |
 | --- | --- | --- |
 | [`getting-started/`](./getting-started) | 快速上手 | 本地启动、依赖说明、API smoke、状态目录和常见 smoke 失败。 |
-| [`api/`](./api) | API 集成 | 认证、错误模型、知识库、入库任务、JSON/SSE 查询和 trace 查询。 |
+| [`api/`](./api) | API 集成 | 认证、错误模型、知识库、入库任务、JSON/SSE 查询、trace 查询、Ralph Loop MCP 和 Skill 集成。 |
 | [`architecture/`](./architecture) | 架构设计 | 模块地图、运行时依赖、RAG pipeline 和排查切入点。 |
 | [`evaluation/`](./evaluation) | 评估与优化 | 数据集、评估运行、rule-based metrics、LLM-as-Judge/QAG 和目标驱动 optimizer。 |
 | [`operations/`](./operations) | 运维排障 | 健康检查、metrics、部署检查清单、Docker 配置和故障排查。 |
@@ -44,11 +44,13 @@
 | OpenAPI 源文件 | [`../api/openapi.yaml`](../api/openapi.yaml) |
 | 内置文档页 | `GET /docs` |
 | curl smoke | [`../examples/curl/05_health_ready.sh`](../examples/curl/05_health_ready.sh) -> [`../examples/curl/50_optimize.sh`](../examples/curl/50_optimize.sh) |
+| Ralph Loop MCP/Skill | [`api/agent-integrations.md`](./api/agent-integrations.md) -> [`../examples/mcp/README.md`](../examples/mcp/README.md) -> [`../examples/skills/README.md`](../examples/skills/README.md) |
 | 契约测试 | `make openapi-validate` |
 
 ## 文档维护规则
 
 - API 行为变更时，同步更新 [`api/`](./api)、[`api.md`](./api.md)、[`../api/openapi.yaml`](../api/openapi.yaml) 和 [`../tests/contract`](../tests/contract)。
+- Ralph Loop 能力清单变更时，先更新 [`../api/openapi.yaml`](../api/openapi.yaml)，再运行 `make agent-sync`，并同步检查 [`api/agent-integrations.md`](./api/agent-integrations.md) 与 [`../examples/mcp`](../examples/mcp)。
 - 本地启动、测试命令或依赖端口变更时，同步更新 [`getting-started/`](./getting-started)、[`development.md`](./development.md) 和 README 的快速开始。
 - 部署变量、健康检查或 metrics 变更时，同步更新 [`operations/`](./operations) 和 [`operations.md`](./operations.md)。
 - 评估指标、optimizer 策略或数据集结构变更时，同步更新 [`evaluation/`](./evaluation) 和 [`evaluation.md`](./evaluation.md)。

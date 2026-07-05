@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "orag-ralph-loop": {
+      "command": "go",
+      "args": [
+        "run",
+        "./cmd/orag-mcp",
+        "--openapi",
+        "api/openapi.yaml"
+      ],
+      "env": {
+        "GOTOOLCHAIN": "go1.26.4",
+        "CGO_ENABLED": "0",
+        "GOFLAGS": "-tags=stdjson,gjson",
+        "ORAG_API_BASE_URL": "http://localhost:8080",
+        "ORAG_API_TOKEN": "replace-with-token",
+        "ORAG_TENANT_ID": "tenant_default",
+        "ORAG_MCP_TIMEOUT": "30s"
+      }
+    }
+  }
+}

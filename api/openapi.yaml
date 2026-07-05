@@ -13,6 +13,62 @@ tags:
   - name: Query
   - name: Trace
   - name: Evaluation
+x-orag-agent-capabilities:
+  version: 1
+  source: openapi
+  generation_boundary:
+    mcp_tool_schema: true
+    skill_manifests: true
+    runtime_handlers: false
+    note: Ralph Loop is a planned-only agent capability in this manifest; MCP/Skill artifacts can be generated from it, but the ORAG HTTP router intentionally does not register POST /v1/ralph-loop until a real runtime handler is implemented.
+  capabilities:
+    - id: ralph-loop
+      name: Ralph Loop
+      description: Run or resume a bounded Ralph Loop verification workflow for an ORAG task/spec and return the verdict, artifacts, and trace identifier.
+      status: planned
+      source:
+        kind: planned_http
+        method: POST
+        path: /v1/ralph-loop
+        operation_id: runRalphLoop
+        backing_services:
+          - optimization service
+          - evaluation service
+          - trace service
+      auth:
+        required: true
+        scheme: bearerAuth
+        env:
+          - ORAG_API_BASE_URL
+          - ORAG_API_TOKEN
+          - ORAG_TENANT_ID
+      trace:
+        request_header: X-Trace-ID
+        response_header: X-Trace-ID
+        response_field: trace_id
+      schemas:
+        input: "#/components/schemas/RalphLoopRequest"
+        output: "#/components/schemas/RalphLoopResponse"
+        error: "#/components/schemas/ErrorResponse"
+      mcp:
+        tool_name: ralph_loop_run
+        description: Execute a Ralph Loop task verification workflow through the ORAG API contract.
+        input_schema: "#/components/schemas/RalphLoopRequest"
+        output_schema: "#/components/schemas/RalphLoopResponse"
+      skills:
+        manifest_name: ralph-loop
+        description: Use when an agent needs to run bounded ORAG Ralph Loop verification from a spec/task path and report a PASS/FAIL verdict with trace evidence.
+      examples:
+        - name: verify-task1
+          input:
+            task_spec_path: .trae/specs/add-ralph-loop-mcp-skills/tasks.md
+            task_id: Task 1
+            mode: focused
+            max_rounds: 1
+          expected_output:
+            status: completed
+            verdict: pass
+            trace_id: trace_ralph_loop_example
 paths:
   /healthz:
     get:
@@ -1333,6 +1389,85 @@ components:
           type: string
         metrics:
           $ref: "#/components/schemas/EvaluationMetrics"
+    RalphLoopRequest:
+      type: object
+      required: [task_spec_path, task_id, mode, max_rounds]
+      description: |
+        Input contract for the Ralph Loop agent capability. The Task 1
+        capability manifest marks the runtime endpoint as planned; MCP tools
+        and Skill manifests use this schema as their input source of truth.
+      properties:
+        task_spec_path:
+          type: string
+          description: Repository-relative path to the spec tasks file or task directory.
+          example: .trae/specs/add-ralph-loop-mcp-skills/tasks.md
+        task_id:
+          type: string
+          description: Task label to verify, for example `Task 1`.
+          example: Task 1
+        mode:
+          type: string
+          enum: [focused, broad]
+          description: Focused verifies the requested task only; broad verifies dependent surfaces too.
+          example: focused
+        max_rounds:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: Maximum Ralph Loop verification rounds allowed for this invocation.
+          example: 1
+        base_ref:
+          type: string
+          description: Optional git base ref used for diff-aware verification.
+          example: origin/main
+        notes:
+          type: string
+          description: Optional operator instructions that must not override the task boundary.
+    RalphLoopResponse:
+      type: object
+      required: [run_id, status, verdict, summary, trace_id, artifacts]
+      description: Ralph Loop result envelope returned to MCP clients and generated Skills.
+      properties:
+        run_id:
+          type: string
+          example: ralph_loop_20260705_task1
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+          example: completed
+        verdict:
+          type: string
+          enum: [pass, fail, blocked]
+          example: pass
+        summary:
+          type: string
+          description: Human-readable verification summary.
+        trace_id:
+          type: string
+          description: Request trace identifier correlated with logs and trace lookup.
+          example: trace_ralph_loop_example
+        artifacts:
+          type: array
+          description: Files or commands that provide evidence for the verdict.
+          items:
+            $ref: "#/components/schemas/RalphLoopArtifact"
+        error:
+          $ref: "#/components/schemas/ErrorBody"
+    RalphLoopArtifact:
+      type: object
+      required: [kind, name]
+      properties:
+        kind:
+          type: string
+          enum: [file, command, trace]
+        name:
+          type: string
+        uri:
+          type: string
+        content_type:
+          type: string
+        sha256:
+          type: string
     OptimizeRequest:
       type: object
       required: [dataset_id, knowledge_base_id]
