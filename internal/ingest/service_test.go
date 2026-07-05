@@ -98,11 +98,33 @@ func (s *stagedSearchStore) Store(_ context.Context, _ kb.Document, chunks []kb.
 	return nil
 }
 
-func (s *stagedSearchStore) Activate(_ context.Context, _ kb.Document, chunks []kb.Chunk) error {
+func (s *stagedSearchStore) Activate(_ context.Context, doc kb.Document, chunks []kb.Chunk) error {
+	for id, chunk := range s.active {
+		if chunk.TenantID == doc.TenantID &&
+			chunk.KnowledgeBaseID == doc.KnowledgeBaseID &&
+			chunk.SourceURI == doc.SourceURI &&
+			chunk.DocumentID != doc.ID {
+			delete(s.active, id)
+		}
+	}
 	for _, chunk := range chunks {
 		if staged, ok := s.pending[chunk.ID]; ok {
 			s.active[chunk.ID] = staged
 			delete(s.pending, chunk.ID)
+		}
+	}
+	return nil
+}
+
+func (s *stagedSearchStore) DeleteDocumentSource(_ context.Context, tenantID, kbID, sourceURI string) error {
+	for id, chunk := range s.active {
+		if chunk.TenantID == tenantID && chunk.KnowledgeBaseID == kbID && chunk.SourceURI == sourceURI {
+			delete(s.active, id)
+		}
+	}
+	for id, chunk := range s.pending {
+		if chunk.TenantID == tenantID && chunk.KnowledgeBaseID == kbID && chunk.SourceURI == sourceURI {
+			delete(s.pending, id)
 		}
 	}
 	return nil
@@ -445,6 +467,68 @@ func TestIngestFailedCompositeIndexDoesNotExposeSparseChunks(t *testing.T) {
 	}
 	if len(results) != 0 {
 		t.Fatalf("failed ingestion is searchable: %#v", results)
+	}
+}
+
+func TestIngestFailedCompositeReplacementKeepsPreviousSourceSearchable(t *testing.T) {
+	ctx := context.Background()
+	store := newStagedSearchStore()
+	svc := &Service{
+		Parser:   parser.BasicParser{},
+		Splitter: chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder: fakeEmbedder{},
+		Indexer: kb.CompositeIndexer{Indexers: []kb.Indexer{
+			store,
+			noopIndexer{},
+		}},
+		Jobs: NewMemoryJobStore(),
+	}
+	req := Request{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		SourceURI:       "memory://replace.md",
+		Name:            "replace.md",
+		Content:         []byte("old replacement survives marker"),
+	}
+	first, err := svc.Ingest(ctx, req)
+	if err != nil {
+		t.Fatalf("first Ingest() error = %v", err)
+	}
+
+	qdrantErr := errors.New("qdrant upsert failed")
+	svc.Indexer = kb.CompositeIndexer{Indexers: []kb.Indexer{
+		store,
+		failingIndexer{err: qdrantErr},
+	}}
+	req.Content = []byte("new replacement hidden marker")
+	res, err := svc.Ingest(ctx, req)
+	if !errors.Is(err, qdrantErr) {
+		t.Fatalf("second Ingest() error = %v, want %v", err, qdrantErr)
+	}
+	if res.Job.Status != JobStatusFailed {
+		t.Fatalf("job status = %q", res.Job.Status)
+	}
+
+	chunks := store.Chunks("tenant_default", "kb_default")
+	if len(chunks) != 1 || chunks[0].DocumentID != first.Document.ID || chunks[0].Content != "old replacement survives marker" {
+		t.Fatalf("active chunks after failed replacement = %#v", chunks)
+	}
+	for name, retriever := range map[string]kb.Retriever{
+		"dense":  kb.DenseRetriever{Store: store},
+		"sparse": kb.SparseRetriever{Store: store},
+	} {
+		results, err := retriever.Retrieve(ctx, kb.SearchRequest{
+			TenantID:        "tenant_default",
+			KnowledgeBaseID: "kb_default",
+			Query:           "old replacement survives",
+			TopK:            8,
+		})
+		if err != nil {
+			t.Fatalf("%s Retrieve() error = %v", name, err)
+		}
+		if len(results) == 0 || results[0].Chunk.DocumentID != first.Document.ID {
+			t.Fatalf("%s results after failed replacement = %#v", name, results)
+		}
 	}
 }
 

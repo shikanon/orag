@@ -115,6 +115,41 @@ func TestDeleteDocumentSourceUsesTenantScopedSourceFilter(t *testing.T) {
 	}
 }
 
+func TestActivateDeletesPreviousSourcePointsButKeepsCurrentDocument(t *testing.T) {
+	points := &recordingPointsClient{}
+	store := VectorStore{Client: &Client{Points: points}, Collection: "chunks"}
+
+	err := store.Activate(context.Background(), kb.Document{
+		ID:              "doc_new",
+		TenantID:        "tenant_1",
+		KnowledgeBaseID: "kb_1",
+		SourceURI:       "memory://doc.md",
+	}, []kb.Chunk{{ID: "chk_new"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if points.deleteReq == nil {
+		t.Fatal("Activate did not call Qdrant delete")
+	}
+	filter := points.deleteReq.GetPoints().GetFilter()
+	if got := filterKeyword(t, filter, "tenant_id"); got != "tenant_1" {
+		t.Fatalf("tenant filter = %q", got)
+	}
+	if got := filterKeyword(t, filter, "knowledge_base_id"); got != "kb_1" {
+		t.Fatalf("knowledge base filter = %q", got)
+	}
+	if got := filterKeyword(t, filter, "source_uri"); got != "memory://doc.md" {
+		t.Fatalf("source URI filter = %q", got)
+	}
+	if len(filter.GetMustNot()) != 1 {
+		t.Fatalf("must_not conditions = %d", len(filter.GetMustNot()))
+	}
+	field := filter.GetMustNot()[0].GetField()
+	if field.GetKey() != "document_id" || field.GetMatch().GetKeyword() != "doc_new" {
+		t.Fatalf("current document exclusion = %#v", field)
+	}
+}
+
 func TestPayloadIntegerStringFallback(t *testing.T) {
 	payload := map[string]*qdrant.Value{"offset": integerValue(12)}
 	if got := payloadString(payload, "offset"); got != "12" {

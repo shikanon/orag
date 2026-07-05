@@ -163,11 +163,6 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 	for i := range chunks {
 		chunks[i].Vector = vectors[i]
 	}
-	if deleter, ok := s.Indexer.(kb.DocumentSourceDeleter); ok {
-		if err := deleter.DeleteDocumentSource(ctx, req.TenantID, req.KnowledgeBaseID, req.SourceURI); err != nil {
-			return fail(err)
-		}
-	}
 	if err := s.Indexer.Store(ctx, doc, chunks); err != nil {
 		return fail(err)
 	}
