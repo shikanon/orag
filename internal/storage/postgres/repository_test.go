@@ -298,7 +298,7 @@ func TestRepositoryDeleteKnowledgeBaseRollsBackOnChildDeleteError(t *testing.T) 
 	}
 }
 
-func TestRepositoryBootstrapDefaultsReturnsKnowledgeBaseError(t *testing.T) {
+func TestRepositoryBootstrapDefaultsReturnsKnowledgeBaseWriteError(t *testing.T) {
 	want := errors.New("knowledge base insert failed")
 	queryer := &fakeKnowledgeBaseQueryer{execErrs: []error{nil, want}}
 	repo := &Repository{kbQueryer: queryer}

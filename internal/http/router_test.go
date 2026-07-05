@@ -74,7 +74,25 @@ func TestAuthMiddlewareAndInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestKnowledgeBaseCreateStorageError(t *testing.T) {
+func TestCreateKnowledgeBaseMemoryBackendReturnsCreated(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"Docs","description":"Team docs","metadata":{"owner":"search"}}`, token)
+	if resp.Code != 201 {
+		t.Fatalf("create status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created kb.KnowledgeBase
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" || created.TenantID != "tenant_default" || created.Name != "Docs" {
+		t.Fatalf("unexpected create response: %#v", created)
+	}
+}
+
+func TestCreateKnowledgeBaseStorageError(t *testing.T) {
 	h, app, closeApp := newTestHertzWithApp(t)
 	defer closeApp()
 
