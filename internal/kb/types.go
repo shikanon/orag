@@ -112,19 +112,23 @@ type DocumentSourceDeleter interface {
 }
 
 type MemoryStore struct {
-	mu        sync.RWMutex
-	kbs       map[string]KnowledgeBase
-	documents map[string]Document
-	chunks    map[string]Chunk
-	relations []GraphRelation
+	mu               sync.RWMutex
+	kbs              map[string]KnowledgeBase
+	documents        map[string]Document
+	chunks           map[string]Chunk
+	pendingDocuments map[string]Document
+	pendingChunks    map[string]Chunk
+	relations        []GraphRelation
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		kbs:       map[string]KnowledgeBase{},
-		documents: map[string]Document{},
-		chunks:    map[string]Chunk{},
-		relations: nil,
+		kbs:              map[string]KnowledgeBase{},
+		documents:        map[string]Document{},
+		chunks:           map[string]Chunk{},
+		pendingDocuments: map[string]Document{},
+		pendingChunks:    map[string]Chunk{},
+		relations:        nil,
 	}
 }
 
@@ -173,14 +177,29 @@ func (s *MemoryStore) DeleteKnowledgeBase(_ context.Context, tenantID, id string
 			delete(s.chunks, chunkID)
 		}
 	}
+	for docID, doc := range s.pendingDocuments {
+		if doc.TenantID == tenantID && doc.KnowledgeBaseID == id {
+			delete(s.pendingDocuments, docID)
+		}
+	}
+	for chunkID, chunk := range s.pendingChunks {
+		if chunk.TenantID == tenantID && chunk.KnowledgeBaseID == id {
+			delete(s.pendingChunks, chunkID)
+		}
+	}
 	s.deleteGraphRelationsLocked(tenantID, id, "")
 	return true, nil
 }
 
-func (s *MemoryStore) Store(_ context.Context, doc Document, chunks []Chunk) error {
+func (s *MemoryStore) Store(ctx context.Context, doc Document, chunks []Chunk) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if isStagedStore(ctx) {
+		s.stageDocumentLocked(doc, chunks)
+		return nil
+	}
 	s.deleteDocumentSourceLocked(doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI)
+	s.deletePendingDocumentSourceLocked(doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI)
 	s.documents[doc.ID] = doc
 	s.deleteGraphRelationsLocked(doc.TenantID, doc.KnowledgeBaseID, doc.ID)
 	for _, chunk := range chunks {
@@ -189,11 +208,39 @@ func (s *MemoryStore) Store(_ context.Context, doc Document, chunks []Chunk) err
 	return nil
 }
 
+func (s *MemoryStore) Activate(_ context.Context, doc Document, chunks []Chunk) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stagedDoc, ok := s.pendingDocuments[doc.ID]
+	if !ok {
+		return nil
+	}
+	s.deleteDocumentSourceLocked(doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI)
+	s.documents[stagedDoc.ID] = stagedDoc
+	for _, chunk := range chunks {
+		if staged, ok := s.pendingChunks[chunk.ID]; ok {
+			s.chunks[staged.ID] = staged
+			delete(s.pendingChunks, chunk.ID)
+		}
+	}
+	delete(s.pendingDocuments, doc.ID)
+	return nil
+}
+
 func (s *MemoryStore) DeleteDocumentSource(_ context.Context, tenantID, kbID, sourceURI string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deleteDocumentSourceLocked(tenantID, kbID, sourceURI)
+	s.deletePendingDocumentSourceLocked(tenantID, kbID, sourceURI)
 	return nil
+}
+
+func (s *MemoryStore) stageDocumentLocked(doc Document, chunks []Chunk) {
+	s.deletePendingDocumentSourceLocked(doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI)
+	s.pendingDocuments[doc.ID] = doc
+	for _, chunk := range chunks {
+		s.pendingChunks[chunk.ID] = chunk
+	}
 }
 
 func (s *MemoryStore) deleteDocumentSourceLocked(tenantID, kbID, sourceURI string) {
@@ -215,6 +262,23 @@ func (s *MemoryStore) deleteDocumentSourceLocked(tenantID, kbID, sourceURI strin
 	}
 	for _, docID := range deletedDocIDs {
 		s.deleteGraphRelationsLocked(tenantID, kbID, docID)
+	}
+}
+
+func (s *MemoryStore) deletePendingDocumentSourceLocked(tenantID, kbID, sourceURI string) {
+	if sourceURI == "" {
+		return
+	}
+	for docID, doc := range s.pendingDocuments {
+		if doc.TenantID != tenantID || doc.KnowledgeBaseID != kbID || doc.SourceURI != sourceURI {
+			continue
+		}
+		delete(s.pendingDocuments, docID)
+		for chunkID, chunk := range s.pendingChunks {
+			if chunk.TenantID == tenantID && chunk.KnowledgeBaseID == kbID && chunk.DocumentID == docID {
+				delete(s.pendingChunks, chunkID)
+			}
+		}
 	}
 }
 

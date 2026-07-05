@@ -62,6 +62,21 @@ func (s VectorStore) DeleteDocumentSource(ctx context.Context, tenantID, kbID, s
 	return err
 }
 
+func (s VectorStore) Activate(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
+	if len(chunks) == 0 || doc.SourceURI == "" {
+		return nil
+	}
+	wait := true
+	_, err := s.Client.Points.Delete(ctx, &qdrant.DeletePoints{
+		CollectionName: s.Collection,
+		Wait:           &wait,
+		Points: &qdrant.PointsSelector{PointsSelectorOneOf: &qdrant.PointsSelector_Filter{
+			Filter: documentSourceExceptDocumentFilter(doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI, doc.ID),
+		}},
+	})
+	return err
+}
+
 func (s VectorStore) Retrieve(ctx context.Context, req kb.SearchRequest) ([]kb.SearchResult, error) {
 	limit := req.TopK
 	if req.DenseTopK > 0 {
@@ -105,6 +120,12 @@ func documentSourceFilter(tenantID, kbID, sourceURI string) *qdrant.Filter {
 		matchKeyword("knowledge_base_id", kbID),
 		matchKeyword("source_uri", sourceURI),
 	}}
+}
+
+func documentSourceExceptDocumentFilter(tenantID, kbID, sourceURI, documentID string) *qdrant.Filter {
+	filter := documentSourceFilter(tenantID, kbID, sourceURI)
+	filter.MustNot = []*qdrant.Condition{matchKeyword("document_id", documentID)}
+	return filter
 }
 
 func matchKeyword(key, value string) *qdrant.Condition {

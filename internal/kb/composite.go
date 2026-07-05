@@ -6,6 +6,23 @@ type ActivatingIndexer interface {
 	Activate(ctx context.Context, doc Document, chunks []Chunk) error
 }
 
+type stagedStoreContextKey struct{}
+
+func withStagedStore(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, stagedStoreContextKey{}, true)
+}
+
+func isStagedStore(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	staged, _ := ctx.Value(stagedStoreContextKey{}).(bool)
+	return staged
+}
+
 type CompositeIndexer struct {
 	Indexers []Indexer
 }
@@ -16,10 +33,15 @@ func (i CompositeIndexer) Store(ctx context.Context, doc Document, chunks []Chun
 		if indexer == nil {
 			continue
 		}
-		if err := indexer.Store(ctx, doc, chunks); err != nil {
+		storeCtx := ctx
+		activator, activating := indexer.(ActivatingIndexer)
+		if activating {
+			storeCtx = withStagedStore(ctx)
+		}
+		if err := indexer.Store(storeCtx, doc, chunks); err != nil {
 			return err
 		}
-		if activator, ok := indexer.(ActivatingIndexer); ok {
+		if activating {
 			activators = append(activators, activator)
 		}
 	}

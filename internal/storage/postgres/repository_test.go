@@ -298,6 +298,83 @@ func TestRepositoryDeleteKnowledgeBaseRollsBackOnChildDeleteError(t *testing.T) 
 	}
 }
 
+func TestRepositoryStoreStagedChunksDoesNotDeleteExistingSource(t *testing.T) {
+	tx := &fakeKnowledgeBaseTx{}
+	repo := &Repository{
+		StageChunks:  true,
+		kbTxBeginner: &fakeKnowledgeBaseTxBeginner{tx: tx},
+	}
+
+	err := repo.Store(context.Background(), kb.Document{
+		ID:              "doc_new",
+		TenantID:        "tenant_1",
+		KnowledgeBaseID: "kb_1",
+		SourceURI:       "memory://replace.md",
+		Title:           "replace.md",
+		ContentHash:     "hash_new",
+	}, []kb.Chunk{{
+		ID:              "chk_new",
+		TenantID:        "tenant_1",
+		KnowledgeBaseID: "kb_1",
+		DocumentID:      "doc_new",
+		SourceURI:       "memory://replace.md",
+		Content:         "new content",
+	}})
+	if err != nil {
+		t.Fatalf("Store() error = %v", err)
+	}
+	if len(tx.execSQLs) != 2 {
+		t.Fatalf("Store() exec calls = %d, want document and chunk inserts: %#v", len(tx.execSQLs), tx.execSQLs)
+	}
+	for _, sql := range tx.execSQLs {
+		if strings.Contains(sql, "DELETE FROM") {
+			t.Fatalf("staged Store deleted existing source before activation: %s", sql)
+		}
+	}
+	if got := tx.execArgs[1][11]; got != false {
+		t.Fatalf("staged chunk searchable arg = %#v, want false", got)
+	}
+	if tx.commitCalls != 1 {
+		t.Fatalf("Commit calls = %d, want 1", tx.commitCalls)
+	}
+}
+
+func TestRepositoryActivateDeletesOldSourceAndMarksNewChunksSearchable(t *testing.T) {
+	tx := &fakeKnowledgeBaseTx{}
+	repo := &Repository{kbTxBeginner: &fakeKnowledgeBaseTxBeginner{tx: tx}}
+
+	err := repo.Activate(context.Background(), kb.Document{
+		ID:              "doc_new",
+		TenantID:        "tenant_1",
+		KnowledgeBaseID: "kb_1",
+		SourceURI:       "memory://replace.md",
+		ContentHash:     "hash_new",
+	}, []kb.Chunk{{ID: "chk_new"}})
+	if err != nil {
+		t.Fatalf("Activate() error = %v", err)
+	}
+	if len(tx.execSQLs) != 3 {
+		t.Fatalf("Activate() exec calls = %d, want old chunk delete, old doc delete, activation update: %#v", len(tx.execSQLs), tx.execSQLs)
+	}
+	for i := 0; i < 2; i++ {
+		if !strings.Contains(tx.execSQLs[i], "content_hash<>$4") {
+			t.Fatalf("old source delete %d missing current hash guard: %s", i, tx.execSQLs[i])
+		}
+		if got := tx.execArgs[i][3]; got != "hash_new" {
+			t.Fatalf("old source delete %d keep hash arg = %#v, want hash_new", i, got)
+		}
+	}
+	if !strings.Contains(tx.execSQLs[2], "SET searchable=TRUE") {
+		t.Fatalf("activation update missing searchable flag: %s", tx.execSQLs[2])
+	}
+	if got := tx.execArgs[2][2]; got != "doc_new" {
+		t.Fatalf("activation document arg = %#v, want doc_new", got)
+	}
+	if tx.commitCalls != 1 {
+		t.Fatalf("Commit calls = %d, want 1", tx.commitCalls)
+	}
+}
+
 func TestRepositoryBootstrapDefaultsReturnsKnowledgeBaseWriteError(t *testing.T) {
 	want := errors.New("knowledge base insert failed")
 	queryer := &fakeKnowledgeBaseQueryer{execErrs: []error{nil, want}}

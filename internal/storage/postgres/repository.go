@@ -257,7 +257,7 @@ func (r *Repository) DeleteKnowledgeBase(ctx context.Context, tenantID, id strin
 }
 
 func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
-	tx, err := r.Pool.Begin(ctx)
+	tx, err := r.knowledgeBaseTxBeginner().BeginKnowledgeBaseTx(ctx)
 	if err != nil {
 		return err
 	}
@@ -275,8 +275,10 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 		doc.ID = existingID
 	}
 
-	if err := deleteDocumentSource(ctx, tx, doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI, doc.ContentHash); err != nil {
-		return err
+	if !r.StageChunks {
+		if err := deleteDocumentSource(ctx, tx, doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI, doc.ContentHash); err != nil {
+			return err
+		}
 	}
 
 	_, err = tx.Exec(ctx, `
@@ -327,7 +329,7 @@ func (r *Repository) DeleteDocumentSource(ctx context.Context, tenantID, kbID, s
 	return err
 }
 
-func deleteDocumentSource(ctx context.Context, tx pgx.Tx, tenantID, kbID, sourceURI, keepContentHash string) error {
+func deleteDocumentSource(ctx context.Context, tx knowledgeBaseTx, tenantID, kbID, sourceURI, keepContentHash string) error {
 	if sourceURI == "" {
 		return nil
 	}
@@ -350,12 +352,24 @@ func (r *Repository) Activate(ctx context.Context, doc kb.Document, chunks []kb.
 	if len(chunks) == 0 {
 		return nil
 	}
-	_, err := r.Pool.Exec(ctx, `
+	tx, err := r.knowledgeBaseTxBeginner().BeginKnowledgeBaseTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := deleteDocumentSource(ctx, tx, doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI, doc.ContentHash); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
 		UPDATE chunks
 		SET searchable=TRUE
 		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND document_id=$3`,
 		doc.TenantID, doc.KnowledgeBaseID, doc.ID)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) Chunks(tenantID, kbID string) []kb.Chunk {
