@@ -957,7 +957,8 @@ components:
           description: Request trace identifier. Query traces can be inspected with `oragctl trace --trace-id <trace_id>`.
         cache_status:
           type: string
-          enum: [hit, miss, error]
+          description: Semantic cache state. `bypass` is returned when the query router sends a request through the direct route without retrieval or cache lookup.
+          enum: [hit, miss, error, bypass]
         profile:
           $ref: "#/components/schemas/Profile"
         warnings:

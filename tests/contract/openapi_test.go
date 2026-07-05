@@ -163,6 +163,35 @@ func TestOptimizationAndJudgeSchemasExposeAsyncContract(t *testing.T) {
 	}
 }
 
+func TestQueryResponseCacheStatusEnumCoversRuntimeStatuses(t *testing.T) {
+	doc, err := openapi3.NewLoader().LoadFromFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Validate(context.Background()); err != nil {
+		t.Fatalf("openapi validation failed: %v", err)
+	}
+
+	queryResponse := requireSchema(t, doc, "QueryResponse")
+	cacheStatusRef, ok := queryResponse.Properties["cache_status"]
+	if !ok || cacheStatusRef == nil || cacheStatusRef.Value == nil {
+		t.Fatal("QueryResponse.cache_status schema missing")
+	}
+	values := make(map[string]bool, len(cacheStatusRef.Value.Enum))
+	for _, raw := range cacheStatusRef.Value.Enum {
+		value, ok := raw.(string)
+		if !ok {
+			t.Fatalf("QueryResponse.cache_status enum value has type %T, want string", raw)
+		}
+		values[value] = true
+	}
+	for _, want := range []string{"hit", "miss", "error", "bypass"} {
+		if !values[want] {
+			t.Fatalf("QueryResponse.cache_status enum missing %q; enum=%#v", want, cacheStatusRef.Value.Enum)
+		}
+	}
+}
+
 func TestEvaluationSchemasExposeQualityMetrics(t *testing.T) {
 	doc, err := openapi3.NewLoader().LoadFromFile("../../api/openapi.yaml")
 	if err != nil {

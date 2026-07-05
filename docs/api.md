@@ -384,7 +384,7 @@ POST /v1/query
 - `citations`：引用列表，包含 `chunk_id`、`document_id`、`source_uri`，可选 `section` 和 `quote`。
 - `retrieved_chunks`：召回结果，包含 chunk、分数、排序和来源；重排成功时 `from` 可能为 `ark_rerank`。
 - `trace_id`：本次查询 trace。
-- `cache_status`：`hit`、`miss` 或 `error`。
+- `cache_status`：`hit`、`miss`、`error` 或 direct route 跳过检索与缓存时的 `bypass`。
 - `warnings`：可选警告，例如无召回上下文时会包含 `no_retrieved_context`。
 
 [`examples/curl/30_query.sh`](../examples/curl/30_query.sh) 调用该接口，不发送 `top_k`，默认由服务配置决定。

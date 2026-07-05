@@ -138,7 +138,7 @@ Content-Type: application/json
 | `answer` | 生成答案。 |
 | `citations` | 引用文档和片段信息。 |
 | `trace_id` | 请求链路 ID。 |
-| `cache_status` | 语义缓存状态，例如 `hit` 或非命中状态。 |
+| `cache_status` | 语义缓存状态，例如 `hit`、`miss`，或 direct route 跳过检索与缓存时的 `bypass`。 |
 | `warnings` | 查询过程中的非致命提醒。 |
 
 `trace_id` 会贯穿本次 HTTP 请求、RAG pipeline、结构化日志和 PostgreSQL trace 记录。需要查看持久化 trace 时，可用 HTTP API 查询当前 tenant 内的记录：
