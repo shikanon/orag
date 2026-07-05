@@ -674,6 +674,21 @@ func TestRepositoryStoresOptimizationRunAndCandidate(t *testing.T) {
 		SearchSpace: optimizerpkg.SearchSpace{Retrieval: optimizerpkg.RetrievalSpace{
 			DenseTopK: []int{4, 8},
 		}},
+		Config: optimizerpkg.RunConfig{
+			DatasetID:       "ds_1",
+			KnowledgeBaseID: "kb_1",
+			Objective:       optimizerpkg.ObjectiveSpec{Maximize: "pairwise_accuracy"},
+			SearchSpace: optimizerpkg.SearchSpace{Retrieval: optimizerpkg.RetrievalSpace{
+				DenseTopK: []int{4, 8},
+			}},
+			Search:         optimizerpkg.SearchSpec{Strategy: optimizerpkg.SearchStrategyGrid, MaxCandidates: 2},
+			Budget:         optimizerpkg.Budget{MaxWallTimeSeconds: 30},
+			Profile:        rag.ProfileHighPrecision,
+			TopK:           8,
+			SelectionSplit: "eval",
+			HoldoutSplit:   "holdout",
+		},
+		Runner:                map[string]any{"type": "internal_rag", "profile": string(rag.ProfileHighPrecision), "top_k": 8},
 		Status:                optimizerpkg.RunStatusQueued,
 		SamplingStrategy:      optimizerpkg.SearchStrategyGrid,
 		SearchSpaceSize:       2,
@@ -697,6 +712,12 @@ func TestRepositoryStoresOptimizationRunAndCandidate(t *testing.T) {
 	checkpoint, _ := queryer.execArgs[15].([]byte)
 	if !strings.Contains(string(checkpoint), "completed_candidate_ids") || queryer.execArgs[18] != &costBudget {
 		t.Fatalf("run args = %#v checkpoint=%s", queryer.execArgs, string(checkpoint))
+	}
+	runner, _ := queryer.execArgs[6].([]byte)
+	for _, want := range []string{`"run_config"`, `"holdout_split":"holdout"`, `"profile":"high_precision"`, `"top_k":8`} {
+		if !strings.Contains(string(runner), want) {
+			t.Fatalf("runner config JSON missing %s: %s", want, string(runner))
+		}
 	}
 
 	expiresAt := now.Add(time.Hour)

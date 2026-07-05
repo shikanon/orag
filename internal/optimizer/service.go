@@ -33,6 +33,7 @@ type OptimizationRun struct {
 	KnowledgeBaseID         string
 	Objective               ObjectiveSpec
 	SearchSpace             SearchSpace
+	Config                  RunConfig
 	Runner                  map[string]any
 	Status                  RunStatus
 	StatusReason            string
@@ -137,6 +138,7 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (OptimizationRu
 		KnowledgeBaseID:         req.KnowledgeBaseID,
 		Objective:               req.Objective,
 		SearchSpace:             req.SearchSpace,
+		Config:                  RunConfigFromSubmitRequest(req),
 		Runner:                  req.Runner,
 		Status:                  RunStatusQueued,
 		SamplingStrategy:        search.Strategy,
@@ -212,7 +214,20 @@ func (s *Service) Resume(ctx context.Context, tenantID, runID string, req Submit
 	if !ok {
 		return OptimizationRun{}, ErrOptimizationNotFound
 	}
+	resumeReq := req
+	if isEmptySubmitRequest(resumeReq) {
+		resumeReq = run.StoredSubmitRequest()
+	}
+	if resumeReq.TenantID == "" {
+		resumeReq.TenantID = tenantID
+	}
 	now := s.clock()
+	run.DatasetID = resumeReq.DatasetID
+	run.KnowledgeBaseID = resumeReq.KnowledgeBaseID
+	run.Objective = resumeReq.Objective
+	run.SearchSpace = resumeReq.SearchSpace
+	run.Config = RunConfigFromSubmitRequest(resumeReq)
+	run.Runner = resumeReq.Runner
 	run.Status = RunStatusQueued
 	run.StatusReason = ""
 	run.CancelRequestedAt = nil
@@ -223,12 +238,25 @@ func (s *Service) Resume(ctx context.Context, tenantID, runID string, req Submit
 		return OptimizationRun{}, err
 	}
 	if !s.DisableAutoStart {
-		go s.run(context.Background(), run.ID, req)
+		go s.run(context.Background(), run.ID, resumeReq)
 	}
 	return run, nil
 }
 
 func (s *Service) RunPending(ctx context.Context, tenantID, runID string, req SubmitRequest) error {
+	if isEmptySubmitRequest(req) {
+		run, ok, err := s.repo().GetOptimizationRun(ctx, tenantID, runID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrOptimizationNotFound
+		}
+		req = run.StoredSubmitRequest()
+	}
+	if req.TenantID == "" {
+		req.TenantID = tenantID
+	}
 	return s.run(ctx, runID, req)
 }
 
@@ -534,4 +562,8 @@ func costBudget(req SubmitRequest) *float64 {
 		return &v
 	}
 	return nil
+}
+
+func isEmptySubmitRequest(req SubmitRequest) bool {
+	return len(req.Runner) == 0 && RunConfigFromSubmitRequest(req).IsZero()
 }
