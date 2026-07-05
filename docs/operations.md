@@ -36,7 +36,7 @@
 `/readyz` 的检查项与当前实现保持一致：
 
 - `STORAGE_BACKEND=memory`：只返回本地 `storage=ready`。
-- `STORAGE_BACKEND=qdrant_postgres`：检查 `postgres` 是否可 ping 通，检查 Qdrant 主 collection `QDRANT_COLLECTION` 和语义缓存 collection `QDRANT_SEMANTIC_CACHE_COLLECTION` 是否存在。
+- `STORAGE_BACKEND=qdrant_postgres`：检查 `postgres` 是否可 ping 通，检查 Qdrant 主 collection `QDRANT_COLLECTION` 和语义缓存 collection `QDRANT_SEMANTIC_CACHE_COLLECTION` 是否存在，并校验两者使用单 unnamed vector、vector size 等于 `ARK_EMBEDDING_DIMENSIONS`、distance 为 cosine。
 - `model_provider`：只根据配置校验结果报告 `configured` 或显式测试模式下的 `mock`，不主动调用外部模型接口，避免第三方波动影响本地服务就绪。
 
 模型 provider 状态只可能报告为：
@@ -44,7 +44,7 @@
 - `mock`：显式设置 `ALLOW_DETERMINISTIC_MOCK=true` 且选择 `mock` provider。
 - `configured`：已配置所选 provider 的必需 key。
 
-如果 PostgreSQL 不可达、Qdrant 不可达或必需 collection 缺失，`/readyz` 会返回未就绪；但它不会验证数据库迁移是否完整，也不会验证模型 key、模型名、额度或网络出口是否真实可用。
+如果 PostgreSQL 不可达、Qdrant 不可达、必需 collection 缺失，或 Qdrant collection 的 vector size/distance 与当前 embedding 配置不兼容，`/readyz` 会返回未就绪；但它不会验证数据库迁移是否完整，也不会验证模型 key、模型名、额度或网络出口是否真实可用。
 
 ## Metrics
 
@@ -159,7 +159,8 @@ QDRANT_GRPC_PORT=6334
 
 - `postgres` 报错：检查 `DATABASE_URL`、数据库账号密码、网络连通性和 PostgreSQL 服务状态。注意 `/readyz` 只做 ping，不验证迁移完整性；接口出现 SQL 表不存在时再执行 `make migrate` 或对应迁移命令。
 - `qdrant` 报错：检查 `QDRANT_HOST`、`QDRANT_GRPC_PORT`、`QDRANT_API_KEY`、`QDRANT_USE_TLS` 和 Qdrant 服务状态。默认 gRPC 端口是 `6334`，不要误填 REST 端口 `6333`。
-- `required collection is missing`：检查 `QDRANT_COLLECTION`、`QDRANT_SEMANTIC_CACHE_COLLECTION` 名称是否与环境变量一致；需要自动创建时确认 `QDRANT_AUTO_CREATE_COLLECTIONS=true`，否则手动创建两个 collection，并保持向量维度与 `ARK_EMBEDDING_DIMENSIONS` 一致。
+- `collection ... is missing`：检查 `QDRANT_COLLECTION`、`QDRANT_SEMANTIC_CACHE_COLLECTION` 名称是否与环境变量一致；需要自动创建时确认 `QDRANT_AUTO_CREATE_COLLECTIONS=true`，否则手动创建两个 collection，并保持向量维度与 `ARK_EMBEDDING_DIMENSIONS` 一致、distance 为 cosine。
+- `vector config mismatch`：现有 Qdrant collection 的 vector size 或 distance 与当前配置不兼容。确认 `ARK_EMBEDDING_DIMENSIONS` 和 embedding provider/model 是否应与旧数据保持一致；如需切换模型或维度，先备份数据，再迁移或重建受影响的 Qdrant collection/volume，并确保 distance 为 cosine。
 - `model_provider=mock`：说明当前显式启用了 deterministic mock。生产或真实模型验证必须改为真实 provider 并配置对应 key。`/readyz` 不主动调用外部模型接口，因此 `model_provider=configured` 只代表必需 key 已注入，不代表 key、额度或模型名一定可用。
 
 ### API 可以启动但查询失败
@@ -167,7 +168,7 @@ QDRANT_GRPC_PORT=6334
 - 401/403：检查登录 token、`JWT_SECRET` 是否发生轮换、`AUTH_TOKEN_TTL` 是否过期，以及默认管理员密码是否已按部署环境更新。
 - 入库或查询返回外部模型错误：检查 `LLM_*_PROVIDER`、对应 provider API key、`ARK_BASE_URL`、`AZURE_OPENAI_BASE_URL`、`GOOGLE_CLOUD_BASE_URL`、其它 `<PROVIDER>_BASE_URL`、`ARK_RERANK_BASE_URL`、`ALIYUN_RERANK_BASE_URL`、模型名、超时和重试配置；用真实外部模型前应确保网络出口、账号额度和模型权限可用。
 - 查询结果总是无上下文：检查文档是否成功入库、PostgreSQL 元数据是否存在、Qdrant 主 collection 是否有向量，以及 `RAG_CONTEXT_TOP_N`、`RAG_MAX_CONTEXT_TOKENS` 是否被设置得过低。
-- 语义缓存命中异常：查看 `orag_rag_cache_hits_total`、`orag_rag_cache_misses_total` 和 `RAG_SEMANTIC_CACHE_THRESHOLD`；collection 缺失会在 `/readyz` 暴露。
+- 语义缓存命中异常：查看 `orag_rag_cache_hits_total`、`orag_rag_cache_misses_total` 和 `RAG_SEMANTIC_CACHE_THRESHOLD`；semantic cache collection 缺失或 vector 配置不兼容会在 `/readyz` 暴露。
 - 已知错误响应或 SSE `error` 事件中的 `trace_id`：先在 HTTP 日志中搜索该值，再运行 `oragctl trace --trace-id <trace_id>` 查看 `node_spans[].error` 和节点耗时。
 
 ### Docker Compose 依赖异常

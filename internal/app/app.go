@@ -460,19 +460,13 @@ func (a *App) Readiness(ctx context.Context) (map[string]ReadinessCheck, bool) {
 			checks["qdrant"] = ReadinessCheck{Status: "error", Error: "not configured"}
 			ready = false
 		} else {
-			mainOK, mainErr := a.Qdrant.CollectionExists(ctx, a.Config.Qdrant.Collection)
-			cacheOK, cacheErr := a.Qdrant.CollectionExists(ctx, a.Config.Qdrant.SemanticCacheCollection)
-			switch {
-			case mainErr != nil:
-				checks["qdrant"] = ReadinessCheck{Status: "error", Error: mainErr.Error()}
+			if err := a.Qdrant.ValidateCollection(ctx, a.Config.Qdrant.Collection, a.Config.Ark.EmbeddingDimensions); err != nil {
+				checks["qdrant"] = ReadinessCheck{Status: "error", Error: err.Error()}
 				ready = false
-			case cacheErr != nil:
-				checks["qdrant"] = ReadinessCheck{Status: "error", Error: cacheErr.Error()}
+			} else if err := a.Qdrant.ValidateCollection(ctx, a.Config.Qdrant.SemanticCacheCollection, a.Config.Ark.EmbeddingDimensions); err != nil {
+				checks["qdrant"] = ReadinessCheck{Status: "error", Error: err.Error()}
 				ready = false
-			case !mainOK || !cacheOK:
-				checks["qdrant"] = ReadinessCheck{Status: "error", Error: "required collection is missing"}
-				ready = false
-			default:
+			} else {
 				checks["qdrant"] = ReadinessCheck{Status: "ready"}
 			}
 		}
