@@ -119,7 +119,7 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 			LatencyMS:   time.Since(start).Milliseconds(),
 		}, nil
 	}
-	results = s.ApplyRerank(ctx, req.Query, results)
+	results = s.ApplyRerank(ctx, req.Query, results, topK)
 	contextText, citations := s.Packer.Pack(results)
 	system := "你是一个严格基于给定上下文回答的 RAG 助手。回答必须使用中文，并在事实来自上下文时引用 chunk id。"
 	if profile == ProfileHighPrecision {
@@ -288,12 +288,18 @@ func cacheProfile(profile Profile) Profile {
 	return profile
 }
 
-func (s *Service) ApplyRerank(ctx context.Context, query string, results []kb.SearchResult) []kb.SearchResult {
+func (s *Service) ApplyRerank(ctx context.Context, query string, results []kb.SearchResult, topK int) []kb.SearchResult {
 	docs := make([]ark.RerankDocument, len(results))
 	for i, result := range results {
 		docs[i] = ark.RerankDocument{ID: result.Chunk.ID, Content: result.Chunk.Content}
 	}
-	reranked, err := s.Model.Rerank(ctx, query, docs, s.Packer.TopN)
+	if topK <= 0 {
+		topK = s.TopK
+	}
+	if topK <= 0 || topK > len(docs) {
+		topK = len(docs)
+	}
+	reranked, err := s.Model.Rerank(ctx, query, docs, topK)
 	if err != nil || len(reranked) == 0 {
 		return results
 	}

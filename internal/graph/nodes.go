@@ -141,7 +141,7 @@ func (n NodeSet) Rerank(ctx context.Context, st State) (State, error) {
 		if st.Cached || len(st.Results) == 0 {
 			return nil
 		}
-		st.Results = n.Service.ApplyRerank(ctx, st.Request.Query, st.Results)
+		st.Results = n.Service.ApplyRerank(ctx, st.Request.Query, st.Results, st.TopK)
 		return nil
 	})
 }

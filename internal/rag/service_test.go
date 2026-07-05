@@ -126,6 +126,90 @@ func TestRetrieveExpandedUsesConfiguredRRFK(t *testing.T) {
 	}
 }
 
+func TestRetrieveExpandedUsesEffectiveTopKWithHybridRetrieverDefault(t *testing.T) {
+	ctx := context.Background()
+	dense := &topKServiceRetriever{prefix: "dense", max: 60}
+	sparse := &topKServiceRetriever{prefix: "sparse", max: 60}
+	service := Service{
+		Retriever: kb.HybridRetriever{
+			Dense:  dense,
+			Sparse: sparse,
+			RRFK:   60,
+			TopN:   8,
+		},
+		TopK: 50,
+	}
+
+	results, _, warnings, err := service.RetrieveExpanded(ctx, QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+	}, 0, []RetrievalQuery{{Query: "qdrant vector search"}}, []float64{1, 2})
+	if err != nil {
+		t.Fatalf("RetrieveExpanded() error = %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if len(results) != 50 {
+		t.Fatalf("len(results) = %d, want 50", len(results))
+	}
+	seen := map[string]struct{}{}
+	for _, result := range results {
+		if _, ok := seen[result.Chunk.ID]; ok {
+			t.Fatalf("duplicate result id %q in %#v", result.Chunk.ID, results)
+		}
+		seen[result.Chunk.ID] = struct{}{}
+	}
+	if got := len(seen); got != 50 {
+		t.Fatalf("unique result ids = %d, want 50", got)
+	}
+	if len(dense.requests) != 1 || dense.requests[0].TopK != 50 || dense.requests[0].DenseTopK != 50 {
+		t.Fatalf("dense request = %#v, want TopK and DenseTopK 50", dense.requests)
+	}
+	if len(sparse.requests) != 1 || sparse.requests[0].TopK != 50 || sparse.requests[0].SparseTopK != 50 {
+		t.Fatalf("sparse request = %#v, want TopK and SparseTopK 50", sparse.requests)
+	}
+}
+
+func TestExecuteExplicitTopKNotTruncatedByContextTopN(t *testing.T) {
+	ctx := context.Background()
+	model := &scriptedServiceModel{}
+	service := Service{
+		Retriever:       &topKServiceRetriever{prefix: "rerank", max: 20},
+		Model:           model,
+		Packer:          ContextPacker{MaxTokens: 512, TopN: 8},
+		PromptStrategy:  prompt.NewStrategy("auto"),
+		DefaultProfile:  ProfileRealtime,
+		NoContextAnswer: "no context",
+		TopK:            50,
+	}
+
+	resp, err := service.Execute(ctx, QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+		TopK:            16,
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(model.rerankTopNs) != 1 || model.rerankTopNs[0] != 16 {
+		t.Fatalf("rerank top_n calls = %#v, want [16]", model.rerankTopNs)
+	}
+	if len(resp.RetrievedChunks) != 16 {
+		t.Fatalf("len(retrieved_chunks) = %d, want 16", len(resp.RetrievedChunks))
+	}
+	if len(resp.Citations) != 8 {
+		t.Fatalf("len(citations) = %d, want context TopN 8", len(resp.Citations))
+	}
+	for _, result := range resp.RetrievedChunks {
+		if result.From != "ark_rerank" {
+			t.Fatalf("retrieved chunk source = %q, want ark_rerank", result.From)
+		}
+	}
+}
+
 func TestExecuteDirectRouteBypassesRetrieval(t *testing.T) {
 	ctx := context.Background()
 	retriever := &recordingServiceRetriever{}
@@ -231,8 +315,41 @@ func (r *rrfKServiceRetriever) Retrieve(_ context.Context, req kb.SearchRequest)
 	}}, nil
 }
 
+type topKServiceRetriever struct {
+	prefix   string
+	max      int
+	requests []kb.SearchRequest
+}
+
+func (r *topKServiceRetriever) Retrieve(_ context.Context, req kb.SearchRequest) ([]kb.SearchResult, error) {
+	r.requests = append(r.requests, req)
+	limit := req.TopK
+	if limit <= 0 || limit > r.max {
+		limit = r.max
+	}
+	results := make([]kb.SearchResult, 0, limit)
+	for i := 1; i <= limit; i++ {
+		id := fmt.Sprintf("%s_candidate_%03d", r.prefix, i)
+		results = append(results, kb.SearchResult{
+			Chunk: kb.Chunk{
+				ID:              id,
+				TenantID:        req.TenantID,
+				KnowledgeBaseID: req.KnowledgeBaseID,
+				DocumentID:      r.prefix + "_doc",
+				Content:         fmt.Sprintf("%s context %03d", req.Query, i),
+				SourceURI:       "memory://" + r.prefix,
+			},
+			Score: float64(limit - i + 1),
+			Rank:  i,
+			From:  r.prefix,
+		})
+	}
+	return results, nil
+}
+
 type scriptedServiceModel struct {
 	systemPrompts []string
+	rerankTopNs   []int
 }
 
 func (m *scriptedServiceModel) Chat(_ context.Context, messages []ark.ChatMessage) (string, error) {
@@ -263,6 +380,7 @@ func (m *scriptedServiceModel) Embed(_ context.Context, texts []string) ([][]flo
 }
 
 func (m *scriptedServiceModel) Rerank(_ context.Context, _ string, docs []ark.RerankDocument, topN int) ([]ark.RerankResult, error) {
+	m.rerankTopNs = append(m.rerankTopNs, topN)
 	if topN <= 0 || topN > len(docs) {
 		topN = len(docs)
 	}

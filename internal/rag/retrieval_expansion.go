@@ -196,7 +196,6 @@ func (s *Service) retrieveOne(ctx context.Context, req QueryRequest, searchReq k
 	if retriever, ok := s.Retriever.(interface {
 		RetrieveWithWarnings(context.Context, kb.SearchRequest) ([]kb.SearchResult, []string, error)
 	}); ok {
-		searchReq.TopK = req.TopK
 		if req.TopK <= 0 {
 			searchReq.DenseTopK = topK
 			searchReq.SparseTopK = topK

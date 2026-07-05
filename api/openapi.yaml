@@ -938,6 +938,7 @@ components:
           type: integer
           minimum: 1
           maximum: 100
+          description: Number of final fused/reranked retrieved_chunks to return. When omitted, the service top-k is used, defaulting from RAG_DENSE_TOP_K; RAG_CONTEXT_TOP_N only limits prompt context and citations.
     QueryResponse:
       type: object
       required: [answer, citations, retrieved_chunks, trace_id, cache_status, profile, latency_ms, created_at]
@@ -950,6 +951,7 @@ components:
             $ref: "#/components/schemas/Citation"
         retrieved_chunks:
           type: array
+          description: Final fused/reranked retrieval results sized by top_k. Prompt context and citations may include fewer chunks because they are independently limited by RAG_CONTEXT_TOP_N and token budget.
           items:
             $ref: "#/components/schemas/SearchResult"
         trace_id:
