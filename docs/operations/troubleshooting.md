@@ -51,7 +51,7 @@ curl -fsS http://localhost:8080/readyz
 | 错误 | 可能原因 | 处理 |
 | --- | --- | --- |
 | `invalid_credentials` | 用户名或密码错误。 | 检查 `ADMIN_DEFAULT_USERNAME`、`ADMIN_DEFAULT_PASSWORD` 和脚本覆盖变量。 |
-| `missing_bearer_token` | 未带 token。 | 重新运行 `examples/curl/00_login.sh`。 |
+| `missing_bearer_token` | 未带 token。 | 重新运行 [`examples/curl/00_login.sh`](../../examples/curl/00_login.sh)。 |
 | `invalid_bearer_token` | token 过期或 `JWT_SECRET` 已轮换。 | 重新登录并更新 `.orag-demo/token`。 |
 
 ## 入库失败
@@ -74,6 +74,14 @@ curl -fsS http://localhost:8080/readyz
 已知 `trace_id` 时先查询持久化 RAG trace：
 
 ```bash
+TOKEN="$(cat .orag-demo/token)"
+curl -fsS "http://localhost:8080/v1/traces/${TRACE_ID}" \
+  -H "Authorization: Bearer ${TOKEN}"
+```
+
+或直接读取本地 PostgreSQL：
+
+```bash
 oragctl trace --trace-id trace_xxx
 ```
 
@@ -82,7 +90,7 @@ oragctl trace --trace-id trace_xxx
 | 步骤 | 操作 | 目的 |
 | --- | --- | --- |
 | 1 | 在 HTTP 日志中搜索 `trace_id`。 | 确认请求 `route`、`status`、`latency` 和 `error_code`。 |
-| 2 | 运行 `oragctl trace --trace-id <trace_id>`。 | 查看 `profile`、RAG 总耗时和 `node_spans`。 |
+| 2 | 调用 `GET /v1/traces/{trace_id}` 或运行 `oragctl trace --trace-id <trace_id>`。 | 查看 `profile`、RAG 总耗时和 `node_spans`。 |
 | 3 | 检查 `node_spans[].error`。 | 判断失败发生在检索、重排、打包、生成还是引用阶段。 |
 | 4 | 对照 `node_spans[].latency_ms` 和 metrics histogram。 | 判断是单次异常还是整体延迟升高。 |
 | 5 | 回到依赖日志或配置。 | 针对 Qdrant、PostgreSQL、模型 provider、rerank provider 或 token/tenant 问题处理。 |
@@ -101,7 +109,7 @@ oragctl trace --trace-id trace_xxx
 
 进程重启后，当前 in-process counter 会从零开始。
 
-metrics 不包含 `trace_id`、tenant、用户输入、prompt、文档内容或模型响应等高基数字段。单次请求排查请使用结构化日志中的 `trace_id` 和 `oragctl trace`。
+metrics 不包含 `trace_id`、tenant、用户输入、prompt、文档内容或模型响应等高基数字段。单次请求排查请使用结构化日志中的 `trace_id`、HTTP trace API 或 `oragctl trace`。
 
 ## Docker 网络问题
 

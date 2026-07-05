@@ -28,7 +28,7 @@ Content-Type: application/json
 }
 ```
 
-默认用户名和密码来自 `.env.example`：
+默认用户名和密码来自 [`.env.example`](../../.env.example)：
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -73,13 +73,21 @@ curl -fsS http://localhost:8080/v1/knowledge-bases \
 
 SSE 查询在 RAG 查询阶段失败时，响应仍是 `text/event-stream`，事件名为 `error`，事件数据中包含 `code`、`message` 和 `trace_id`。SSE 的 `trace` 事件、后续 `chunk`/`citations`/`done` 事件和失败时的 `error` 事件使用同一个 `trace_id`。
 
-排查持久化 RAG trace 时使用 CLI，而不是 HTTP API：
+排查持久化 RAG trace 时可以使用 HTTP API 或 CLI。HTTP API 会按当前 Bearer token 所属 tenant 过滤：
+
+```http
+GET /v1/traces?limit=20
+GET /v1/traces/{trace_id}
+Authorization: Bearer <access_token>
+```
+
+CLI 适合直接排查本地 PostgreSQL：
 
 ```bash
 oragctl trace --trace-id trace_xxx
 ```
 
-该命令按 `trace_id` 查询 PostgreSQL 的 `rag_traces` 和 `rag_node_spans`，返回查询元数据、profile、总耗时、错误状态和 node span 列表。当前 API 契约中没有 `/v1/traces` 这类管理端点。
+上述入口都会返回查询元数据、profile、总耗时、错误状态和 node span 列表。HTTP 列表接口支持 `profile`、`since`、`until`、`has_error`、`slow_ms` 和 `limit` 过滤；CLI 还支持 `--stats` 聚合 node latency 统计。
 
 ## 常见错误码
 

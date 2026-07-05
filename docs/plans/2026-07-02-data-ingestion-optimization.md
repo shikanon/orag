@@ -13,7 +13,7 @@
 ### Task 1: List Optimization Options
 
 **Files:**
-- Create: `docs/plans/2026-07-02-data-ingestion-optimization.md`
+- Create: [`docs/plans/2026-07-02-data-ingestion-optimization.md`](./2026-07-02-data-ingestion-optimization.md)
 
 **Step 1: Capture candidate optimizations**
 
@@ -35,8 +35,8 @@ Implement low-risk changes first:
 ### Task 2: Parser Safety
 
 **Files:**
-- Modify: `internal/ingest/parser/parser.go`
-- Test: `internal/ingest/parser/parser_test.go`
+- Modify: [`internal/ingest/parser/parser.go`](../../internal/ingest/parser/parser.go)
+- Test: [`internal/ingest/parser/parser_test.go`](../../internal/ingest/parser/parser_test.go)
 
 **Step 1: Write failing tests**
 
@@ -51,7 +51,7 @@ For `.pdf`, `.png`, `.jpg`, `.jpeg`, return an explicit error when no non-empty 
 Run:
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/ingest/parser -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/ingest/parser -v
 ```
 
 Expected: PASS.
@@ -59,8 +59,8 @@ Expected: PASS.
 ### Task 3: Idempotent Chunk Consistency
 
 **Files:**
-- Modify: `internal/storage/postgres/repository.go`
-- Test: `internal/storage/postgres/repository_test.go`
+- Modify: [`internal/storage/postgres/repository.go`](../../internal/storage/postgres/repository.go)
+- Test: [`internal/storage/postgres/repository_test.go`](../../internal/storage/postgres/repository_test.go)
 
 **Step 1: Write failing test or helper-level check**
 
@@ -75,7 +75,7 @@ When `existingID != ""`, rewrite each chunk's `DocumentID` and deterministic `ID
 Run:
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/storage/postgres -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/storage/postgres -v
 ```
 
 Expected: PASS.
@@ -90,7 +90,7 @@ Expected: PASS.
 Run parser, ingest, and storage tests:
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/ingest/... ./internal/storage/postgres -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/ingest/... ./internal/storage/postgres -v
 ```
 
 Expected: PASS.
@@ -100,7 +100,7 @@ Expected: PASS.
 Run:
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./tests/contract -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/contract -v
 ```
 
 Expected: PASS.
@@ -108,8 +108,8 @@ Expected: PASS.
 ### Task 5: Chunking Quality
 
 **Files:**
-- Modify: `internal/ingest/chunker/chunker.go`
-- Test: `internal/ingest/chunker/chunker_test.go`
+- Modify: [`internal/ingest/chunker/chunker.go`](../../internal/ingest/chunker/chunker.go)
+- Test: [`internal/ingest/chunker/chunker_test.go`](../../internal/ingest/chunker/chunker_test.go)
 
 **Step 1: Write failing tests**
 
@@ -131,7 +131,7 @@ When a single paragraph exceeds `SizeTokens`, split it into bounded windows with
 Run:
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/ingest/chunker -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/ingest/chunker -v
 ```
 
 Expected: PASS.

@@ -1,20 +1,25 @@
 # API
 
-本文描述当前服务已经实现的 HTTP API。契约源文件是 `api/openapi.yaml`，服务内置入口是 `GET /docs`，该入口只返回一个最小 HTML 页面并指向 OpenAPI 源文件；真实可调用路由以 `internal/http/router.go` 和 `api/openapi.yaml` 保持一致为准。
+本文描述当前服务已经实现的 HTTP API。契约源文件是 [`api/openapi.yaml`](../api/openapi.yaml)，服务内置入口是 `GET /docs`，该入口只返回一个最小 HTML 页面并指向 OpenAPI 源文件；真实可调用路由以 [`internal/http/router.go`](../internal/http/router.go) 和 [`api/openapi.yaml`](../api/openapi.yaml) 保持一致为准。
 
-`examples/curl/` 下的脚本是本地 smoke 示例，默认使用 `BASE_URL=http://localhost:8080`，并把 token、知识库 ID、数据集 ID、文档 ID、入库 job ID 写入 `.orag-demo/`。这些脚本没有覆盖全部 API，但覆盖了登录、建库、文本入库、查询和评估主路径。
+[`examples/curl/`](../examples/curl) 下的脚本是本地 smoke 示例，默认使用 `BASE_URL=http://localhost:8080`，并把 token、知识库 ID、数据集 ID、文档 ID、入库 job ID、trace ID、评估 ID 和优化 ID 写入 `.orag-demo/`。这些脚本没有覆盖全部 API，但覆盖了健康检查、登录、建库、文本/文件入库、普通查询、SSE 查询、trace 查询、评估和优化主路径。
 
 | 脚本 | 覆盖的 API | 说明 |
 | --- | --- | --- |
-| `examples/curl/00_login.sh` | `POST /v1/auth/login` | 使用 `ADMIN_USERNAME`、`ADMIN_PASSWORD`，默认 `admin`/`admin`，写入 `.orag-demo/token`。 |
-| `examples/curl/10_create_kb.sh` | `POST /v1/knowledge-bases` | 使用 `KB_NAME`、`KB_DESCRIPTION`，写入 `.orag-demo/kb_id`。 |
-| `examples/curl/20_upload_doc.sh` | `POST /v1/knowledge-bases/{id}/documents:import` | 使用 `DOC_NAME`、`DOC_SOURCE_URI`、`DOC_CONTENT`，写入 `.orag-demo/document_id` 和 `.orag-demo/job_id`。 |
-| `examples/curl/30_query.sh` | `POST /v1/query` | 使用 `QUERY`、`PROFILE`，默认查询 `realtime` profile。 |
-| `examples/curl/40_eval.sh` | `POST /v1/datasets`、`POST /v1/datasets/{id}/items`、`POST /v1/evaluations` | 使用 `DATASET_NAME`、`DATASET_KIND`、`EVAL_QUERY`、`GROUND_TRUTH`、`PROFILE`、`TOP_K`；可用 `ENABLE_JUDGE=true`、`ENABLE_QAG=true` 附加 Judge/QAG 配置。 |
-| `examples/curl/50_optimize.sh` | `POST /v1/optimizations`、`GET /v1/optimizations/{id}` | 提交目标驱动异步优化 run，保存 `.orag-demo/optimization_id` 并轮询状态。 |
-| `examples/curl/lib.sh` | 无直接业务端点 | 提供 `BASE_URL`、`.orag-demo/` 状态文件、`TOKEN`/`KB_ID` 覆盖和简单 JSON 转义。 |
+| [`examples/curl/05_health_ready.sh`](../examples/curl/05_health_ready.sh) | `GET /healthz`、`GET /readyz` | 在状态脚本前检查进程和依赖就绪状态。 |
+| [`examples/curl/00_login.sh`](../examples/curl/00_login.sh) | `POST /v1/auth/login` | 使用 `ADMIN_USERNAME`、`ADMIN_PASSWORD`，默认 `admin`/`admin`，写入 `.orag-demo/token`。 |
+| [`examples/curl/10_create_kb.sh`](../examples/curl/10_create_kb.sh) | `POST /v1/knowledge-bases` | 使用 `KB_NAME`、`KB_DESCRIPTION`，写入 `.orag-demo/kb_id`。 |
+| [`examples/curl/20_upload_doc.sh`](../examples/curl/20_upload_doc.sh) | `POST /v1/knowledge-bases/{id}/documents:import` | 使用 `DOC_NAME`、`DOC_SOURCE_URI`、`DOC_CONTENT`，写入 `.orag-demo/document_id` 和 `.orag-demo/job_id`。 |
+| [`examples/curl/25_upload_file.sh`](../examples/curl/25_upload_file.sh) | `POST /v1/knowledge-bases/{id}/documents` | 通过 multipart 上传本地 Markdown 文件，写入 `.orag-demo/document_id` 和 `.orag-demo/job_id`。 |
+| [`examples/curl/30_query.sh`](../examples/curl/30_query.sh) | `POST /v1/query` | 使用 `QUERY`、`PROFILE`，默认查询 `realtime` profile，并写入 `.orag-demo/trace_id`。 |
+| [`examples/curl/35_query_stream.sh`](../examples/curl/35_query_stream.sh) | `POST /v1/query:stream` | 使用 SSE 查询，保存 stream trace ID。 |
+| [`examples/curl/36_trace_lookup.sh`](../examples/curl/36_trace_lookup.sh) | `GET /v1/traces`、`GET /v1/traces/{trace_id}` | 列出最近 trace 并读取单条 trace 明细。 |
+| [`examples/curl/40_eval.sh`](../examples/curl/40_eval.sh) | `POST /v1/datasets`、`POST /v1/datasets/{id}/items`、`POST /v1/evaluations` | 使用 `DATASET_NAME`、`DATASET_KIND`、`EVAL_QUERY`、`GROUND_TRUTH`、`PROFILE`、`TOP_K`；可用 `ENABLE_JUDGE=true`、`ENABLE_QAG=true` 附加 Judge/QAG 配置。 |
+| [`examples/curl/45_optimize.sh`](../examples/curl/45_optimize.sh) | `POST /v1/optimizations` | 兼容旧 `profiles`/`top_ks` 请求，便于快速优化 smoke。 |
+| [`examples/curl/50_optimize.sh`](../examples/curl/50_optimize.sh) | `POST /v1/optimizations`、`GET /v1/optimizations/{id}` | 提交目标驱动异步优化 run，保存 `.orag-demo/optimization_id` 并轮询状态。 |
+| [`examples/curl/lib.sh`](../examples/curl/lib.sh) | 无直接业务端点 | 提供 `BASE_URL`、`.orag-demo/` 状态文件、`TOKEN`/`KB_ID` 覆盖和简单 JSON 转义。 |
 
-未被 curl 脚本覆盖但已实现的接口包括：`GET /v1/knowledge-bases`、`GET /v1/knowledge-bases/{id}`、`DELETE /v1/knowledge-bases/{id}`、`POST /v1/knowledge-bases/{id}/documents`、`GET /v1/ingestion-jobs/{id}`、`POST /v1/query:stream`、`GET /v1/evaluations/{id}`、`POST /v1/optimizations/{id}:cancel` 和 `POST /v1/optimizations/{id}:resume`。
+未被 curl 脚本覆盖但已实现的接口包括：`GET /v1/knowledge-bases`、`GET /v1/knowledge-bases/{id}`、`DELETE /v1/knowledge-bases/{id}`、`GET /v1/ingestion-jobs/{id}`、`GET /v1/evaluations/{id}`、`POST /v1/optimizations/{id}:cancel` 和 `POST /v1/optimizations/{id}:resume`。
 
 ## 通用约定
 
@@ -85,13 +90,21 @@ Content-Type: application/json
 
 `trace_id` 用于排查同一次请求链路。服务优先复用请求头 `X-Trace-ID`；未传入时自动生成，并把同一个值写入响应头 `X-Trace-ID`、JSON 错误体、SSE 事件、结构化日志和 RAG trace 持久化记录。`POST /v1/query:stream` 在 RAG 查询阶段失败时返回 `text/event-stream`，事件名为 `error`，事件数据仍包含 `code`、`message`、`trace_id`。
 
-当前 HTTP API 不提供 trace 查询端点。排查 RAG trace 时使用 CLI 查询 PostgreSQL：
+Trace 可以通过 HTTP API 或 CLI 查询。HTTP API 会按当前 Bearer token 所属 tenant 过滤 trace；CLI 适合直接排查本地 PostgreSQL：
+
+```http
+GET /v1/traces?limit=20
+GET /v1/traces/{trace_id}
+Authorization: Bearer <access_token>
+```
+
+`GET /v1/traces` 支持 `profile`、`since`、`until`、`has_error`、`slow_ms` 和 `limit` 查询参数，返回 `items` 列表；`GET /v1/traces/{trace_id}` 返回单条 `TraceRecord`，不存在或不属于当前 tenant 时返回 `404 trace_not_found`。
 
 ```bash
 oragctl trace --trace-id trace_xxx
 ```
 
-命中时返回 `found=true` 和 `trace` 对象，包含 `tenant_id`、`profile`、`latency_ms`、`has_error`、`error_count` 和按时间排序的 `node_spans`；未命中时返回 `found=false` 和查询的 `trace_id`。
+CLI 命中时返回 `found=true` 和 `trace` 对象，包含 `tenant_id`、`profile`、`latency_ms`、`has_error`、`error_count` 和按时间排序的 `node_spans`；未命中时返回 `found=false` 和查询的 `trace_id`。
 
 ## 认证
 
@@ -160,7 +173,7 @@ POST /v1/knowledge-bases
 }
 ```
 
-`name` 是必填字段。`examples/curl/10_create_kb.sh` 只发送 `name` 和 `description`，不发送 `metadata`。
+`name` 是必填字段。[`examples/curl/10_create_kb.sh`](../examples/curl/10_create_kb.sh) 只发送 `name` 和 `description`，不发送 `metadata`。
 
 ### 列出知识库
 
@@ -221,7 +234,7 @@ POST /v1/knowledge-bases/{id}/documents:import
 }
 ```
 
-`content` 是 OpenAPI 中唯一必填字段。实现中如果 `name` 为空，会使用 `imported.md`。`examples/curl/20_upload_doc.sh` 使用的就是该 JSON 导入接口。
+`content` 是 OpenAPI 中唯一必填字段。实现中如果 `name` 为空，会使用 `imported.md`。[`examples/curl/20_upload_doc.sh`](../examples/curl/20_upload_doc.sh) 使用的就是该 JSON 导入接口。
 
 响应 `202 Accepted`：
 
@@ -374,7 +387,7 @@ POST /v1/query
 - `cache_status`：`hit`、`miss` 或 `error`。
 - `warnings`：可选警告，例如无召回上下文时会包含 `no_retrieved_context`。
 
-`examples/curl/30_query.sh` 调用该接口，不发送 `top_k`，默认由服务配置决定。
+[`examples/curl/30_query.sh`](../examples/curl/30_query.sh) 调用该接口，不发送 `top_k`，默认由服务配置决定。
 
 ### SSE 查询
 
@@ -486,7 +499,7 @@ POST /v1/datasets/{id}/items
 
 如果 `{id}` 对应的数据集不存在或不属于当前 tenant，返回 `404 dataset_not_found`，不会写入样本。
 
-`relevant_doc_ids` 是检索质量和引用质量指标的主要标注来源；`diversity_annotations` 是可选多样性标注，可用 `aspect` 或 `subquestion` 绑定 `chunk_id` / `chunk_ids`、`document_id` / `document_ids` 或 `source_uri` / `source_uris`。`examples/curl/40_eval.sh` 会先创建数据集，再添加一个样本；如果 `.orag-demo/document_id` 存在，会把该文档 ID 放入 `relevant_doc_ids`。
+`relevant_doc_ids` 是检索质量和引用质量指标的主要标注来源；`diversity_annotations` 是可选多样性标注，可用 `aspect` 或 `subquestion` 绑定 `chunk_id` / `chunk_ids`、`document_id` / `document_ids` 或 `source_uri` / `source_uris`。[`examples/curl/40_eval.sh`](../examples/curl/40_eval.sh) 会先创建数据集，再添加一个样本；如果 `.orag-demo/document_id` 存在，会把该文档 ID 放入 `relevant_doc_ids`。
 
 ## 评估
 

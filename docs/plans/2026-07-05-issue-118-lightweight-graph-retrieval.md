@@ -8,11 +8,11 @@ Issue: https://github.com/shikanon/orag/issues/118
 
 ## 当前代码落点
 
-- `internal/ingest/service.go`: ingestion 可在 chunk store 后抽取实体关系。
-- `internal/storage/postgres/repository.go`: 已是默认元数据与 FTS 存储，可增加 graph relation persistence。
-- `internal/kb/graph.go`: graph retriever decorator 扩展 hybrid 结果。
-- `internal/ingest/graph.go`: ingestion 阶段轻量实体/共现关系抽取。
-- `internal/app/app.go`: 按配置装配 graph builder 和 graph retriever。
+- [`internal/ingest/service.go`](../../internal/ingest/service.go): ingestion 可在 chunk store 后抽取实体关系。
+- [`internal/storage/postgres/repository.go`](../../internal/storage/postgres/repository.go): 已是默认元数据与 FTS 存储，可增加 graph relation persistence。
+- [`internal/kb/graph.go`](../../internal/kb/graph.go): graph retriever decorator 扩展 hybrid 结果。
+- [`internal/ingest/graph.go`](../../internal/ingest/graph.go): ingestion 阶段轻量实体/共现关系抽取。
+- [`internal/app/app.go`](../../internal/app/app.go): 按配置装配 graph builder 和 graph retriever。
 
 ## 设计决策
 
@@ -36,37 +36,37 @@ Issue: https://github.com/shikanon/orag/issues/118
 ## 开发拆解
 
 1. 数据结构和迁移
-   - 文件：`migrations/000014_lightweight_graph_retrieval.sql`
-   - 文件：`internal/kb/types.go`
+   - 文件：[`migrations/000014_lightweight_graph_retrieval.sql`](../../migrations/000014_lightweight_graph_retrieval.sql)
+   - 文件：[`internal/kb/types.go`](../../internal/kb/types.go)
    - 测试：memory store graph expansion。
 
 2. Entity/relation extractor
-   - 文件：`internal/ingest/graph.go`
+   - 文件：[`internal/ingest/graph.go`](../../internal/ingest/graph.go)
    - 启发式实体抽取和 chunk 内共现关系。
    - 测试：英文/中文实体可生成 relation。
 
 3. PostgreSQL graph repository
-   - 文件：`internal/storage/postgres/repository.go`
+   - 文件：[`internal/storage/postgres/repository.go`](../../internal/storage/postgres/repository.go)
    - 方法：`StoreGraphRelations(ctx, relations)`、`ExpandGraph(ctx, request)`。
    - 测试：通过编译和现有 repository scan tests 覆盖。
 
 4. Ingestion 接入
-   - 文件：`internal/ingest/service.go`
+   - 文件：[`internal/ingest/service.go`](../../internal/ingest/service.go)
    - Store chunks 后抽取和持久化 graph；默认关闭。
 
 5. Graph retriever
-   - 文件：`internal/kb/graph.go`
+   - 文件：[`internal/kb/graph.go`](../../internal/kb/graph.go)
    - 输入 query，输出 SearchResult，From=`graph`。
    - 作为 decorator 包装 `kb.HybridRetriever`。
 
 6. Query 路由联动
-   - 文件：`internal/app/app.go`
+   - 文件：[`internal/app/app.go`](../../internal/app/app.go)
    - 当 `RAG_GRAPH_RETRIEVAL_ENABLED=true` 时启用，路由器可独立控制 single/multi 检索强度。
    - 测试：graph retriever 能追加相关 chunk。
 
 7. 评估与文档
-   - 文件：`docs/evaluation.md`
-   - 文件：`docs/architecture/rag-pipeline.md`
+   - 文件：[`docs/evaluation.md`](../evaluation.md)
+   - 文件：[`docs/architecture/rag-pipeline.md`](../architecture/rag-pipeline.md)
    - 增加两个跨实体关系样例，说明部署影响为 PostgreSQL 表和索引。
 
 ## 验收证据

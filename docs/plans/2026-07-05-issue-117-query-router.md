@@ -8,11 +8,11 @@ Issue: https://github.com/shikanon/orag/issues/117
 
 ## 当前代码落点
 
-- `internal/http/router.go`: HTTP query request 转 `rag.QueryRequest`。
-- `internal/rag/types.go`: query request/response 需要带 routing metadata。
-- `internal/rag/service.go`: Query/Execute 入口。
-- `internal/graph/nodes.go`: Graph 节点适合插入 route classification。
-- `internal/observability/tracing.go` 和 trace storage: 需要把路由结果进入 spans/warnings。
+- [`internal/http/router.go`](../../internal/http/router.go): HTTP query request 转 `rag.QueryRequest`。
+- [`internal/rag/types.go`](../../internal/rag/types.go): query request/response 需要带 routing metadata。
+- [`internal/rag/service.go`](../../internal/rag/service.go): Query/Execute 入口。
+- [`internal/graph/nodes.go`](../../internal/graph/nodes.go): Graph 节点适合插入 route classification。
+- [`internal/observability/tracing.go`](../../internal/observability/tracing.go) 和 trace storage: 需要把路由结果进入 spans/warnings。
 
 ## 设计决策
 
@@ -46,35 +46,35 @@ Issue: https://github.com/shikanon/orag/issues/117
 ## 开发拆解
 
 1. 路由类型与启发式分类器
-   - 文件：`internal/rag/query_router.go`
-   - 测试：`internal/rag/query_router_test.go`
+   - 文件：[`internal/rag/query_router.go`](../../internal/rag/query_router.go)
+   - 测试：[`internal/rag/query_router_test.go`](../../internal/rag/query_router_test.go)
    - 覆盖 direct/single/multi_step 和 reason。
 
 2. QueryRequest/Response 扩展
-   - 文件：`internal/rag/types.go`
+   - 文件：[`internal/rag/types.go`](../../internal/rag/types.go)
    - 字段：`Route *RouteDecision`
    - HTTP JSON 保持向后兼容。
 
 3. Service 接入
-   - 文件：`internal/rag/service.go`
+   - 文件：[`internal/rag/service.go`](../../internal/rag/service.go)
    - 在 Execute 开头 route，按 route 调整 retrieval behavior。
    - 测试：router disabled 时结果等同旧行为；direct 不调用 retriever；single 不触发 multi-query。
 
 4. Graph 接入
-   - 文件：`internal/graph/nodes.go`
+   - 文件：[`internal/graph/nodes.go`](../../internal/graph/nodes.go)
    - 新增 `QueryRoute` 节点，在 `Init` 后运行。
    - State 增加 `RouteDecision`。
    - 测试 graph spans 包含 `query_route`。
 
 5. 配置和 app wiring
-   - 文件：`internal/config/config.go`
-   - 文件：`internal/app/app.go`
+   - 文件：[`internal/config/config.go`](../../internal/config/config.go)
+   - 文件：[`internal/app/app.go`](../../internal/app/app.go)
    - 默认关闭，启用时注入 heuristic router。
 
 6. 文档
-   - 文件：`README.md`
-   - 文件：`docs/architecture/rag-pipeline.md`
-   - 文件：`docs/operations.md`
+   - 文件：[`README.md`](../../README.md)
+   - 文件：[`docs/architecture/rag-pipeline.md`](../architecture/rag-pipeline.md)
+   - 文件：[`docs/operations.md`](../operations.md)
    - 说明路由类型、默认策略、风险和排查。
 
 ## 验收证据

@@ -979,8 +979,8 @@ Before sampling, compute and report `search_space_size`. If the Cartesian produc
 ### Task 1: Add Evaluation Mode And Judge Types
 
 **Files:**
-- Modify: `internal/eval/service.go`
-- Create: `internal/eval/judge_types.go`
+- Modify: [`internal/eval/service.go`](../../internal/eval/service.go)
+- Create: [`internal/eval/judge_types.go`](../../internal/eval/judge_types.go)
 - Create: `internal/eval/metrics_registry.go`
 - Test: `internal/eval/judge_types_test.go`
 
@@ -997,7 +997,7 @@ Add typed constants for evaluation modes, comparison modes, judge metrics, and d
 Run:
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/eval -run TestJudgeTypes -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/eval -run TestJudgeTypes -v
 ```
 
 Expected: PASS.
@@ -1012,8 +1012,8 @@ git commit -m "feat(eval): add judge evaluation types"
 ### Task 2: Add Judge Interface And Rule-Based Adapter
 
 **Files:**
-- Create: `internal/eval/judge.go`
-- Modify: `internal/eval/metrics.go`
+- Create: [`internal/eval/judge.go`](../../internal/eval/judge.go)
+- Modify: [`internal/eval/metrics.go`](../../internal/eval/metrics.go)
 - Test: `internal/eval/judge_test.go`
 
 **Step 1: Write failing tests**
@@ -1043,7 +1043,7 @@ Wrap `ScoreItem` as a rule-based judge so hybrid evaluation can reuse old and ne
 **Step 4: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/eval -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/eval -v
 ```
 
 Expected: PASS.
@@ -1058,10 +1058,10 @@ git commit -m "feat(eval): add pluggable judge interface"
 ### Task 3: Implement LLM Judge Client
 
 **Files:**
-- Create: `internal/eval/llm_judge.go`
-- Create: `internal/eval/judge_prompt.go`
-- Test: `internal/eval/llm_judge_test.go`
-- Modify: `internal/llm/ark/client.go` only if a narrow chat abstraction is needed.
+- Create: [`internal/eval/llm_judge.go`](../../internal/eval/llm_judge.go)
+- Create: [`internal/eval/judge_prompt.go`](../../internal/eval/judge_prompt.go)
+- Test: [`internal/eval/llm_judge_test.go`](../../internal/eval/llm_judge_test.go)
+- Modify: [`internal/llm/ark/client.go`](../../internal/llm/ark/client.go) only if a narrow chat abstraction is needed.
 
 **Step 1: Write failing tests**
 
@@ -1078,7 +1078,7 @@ Call one or more judge models, parse JSON, clamp scores to `[0, 1]`, aggregate e
 **Step 4: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/eval -run 'TestLLMJudge|TestJudgePrompt' -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/eval -run 'TestLLMJudge|TestJudgePrompt' -v
 ```
 
 Expected: PASS.
@@ -1101,9 +1101,9 @@ git commit -m "feat(eval): add llm judge"
 - Create: `migrations/000008_optimizer_runs.down.sql`
 - Create: `migrations/000009_harness_runs.up.sql`
 - Create: `migrations/000009_harness_runs.down.sql`
-- Modify: `internal/eval/service.go`
-- Modify: `internal/storage/postgres/eval.go`
-- Test: `internal/storage/postgres/repository_test.go`
+- Modify: [`internal/eval/service.go`](../../internal/eval/service.go)
+- Modify: [`internal/storage/postgres/eval.go`](../../internal/storage/postgres/eval.go)
+- Test: [`internal/storage/postgres/repository_test.go`](../../internal/storage/postgres/repository_test.go)
 
 **Step 1: Write failing repository tests**
 
@@ -1120,7 +1120,7 @@ Add `StoreJudgeRun`, `StoreJudgeResult`, `StorePairwiseJudgeResult`, `StoreJudge
 **Step 4: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/storage/postgres -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/storage/postgres -v
 ```
 
 Expected: PASS.
@@ -1135,10 +1135,10 @@ git commit -m "feat(eval): persist judge results"
 ### Task 5: Extend Evaluation Runner
 
 **Files:**
-- Modify: `internal/eval/service.go`
-- Modify: `internal/app/app.go`
-- Test: `internal/eval/service_test.go`
-- Test: `internal/app/app_test.go`
+- Modify: [`internal/eval/service.go`](../../internal/eval/service.go)
+- Modify: [`internal/app/app.go`](../../internal/app/app.go)
+- Test: [`internal/eval/service_test.go`](../../internal/eval/service_test.go)
+- Test: [`internal/app/app_test.go`](../../internal/app/app_test.go)
 
 **Step 1: Write failing tests**
 
@@ -1163,7 +1163,7 @@ When `mode` and `judge` are omitted, behavior must match current API.
 **Step 4: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/eval ./internal/app -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/eval ./internal/app -v
 ```
 
 Expected: PASS.
@@ -1178,11 +1178,11 @@ git commit -m "feat(eval): run llm judge during evaluation"
 ### Task 6: Add Evaluation Detail API
 
 **Files:**
-- Modify: `internal/http/router.go`
-- Modify: `api/openapi.yaml`
-- Modify: `docs/api.md`
-- Test: `internal/http/router_test.go`
-- Test: `tests/contract/openapi_test.go`
+- Modify: [`internal/http/router.go`](../../internal/http/router.go)
+- Modify: [`api/openapi.yaml`](../../api/openapi.yaml)
+- Modify: [`docs/api.md`](../api.md)
+- Test: [`internal/http/router_test.go`](../../internal/http/router_test.go)
+- Test: [`tests/contract/openapi_test.go`](../../tests/contract/openapi_test.go)
 
 **Step 1: Write failing route tests**
 
@@ -1199,7 +1199,7 @@ Document `mode`, `judge`, `comparison_mode`, `include_items`, `include_judge`, `
 **Step 4: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/http ./tests/contract -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/http ./tests/contract -v
 ```
 
 Expected: PASS.
@@ -1214,10 +1214,10 @@ git commit -m "feat(api): expose evaluation judge details"
 ### Task 7: Add Objective Specification
 
 **Files:**
-- Create: `internal/optimizer/objective.go`
-- Create: `internal/optimizer/objective_test.go`
-- Create: `internal/optimizer/expression.go`
-- Modify: `internal/eval/optimizer.go` or move optimizer into `internal/optimizer`.
+- Create: [`internal/optimizer/objective.go`](../../internal/optimizer/objective.go)
+- Create: [`internal/optimizer/objective_test.go`](../../internal/optimizer/objective_test.go)
+- Create: [`internal/optimizer/expression.go`](../../internal/optimizer/expression.go)
+- Modify: [`internal/eval/optimizer.go`](../../internal/eval/optimizer.go) or move optimizer into [`internal/optimizer`](../../internal/optimizer).
 
 **Step 1: Write failing tests**
 
@@ -1240,7 +1240,7 @@ Support:
 **Step 3: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/optimizer -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/optimizer -v
 ```
 
 Expected: PASS.
@@ -1255,9 +1255,9 @@ git commit -m "feat(optimizer): add objective scoring"
 ### Task 8: Add Candidate Config And Search Space
 
 **Files:**
-- Create: `internal/optimizer/candidate.go`
-- Create: `internal/optimizer/search_space.go`
-- Test: `internal/optimizer/search_space_test.go`
+- Create: [`internal/optimizer/candidate.go`](../../internal/optimizer/candidate.go)
+- Create: [`internal/optimizer/search_space.go`](../../internal/optimizer/search_space.go)
+- Test: [`internal/optimizer/search_space_test.go`](../../internal/optimizer/search_space_test.go)
 
 **Step 1: Write failing tests**
 
@@ -1274,7 +1274,7 @@ Implement seeded random search and dependency-aware sampling first. Keep grid on
 **Step 4: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/optimizer -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/optimizer -v
 ```
 
 Expected: PASS.
@@ -1289,11 +1289,11 @@ git commit -m "feat(optimizer): add candidate search space"
 ### Task 9: Add Internal Candidate Runner
 
 **Files:**
-- Create: `internal/optimizer/runner.go`
-- Create: `internal/optimizer/internal_runner.go`
-- Modify: `internal/rag/service.go`
-- Modify: `internal/graph/rag_graph.go`
-- Test: `internal/optimizer/internal_runner_test.go`
+- Create: [`internal/optimizer/runner.go`](../../internal/optimizer/runner.go)
+- Create: [`internal/optimizer/internal_runner.go`](../../internal/optimizer/internal_runner.go)
+- Modify: [`internal/rag/service.go`](../../internal/rag/service.go)
+- Modify: [`internal/graph/rag_graph.go`](../../internal/graph/rag_graph.go)
+- Test: [`internal/optimizer/internal_runner_test.go`](../../internal/optimizer/internal_runner_test.go)
 
 **Step 1: Write failing tests**
 
@@ -1310,7 +1310,7 @@ For chunking and embedding/index candidates, default to disabled. When explicitl
 **Step 4: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/optimizer ./internal/rag ./internal/graph -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/optimizer ./internal/rag ./internal/graph -v
 ```
 
 Expected: PASS.
@@ -1325,11 +1325,11 @@ git commit -m "feat(optimizer): add internal rag candidate runner"
 ### Task 10: Add External Harness Runner
 
 **Files:**
-- Create: `internal/optimizer/harness.go`
+- Create: [`internal/optimizer/harness.go`](../../internal/optimizer/harness.go)
 - Create: `internal/optimizer/redaction.go`
-- Create: `internal/optimizer/harness_test.go`
-- Modify: `internal/config/config.go`
-- Modify: `.env.example`
+- Create: [`internal/optimizer/harness_test.go`](../../internal/optimizer/harness_test.go)
+- Modify: [`internal/config/config.go`](../../internal/config/config.go)
+- Modify: [`.env.example`](../../.env.example)
 
 **Step 1: Write failing tests**
 
@@ -1350,7 +1350,7 @@ Support `codex-cli` and generic command harness through an explicit executable a
 **Step 4: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/optimizer -run TestHarness -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/optimizer -run TestHarness -v
 ```
 
 Expected: PASS.
@@ -1366,8 +1366,8 @@ git commit -m "feat(optimizer): add external harness runner"
 
 **Files:**
 - Create: `internal/optimizer/repository.go`
-- Modify: `internal/storage/postgres/eval.go` or create `internal/storage/postgres/optimizer.go`
-- Test: `internal/storage/postgres/repository_test.go`
+- Modify: [`internal/storage/postgres/eval.go`](../../internal/storage/postgres/eval.go) or create [`internal/storage/postgres/optimizer.go`](../../internal/storage/postgres/optimizer.go)
+- Test: [`internal/storage/postgres/repository_test.go`](../../internal/storage/postgres/repository_test.go)
 
 **Step 1: Write failing repository tests**
 
@@ -1380,7 +1380,7 @@ Use `optimization_runs`, `optimization_candidates`, and `harness_runs`. Persist 
 **Step 3: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/storage/postgres -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/storage/postgres -v
 ```
 
 Expected: PASS.
@@ -1395,13 +1395,13 @@ git commit -m "feat(optimizer): persist optimization runs"
 ### Task 12: Implement Goal-Driven Optimizer Service
 
 **Files:**
-- Create: `internal/optimizer/service.go`
+- Create: [`internal/optimizer/service.go`](../../internal/optimizer/service.go)
 - Create: `internal/optimizer/worker.go`
-- Create: `internal/optimizer/checkpoint.go`
-- Create: `internal/optimizer/ratelimit.go`
-- Create: `internal/optimizer/service_test.go`
-- Modify: `internal/app/app.go`
-- Modify: `internal/http/router.go`
+- Create: [`internal/optimizer/checkpoint.go`](../../internal/optimizer/checkpoint.go)
+- Create: [`internal/optimizer/ratelimit.go`](../../internal/optimizer/ratelimit.go)
+- Create: [`internal/optimizer/service_test.go`](../../internal/optimizer/service_test.go)
+- Modify: [`internal/app/app.go`](../../internal/app/app.go)
+- Modify: [`internal/http/router.go`](../../internal/http/router.go)
 
 **Step 1: Write failing service tests**
 
@@ -1435,7 +1435,7 @@ Replace current simple `eval.Optimizer` call with new asynchronous optimizer ser
 **Step 4: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/optimizer ./internal/http ./internal/app -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/optimizer ./internal/http ./internal/app -v
 ```
 
 Expected: PASS.
@@ -1450,14 +1450,14 @@ git commit -m "feat(optimizer): run goal-driven optimization"
 ### Task 13: Update OpenAPI, Docs, And Examples
 
 **Files:**
-- Modify: `api/openapi.yaml`
-- Modify: `docs/evaluation.md`
-- Modify: `docs/api.md`
-- Modify: `docs/development.md`
-- Modify: `examples/curl/40_eval.sh`
+- Modify: [`api/openapi.yaml`](../../api/openapi.yaml)
+- Modify: [`docs/evaluation.md`](../evaluation.md)
+- Modify: [`docs/api.md`](../api.md)
+- Modify: [`docs/development.md`](../development.md)
+- Modify: [`examples/curl/40_eval.sh`](../../examples/curl/40_eval.sh)
 - Create: `examples/curl/46_optimize_goal.sh`
-- Test: `tests/contract/openapi_test.go`
-- Test: `tests/contract/examples_test.go`
+- Test: [`tests/contract/openapi_test.go`](../../tests/contract/openapi_test.go)
+- Test: [`tests/contract/examples_test.go`](../../tests/contract/examples_test.go)
 
 **Step 1: Write failing contract tests**
 
@@ -1478,7 +1478,7 @@ Add curl examples for hybrid judge evaluation, pairwise optimization against a b
 **Step 5: Run tests**
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./tests/contract -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/contract -v
 ```
 
 Expected: PASS.
@@ -1493,7 +1493,7 @@ git commit -m "docs: document llm judge and goal optimizer"
 ### Task 14: End-To-End Validation
 
 **Files:**
-- Modify: `Makefile`
+- Modify: [`Makefile`](../../Makefile)
 - Create: `tests/contract/judge_optimizer_test.go`
 - Create: `tests/live/judge_optimizer_live_test.go`
 
@@ -1511,7 +1511,7 @@ Add:
 
 ```makefile
 test-judge:
-	CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./internal/eval ./internal/optimizer ./tests/contract -v
+	CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./internal/eval ./internal/optimizer ./tests/contract -v
 ```
 
 **Step 4: Run full validation**

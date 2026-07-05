@@ -6,26 +6,26 @@
 
 | 顺序 | 文档 | 目标 |
 | --- | --- | --- |
-| 1 | `rag-pipeline.md` | 理解一次 RAG 查询从 HTTP 请求到答案返回的执行链路。 |
-| 2 | `../Go-RAG-框架技术方案.md` | 查看更完整的技术方案和设计背景。 |
-| 3 | `../development.md` | 回到本地开发、测试和调试命令。 |
+| 1 | [`rag-pipeline.md`](./rag-pipeline.md) | 理解一次 RAG 查询从 HTTP 请求到答案返回的执行链路。 |
+| 2 | [`../Go-RAG-框架技术方案.md`](../Go-RAG-框架技术方案.md) | 查看更完整的技术方案和设计背景。 |
+| 3 | [`../development.md`](../development.md) | 回到本地开发、测试和调试命令。 |
 
 ## 模块地图
 
 | 模块 | 路径 | 责任 |
 | --- | --- | --- |
-| API 服务入口 | `../../cmd/orag-api` | 启动 Hertz HTTP 服务。 |
-| CLI 工具 | `../../cmd/oragctl` | 执行数据库迁移等运维动作。 |
-| HTTP 层 | `../../internal/http` | 路由、鉴权中间件、错误响应、SSE。 |
-| 应用组装 | `../../internal/app` | 组装配置、依赖、服务和路由。 |
-| RAG 服务 | `../../internal/rag` | 查询编排、上下文打包、引用、语义缓存。 |
-| Graph 编排 | `../../internal/graph` | Eino Graph 节点和 RAG 链路。 |
-| 知识库能力 | `../../internal/kb` | 检索器、RRF、store 抽象和能力组合。 |
-| 入库 | `../../internal/ingest` | loader、parser、chunker、jobs 和入库服务。 |
-| 模型适配 | `../../internal/llm/provider`、`../../internal/llm/ark` | Provider registry 和 adapter 选择；Ark/豆包仍作为默认推荐实现。 |
-| 存储 | `../../internal/storage` | PostgreSQL、Qdrant 真实后端实现。 |
-| 评估 | `../../internal/eval` | 数据集、评估运行、metrics、optimizer。 |
-| 观测 | `../../internal/observability` | metrics 和 tracing 入口。 |
+| API 服务入口 | [`../../cmd/orag-api`](../../cmd/orag-api) | 启动 Hertz HTTP 服务。 |
+| CLI 工具 | [`../../cmd/oragctl`](../../cmd/oragctl) | 执行数据库迁移等运维动作。 |
+| HTTP 层 | [`../../internal/http`](../../internal/http) | 路由、鉴权中间件、错误响应、SSE。 |
+| 应用组装 | [`../../internal/app`](../../internal/app) | 组装配置、依赖、服务和路由。 |
+| RAG 服务 | [`../../internal/rag`](../../internal/rag) | 查询编排、上下文打包、引用、语义缓存。 |
+| Graph 编排 | [`../../internal/graph`](../../internal/graph) | Eino Graph 节点和 RAG 链路。 |
+| 知识库能力 | [`../../internal/kb`](../../internal/kb) | 检索器、RRF、store 抽象和能力组合。 |
+| 入库 | [`../../internal/ingest`](../../internal/ingest) | loader、parser、chunker、jobs 和入库服务。 |
+| 模型适配 | [`../../internal/llm/provider`](../../internal/llm/provider)、[`../../internal/llm/ark`](../../internal/llm/ark) | Provider registry 和 adapter 选择；Ark/豆包仍作为默认推荐实现。 |
+| 存储 | [`../../internal/storage`](../../internal/storage) | PostgreSQL、Qdrant 真实后端实现。 |
+| 评估 | [`../../internal/eval`](../../internal/eval) | 数据集、评估运行、metrics、optimizer。 |
+| 观测 | [`../../internal/observability`](../../internal/observability) | metrics 和 tracing 入口。 |
 
 ## 运行时依赖
 

@@ -1,6 +1,6 @@
 # 运维文档
 
-本目录面向部署、监控和故障排查。完整长文仍保留在 `../operations.md`，本目录提供更结构化的运维入口。
+本目录面向部署、监控和故障排查。完整长文仍保留在 [`../operations.md`](../operations.md)，本目录提供更结构化的运维入口。
 
 ## 运行依赖
 
@@ -78,7 +78,15 @@ oragctl trace --trace-id trace_xxx
 | `trace.has_error`、`trace.error_count` | node span 是否包含错误及错误数量。 |
 | `trace.node_spans` | 按时间排序的节点 span，包含 `node_name`、`latency_ms`、`error` 和 `created_at`。 |
 
-当前只支持按单个 `trace_id` 精确查询 PostgreSQL，不支持 HTTP trace 查询入口、trace 列表、采样、跨服务拓扑或外部 APM 跳转。
+HTTP API 支持按当前 tenant 查询 trace 列表和详情：
+
+```http
+GET /v1/traces?limit=20
+GET /v1/traces/{trace_id}
+Authorization: Bearer <access_token>
+```
+
+CLI 支持本地 PostgreSQL 单条、列表和统计查询。当前仍不提供跨租户聚合、采样、跨服务拓扑或外部 APM 跳转。
 
 ## OTel 与 LangFuse 边界
 
@@ -127,8 +135,8 @@ QDRANT_GRPC_PORT=6334
 
 | 现象 | 继续阅读 |
 | --- | --- |
-| `/readyz` 失败 | `troubleshooting.md` |
-| 查询失败或无上下文 | `../architecture/rag-pipeline.md` |
+| `/readyz` 失败 | [`troubleshooting.md`](./troubleshooting.md) |
+| 查询失败或无上下文 | [`../architecture/rag-pipeline.md`](../architecture/rag-pipeline.md) |
 | 已知 `trace_id` 需要定位 RAG 节点 | `oragctl trace --trace-id <trace_id>` |
-| API smoke 失败 | `../getting-started/api-smoke.md` |
-| 镜像拉取或构建超时 | `../operations.md` |
+| API smoke 失败 | [`../getting-started/api-smoke.md`](../getting-started/api-smoke.md) |
+| 镜像拉取或构建超时 | [`../operations.md`](../operations.md) |

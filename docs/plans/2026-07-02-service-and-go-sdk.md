@@ -4,9 +4,9 @@
 
 **Goal:** ORAG 同时支持以 Docker 服务方式对外提供 HTTP API，也支持作为 Go SDK 被其他 Go 模块直接导入使用。
 
-**Architecture:** 保留现有 `cmd/orag-api`、`internal/http` 和 `deployments/` 作为服务化入口；新增模块根包 `github.com/shikanon/orag` 作为公共 SDK facade，封装 `internal/app`、RAG 查询、文档入库、trace 查询和关闭资源。HTTP 服务后续只负责协议适配，核心初始化和业务能力由 SDK 复用，避免服务模式与 SDK 模式产生两套逻辑。
+**Architecture:** 保留现有 [`cmd/orag-api`](../../cmd/orag-api)、[`internal/http`](../../internal/http) 和 [`deployments/`](../../deployments) 作为服务化入口；新增模块根包 `github.com/shikanon/orag` 作为公共 SDK facade，封装 [`internal/app`](../../internal/app)、RAG 查询、文档入库、trace 查询和关闭资源。HTTP 服务后续只负责协议适配，核心初始化和业务能力由 SDK 复用，避免服务模式与 SDK 模式产生两套逻辑。
 
-**Tech Stack:** Go 1.22, CloudWeGo Hertz, PostgreSQL/pgx, Qdrant, Docker Compose, existing `CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson` test flags.
+**Tech Stack:** Go 1.26, CloudWeGo Hertz, PostgreSQL/pgx, Qdrant, Docker Compose, existing `CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson` test flags.
 
 ---
 
@@ -16,8 +16,8 @@
 - Create: `sdk_test.go`
 - Create: `orag.go`
 - Create: `sdk_types.go`
-- Modify: `README.md`
-- Modify: `docs/development.md`
+- Modify: [`README.md`](../../README.md)
+- Modify: [`docs/development.md`](../development.md)
 
 **Step 1: Write the failing external-package SDK test**
 
@@ -68,7 +68,7 @@ func TestSDKCanCreateMemoryClientAndQuery(t *testing.T) {
 Run:
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . -run TestSDKCanCreateMemoryClientAndQuery -v
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . -run TestSDKCanCreateMemoryClientAndQuery -v
 ```
 
 Expected: FAIL because root package `orag`, `Config`, `NewClient`, `QueryRequest`, and `StaticChatModel` do not exist.
@@ -255,10 +255,10 @@ func fromRAGResponse(resp rag.QueryResponse) QueryResponse {
 Run:
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . -run TestSDKCanCreateMemoryClientAndQuery -v
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . -run TestSDKCanCreateMemoryClientAndQuery -v
 ```
 
-Expected: FAIL because model injection needs a public test model and `internal/app` currently constructs a concrete Ark client too early.
+Expected: FAIL because model injection needs a public test model and [`internal/app`](../../internal/app) currently constructs a concrete Ark client too early.
 
 **Step 5: Commit**
 
@@ -272,7 +272,7 @@ git commit -m "feat: define public go sdk facade"
 ### Task 2: Make app construction SDK-friendly
 
 **Files:**
-- Modify: `internal/app/app.go`
+- Modify: [`internal/app/app.go`](../../internal/app/app.go)
 - Create: `sdk_model_test.go`
 - Modify: `orag.go`
 - Modify: `sdk_types.go`
@@ -326,14 +326,14 @@ func TestSDKUsesInjectedModelWithoutExternalArk(t *testing.T) {
 Run:
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . -run TestSDKUsesInjectedModelWithoutExternalArk -v
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . -run TestSDKUsesInjectedModelWithoutExternalArk -v
 ```
 
 Expected: FAIL because SDK model injection is not supported yet.
 
 **Step 3: Introduce app options**
 
-Modify `internal/app/app.go` so app initialization accepts optional dependencies without exposing them publicly.
+Modify [`internal/app/app.go`](../../internal/app/app.go) so app initialization accepts optional dependencies without exposing them publicly.
 
 ```go
 type Option func(*options)
@@ -402,7 +402,7 @@ func (m *StaticModel) Chat(ctx context.Context, messages []ark.ChatMessage) (str
 Run:
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . ./internal/app ./internal/rag -v
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . ./internal/app ./internal/rag -v
 ```
 
 Expected: PASS.
@@ -422,7 +422,7 @@ git commit -m "feat: support sdk dependency injection"
 - Modify: `orag.go`
 - Modify: `sdk_types.go`
 - Create: `sdk_ingest_trace_test.go`
-- Modify: `docs/api.md`
+- Modify: [`docs/api.md`](../api.md)
 
 **Step 1: Write the failing SDK ingestion and trace test**
 
@@ -494,7 +494,7 @@ func TestSDKIngestQueryAndTraceLookup(t *testing.T) {
 Run:
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . -run TestSDKIngestQueryAndTraceLookup -v
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . -run TestSDKIngestQueryAndTraceLookup -v
 ```
 
 Expected: FAIL because SDK ingestion and trace methods do not exist.
@@ -551,7 +551,7 @@ In `sdk_types.go`, add public request/response structs: `IngestTextRequest`, `In
 Run:
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . ./internal/app ./internal/graph -v
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test . ./internal/app ./internal/graph -v
 ```
 
 Expected: PASS.
@@ -568,10 +568,10 @@ git commit -m "feat: expose ingest and trace through go sdk"
 ### Task 4: Keep Docker service mode as first-class supported mode
 
 **Files:**
-- Modify: `cmd/orag-api/main.go`
-- Modify: `deployments/Dockerfile`
-- Modify: `deployments/docker-compose.yml`
-- Modify: `README.md`
+- Modify: [`cmd/orag-api/main.go`](../../cmd/orag-api/main.go)
+- Modify: [`deployments/Dockerfile`](../../deployments/Dockerfile)
+- Modify: [`deployments/docker-compose.yml`](../../deployments/docker-compose.yml)
+- Modify: [`README.md`](../../README.md)
 - Create: `tests/contract/service_mode_test.go`
 
 **Step 1: Write a service-mode contract test**
@@ -613,14 +613,14 @@ func TestServiceModeArtifactsExist(t *testing.T) {
 Run:
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run TestServiceModeArtifactsExist -v
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run TestServiceModeArtifactsExist -v
 ```
 
 Expected: PASS if current Docker service artifacts remain valid, otherwise FAIL with missing artifact details.
 
-**Step 3: Make `cmd/orag-api` use the SDK env constructor if practical**
+**Step 3: Make [`cmd/orag-api`](../../cmd/orag-api) use the SDK env constructor if practical**
 
-Modify `cmd/orag-api/main.go` only if it reduces duplication. Keep the HTTP server using `internal/http.NewServer` because protocol wiring remains internal.
+Modify [`cmd/orag-api/main.go`](../../cmd/orag-api/main.go) only if it reduces duplication. Keep the HTTP server using `internal/http.NewServer` because protocol wiring remains internal.
 
 ```go
 sdkClient, err := orag.NewClientFromEnv(context.Background())
@@ -628,7 +628,7 @@ sdkClient, err := orag.NewClientFromEnv(context.Background())
 httpserver.NewServer(sdkClient.InternalApp()).Hertz().Spin()
 ```
 
-If exposing `InternalApp()` would leak internals, keep `cmd/orag-api` on `internal/app.New` and document that service and SDK share the same app constructor beneath the package boundary.
+If exposing `InternalApp()` would leak internals, keep [`cmd/orag-api`](../../cmd/orag-api) on `internal/app.New` and document that service and SDK share the same app constructor beneath the package boundary.
 
 **Step 4: Verify Docker build path**
 
@@ -653,10 +653,10 @@ git commit -m "test: lock service mode docker artifacts"
 
 **Files:**
 - Create: `examples/sdk/basic/main.go`
-- Modify: `README.md`
-- Modify: `docs/getting-started/README.md`
-- Modify: `docs/development.md`
-- Modify: `docs/architecture/README.md`
+- Modify: [`README.md`](../../README.md)
+- Modify: [`docs/getting-started/README.md`](../getting-started/README.md)
+- Modify: [`docs/development.md`](../development.md)
+- Modify: [`docs/architecture/README.md`](../architecture/README.md)
 
 **Step 1: Add SDK example**
 
@@ -726,7 +726,7 @@ go run ./examples/sdk/basic
 Run:
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./examples/sdk/basic
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./examples/sdk/basic
 ```
 
 Expected: PASS.
@@ -762,7 +762,7 @@ Expected: PASS and only Go formatting changes.
 Run:
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./...
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./...
 ```
 
 Expected: PASS.
@@ -772,7 +772,7 @@ Expected: PASS.
 Run:
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go vet ./...
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go vet ./...
 ```
 
 Expected: PASS.
@@ -782,7 +782,7 @@ Expected: PASS.
 Run:
 
 ```bash
-GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -v
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -v
 ```
 
 Expected: PASS.

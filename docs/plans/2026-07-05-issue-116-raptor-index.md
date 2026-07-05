@@ -8,11 +8,11 @@ Issue: https://github.com/shikanon/orag/issues/116
 
 ## 当前代码落点
 
-- `internal/ingest/service.go`: 适合在原始 chunk 构建后追加层级摘要 chunk。
-- `internal/ingest/raptor.go`: RAPTOR-style 递归摘要 builder。
-- `internal/kb/types.go`: `Chunk.Metadata` 可表达 summary node 与 child chunk 关系。
-- `internal/storage/postgres/repository.go`: 复用 chunks 表持久化 summary chunk。
-- `internal/storage/qdrant/payload.go`: 复用同一 vector collection 写入 summary chunk payload。
+- [`internal/ingest/service.go`](../../internal/ingest/service.go): 适合在原始 chunk 构建后追加层级摘要 chunk。
+- [`internal/ingest/raptor.go`](../../internal/ingest/raptor.go): RAPTOR-style 递归摘要 builder。
+- [`internal/kb/types.go`](../../internal/kb/types.go): `Chunk.Metadata` 可表达 summary node 与 child chunk 关系。
+- [`internal/storage/postgres/repository.go`](../../internal/storage/postgres/repository.go): 复用 chunks 表持久化 summary chunk。
+- [`internal/storage/qdrant/payload.go`](../../internal/storage/qdrant/payload.go): 复用同一 vector collection 写入 summary chunk payload。
 
 ## 设计决策
 
@@ -37,27 +37,27 @@ Issue: https://github.com/shikanon/orag/issues/116
 ## 开发拆解
 
 1. 数据结构
-   - 文件：`internal/kb/types.go`
+   - 文件：[`internal/kb/types.go`](../../internal/kb/types.go)
    - 摘要 chunk metadata 存储 `kind`、`level`、`child_chunk_ids`。
 
 2. RAPTOR builder
-   - 文件：`internal/ingest/raptor.go`
+   - 文件：[`internal/ingest/raptor.go`](../../internal/ingest/raptor.go)
    - 输入：document、chunks、summarizer。
    - 输出：summary chunks。
    - 测试：固定 chunks，branch_factor=2，生成两层摘要；child_chunk_ids 可追踪。
 
 3. PostgreSQL/Qdrant 持久化
-   - 文件：`internal/storage/postgres/repository.go`
-   - 文件：`internal/storage/qdrant/payload.go`
+   - 文件：[`internal/storage/postgres/repository.go`](../../internal/storage/postgres/repository.go)
+   - 文件：[`internal/storage/qdrant/payload.go`](../../internal/storage/qdrant/payload.go)
    - 摘要 chunk 与普通 chunk 一起写入，payload/metadata 包含 `kind`、`level`、`child_chunk_ids`。
    - 测试：payload encode/decode。
 
 4. Ingestion 接入
-   - 文件：`internal/ingest/service.go`
+   - 文件：[`internal/ingest/service.go`](../../internal/ingest/service.go)
    - 原始 chunks 构建后追加 RAPTOR summary chunks，一起 embedding 和 Store。
 
 5. 文档
-   - 文件：`docs/architecture/rag-pipeline.md`
+   - 文件：[`docs/architecture/rag-pipeline.md`](../architecture/rag-pipeline.md)
    - 说明成本和适用场景。
 
 ## 验收证据

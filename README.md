@@ -148,11 +148,16 @@ make dev-down
 examples/curl/00_login.sh
 examples/curl/10_create_kb.sh
 examples/curl/20_upload_doc.sh
+examples/curl/25_upload_file.sh
 examples/curl/30_query.sh
+examples/curl/35_query_stream.sh
+examples/curl/36_trace_lookup.sh
 examples/curl/40_eval.sh
+examples/curl/45_optimize.sh
+examples/curl/50_optimize.sh
 ```
 
-脚本默认请求 `BASE_URL=http://localhost:8080`，可通过 `BASE_URL` 覆盖。运行状态保存在 `.orag-demo/`，包括 token、知识库 ID、文档 ID、数据集 ID 和入库 job ID；该目录不应提交。
+脚本默认请求 `BASE_URL=http://localhost:8080`，可通过 `BASE_URL` 覆盖。运行状态保存在 `.orag-demo/`，包括 token、知识库 ID、文档 ID、入库 job ID、trace ID、数据集 ID、评估 ID 和优化 ID；该目录不应提交。
 
 ### Go client 示例
 
