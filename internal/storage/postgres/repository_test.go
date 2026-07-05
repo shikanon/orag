@@ -861,6 +861,34 @@ func TestRepositoryStoreTraceReplacesSpansForRepeatedTraceID(t *testing.T) {
 	}
 }
 
+func TestRepositoryStoreTraceFailureSpanReadsHasError(t *testing.T) {
+	db := newFakeTraceDB(time.Date(2026, 7, 3, 11, 0, 0, 0, time.UTC))
+	repo := &Repository{traceReader: db, traceTxBeginner: db}
+	ctx := context.Background()
+
+	err := repo.StoreTrace(ctx, "tenant_1", "trace_failed", "query", rag.ProfileHighPrecision, 47, []raggraph.NodeSpan{
+		{NodeName: "init", LatencyMS: 1},
+		{NodeName: "hybrid_retrieve", LatencyMS: 46, Error: "retrieval unavailable"},
+	})
+	if err != nil {
+		t.Fatalf("StoreTrace() error = %v", err)
+	}
+
+	got, found, err := repo.GetTrace(ctx, "trace_failed")
+	if err != nil {
+		t.Fatalf("GetTrace() error = %v", err)
+	}
+	if !found {
+		t.Fatal("GetTrace() found = false, want true")
+	}
+	if !got.HasError || got.ErrorCount != 1 {
+		t.Fatalf("GetTrace() error status = has_error:%v error_count:%d", got.HasError, got.ErrorCount)
+	}
+	if len(got.NodeSpans) != 2 || got.NodeSpans[1].NodeName != "hybrid_retrieve" || got.NodeSpans[1].Error != "retrieval unavailable" {
+		t.Fatalf("GetTrace() spans = %#v", got.NodeSpans)
+	}
+}
+
 func TestRepositoryGetTraceFound(t *testing.T) {
 	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
 	reader := &fakeTraceReader{
