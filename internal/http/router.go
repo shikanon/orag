@@ -570,6 +570,14 @@ func (s *Server) runEvaluation(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	req.TenantID = tenantID(c)
+	if !s.requireDatasetForEvaluation(ctx, c, req.DatasetID) {
+		return
+	}
+	if strings.TrimSpace(req.DatasetID) != "" && strings.TrimSpace(req.KnowledgeBaseID) != "" {
+		if !s.requireKnowledgeBase(ctx, c, req.KnowledgeBaseID) {
+			return
+		}
+	}
 	resp, err := s.App.Eval.Run(ctx, req)
 	if err != nil {
 		if errors.Is(err, dataset.ErrDatasetNotFound) {
@@ -580,6 +588,20 @@ func (s *Server) runEvaluation(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	c.JSON(consts.StatusAccepted, resp)
+}
+
+func (s *Server) requireDatasetForEvaluation(ctx context.Context, c *app.RequestContext, datasetID string) bool {
+	if strings.TrimSpace(datasetID) == "" {
+		return true
+	}
+	if _, ok, err := s.App.Datasets.Get(ctx, tenantID(c), datasetID); err != nil {
+		writeDatasetError(c, "dataset_lookup_failed", err)
+		return false
+	} else if !ok {
+		writeDatasetNotFound(c)
+		return false
+	}
+	return true
 }
 
 func (s *Server) getEvaluation(ctx context.Context, c *app.RequestContext) {

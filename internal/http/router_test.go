@@ -577,6 +577,32 @@ func TestDatasetItemEvaluationAndOptimizationUseTokenTenant(t *testing.T) {
 	}
 }
 
+func TestRunEvaluationRejectsMissingKnowledgeBaseBeforeRAG(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	pipeline := &countingPipeline{resp: rag.QueryResponse{Answer: "should not run", CacheStatus: "miss"}}
+	app.RAG.Pipeline = pipeline
+
+	token := loginToken(t, h)
+	ds, err := app.Datasets.Create(ctx, "tenant_default", "missing-kb-eval", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Datasets.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
+		Query:       "q",
+		GroundTruth: "a",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := performJSONWithTrace(h, "POST", "/v1/evaluations", `{"dataset_id":"`+ds.ID+`","knowledge_base_id":"kb_missing","profile":"realtime"}`, token, "trace_eval_missing_kb")
+	assertErrorResponse(t, resp, 404, "knowledge_base_not_found", "trace_eval_missing_kb")
+	if pipeline.calls != 0 {
+		t.Fatalf("evaluation called RAG pipeline %d times for missing knowledge base", pipeline.calls)
+	}
+}
+
 func TestGetEvaluationIncludesItemsJudgeAndPairwiseDetails(t *testing.T) {
 	ctx := context.Background()
 	h, app, closeApp := newTestHertzWithApp(t)
