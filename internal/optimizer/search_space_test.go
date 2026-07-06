@@ -84,6 +84,38 @@ func TestGenerateCandidatesUsesGridForSmallSpace(t *testing.T) {
 	}
 }
 
+func TestGenerateCandidatesPreservesOmittedGraphBooleanDimensions(t *testing.T) {
+	result, err := GenerateCandidates(SearchSpace{
+		Retrieval: RetrievalSpace{DenseTopK: []int{10}},
+	}, SearchSpec{Strategy: SearchStrategyGrid, MaxCandidates: 10})
+	if err != nil {
+		t.Fatalf("GenerateCandidates() error = %v", err)
+	}
+	if len(result.Candidates) != 1 {
+		t.Fatalf("candidates = %d, want one candidate", len(result.Candidates))
+	}
+	if result.Candidates[0].Graph.QueryRewriteEnabled != nil || result.Candidates[0].Graph.HyDEEnabled != nil {
+		t.Fatalf("graph candidate = %#v, want omitted boolean dimensions to remain nil", result.Candidates[0].Graph)
+	}
+
+	result, err = GenerateCandidates(SearchSpace{
+		Graph: GraphSpace{
+			QueryRewriteEnabled: []bool{false},
+			HyDEEnabled:         []bool{false},
+		},
+	}, SearchSpec{Strategy: SearchStrategyGrid, MaxCandidates: 10})
+	if err != nil {
+		t.Fatalf("GenerateCandidates() explicit false error = %v", err)
+	}
+	if len(result.Candidates) != 1 {
+		t.Fatalf("explicit false candidates = %d, want one candidate", len(result.Candidates))
+	}
+	graph := result.Candidates[0].Graph
+	if graph.QueryRewriteEnabled == nil || *graph.QueryRewriteEnabled || graph.HyDEEnabled == nil || *graph.HyDEEnabled {
+		t.Fatalf("graph candidate = %#v, want explicit false boolean dimensions", graph)
+	}
+}
+
 func TestGenerateCandidatesPrunesDisabledIndexAffectingDimensions(t *testing.T) {
 	space := SearchSpace{
 		Chunking: ChunkingSpace{

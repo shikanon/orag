@@ -31,7 +31,7 @@ func TestInternalRAGRunnerAppliesCandidateToClonedService(t *testing.T) {
 			RRFK:                   90,
 			SemanticCacheThreshold: 0.96,
 		},
-		Graph: GraphCandidate{QueryRewriteEnabled: true, HyDEEnabled: true, MultiQueryCount: 3},
+		Graph: GraphCandidate{QueryRewriteEnabled: boolPtr(true), HyDEEnabled: boolPtr(true), MultiQueryCount: 3},
 	}
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	namespaces := NewTempNamespaceManager(nil)
@@ -106,6 +106,55 @@ func TestInternalRAGRunnerAppliesCandidateToClonedService(t *testing.T) {
 	}
 	if baseRetriever.DenseTopK != 3 || baseRetriever.SparseTopK != 4 || baseRetriever.RRFK != 30 {
 		t.Fatalf("base retriever was mutated: %#v", baseRetriever)
+	}
+}
+
+func TestInternalRAGRunnerPreservesGraphEnhancementsWhenCandidateOmitsGraphBooleans(t *testing.T) {
+	base := &rag.Service{
+		TopK:                   5,
+		QueryRewriteEnabled:    true,
+		HyDEEnabled:            true,
+		SemanticCacheThreshold: 0.88,
+	}
+	runner := InternalRAGRunner{BaseRAG: base}
+
+	cloned := runner.configureCandidateService(CandidateConfig{
+		Retrieval: RetrievalCandidate{DenseTopK: 12},
+	})
+
+	if cloned == base {
+		t.Fatal("candidate service reused production service pointer")
+	}
+	if !cloned.QueryRewriteEnabled || !cloned.HyDEEnabled {
+		t.Fatalf("graph enhancements = rewrite:%t hyde:%t, want preserved true values", cloned.QueryRewriteEnabled, cloned.HyDEEnabled)
+	}
+	if cloned.TopK != 12 {
+		t.Fatalf("top_k = %d, want retrieval candidate override", cloned.TopK)
+	}
+	if !base.QueryRewriteEnabled || !base.HyDEEnabled || base.TopK != 5 {
+		t.Fatalf("base RAG was mutated: %#v", base)
+	}
+}
+
+func TestInternalRAGRunnerAppliesExplicitFalseGraphCandidate(t *testing.T) {
+	base := &rag.Service{
+		QueryRewriteEnabled: true,
+		HyDEEnabled:         true,
+	}
+	runner := InternalRAGRunner{BaseRAG: base}
+
+	cloned := runner.configureCandidateService(CandidateConfig{
+		Graph: GraphCandidate{
+			QueryRewriteEnabled: boolPtr(false),
+			HyDEEnabled:         boolPtr(false),
+		},
+	})
+
+	if cloned.QueryRewriteEnabled || cloned.HyDEEnabled {
+		t.Fatalf("graph enhancements = rewrite:%t hyde:%t, want explicit false overrides", cloned.QueryRewriteEnabled, cloned.HyDEEnabled)
+	}
+	if !base.QueryRewriteEnabled || !base.HyDEEnabled {
+		t.Fatalf("base RAG was mutated: %#v", base)
 	}
 }
 
@@ -184,4 +233,8 @@ type failingNamespaceCleaner struct{}
 
 func (failingNamespaceCleaner) DeleteTempNamespace(context.Context, TempNamespace) error {
 	return errors.New("delete failed")
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }

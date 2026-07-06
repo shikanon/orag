@@ -127,8 +127,12 @@ func applyRerankerCandidate(service *rag.Service, candidate RerankerCandidate) {
 }
 
 func applyGraphCandidate(service *rag.Service, candidate GraphCandidate) {
-	service.QueryRewriteEnabled = candidate.QueryRewriteEnabled
-	service.HyDEEnabled = candidate.HyDEEnabled
+	if candidate.QueryRewriteEnabled != nil {
+		service.QueryRewriteEnabled = *candidate.QueryRewriteEnabled
+	}
+	if candidate.HyDEEnabled != nil {
+		service.HyDEEnabled = *candidate.HyDEEnabled
+	}
 	if candidate.MultiQueryCount > 0 {
 		service.MultiQueryCount = candidate.MultiQueryCount
 	}
