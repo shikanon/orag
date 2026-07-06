@@ -834,6 +834,46 @@ func TestRepositoryStoresOptimizationRunAndCandidate(t *testing.T) {
 	}
 }
 
+func TestRepositoryUpdateOptimizationRunIncludesReadbackFields(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{}
+	repo := &Repository{evalQueryer: queryer}
+	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
+
+	run := optimizerpkg.OptimizationRun{
+		ID:              "opt_1",
+		TenantID:        "tenant_1",
+		DatasetID:       "ds_replacement",
+		KnowledgeBaseID: "kb_replacement",
+		Objective:       optimizerpkg.ObjectiveSpec{Maximize: "faithfulness"},
+		SearchSpace: optimizerpkg.SearchSpace{Retrieval: optimizerpkg.RetrievalSpace{
+			DenseTopK: []int{6},
+		}},
+		Status:    optimizerpkg.RunStatusRunning,
+		UpdatedAt: now,
+	}
+	if err := repo.UpdateOptimizationRun(context.Background(), run); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"dataset_id=$3", "knowledge_base_id=$4", "status=$8"} {
+		if !strings.Contains(queryer.execSQL, want) {
+			t.Fatalf("UpdateOptimizationRun SQL missing %q: %s", want, queryer.execSQL)
+		}
+	}
+	if len(queryer.execArgs) < 8 {
+		t.Fatalf("UpdateOptimizationRun args = %#v, want at least 8 args", queryer.execArgs)
+	}
+	if queryer.execArgs[2] != "ds_replacement" {
+		t.Fatalf("dataset arg = %#v, want replacement dataset", queryer.execArgs[2])
+	}
+	if queryer.execArgs[3] != "kb_replacement" {
+		t.Fatalf("knowledge base arg = %#v, want replacement knowledge base", queryer.execArgs[3])
+	}
+	if queryer.execArgs[7] != optimizerpkg.RunStatusRunning {
+		t.Fatalf("status arg = %#v, want %q", queryer.execArgs[7], optimizerpkg.RunStatusRunning)
+	}
+}
+
 func TestRepositoryListsOptimizationCandidatesWithTenantGuard(t *testing.T) {
 	queryer := &fakeKnowledgeBaseQueryer{queryRows: &fakeTraceRows{}}
 	repo := &Repository{evalQueryer: queryer}

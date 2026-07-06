@@ -88,13 +88,13 @@ func (r *Repository) UpdateOptimizationRun(ctx context.Context, run optimizer.Op
 	}
 	_, err = r.evaluationQueryer().Exec(ctx, `
 		UPDATE optimization_runs
-		SET objective=$3, search_space=$4, runner=$5, status=$6, status_reason=$7,
-			best_candidate_id=$8, holdout_candidate_id=$9, sampling_strategy=$10,
-			search_space_size=$11, sampled_candidate_count=$12, completed_candidate_count=$13,
-			checkpoint=$14, token_usage=$15, cost_usd=$16, cost_budget_usd=$17,
-			cancel_requested_at=$18, updated_at=$19
+		SET dataset_id=$3, knowledge_base_id=$4, objective=$5, search_space=$6, runner=$7,
+			status=$8, status_reason=$9, best_candidate_id=$10, holdout_candidate_id=$11,
+			sampling_strategy=$12, search_space_size=$13, sampled_candidate_count=$14,
+			completed_candidate_count=$15, checkpoint=$16, token_usage=$17, cost_usd=$18,
+			cost_budget_usd=$19, cancel_requested_at=$20, updated_at=$21
 		WHERE tenant_id=$1 AND id=$2`,
-		run.TenantID, run.ID, objective, searchSpace, runner, run.Status, run.StatusReason,
+		run.TenantID, run.ID, run.DatasetID, run.KnowledgeBaseID, objective, searchSpace, runner, run.Status, run.StatusReason,
 		run.BestCandidateID, run.HoldoutCandidateID, run.SamplingStrategy,
 		run.SearchSpaceSize, run.SampledCandidateCount, run.CompletedCandidateCount,
 		checkpoint, tokenUsage, run.CostUSD, run.CostBudgetUSD, run.CancelRequestedAt, run.UpdatedAt)
