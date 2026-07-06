@@ -55,7 +55,7 @@ Content-Type: application/json
 - `realtime`
 - `high_precision`
 
-当请求未显式传 `profile` 时，服务使用配置项 `RAG_DEFAULT_PROFILE`，默认是 `realtime`。当请求未显式传 `top_k` 时，服务使用配置的 dense top-k，默认来自 `RAG_DENSE_TOP_K=50`；显式传入的 `top_k` 必须在 `1..100` 范围内。底层 dense/sparse 候选规模仍分别受 `RAG_DENSE_TOP_K` 和 `RAG_SPARSE_TOP_K` 影响。
+当请求未显式传 `profile` 时，服务使用配置项 `RAG_DEFAULT_PROFILE`，默认是 `realtime`。当请求未显式传 `top_k` 时，服务使用配置的 dense top-k，默认来自 `RAG_DENSE_TOP_K=50`；显式传入的 `top_k` 必须在 `1..100` 范围内。`top_k` 控制最终融合/重排后的 `retrieved_chunks` 数量；`RAG_CONTEXT_TOP_N` 只控制打包进回答 prompt 和 `citations` 的 chunk 数量。底层 dense/sparse 候选规模仍分别受 `RAG_DENSE_TOP_K` 和 `RAG_SPARSE_TOP_K` 影响。
 
 ## 统一错误响应
 
@@ -333,7 +333,7 @@ POST /v1/query
 }
 ```
 
-必填字段是 `knowledge_base_id` 和 `query`。`profile` 可选值为 `realtime`、`high_precision`；`session_id` 当前作为请求字段透传给 RAG 层，不在 OpenAPI 响应中返回；`top_k` 控制本次请求最终融合后的检索结果数量，显式传入时必须在 `1..100` 范围内。
+必填字段是 `knowledge_base_id` 和 `query`。`profile` 可选值为 `realtime`、`high_precision`；`session_id` 当前作为请求字段透传给 RAG 层，不在 OpenAPI 响应中返回；`top_k` 控制本次请求最终融合/重排后的 `retrieved_chunks` 数量，显式传入时必须在 `1..100` 范围内。未传 `top_k` 时使用服务 top-k，默认来自 `RAG_DENSE_TOP_K=50`；`RAG_CONTEXT_TOP_N` 独立限制进入回答 prompt 和 `citations` 的 chunk 数量，因此较大的 `top_k` 可能增加检索/重排工作，但不会自动扩大上下文打包数量。
 
 响应 `200 OK`：
 
@@ -381,8 +381,8 @@ POST /v1/query
 字段说明：
 
 - `answer`：生成答案；当有 citation 且答案未包含第一个 chunk ID 时，实现会补充一个 chunk ID 提示。
-- `citations`：引用列表，包含 `chunk_id`、`document_id`、`source_uri`，可选 `section` 和 `quote`。
-- `retrieved_chunks`：召回结果，包含 chunk、分数、排序和来源；重排成功时 `from` 可能为 `ark_rerank`。
+- `citations`：引用列表，包含 `chunk_id`、`document_id`、`source_uri`，可选 `section` 和 `quote`；数量由 `RAG_CONTEXT_TOP_N` 和上下文 token 限制决定。
+- `retrieved_chunks`：最终融合/重排后的召回结果，数量由 `top_k` 决定，包含 chunk、分数、排序和来源；重排成功时 `from` 可能为 `ark_rerank`。
 - `trace_id`：本次查询 trace。
 - `cache_status`：`hit`、`miss`、`error` 或 direct route 跳过检索与缓存时的 `bypass`。
 - `warnings`：可选警告，例如无召回上下文时会包含 `no_retrieved_context`。
