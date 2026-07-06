@@ -286,6 +286,9 @@ func (s *Service) run(ctx context.Context, runID string, req SubmitRequest) erro
 			run.Checkpoint.markFailed(candidate.ID)
 			return s.failRun(ctx, &run, err)
 		}
+		if req.Budget.MaxCostUSD > 0 && run.CostUSD >= req.Budget.MaxCostUSD {
+			return s.transitionRun(ctx, &run, RunStatusBudgetStopped, "budget_stopped", "max cost reached")
+		}
 	}
 	if run.Status == RunStatusCanceled || run.Status == RunStatusBudgetStopped {
 		return nil

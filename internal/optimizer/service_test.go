@@ -107,6 +107,41 @@ func TestServiceBudgetStopAndResumeSkipsCompletedCandidate(t *testing.T) {
 	}
 }
 
+func TestServiceStopsAfterSingleCandidateCostOverrun(t *testing.T) {
+	repo := newMemoryOptimizationRepository()
+	runner := &recordingCandidateRunner{}
+	service := &Service{Repository: repo, Runner: runner, DisableAutoStart: true}
+	req := basicSubmitRequest()
+	req.SearchSpace.Retrieval.DenseTopK = []int{1}
+	req.Search.MaxCandidates = 1
+	req.Budget = Budget{MaxCostUSD: 0.05}
+
+	run, err := service.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	if err := service.RunPending(context.Background(), "tenant_a", run.ID, req); err != nil {
+		t.Fatalf("RunPending() error = %v", err)
+	}
+	status, _, _ := service.Get(context.Background(), "tenant_a", run.ID)
+	if status.Run.Status != RunStatusBudgetStopped {
+		t.Fatalf("status = %q, want budget_stopped", status.Run.Status)
+	}
+	if status.Run.CostUSD != 0.1 {
+		t.Fatalf("cost_usd = %v, want 0.1", status.Run.CostUSD)
+	}
+	if status.Run.Checkpoint.CostUSD != 0.1 {
+		t.Fatalf("checkpoint cost_usd = %v, want 0.1", status.Run.Checkpoint.CostUSD)
+	}
+	if status.Run.CompletedCandidateCount != 1 || len(status.Run.Checkpoint.CompletedCandidateIDs) != 1 {
+		t.Fatalf("checkpoint = %#v, want one completed candidate", status.Run.Checkpoint)
+	}
+	candidateID := status.Run.Checkpoint.CompletedCandidateIDs[0]
+	if runner.saw(candidateID, PhaseHoldout, "holdout") {
+		t.Fatalf("runner calls = %#v, holdout should be skipped after cost budget stop", runner.calls)
+	}
+}
+
 func TestServiceEmptyResumeUsesStoredRunConfig(t *testing.T) {
 	repo := newMemoryOptimizationRepository()
 	now := time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
