@@ -40,11 +40,12 @@ curl -fsS http://localhost:8080/readyz
 | --- | --- | --- |
 | `postgres` | `DATABASE_URL` 错误、数据库未启动、账号密码不匹配。 | 检查 `make dev-up`、`docker compose ps` 和数据库连接串。 |
 | `qdrant` | `QDRANT_HOST`、`QDRANT_GRPC_PORT` 或 TLS/API key 配置错误。 | 确认后端使用 gRPC 端口 `6334`，不是 REST 端口 `6333`。 |
-| collection 缺失 | 主 collection 或 semantic cache collection 不存在。 | 开启 `QDRANT_AUTO_CREATE_COLLECTIONS=true` 或手动创建 collection。 |
+| collection 缺失 | 主 collection 或 semantic cache collection 不存在。 | 开启 `QDRANT_AUTO_CREATE_COLLECTIONS=true` 或手动创建 collection，并保持 vector size 等于 `ARK_EMBEDDING_DIMENSIONS`、distance 为 cosine。 |
+| `vector config mismatch` | 旧 Qdrant volume、手动创建的 collection，或 embedding provider/model 变更导致 collection vector size/distance 与当前配置不兼容。 | 对齐 `ARK_EMBEDDING_DIMENSIONS`/embedding provider 与现有数据；如需切换维度或模型，先备份数据，再迁移或重建受影响的 Qdrant collection/volume。 |
 | `model_provider=mock` | 显式启用了 deterministic mock provider。 | 只用于测试或本地无外部模型调试；真实模型验证和生产必须配置所选 provider 的 key。 |
 | provider base URL 缺失 | 选择了 Azure OpenAI 或 Google Cloud，但没有配置 `AZURE_OPENAI_BASE_URL` 或 `GOOGLE_CLOUD_BASE_URL`。 | 补齐对应 base URL；其它 provider 如走代理或私有网关，检查 `<PROVIDER>_BASE_URL`。 |
 
-注意：`/readyz` 不验证数据库迁移是否完整。如果接口报 SQL 表不存在，应执行 `make migrate`。
+注意：`/readyz` 会验证 Qdrant 主 collection 和 semantic cache collection 的 vector 配置，但不验证数据库迁移是否完整。如果接口报 SQL 表不存在，应执行 `make migrate`。
 
 ## 登录失败
 

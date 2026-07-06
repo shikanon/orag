@@ -24,10 +24,16 @@ type PointsClient interface {
 	Count(ctx context.Context, in *qdrant.CountPoints, opts ...grpc.CallOption) (*qdrant.CountResponse, error)
 }
 
+type CollectionsClient interface {
+	Get(ctx context.Context, in *qdrant.GetCollectionInfoRequest, opts ...grpc.CallOption) (*qdrant.GetCollectionInfoResponse, error)
+	Create(ctx context.Context, in *qdrant.CreateCollection, opts ...grpc.CallOption) (*qdrant.CollectionOperationResponse, error)
+	CollectionExists(ctx context.Context, in *qdrant.CollectionExistsRequest, opts ...grpc.CallOption) (*qdrant.CollectionExistsResponse, error)
+}
+
 type Client struct {
 	Conn        *grpc.ClientConn
 	Qdrant      qdrant.QdrantClient
-	Collections qdrant.CollectionsClient
+	Collections CollectionsClient
 	Points      PointsClient
 }
 
