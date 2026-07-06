@@ -55,8 +55,8 @@ type IndexingCandidate struct {
 }
 
 type GraphCandidate struct {
-	QueryRewriteEnabled bool     `json:"query_rewrite_enabled,omitempty"`
-	HyDEEnabled         bool     `json:"hyde_enabled,omitempty"`
+	QueryRewriteEnabled *bool    `json:"query_rewrite_enabled,omitempty"`
+	HyDEEnabled         *bool    `json:"hyde_enabled,omitempty"`
 	MultiQueryCount     int      `json:"multi_query_count,omitempty"`
 	Modules             []string `json:"modules,omitempty"`
 }

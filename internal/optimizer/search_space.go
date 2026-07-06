@@ -330,8 +330,8 @@ func retrievalChoices(space RetrievalSpace) []RetrievalCandidate {
 
 func graphChoices(space GraphSpace) []GraphCandidate {
 	var out []GraphCandidate
-	for _, rewrite := range boolChoices(space.QueryRewriteEnabled) {
-		for _, hyde := range boolChoices(space.HyDEEnabled) {
+	for _, rewrite := range boolPtrChoices(space.QueryRewriteEnabled) {
+		for _, hyde := range boolPtrChoices(space.HyDEEnabled) {
 			for _, multiQuery := range intChoices(space.MultiQueryCount) {
 				for _, modules := range moduleChoices(space.Modules) {
 					out = append(out, GraphCandidate{
@@ -368,11 +368,16 @@ func stringChoices(values []string) []string {
 	return values
 }
 
-func boolChoices(values []bool) []bool {
+func boolPtrChoices(values []bool) []*bool {
 	if len(values) == 0 {
-		return []bool{false}
+		return []*bool{nil}
 	}
-	return values
+	out := make([]*bool, 0, len(values))
+	for _, value := range values {
+		candidate := value
+		out = append(out, &candidate)
+	}
+	return out
 }
 
 func floatChoices(values []float64) []float64 {
