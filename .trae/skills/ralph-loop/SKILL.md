@@ -1,6 +1,11 @@
-# Ralph Loop Codex Skill
+---
+name: ralph-loop
+description: "Use when an agent needs to run bounded ORAG Ralph Loop verification from a spec/task path and report a PASS/FAIL verdict with trace evidence."
+---
 
-Generated from `orag.capabilities.v1` version `2026-07-05` with generator `manifest-first.v1` for Codex.
+# Ralph Loop Trae Skill
+
+Generated from `orag.capabilities.v1` version `2026-07-05` with generator `manifest-first.v1` for Trae.
 
 ## Purpose
 Use when an agent needs to run bounded ORAG Ralph Loop verification from a spec/task path and report a PASS/FAIL verdict with trace evidence.
@@ -62,7 +67,6 @@ Run Ralph Loop for Task 1 in focused mode with at most one round, then report th
 - Surface API or MCP errors without retrying unboundedly.
 - Return blocked when task scope is ambiguous.
 
-## Codex Usage
-- Read local task/spec or evidence files before invoking ORAG tools.
-- Prefer MCP tools when available; use HTTP only when the matching `api/openapi.yaml` facet is implemented.
-- Return verdict, summary, artifacts, and `trace_id` when present.
+## Trae Usage
+- Invoke this Skill only when the user request matches the trigger conditions.
+- Keep actions inside the listed safety boundaries and ask before expanding scope.

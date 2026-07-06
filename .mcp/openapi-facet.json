@@ -1,0 +1,130 @@
+{
+  "generated_from": "orag.capabilities.v1",
+  "schema_version": "orag.capabilities.v1",
+  "capability_version": "2026-07-05",
+  "generator_version": "manifest-first.v1",
+  "openapi_facet_path": "api/openapi.yaml",
+  "capabilities": [
+    {
+      "id": "apply-low-risk-action",
+      "status": "planned",
+      "method": "POST",
+      "path": "/v1/self-ops/apply-low-risk-action",
+      "operation_id": "applyLowRiskAction",
+      "auth_scheme": "bearerAuth",
+      "request_schema": "#/components/schemas/ApplyLowRiskActionRequest",
+      "response_schema": "#/components/schemas/ApplyLowRiskActionResult",
+      "error_schema": "#/components/schemas/ErrorResponse",
+      "backing_services": [
+        "trace service",
+        "agent artifact service"
+      ]
+    },
+    {
+      "id": "create-remediation-issue",
+      "status": "planned",
+      "method": "POST",
+      "path": "/v1/self-ops/remediation-issues",
+      "operation_id": "createRemediationIssue",
+      "auth_scheme": "bearerAuth",
+      "request_schema": "#/components/schemas/CreateRemediationIssueRequest",
+      "response_schema": "#/components/schemas/CreateRemediationIssueResult",
+      "error_schema": "#/components/schemas/ErrorResponse",
+      "backing_services": [
+        "trace service",
+        "agent artifact service"
+      ]
+    },
+    {
+      "id": "diagnose",
+      "status": "planned",
+      "method": "POST",
+      "path": "/v1/diagnostics/diagnose",
+      "operation_id": "diagnoseSymptom",
+      "auth_scheme": "bearerAuth",
+      "request_schema": "#/components/schemas/DiagnoseRequest",
+      "response_schema": "#/components/schemas/DiagnoseResult",
+      "error_schema": "#/components/schemas/ErrorResponse",
+      "backing_services": [
+        "trace service",
+        "agent artifact service"
+      ]
+    },
+    {
+      "id": "maintenance-plan",
+      "status": "planned",
+      "method": "POST",
+      "path": "/v1/self-ops/maintenance-plan",
+      "operation_id": "createMaintenancePlan",
+      "auth_scheme": "bearerAuth",
+      "request_schema": "#/components/schemas/MaintenancePlanRequest",
+      "response_schema": "#/components/schemas/MaintenancePlan",
+      "error_schema": "#/components/schemas/ErrorResponse",
+      "backing_services": [
+        "trace service",
+        "agent artifact service"
+      ]
+    },
+    {
+      "id": "ralph-loop",
+      "status": "planned",
+      "method": "POST",
+      "path": "/v1/ralph-loop",
+      "operation_id": "runRalphLoop",
+      "auth_scheme": "bearerAuth",
+      "request_schema": "#/components/schemas/RalphLoopRequest",
+      "response_schema": "#/components/schemas/RalphLoopResponse",
+      "error_schema": "#/components/schemas/ErrorResponse",
+      "backing_services": [
+        "optimization service",
+        "evaluation service",
+        "trace service"
+      ]
+    },
+    {
+      "id": "runbook-suggest",
+      "status": "planned",
+      "method": "POST",
+      "path": "/v1/diagnostics/runbooks/suggest",
+      "operation_id": "suggestRunbook",
+      "auth_scheme": "bearerAuth",
+      "request_schema": "#/components/schemas/RunbookSuggestRequest",
+      "response_schema": "#/components/schemas/RunbookSuggestResponse",
+      "error_schema": "#/components/schemas/ErrorResponse",
+      "backing_services": [
+        "trace service",
+        "agent artifact service"
+      ]
+    },
+    {
+      "id": "self-check",
+      "status": "planned",
+      "method": "POST",
+      "path": "/v1/self-check",
+      "operation_id": "runSelfCheck",
+      "auth_scheme": "bearerAuth",
+      "request_schema": "#/components/schemas/SelfCheckRequest",
+      "response_schema": "#/components/schemas/SelfCheckResult",
+      "error_schema": "#/components/schemas/ErrorResponse",
+      "backing_services": [
+        "trace service",
+        "agent artifact service"
+      ]
+    },
+    {
+      "id": "trace-lookup",
+      "status": "planned",
+      "method": "POST",
+      "path": "/v1/diagnostics/traces/{trace_id}",
+      "operation_id": "lookupTrace",
+      "auth_scheme": "bearerAuth",
+      "request_schema": "#/components/schemas/TraceLookupRequest",
+      "response_schema": "#/components/schemas/TraceLookupResponse",
+      "error_schema": "#/components/schemas/ErrorResponse",
+      "backing_services": [
+        "trace service",
+        "agent artifact service"
+      ]
+    }
+  ]
+}

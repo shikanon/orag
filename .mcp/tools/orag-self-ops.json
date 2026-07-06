@@ -1,0 +1,236 @@
+{
+  "generated_from": "orag.capabilities.v1",
+  "schema_version": "orag.capabilities.v1",
+  "capability_version": "2026-07-05",
+  "generator_version": "manifest-first.v1",
+  "protocol_version": "2024-11-05",
+  "runtime_gate_warning": "Static make agent-sync-check is the authoritative drift gate; runtime MCP probes are convenience checks only.",
+  "tools": [
+    {
+      "name": "orag_apply_low_risk_action",
+      "description": "Apply an authorized low-risk ORAG maintenance action after TOCTOU precondition checks.",
+      "inputSchema": {
+        "description": "Input contract for ORAG Apply Low Risk Action.",
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "plan_id": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/ApplyLowRiskActionRequest"
+      },
+      "outputSchema": {
+        "description": "Output contract for ORAG Apply Low Risk Action.",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/ApplyLowRiskActionResult"
+      },
+      "annotations": {
+        "auth": {
+          "env": [
+            "ORAG_API_BASE_URL",
+            "ORAG_API_TOKEN",
+            "ORAG_TENANT_ID"
+          ],
+          "required": true,
+          "scheme": "bearerAuth"
+        },
+        "examples": [
+          {
+            "name": "apply-approved-action",
+            "prompt": "Apply the approved low-risk action from plan plan_20260705_001.",
+            "input": {
+              "approved": true,
+              "plan_id": "plan_20260705_001"
+            },
+            "expected_output": {
+              "status": "completed",
+              "verdict": "pass"
+            }
+          }
+        ],
+        "operations": {
+          "side_effect": "write",
+          "read_only": false,
+          "dry_run_supported": false,
+          "requires_approval": true,
+          "idempotency_key": "selfops:{action}:{snapshot_hash}",
+          "lock_key": "selfops:{scope}",
+          "rollback": [
+            "Use the plan rollback commands and report blocked if preconditions drift."
+          ]
+        },
+        "orag_capability_id": "apply-low-risk-action",
+        "orag_display_name": "ORAG Apply Low Risk Action",
+        "risk_level": "high",
+        "runtime_gate_warning": "Runtime probes do not replace static make agent-sync-check.",
+        "skill_manifest_name": "orag-self-ops",
+        "trace": {
+          "request_header": "X-Trace-ID",
+          "response_field": "trace_id",
+          "response_header": "X-Trace-ID"
+        }
+      }
+    },
+    {
+      "name": "orag_create_remediation_issue",
+      "description": "Create an authorized remediation issue from ORAG findings.",
+      "inputSchema": {
+        "description": "Input contract for ORAG Create Remediation Issue.",
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "finding_id": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/CreateRemediationIssueRequest"
+      },
+      "outputSchema": {
+        "description": "Output contract for ORAG Create Remediation Issue.",
+        "properties": {
+          "issue_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/CreateRemediationIssueResult"
+      },
+      "annotations": {
+        "auth": {
+          "env": [
+            "ORAG_API_BASE_URL",
+            "ORAG_API_TOKEN",
+            "ORAG_TENANT_ID"
+          ],
+          "required": true,
+          "scheme": "bearerAuth"
+        },
+        "examples": [
+          {
+            "name": "create-remediation-issue",
+            "prompt": "Create a remediation issue for the failed release readiness check.",
+            "input": {
+              "approved": true,
+              "finding_id": "release.contract.openapi_failed"
+            },
+            "expected_output": {
+              "issue_id": "orag-remediation-001",
+              "verdict": "pass"
+            }
+          }
+        ],
+        "operations": {
+          "side_effect": "write",
+          "read_only": false,
+          "dry_run_supported": true,
+          "requires_approval": true,
+          "idempotency_key": "selfops:remediation-issue:{finding_hash}",
+          "lock_key": "selfops:remediation-issue",
+          "rollback": [
+            "Close the generated issue if it was created from stale findings."
+          ]
+        },
+        "orag_capability_id": "create-remediation-issue",
+        "orag_display_name": "ORAG Create Remediation Issue",
+        "risk_level": "medium",
+        "runtime_gate_warning": "Runtime probes do not replace static make agent-sync-check.",
+        "skill_manifest_name": "orag-self-ops",
+        "trace": {
+          "request_header": "X-Trace-ID",
+          "response_field": "trace_id",
+          "response_header": "X-Trace-ID"
+        }
+      }
+    },
+    {
+      "name": "orag_maintenance_plan",
+      "description": "Create a dry-run ORAG maintenance plan without applying writes.",
+      "inputSchema": {
+        "description": "Input contract for ORAG Maintenance Plan.",
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/MaintenancePlanRequest"
+      },
+      "outputSchema": {
+        "description": "Output contract for ORAG Maintenance Plan.",
+        "properties": {
+          "lock_key": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/MaintenancePlan"
+      },
+      "annotations": {
+        "auth": {
+          "env": [
+            "ORAG_API_BASE_URL",
+            "ORAG_API_TOKEN",
+            "ORAG_TENANT_ID"
+          ],
+          "required": true,
+          "scheme": "bearerAuth"
+        },
+        "examples": [
+          {
+            "name": "dry-run-agent-artifacts",
+            "prompt": "Create a dry-run maintenance plan to regenerate stale agent artifacts.",
+            "input": {
+              "dry_run": true,
+              "scope": "agent_artifacts"
+            },
+            "expected_output": {
+              "lock_key": "selfops:agent-artifacts",
+              "verdict": "pass"
+            }
+          }
+        ],
+        "operations": {
+          "side_effect": "dry_run",
+          "read_only": true,
+          "dry_run_supported": true,
+          "requires_approval": false,
+          "rollback": [
+            "Discard the dry-run plan if preconditions drift or authorization is not granted."
+          ]
+        },
+        "orag_capability_id": "maintenance-plan",
+        "orag_display_name": "ORAG Maintenance Plan",
+        "risk_level": "medium",
+        "runtime_gate_warning": "Runtime probes do not replace static make agent-sync-check.",
+        "skill_manifest_name": "orag-self-ops",
+        "trace": {
+          "request_header": "X-Trace-ID",
+          "response_field": "trace_id",
+          "response_header": "X-Trace-ID"
+        }
+      }
+    }
+  ]
+}

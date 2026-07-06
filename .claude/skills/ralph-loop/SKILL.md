@@ -6,23 +6,25 @@ allowed-tools: Read, Bash(curl:*)
 
 # Ralph Loop Claude Code Skill
 
-Generated from `x-orag-agent-capabilities` version `1` for Claude Code.
+Generated from `orag.capabilities.v1` version `2026-07-05` with generator `manifest-first.v1` for Claude Code.
 
 ## Purpose
 Use when an agent needs to run bounded ORAG Ralph Loop verification from a spec/task path and report a PASS/FAIL verdict with trace evidence.
 
 ## Trigger Conditions
-- Use when an agent needs a bounded ORAG Ralph Loop verification run from a task/spec path.
-- Use when the expected answer must include a PASS/FAIL verdict, artifacts, and trace evidence.
-- Do not use for general RAG queries, ingestion, or unbounded autonomous code changes.
+- User asks to run Ralph Loop verification for an ORAG task or spec.
+- Expected answer must include PASS/FAIL verdict, artifacts, and trace evidence.
 
-## Parameters
-- API endpoint: `POST /v1/ralph-loop`
-- Operation ID: `runRalphLoop`
-- MCP tool: `ralph_loop_run`
-- Input schema: `#/components/schemas/RalphLoopRequest`
-- Output schema: `#/components/schemas/RalphLoopResponse`
-- Error schema: `#/components/schemas/ErrorResponse`
+## Anti-Triggers
+- Do not use for general RAG queries.
+- Do not use for unbounded autonomous implementation work.
+
+## Mutual Exclusion
+- Key: `ralph-loop`
+- Ralph Loop verification is separate from self-check, diagnosis, and self-ops Skills.
+
+## Capabilities
+- `ralph_loop_run`: `ralph-loop` via `POST /v1/ralph-loop`, input `#/components/schemas/RalphLoopRequest`, output `#/components/schemas/RalphLoopResponse`, risk `low`, side effect `read_only`
 
 ## Environment
 - `ORAG_API_BASE_URL`
@@ -30,15 +32,16 @@ Use when an agent needs to run bounded ORAG Ralph Loop verification from a spec/
 - `ORAG_TENANT_ID`
 
 ## Call Steps
-1. Confirm `ORAG_API_BASE_URL`, `ORAG_API_TOKEN`, and `ORAG_TENANT_ID` are available.
-2. Build a request body with `task_spec_path`, `task_id`, `mode`, and `max_rounds`.
-3. Send `Authorization: Bearer ${ORAG_API_TOKEN}`, `X-ORAG-Tenant-ID: ${ORAG_TENANT_ID}`, and optional `X-Trace-ID`.
-4. Report `status`, `verdict`, `summary`, `artifacts`, and `trace_id` from the response.
+1. Read the task or spec path.
+2. Call ralph_loop_run with a bounded max_rounds value.
+3. Report verdict, summary, artifacts, and trace ID.
 
-## Example Prompt
-Run Ralph Loop for `Task 1` in `focused` mode with at most `1` round(s), then report the verdict and trace ID.
+## Example Prompts
+- Run Ralph Loop for Task 1 in focused mode with at most one round.
 
-## Example Request
+## Example Request: `ralph_loop_run`
+Run Ralph Loop for Task 1 in focused mode with at most one round, then report the verdict and trace ID.
+
 ```json
 {
   "max_rounds": 1,
@@ -48,7 +51,7 @@ Run Ralph Loop for `Task 1` in `focused` mode with at most `1` round(s), then re
 }
 ```
 
-## Expected Output Shape
+## Expected Output Shape: `ralph_loop_run`
 ```json
 {
   "status": "completed",
@@ -58,10 +61,13 @@ Run Ralph Loop for `Task 1` in `focused` mode with at most `1` round(s), then re
 ```
 
 ## Safety Boundaries
-- Treat this Skill as an API client description; it does not implement the Ralph Loop runtime handler.
-- Never print bearer tokens, tenant secrets, or full request headers in the final answer.
-- Stop and surface the API error when `#/components/schemas/ErrorResponse` or HTTP status indicates failure.
+- Planned-only runtime boundary.
+- Never print bearer tokens or tenant secrets.
+
+## Failure Handling
+- Surface API or MCP errors without retrying unboundedly.
+- Return blocked when task scope is ambiguous.
 
 ## Claude Code Usage
-- Prefer `Read` for local task/spec context and `Bash(curl:*)` only for the ORAG API call.
+- Prefer `Read` for local context and MCP/HTTP calls only for the listed ORAG capabilities.
 - Do not modify repository files unless the user explicitly asks for implementation work.

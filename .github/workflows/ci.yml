@@ -18,6 +18,8 @@ jobs:
       - run: go mod download
       - run: gofmt -w $(find . -name '*.go' -not -path './vendor/*') && git diff --exit-code
       - run: make agent-sync-check
+      - run: make agent-artifact-tests
+      - run: make mcp-self-check-smoke
       - run: go test ./...
       - run: go vet ./...
       - run: go test ./tests/contract -run TestOpenAPI -v

@@ -7,19 +7,11 @@
   "runtime_gate_warning": "Static make agent-sync-check is the authoritative drift gate; runtime MCP probes are convenience checks only.",
   "tools": [
     {
-      "name": "ralph_loop_run",
-      "description": "Execute a Ralph Loop task verification workflow through the ORAG API contract.",
+      "name": "orag_check",
+      "description": "Run a read-only ORAG self-check and return stable check IDs, evidence, verdict, and trace metadata.",
       "inputSchema": {
-        "description": "Input contract for the Ralph Loop agent capability.",
+        "description": "Input contract for read-only ORAG self-checks.",
         "properties": {
-          "base_ref": {
-            "type": "string"
-          },
-          "max_rounds": {
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
           "mode": {
             "enum": [
               "focused",
@@ -27,34 +19,39 @@
             ],
             "type": "string"
           },
-          "notes": {
-            "type": "string"
+          "overall_deadline_seconds": {
+            "minimum": 1,
+            "type": "integer"
           },
-          "task_id": {
-            "description": "Task label to verify, for example Task 1.",
-            "type": "string"
+          "per_check_timeout_seconds": {
+            "minimum": 1,
+            "type": "integer"
           },
-          "task_spec_path": {
-            "description": "Repository-relative path to the spec tasks file or task directory.",
+          "scope": {
+            "enum": [
+              "health",
+              "contract",
+              "agent_sync",
+              "smoke",
+              "storage",
+              "config",
+              "release",
+              "all"
+            ],
             "type": "string"
           }
         },
         "required": [
-          "task_spec_path",
-          "task_id",
-          "mode",
-          "max_rounds"
+          "scope",
+          "mode"
         ],
         "type": "object",
-        "x-orag-schema-ref": "#/components/schemas/RalphLoopRequest"
+        "x-orag-schema-ref": "#/components/schemas/SelfCheckRequest"
       },
       "outputSchema": {
-        "description": "Output contract for Ralph Loop.",
+        "description": "Output contract for ORAG Self Check.",
         "properties": {
-          "status": {
-            "type": "string"
-          },
-          "trace_id": {
+          "schema_version": {
             "type": "string"
           },
           "verdict": {
@@ -62,7 +59,7 @@
           }
         },
         "type": "object",
-        "x-orag-schema-ref": "#/components/schemas/RalphLoopResponse"
+        "x-orag-schema-ref": "#/components/schemas/SelfCheckResult"
       },
       "annotations": {
         "auth": {
@@ -76,17 +73,14 @@
         },
         "examples": [
           {
-            "name": "verify-task1",
-            "prompt": "Run Ralph Loop for Task 1 in focused mode with at most one round, then report the verdict and trace ID.",
+            "name": "agent-sync-focused",
+            "prompt": "Check whether ORAG MCP and Skill artifacts are synchronized.",
             "input": {
-              "max_rounds": 1,
               "mode": "focused",
-              "task_id": "Task 1",
-              "task_spec_path": ".trae/specs/add-ralph-loop-mcp-skills/tasks.md"
+              "scope": "agent_sync"
             },
             "expected_output": {
-              "status": "completed",
-              "trace_id": "trace_ralph_loop_example",
+              "schema_version": "orag.selfops.result.v1",
               "verdict": "pass"
             }
           }
@@ -97,14 +91,14 @@
           "dry_run_supported": false,
           "requires_approval": false,
           "rollback": [
-            "No rollback is required because the capability is planned-only and does not perform writes."
+            "No rollback is required for read-only checks."
           ]
         },
-        "orag_capability_id": "ralph-loop",
-        "orag_display_name": "Ralph Loop",
+        "orag_capability_id": "self-check",
+        "orag_display_name": "ORAG Self Check",
         "risk_level": "low",
         "runtime_gate_warning": "Runtime probes do not replace static make agent-sync-check.",
-        "skill_manifest_name": "ralph-loop",
+        "skill_manifest_name": "orag-self-check",
         "trace": {
           "request_header": "X-Trace-ID",
           "response_field": "trace_id",

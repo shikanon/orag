@@ -25,8 +25,10 @@ func TestExamplesReadmeIndex(t *testing.T) {
 		"GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run TestExamples -v",
 		"GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory",
 		"GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check",
+		"GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-check-smoke",
 		"public `pkg/memory` facade",
 		"ralph_loop_run",
+		"orag_check",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("examples README missing %q", want)
@@ -76,7 +78,9 @@ func TestExamplesScriptPaths(t *testing.T) {
 		"examples/mcp/README.md",
 		"examples/mcp/stdio-client-config.json",
 		"examples/mcp/ralph-loop-stdio-smoke.jsonl",
+		"examples/mcp/self-check-stdio-smoke.jsonl",
 		"examples/skills/README.md",
+		"examples/skills/self-check-diagnose-ops.md",
 		"examples/skills/codex-ralph-loop.md",
 		"examples/skills/claude-code-ralph-loop.md",
 		"examples/skills/trae-ralph-loop.md",
@@ -96,6 +100,21 @@ func TestMCPAndSkillExamplesDocumentRalphLoop(t *testing.T) {
 	} {
 		if !strings.Contains(mcpSmoke, want) {
 			t.Fatalf("MCP smoke example missing %q", want)
+		}
+	}
+
+	selfCheckSmoke := readRepoFile(t, "examples/mcp/self-check-stdio-smoke.jsonl")
+	for _, want := range []string{
+		`"method":"initialize"`,
+		`"method":"tools/list"`,
+		`"method":"tools/call"`,
+		`"name":"orag_check"`,
+		`"scope":"agent_sync"`,
+		`"mode":"focused"`,
+		`"trace_id":"trace_self_check_agent_sync_smoke"`,
+	} {
+		if !strings.Contains(selfCheckSmoke, want) {
+			t.Fatalf("self-check MCP smoke example missing %q", want)
 		}
 	}
 
@@ -128,6 +147,23 @@ func TestMCPAndSkillExamplesDocumentRalphLoop(t *testing.T) {
 			if !strings.Contains(body, want) {
 				t.Fatalf("%s missing %q", path, want)
 			}
+		}
+	}
+
+	opsGuide := readRepoFile(t, "examples/skills/self-check-diagnose-ops.md")
+	for _, want := range []string{
+		"orag-self-check",
+		"orag-self-diagnose",
+		"orag-self-ops",
+		"mutually exclusive",
+		"orag_check",
+		"orag_diagnose",
+		"orag_maintenance_plan",
+		"approved",
+		"verdict=blocked",
+	} {
+		if !strings.Contains(opsGuide, want) {
+			t.Fatalf("operational Skill guide missing %q", want)
 		}
 	}
 }

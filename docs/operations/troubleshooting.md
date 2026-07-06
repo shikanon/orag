@@ -111,6 +111,24 @@ oragctl trace --trace-id trace_xxx
 
 metrics 不包含 `trace_id`、tenant、用户输入、prompt、文档内容或模型响应等高基数字段。单次请求排查请使用结构化日志中的 `trace_id`、HTTP trace API 或 `oragctl trace`。
 
+## Agent artifact drift
+
+| 现象 | 优先检查 | 处理 |
+| --- | --- | --- |
+| `make agent-sync-check` 失败 | capability manifest、生成模板、`.mcp/tools/*.json`、`.mcp/openapi-facet.json`、`.codex/skills`、`.claude/skills`、`.trae/skills` 是否不一致。 | 运行 `make agent-sync`，审核生成 diff，再运行 `make agent-sync-check`。 |
+| `orag_check(scope=agent_sync)` 通过但 CI 失败 | runtime probe 只表示当前运行时便利检查结果，CI static gate 仍是权威。 | 以 CI 中的 `make agent-sync-check` 输出为准，不用 runtime probe 覆盖 CI 结论。 |
+| `tools/list` 缺少 `orag_check` 或诊断/自运维工具 | 运行目录不在仓库根目录，或 `.mcp/tools/orag-self-*.json` 未生成。 | 从仓库根目录运行 `make agent-sync-check`，必要时运行 `make agent-sync`。 |
+| Skill 触发边界不清晰 | 生成的 `orag-self-check`、`orag-self-diagnose`、`orag-self-ops` 不是最新。 | 检查 `examples/skills/self-check-diagnose-ops.md`，重新生成并审核 Skill diff。 |
+
+## Self-ops apply 被阻断
+
+| 现象 | 可能原因 | 处理 |
+| --- | --- | --- |
+| `verdict=blocked` 且提示 precondition drift | 计划生成后 manifest、生成产物、配置或工作区状态变化。 | 丢弃旧计划，重新运行 `orag_maintenance_plan`。 |
+| `verdict=blocked` 且提示 approval missing | apply 请求没有明确授权。 | 先展示 dry-run plan、snapshot hash、rollback 和 verification commands，再由用户明确批准。 |
+| `verdict=blocked` 且提示 lock conflict | 同一 scope 的 single-flight apply 正在运行。 | 等待已有 apply 结束，再用新的状态重新计划。 |
+| 重复请求返回已完成结果 | idempotency key 命中，系统阻止重复写入。 | 使用原始结果作为审计证据，不要生成新的 apply 请求绕过幂等保护。 |
+
 ## Docker 网络问题
 
 | 场景 | 建议 |
