@@ -14,13 +14,14 @@ const (
 )
 
 type QueryRequest struct {
-	TenantID        string  `json:"-"`
-	TraceID         string  `json:"-"`
-	KnowledgeBaseID string  `json:"knowledge_base_id"`
-	Query           string  `json:"query"`
-	Profile         Profile `json:"profile,omitempty"`
-	SessionID       string  `json:"session_id,omitempty"`
-	TopK            int     `json:"top_k,omitempty"`
+	TenantID               string  `json:"-"`
+	TraceID                string  `json:"-"`
+	SemanticCacheNamespace string  `json:"-"`
+	KnowledgeBaseID        string  `json:"knowledge_base_id"`
+	Query                  string  `json:"query"`
+	Profile                Profile `json:"profile,omitempty"`
+	SessionID              string  `json:"session_id,omitempty"`
+	TopK                   int     `json:"top_k,omitempty"`
 }
 
 type Citation struct {

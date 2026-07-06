@@ -2,6 +2,7 @@ package optimizer
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/shikanon/orag/internal/dataset"
@@ -74,6 +75,8 @@ func (r InternalRAGRunner) configureCandidateService(candidate CandidateConfig) 
 		return &rag.Service{}
 	}
 	cloned := *r.BaseRAG
+	cloned.Pipeline = nil
+	cloned.SemanticCacheNamespace = semanticCacheCandidateNamespace(candidate.ID)
 	applyRetrievalCandidate(&cloned, candidate.Retrieval)
 	applyRerankerCandidate(&cloned, candidate.Reranker)
 	applyGraphCandidate(&cloned, candidate.Graph)
@@ -207,4 +210,12 @@ func maxPositive(values ...int) int {
 		}
 	}
 	return maximum
+}
+
+func semanticCacheCandidateNamespace(candidateID string) string {
+	candidateID = strings.TrimSpace(candidateID)
+	if candidateID == "" {
+		return ""
+	}
+	return "optimizer_candidate:" + candidateID
 }

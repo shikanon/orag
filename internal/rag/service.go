@@ -34,6 +34,7 @@ type Service struct {
 	TopK                   int
 	Pipeline               Pipeline
 	SemanticCacheThreshold float64
+	SemanticCacheNamespace string
 	RRFK                   int
 
 	QueryRewriteEnabled bool
@@ -225,13 +226,14 @@ func (s *Service) LookupSemanticCache(ctx context.Context, req QueryRequest, vec
 		return QueryResponse{}, false, ""
 	}
 	cached, ok, err := s.Cache.Lookup(ctx, SemanticCacheLookupRequest{
-		TenantID:        req.TenantID,
-		KnowledgeBaseID: req.KnowledgeBaseID,
-		Query:           req.Query,
-		Vector:          vector,
-		Threshold:       s.SemanticCacheThreshold,
-		Profile:         profile,
-		TopK:            topK,
+		TenantID:               req.TenantID,
+		KnowledgeBaseID:        req.KnowledgeBaseID,
+		Query:                  req.Query,
+		Vector:                 vector,
+		Threshold:              s.SemanticCacheThreshold,
+		Profile:                profile,
+		TopK:                   topK,
+		SemanticCacheNamespace: s.SemanticCacheNamespace,
 	})
 	if err != nil {
 		return QueryResponse{}, false, "semantic cache lookup failed: " + err.Error()
@@ -259,14 +261,15 @@ func (s *Service) StoreSemanticCache(ctx context.Context, req QueryRequest, vect
 	}
 	resp.Profile = cacheProfile
 	if err := s.Cache.Store(ctx, SemanticCacheEntry{
-		TenantID:        req.TenantID,
-		KnowledgeBaseID: req.KnowledgeBaseID,
-		Query:           req.Query,
-		Vector:          vector,
-		Profile:         cacheProfile,
-		TopK:            topK,
-		Response:        resp,
-		CreatedAt:       time.Now().UTC(),
+		TenantID:               req.TenantID,
+		KnowledgeBaseID:        req.KnowledgeBaseID,
+		Query:                  req.Query,
+		Vector:                 vector,
+		Profile:                cacheProfile,
+		TopK:                   topK,
+		SemanticCacheNamespace: s.SemanticCacheNamespace,
+		Response:               resp,
+		CreatedAt:              time.Now().UTC(),
 	}); err != nil {
 		return "semantic cache write failed: " + err.Error()
 	}

@@ -185,6 +185,71 @@ func TestServiceCancelPersistsCheckpointAndStopsScheduling(t *testing.T) {
 	}
 }
 
+func TestServiceCancelDuringLastCandidateWinsOverCompleted(t *testing.T) {
+	repo := newMemoryOptimizationRepository()
+	var service *Service
+	var runID string
+	runner := &recordingCandidateRunner{
+		afterCall: func(CandidateRunRequest) {
+			if _, err := service.Cancel(context.Background(), "tenant_a", runID, "stop after current candidate"); err != nil {
+				t.Fatalf("Cancel() error = %v", err)
+			}
+		},
+	}
+	service = &Service{Repository: repo, Runner: runner, DisableAutoStart: true}
+	req := basicSubmitRequest()
+	req.HoldoutSplit = ""
+	req.SearchSpace = SearchSpace{Retrieval: RetrievalSpace{DenseTopK: []int{1}}}
+	req.Search = SearchSpec{Strategy: SearchStrategyGrid, MaxCandidates: 1}
+
+	run, err := service.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	runID = run.ID
+	if err := service.RunPending(context.Background(), "tenant_a", run.ID, req); err != nil {
+		t.Fatalf("RunPending() error = %v", err)
+	}
+
+	status, _, _ := service.Get(context.Background(), "tenant_a", run.ID)
+	if status.Run.Status != RunStatusCanceled || status.Run.Checkpoint.CancelRequestedAt == nil {
+		t.Fatalf("run = %#v, want canceled after in-flight candidate finishes", status.Run)
+	}
+	if status.Run.BestCandidateID != "" {
+		t.Fatalf("best candidate = %q, want no scoring after cancellation", status.Run.BestCandidateID)
+	}
+}
+
+func TestServiceCostBudgetExceededAfterCandidateStopsRun(t *testing.T) {
+	repo := newMemoryOptimizationRepository()
+	runner := &recordingCandidateRunner{}
+	service := &Service{Repository: repo, Runner: runner, DisableAutoStart: true}
+	req := basicSubmitRequest()
+	req.HoldoutSplit = ""
+	req.SearchSpace = SearchSpace{Retrieval: RetrievalSpace{DenseTopK: []int{1}}}
+	req.Search = SearchSpec{Strategy: SearchStrategyGrid, MaxCandidates: 1}
+	req.Budget = Budget{MaxCostUSD: 0.05}
+
+	run, err := service.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	if err := service.RunPending(context.Background(), "tenant_a", run.ID, req); err != nil {
+		t.Fatalf("RunPending() error = %v", err)
+	}
+
+	status, _, _ := service.Get(context.Background(), "tenant_a", run.ID)
+	if status.Run.Status != RunStatusBudgetStopped {
+		t.Fatalf("status = %q, want budget_stopped after final cost check", status.Run.Status)
+	}
+	if status.Run.BestCandidateID != "" {
+		t.Fatalf("best candidate = %q, want no scoring after budget stop", status.Run.BestCandidateID)
+	}
+	if status.Run.CostUSD <= req.Budget.MaxCostUSD {
+		t.Fatalf("cost = %v, want over budget %v", status.Run.CostUSD, req.Budget.MaxCostUSD)
+	}
+}
+
 func TestServiceRecordsRunnerFailure(t *testing.T) {
 	repo := newMemoryOptimizationRepository()
 	runner := &recordingCandidateRunner{err: errors.New("runner failed")}

@@ -33,7 +33,12 @@ services:
       context: ..
       dockerfile: deployments/Dockerfile
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgres://orag:orag@postgres:5432/orag?sslmode=disable}
+      QDRANT_HOST: ${DOCKER_QDRANT_HOST:-qdrant}
+      QDRANT_GRPC_PORT: ${DOCKER_QDRANT_GRPC_PORT:-6334}
     ports:
       - "8080:8080"
     depends_on:

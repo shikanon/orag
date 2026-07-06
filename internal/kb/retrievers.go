@@ -60,18 +60,18 @@ func (r HybridRetriever) Retrieve(ctx context.Context, req SearchRequest) ([]Sea
 
 func (r HybridRetriever) RetrieveWithWarnings(ctx context.Context, req SearchRequest) ([]SearchResult, []string, error) {
 	denseReq := req
-	if r.DenseTopK > 0 {
+	if req.DenseTopK > 0 {
+		denseReq.TopK = req.DenseTopK
+	} else if req.TopK <= 0 && r.DenseTopK > 0 {
 		denseReq.TopK = r.DenseTopK
 		denseReq.DenseTopK = r.DenseTopK
-	} else if req.DenseTopK > 0 {
-		denseReq.TopK = req.DenseTopK
 	}
 	sparseReq := req
-	if r.SparseTopK > 0 {
+	if req.SparseTopK > 0 {
+		sparseReq.TopK = req.SparseTopK
+	} else if req.TopK <= 0 && r.SparseTopK > 0 {
 		sparseReq.TopK = r.SparseTopK
 		sparseReq.SparseTopK = r.SparseTopK
-	} else if req.SparseTopK > 0 {
-		sparseReq.TopK = req.SparseTopK
 	}
 
 	var wg sync.WaitGroup
