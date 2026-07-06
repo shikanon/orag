@@ -273,6 +273,60 @@ func TestServiceRecordsRunnerFailure(t *testing.T) {
 	}
 }
 
+func TestServiceSubmitDoesNotPersistPartialRunWhenAtomicCreateFails(t *testing.T) {
+	want := errors.New("atomic create failed")
+	repo := &failingAtomicCreateRepository{
+		memoryOptimizationRepository: newMemoryOptimizationRepository(),
+		err:                          want,
+	}
+	runner := &recordingCandidateRunner{}
+	service := &Service{Repository: repo, Runner: runner}
+
+	_, err := service.Submit(context.Background(), basicSubmitRequest())
+	if !errors.Is(err, want) {
+		t.Fatalf("Submit() error = %v, want %v", err, want)
+	}
+	if repo.atomicCalls != 1 {
+		t.Fatalf("atomic create calls = %d, want 1", repo.atomicCalls)
+	}
+	if repo.createRunCalls != 0 || repo.createCandidateCalls != 0 {
+		t.Fatalf("legacy create calls = run %d candidate %d, want 0/0", repo.createRunCalls, repo.createCandidateCalls)
+	}
+	if repo.atomicRun.ID == "" {
+		t.Fatal("atomic create did not receive a run")
+	}
+	if repo.atomicRun.Status != RunStatusQueued || repo.atomicRun.Checkpoint.Stage != "submitted" {
+		t.Fatalf("atomic run = %#v, want queued submitted run", repo.atomicRun)
+	}
+	if len(repo.atomicCandidates) != 2 {
+		t.Fatalf("atomic candidates = %d, want 2: %#v", len(repo.atomicCandidates), repo.atomicCandidates)
+	}
+	for _, candidate := range repo.atomicCandidates {
+		if candidate.OptimizationRunID != repo.atomicRun.ID {
+			t.Fatalf("candidate run ID = %q, want %q", candidate.OptimizationRunID, repo.atomicRun.ID)
+		}
+		if candidate.Status != CandidateStatusQueued {
+			t.Fatalf("candidate status = %q, want queued", candidate.Status)
+		}
+		if candidate.Config.ID != candidate.ID {
+			t.Fatalf("candidate config ID = %q, want %q", candidate.Config.ID, candidate.ID)
+		}
+	}
+	if _, ok, err := repo.GetOptimizationRun(context.Background(), "tenant_a", repo.atomicRun.ID); err != nil || ok {
+		t.Fatalf("GetOptimizationRun() = ok %v error %v, want not found", ok, err)
+	}
+	candidates, err := repo.ListOptimizationCandidates(context.Background(), "tenant_a", repo.atomicRun.ID)
+	if err != nil {
+		t.Fatalf("ListOptimizationCandidates() error = %v", err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("stored candidates = %#v, want none", candidates)
+	}
+	if got := len(runner.selectionIDs()); got != 0 {
+		t.Fatalf("runner selection calls = %d, want 0", got)
+	}
+}
+
 func basicSubmitRequest() SubmitRequest {
 	return SubmitRequest{
 		TenantID:        "tenant_a",
@@ -285,6 +339,65 @@ func basicSubmitRequest() SubmitRequest {
 		Search:         SearchSpec{Strategy: SearchStrategyGrid, MaxCandidates: 2},
 		SelectionSplit: "eval",
 		HoldoutSplit:   "holdout",
+	}
+}
+
+func TestMemoryRepositoryCreateOptimizationRunWithCandidates(t *testing.T) {
+	repo := NewMemoryRepository()
+	now := time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC)
+	run := OptimizationRun{
+		ID:        "opt_1",
+		TenantID:  "tenant_a",
+		Status:    RunStatusQueued,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	candidates := []OptimizationCandidate{
+		{
+			ID:                "cand_b",
+			OptimizationRunID: "opt_1",
+			Config:            CandidateConfig{ID: "stale", Retrieval: RetrievalCandidate{DenseTopK: 2}},
+			Status:            CandidateStatusQueued,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		},
+		{
+			ID:                "cand_a",
+			OptimizationRunID: "opt_1",
+			Config:            CandidateConfig{Retrieval: RetrievalCandidate{DenseTopK: 1}},
+			Status:            CandidateStatusQueued,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		},
+	}
+
+	if err := repo.CreateOptimizationRunWithCandidates(context.Background(), run, candidates); err != nil {
+		t.Fatalf("CreateOptimizationRunWithCandidates() error = %v", err)
+	}
+	gotRun, ok, err := repo.GetOptimizationRun(context.Background(), "tenant_a", "opt_1")
+	if err != nil || !ok {
+		t.Fatalf("GetOptimizationRun() = ok %v error %v", ok, err)
+	}
+	if gotRun.ID != run.ID || gotRun.Status != run.Status {
+		t.Fatalf("run = %#v, want %#v", gotRun, run)
+	}
+	gotCandidates, err := repo.ListOptimizationCandidates(context.Background(), "tenant_a", "opt_1")
+	if err != nil {
+		t.Fatalf("ListOptimizationCandidates() error = %v", err)
+	}
+	if len(gotCandidates) != 2 {
+		t.Fatalf("candidate count = %d, want 2: %#v", len(gotCandidates), gotCandidates)
+	}
+	if gotCandidates[0].ID != "cand_a" || gotCandidates[1].ID != "cand_b" {
+		t.Fatalf("candidate order = %#v, want cand_a then cand_b", gotCandidates)
+	}
+	for _, candidate := range gotCandidates {
+		if candidate.Config.ID != candidate.ID {
+			t.Fatalf("candidate config ID = %q, want %q for %#v", candidate.Config.ID, candidate.ID, candidate)
+		}
+		if candidate.OptimizationRunID != run.ID {
+			t.Fatalf("candidate run ID = %q, want %q", candidate.OptimizationRunID, run.ID)
+		}
 	}
 }
 
@@ -306,6 +419,21 @@ func (r *memoryOptimizationRepository) CreateOptimizationRun(_ context.Context, 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.runs[run.ID] = run
+	return nil
+}
+
+func (r *memoryOptimizationRepository) CreateOptimizationRunWithCandidates(_ context.Context, run OptimizationRun, candidates []OptimizationCandidate) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	copies := make([]OptimizationCandidate, len(candidates))
+	for i, candidate := range candidates {
+		candidate.Config.ID = candidate.ID
+		copies[i] = candidate
+	}
+	r.runs[run.ID] = run
+	for _, candidate := range copies {
+		r.candidates[candidate.ID] = candidate
+	}
 	return nil
 }
 
@@ -363,6 +491,33 @@ func (r *memoryOptimizationRepository) StoreHarnessRun(_ context.Context, run Ha
 	defer r.mu.Unlock()
 	r.harness = append(r.harness, run)
 	return nil
+}
+
+type failingAtomicCreateRepository struct {
+	*memoryOptimizationRepository
+	err                  error
+	atomicCalls          int
+	createRunCalls       int
+	createCandidateCalls int
+	atomicRun            OptimizationRun
+	atomicCandidates     []OptimizationCandidate
+}
+
+func (r *failingAtomicCreateRepository) CreateOptimizationRun(ctx context.Context, run OptimizationRun) error {
+	r.createRunCalls++
+	return r.memoryOptimizationRepository.CreateOptimizationRun(ctx, run)
+}
+
+func (r *failingAtomicCreateRepository) CreateOptimizationRunWithCandidates(_ context.Context, run OptimizationRun, candidates []OptimizationCandidate) error {
+	r.atomicCalls++
+	r.atomicRun = run
+	r.atomicCandidates = append([]OptimizationCandidate(nil), candidates...)
+	return r.err
+}
+
+func (r *failingAtomicCreateRepository) CreateOptimizationCandidate(ctx context.Context, candidate OptimizationCandidate) error {
+	r.createCandidateCalls++
+	return r.memoryOptimizationRepository.CreateOptimizationCandidate(ctx, candidate)
 }
 
 type runnerCall struct {
