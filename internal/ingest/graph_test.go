@@ -2,6 +2,8 @@ package ingest
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/shikanon/orag/internal/ingest/chunker"
@@ -70,5 +72,98 @@ func TestIngestStoresGraphRelationsWhenIndexerSupportsGraph(t *testing.T) {
 	}
 	if len(results) == 0 {
 		t.Fatalf("expected stored graph expansion results")
+	}
+}
+
+func TestIngestGraphRelationFailureSucceedsWithWarning(t *testing.T) {
+	ctx := context.Background()
+	graphErr := errors.New("graph relation write failed")
+	indexer := &graphFailingIndexer{
+		MemoryStore: kb.NewMemoryStore(),
+		err:         graphErr,
+	}
+	if err := indexer.PutKnowledgeBase(ctx, kb.KnowledgeBase{ID: "kb_default", TenantID: "tenant_default", Name: "Default"}); err != nil {
+		t.Fatal(err)
+	}
+	jobs := NewMemoryJobStore()
+	svc := &Service{
+		Parser:         parser.BasicParser{},
+		Splitter:       chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder:       fakeEmbedder{},
+		GraphBuilder:   fixedRelationGraphBuilder{},
+		KnowledgeBases: indexer,
+		Indexer:        indexer,
+		Jobs:           jobs,
+	}
+
+	res, err := svc.Ingest(ctx, Request{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		SourceURI:       "memory://graph-warning.md",
+		Name:            "graph-warning.md",
+		Content:         []byte("Qdrant relation failure visible marker"),
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if res.Job.Status != JobStatusSucceeded {
+		t.Fatalf("job status = %q", res.Job.Status)
+	}
+	assertGraphWarning(t, res.Job.Error, graphErr)
+	stored, ok, err := jobs.GetJob(ctx, "tenant_default", res.Job.ID)
+	if err != nil || !ok {
+		t.Fatalf("job lookup ok=%v err=%v", ok, err)
+	}
+	if stored.Status != JobStatusSucceeded {
+		t.Fatalf("stored job status = %q", stored.Status)
+	}
+	assertGraphWarning(t, stored.Error, graphErr)
+
+	results, err := (kb.SparseRetriever{Store: indexer}).Retrieve(ctx, kb.SearchRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "visible marker",
+		TopK:            8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 || results[0].Chunk.DocumentID != res.Document.ID {
+		t.Fatalf("successful ingestion is not searchable: %#v", results)
+	}
+}
+
+type graphFailingIndexer struct {
+	*kb.MemoryStore
+	err error
+}
+
+func (i *graphFailingIndexer) StoreGraphRelations(context.Context, []kb.GraphRelation) error {
+	return i.err
+}
+
+type fixedRelationGraphBuilder struct{}
+
+func (fixedRelationGraphBuilder) Build(_ context.Context, req GraphBuildRequest) ([]kb.GraphRelation, []string, error) {
+	if len(req.Chunks) == 0 {
+		return nil, nil, nil
+	}
+	return []kb.GraphRelation{{
+		TenantID:        req.Document.TenantID,
+		KnowledgeBaseID: req.Document.KnowledgeBaseID,
+		DocumentID:      req.Document.ID,
+		SourceChunkID:   req.Chunks[0].ID,
+		TargetChunkID:   req.Chunks[0].ID,
+		Subject:         "Qdrant",
+		Predicate:       "co_occurs_with",
+		Object:          "PostgreSQL",
+		Weight:          1,
+	}}, nil, nil
+}
+
+func assertGraphWarning(t *testing.T, got string, want error) {
+	t.Helper()
+	if !strings.Contains(got, "graph indexing failed") || !strings.Contains(got, want.Error()) {
+		t.Fatalf("job error = %q, want graph indexing warning containing %q", got, want)
 	}
 }
