@@ -55,7 +55,7 @@ type selfCheckExecutor interface {
 }
 
 type diagnosticsExecutor interface {
-	TraceLookup(req diagnostics.TraceLookupRequest) diagnostics.TraceLookupResponse
+	TraceLookup(ctx context.Context, req diagnostics.TraceLookupRequest) diagnostics.TraceLookupResponse
 	Diagnose(req diagnostics.DiagnoseRequest) diagnostics.DiagnoseResult
 	RunbookSuggest(req diagnostics.RunbookSuggestRequest) diagnostics.RunbookSuggestResponse
 }
@@ -85,9 +85,34 @@ func NewServer(tools []ToolDefinition, cfg RuntimeConfig, client ToolClient) (*S
 		client:      client,
 		config:      cfg,
 		checks:      selfcheck.NewExecutor(selfcheck.Options{}),
-		diagnostics: diagnostics.NewExecutor(),
+		diagnostics: newDiagnosticsExecutor(cfg, client),
 		ops:         selfops.NewExecutor(selfops.Options{}),
 	}, nil
+}
+
+func newDiagnosticsExecutor(cfg RuntimeConfig, client ToolClient) *diagnostics.Executor {
+	if getter := traceGetterFromRuntimeConfig(cfg, client); getter != nil {
+		return diagnostics.NewExecutor(diagnostics.WithTraceGetter(getter))
+	}
+	return diagnostics.NewExecutor()
+}
+
+func traceGetterFromRuntimeConfig(cfg RuntimeConfig, client ToolClient) diagnostics.TraceGetter {
+	if !runtimeConfigAvailable(cfg) {
+		return nil
+	}
+	if _, err := joinURL(cfg.BaseURL, "/v1/traces/trace_config_probe"); err != nil {
+		return nil
+	}
+	return NewHTTPTraceGetter(httpClientFromToolClient(client), cfg)
+}
+
+func httpClientFromToolClient(client ToolClient) *http.Client {
+	httpClient, ok := client.(*HTTPToolClient)
+	if !ok || httpClient == nil || httpClient.client == nil {
+		return http.DefaultClient
+	}
+	return httpClient.client
 }
 
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
@@ -168,7 +193,7 @@ func (s *Server) handleToolCall(ctx context.Context, req jsonRPCRequest) ([]byte
 		return s.handleSelfCheck(ctx, req.ID, params), true
 	}
 	if isDiagnosticTool(params.Name) {
-		return s.handleDiagnostics(req.ID, params), true
+		return s.handleDiagnostics(ctx, req.ID, params), true
 	}
 	if isSelfOpsTool(params.Name) {
 		return s.handleSelfOps(ctx, req.ID, params), true
@@ -224,13 +249,13 @@ func (s *Server) handleSelfCheck(ctx context.Context, id json.RawMessage, params
 	return s.resultResponse(id, mcpResult)
 }
 
-func (s *Server) handleDiagnostics(id json.RawMessage, params toolCallParams) []byte {
+func (s *Server) handleDiagnostics(ctx context.Context, id json.RawMessage, params toolCallParams) []byte {
 	var payload any
 	var verdict selfcheck.Verdict
 	var traceID string
 	switch params.Name {
 	case "orag_trace_lookup":
-		result := s.diagnostics.TraceLookup(diagnostics.TraceLookupRequest{TraceID: stringArg(params.Arguments, "trace_id")})
+		result := s.diagnostics.TraceLookup(ctx, diagnostics.TraceLookupRequest{TraceID: stringArg(params.Arguments, "trace_id")})
 		payload = result
 		verdict = result.Verdict
 		traceID = result.TraceID

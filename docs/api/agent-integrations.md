@@ -78,7 +78,7 @@ ORAG_API_BASE_URL=http://localhost:8080 ORAG_API_TOKEN=replace-with-token ORAG_T
 | Tool | Skill | Side effect | Boundary |
 | --- | --- | --- | --- |
 | `orag_check` | `orag-self-check` | Read-only | Returns health, contract, agent-sync, smoke, storage, config, release, or all check results. |
-| `orag_trace_lookup` | `orag-self-diagnose` | Read-only | Looks up trace evidence for diagnosis. |
+| `orag_trace_lookup` | `orag-self-diagnose` | Read-only | Looks up persisted trace evidence when a trace source finds the trace; returns `found=false` and `verdict=blocked` when the trace is missing or the store is unavailable. |
 | `orag_diagnose` | `orag-self-diagnose` | Read-only | Interprets symptoms, trace IDs, logs, and failed command evidence. |
 | `orag_runbook_suggest` | `orag-self-diagnose` | Read-only | Maps diagnosis scope and verdict to runbooks and verification commands. |
 | `orag_maintenance_plan` | `orag-self-ops` | Dry-run | Creates a plan with snapshot hashes, preconditions, idempotency key, lock key, rollback, and verification commands. |

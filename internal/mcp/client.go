@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/shikanon/orag/internal/observability"
+	"github.com/shikanon/orag/internal/storage/postgres"
 )
 
 const (
@@ -52,6 +53,77 @@ func NewHTTPToolClient(client *http.Client) *HTTPToolClient {
 		client = http.DefaultClient
 	}
 	return &HTTPToolClient{client: client}
+}
+
+type HTTPTraceGetter struct {
+	client *http.Client
+	cfg    RuntimeConfig
+}
+
+func NewHTTPTraceGetter(client *http.Client, cfg RuntimeConfig) *HTTPTraceGetter {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return &HTTPTraceGetter{client: client, cfg: cfg}
+}
+
+func (g *HTTPTraceGetter) GetTrace(ctx context.Context, traceID string) (postgres.TraceRecord, bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	traceID = strings.TrimSpace(traceID)
+	if traceID == "" {
+		return postgres.TraceRecord{}, false, nil
+	}
+	if !runtimeConfigAvailable(g.cfg) {
+		return postgres.TraceRecord{}, false, errors.New("trace runtime configuration is unavailable")
+	}
+	endpoint, err := joinURL(g.cfg.BaseURL, "/v1/traces/"+url.PathEscape(traceID))
+	if err != nil {
+		return postgres.TraceRecord{}, false, err
+	}
+
+	timeout := g.cfg.Timeout
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(callCtx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return postgres.TraceRecord{}, false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(g.cfg.Token))
+	req.Header.Set("X-ORAG-Tenant-ID", strings.TrimSpace(g.cfg.TenantID))
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		if errors.Is(callCtx.Err(), context.DeadlineExceeded) {
+			return postgres.TraceRecord{}, false, context.DeadlineExceeded
+		}
+		return postgres.TraceRecord{}, false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return postgres.TraceRecord{}, false, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return postgres.TraceRecord{}, false, fmt.Errorf("trace API returned HTTP %d", resp.StatusCode)
+	}
+
+	var record postgres.TraceRecord
+	if err := json.NewDecoder(resp.Body).Decode(&record); err != nil {
+		return postgres.TraceRecord{}, false, err
+	}
+	if strings.TrimSpace(record.ID) == "" {
+		record.ID = traceID
+	}
+	if record.NodeSpans == nil {
+		record.NodeSpans = []postgres.TraceNodeSpan{}
+	}
+	return record, true, nil
 }
 
 func (c *HTTPToolClient) CallTool(ctx context.Context, cfg RuntimeConfig, tool ToolDefinition, args map[string]any, meta map[string]any) (ToolResult, error) {
@@ -128,6 +200,10 @@ func validateRuntimeConfig(cfg RuntimeConfig, cap Capability) error {
 		return newRPCError(codeConfigError, "missing_config", "missing required ORAG MCP configuration", map[string]any{"missing_env": missing})
 	}
 	return nil
+}
+
+func runtimeConfigAvailable(cfg RuntimeConfig) bool {
+	return strings.TrimSpace(cfg.BaseURL) != "" && strings.TrimSpace(cfg.Token) != "" && strings.TrimSpace(cfg.TenantID) != ""
 }
 
 func downstreamError(status int, payload any, traceID string) *RPCError {

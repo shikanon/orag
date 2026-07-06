@@ -138,12 +138,12 @@ func traceLookupCapability() Capability {
 	return Capability{
 		ID:          "trace-lookup",
 		DisplayName: "ORAG Trace Lookup",
-		Description: "Look up trace evidence for diagnosis without performing writes.",
+		Description: "Look up persisted trace evidence for diagnosis; return blocked when the trace is missing or the trace store is unavailable.",
 		Status:      "planned",
 		RiskLevel:   RiskLow,
-		HTTP:        httpFacet("planned_http", "/v1/diagnostics/traces/{trace_id}", "lookupTrace", "#/components/schemas/TraceLookupRequest", "#/components/schemas/TraceLookupResponse"),
-		MCP:         mcpFacet("trace-lookup", "ORAG Trace Lookup", "orag_trace_lookup", "Look up ORAG trace details and return evidence for diagnosis.", "#/components/schemas/TraceLookupRequest", "#/components/schemas/TraceLookupResponse"),
-		Skill:       diagnoseSkill("Use trace evidence as read-only input for diagnosis.", "Look up trace trace_req and summarize failing stages."),
+		HTTP:        traceLookupHTTPFacet(),
+		MCP:         mcpFacet("trace-lookup", "ORAG Trace Lookup", "orag_trace_lookup", "Look up persisted ORAG trace details; returns blocked when the trace is missing or unavailable.", "#/components/schemas/TraceLookupRequest", "#/components/schemas/TraceLookupResponse"),
+		Skill:       diagnoseSkill("Use persisted trace evidence as read-only input for diagnosis; missing or unavailable traces must be reported as blocked.", "Look up trace trace_req; if found, summarize failing stages, otherwise report blocked."),
 		Operations: OperationsSemantic{
 			SideEffect: EffectReadOnly,
 			ReadOnly:   true,
@@ -152,9 +152,9 @@ func traceLookupCapability() Capability {
 		Generation: generatedEverywhere("orag-self-diagnose"),
 		Examples: []Example{{
 			Name:           "trace-lookup",
-			Prompt:         "Look up trace trace_req and summarize the failed stage.",
+			Prompt:         "Look up trace trace_req and summarize the failed stage when evidence exists.",
 			Input:          map[string]any{"trace_id": "trace_req"},
-			ExpectedOutput: map[string]any{"verdict": "pass", "trace_id": "trace_req"},
+			ExpectedOutput: map[string]any{"verdict": "pass", "found": true, "trace_id": "trace_req"},
 		}},
 	}
 }
@@ -307,6 +307,13 @@ func httpFacet(kind, path, operationID, requestSchema, responseSchema string) HT
 	}
 }
 
+func traceLookupHTTPFacet() HTTPFacet {
+	facet := httpFacet("http", "/v1/traces/{trace_id}", "getTrace", "#/components/schemas/TraceLookupRequest", "#/components/schemas/TraceLookupResponse")
+	facet.Method = http.MethodGet
+	facet.BackingServices = []string{"trace service"}
+	return facet
+}
+
 func mcpFacet(id, displayName, toolName, description, inputSchema, outputSchema string) MCPFacet {
 	return MCPFacet{
 		ToolName:     toolName,
@@ -364,7 +371,7 @@ func diagnoseSkill(description, prompt string) SkillBehavior {
 		AntiTriggers:        []string{"Do not execute write operations.", "Do not claim release readiness; use orag-self-check for check-only requests."},
 		CallOrder:           []string{"Collect symptom, trace, and command evidence.", "Call the diagnostic MCP tool.", "Report findings, severity, recommended actions, and verification commands."},
 		SafetyBoundaries:    []string{"Read-only only.", "If a write is required, recommend switching to orag-self-ops dry-run planning."},
-		FailureHandling:     []string{"Return blocked when evidence is insufficient.", "Preserve trace IDs and failed command output as evidence."},
+		FailureHandling:     []string{"Return blocked when evidence is insufficient.", "For trace lookup, return found=false and verdict=blocked when the trace is missing or the trace store is unavailable.", "Preserve trace IDs and failed command output as evidence."},
 		ExamplePrompts:      []string{prompt},
 		MutualExclusionKey:  "self-diagnose",
 		MutualExclusionNote: "Diagnosis interprets evidence; self-check only gathers status, and self-ops handles authorized write plans.",
