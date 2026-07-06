@@ -32,6 +32,9 @@ go.work.sum
 
 # local agent/spec workspace
 .trae/
+.mcp/
+.codex/
+.claude/skills/
 
 # macOS
 .DS_Store

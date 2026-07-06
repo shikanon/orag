@@ -21,24 +21,24 @@ func TestGenerateFromManifestProducesMCPAndSkillArtifacts(t *testing.T) {
 		byPath[file.Path] = file
 	}
 	for _, path := range []string{
-		".mcp/openapi-facet.json",
-		".mcp/tools/ralph-loop.json",
-		".mcp/tools/orag-self-check.json",
-		".mcp/tools/orag-self-diagnose.json",
-		".mcp/tools/orag-self-ops.json",
-		".codex/skills/ralph-loop/SKILL.md",
-		".claude/skills/ralph-loop/SKILL.md",
-		".trae/skills/ralph-loop/SKILL.md",
-		".codex/skills/orag-self-check/SKILL.md",
-		".claude/skills/orag-self-diagnose/SKILL.md",
-		".trae/skills/orag-self-ops/SKILL.md",
+		"agent/mcp/openapi-facet.json",
+		"agent/mcp/tools/ralph-loop.json",
+		"agent/mcp/tools/orag-self-check.json",
+		"agent/mcp/tools/orag-self-diagnose.json",
+		"agent/mcp/tools/orag-self-ops.json",
+		"agent/skills/codex/ralph-loop/SKILL.md",
+		"agent/skills/claude-code/ralph-loop/SKILL.md",
+		"agent/skills/trae/ralph-loop/SKILL.md",
+		"agent/skills/codex/orag-self-check/SKILL.md",
+		"agent/skills/claude-code/orag-self-diagnose/SKILL.md",
+		"agent/skills/trae/orag-self-ops/SKILL.md",
 	} {
 		if _, ok := byPath[path]; !ok {
 			t.Fatalf("missing generated file %s in %#v", path, files)
 		}
 	}
 
-	mcpTools := byPath[".mcp/tools/orag-self-diagnose.json"].Content
+	mcpTools := byPath["agent/mcp/tools/orag-self-diagnose.json"].Content
 	for _, want := range []string{
 		`"schema_version": "orag.capabilities.v1"`,
 		`"protocol_version": "2024-11-05"`,
@@ -52,7 +52,7 @@ func TestGenerateFromManifestProducesMCPAndSkillArtifacts(t *testing.T) {
 		}
 	}
 
-	facet := byPath[".mcp/openapi-facet.json"].Content
+	facet := byPath["agent/mcp/openapi-facet.json"].Content
 	for _, want := range []string{
 		`"id": "self-check"`,
 		`"path": "/v1/self-check"`,
@@ -71,7 +71,7 @@ func TestGenerateFromOpenAPICompatibilityWrapperUsesManifest(t *testing.T) {
 	}
 	var found bool
 	for _, file := range files {
-		if file.Path == ".mcp/tools/orag-self-check.json" && strings.Contains(file.Content, `"name": "orag_check"`) {
+		if file.Path == "agent/mcp/tools/orag-self-check.json" && strings.Contains(file.Content, `"name": "orag_check"`) {
 			found = true
 		}
 	}
@@ -83,9 +83,9 @@ func TestGenerateFromOpenAPICompatibilityWrapperUsesManifest(t *testing.T) {
 func TestWriteAndCheckFilesDetectsStaticDrift(t *testing.T) {
 	dir := t.TempDir()
 	files := []GeneratedFile{
-		{Target: "mcp", Path: ".mcp/tools/ralph-loop.json", Content: "{}\n"},
-		{Target: "openapi-facet", Path: ".mcp/openapi-facet.json", Content: "{}\n"},
-		{Target: "trae", Path: ".trae/skills/orag-self-check/SKILL.md", Content: "# Trae\n"},
+		{Target: "mcp", Path: "agent/mcp/tools/ralph-loop.json", Content: "{}\n"},
+		{Target: "openapi-facet", Path: "agent/mcp/openapi-facet.json", Content: "{}\n"},
+		{Target: "trae", Path: "agent/skills/trae/orag-self-check/SKILL.md", Content: "# Trae\n"},
 	}
 
 	if err := WriteFiles(dir, files); err != nil {
@@ -95,7 +95,7 @@ func TestWriteAndCheckFilesDetectsStaticDrift(t *testing.T) {
 		t.Fatalf("CheckFiles() error = %v", err)
 	}
 
-	path := filepath.Join(dir, ".trae", "skills", "orag-self-check", "SKILL.md")
+	path := filepath.Join(dir, "agent", "skills", "trae", "orag-self-check", "SKILL.md")
 	if err := os.WriteFile(path, []byte("# stale\n"), 0o644); err != nil {
 		t.Fatalf("write stale file: %v", err)
 	}

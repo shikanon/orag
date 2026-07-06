@@ -15,7 +15,7 @@ import (
 	"github.com/shikanon/orag/internal/mcp"
 )
 
-const openAPIFacetPath = ".mcp/openapi-facet.json"
+const openAPIFacetPath = "agent/mcp/openapi-facet.json"
 
 // GeneratedFile is a deterministic artifact rendered from the capability manifest.
 type GeneratedFile struct {
@@ -131,7 +131,7 @@ func renderMCPToolFiles(manifest capabilities.Manifest) ([]GeneratedFile, error)
 		}
 		path := strings.TrimSpace(capability.Generation.MCPArtifact)
 		if path == "" {
-			path = filepath.ToSlash(filepath.Join(".mcp", "tools", capability.Skill.ManifestName+".json"))
+			path = filepath.ToSlash(filepath.Join("agent", "mcp", "tools", capability.Skill.ManifestName+".json"))
 		}
 		byPath[path] = append(byPath[path], tool)
 	}

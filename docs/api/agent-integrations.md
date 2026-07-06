@@ -7,11 +7,11 @@ ORAG exposes Agent-facing capabilities through a manifest-first pipeline. The ca
 | Artifact | Path | Source | Purpose |
 | --- | --- | --- | --- |
 | OpenAPI contract | `api/openapi.yaml` | Capability manifest HTTP facet plus HTTP handlers | Public HTTP schema and contract validation. |
-| OpenAPI facet snapshot | `.mcp/openapi-facet.json` | Capability manifest | Static drift evidence for Agent-facing HTTP facets. |
-| MCP tool schemas | `.mcp/tools/*.json` | Capability manifest | Stdio tool discovery for Ralph Loop, self-check, diagnosis, and self-ops. |
-| Codex Skills | `.codex/skills/*/SKILL.md` | Capability manifest | Agent-specific Skill instructions and safety boundaries. |
-| Claude Code Skills | `.claude/skills/*/SKILL.md` | Capability manifest | Agent-specific Skill instructions and allowed behavior. |
-| Trae Skills | `.trae/skills/*/SKILL.md` | Capability manifest | Workspace Skill instructions and trigger boundaries. |
+| OpenAPI facet snapshot | `agent/mcp/openapi-facet.json` | Capability manifest | Static drift evidence for Agent-facing HTTP facets (SSOT, version-controlled). |
+| MCP tool schemas | `agent/mcp/tools/*.json` | Capability manifest | Stdio tool discovery for Ralph Loop, self-check, diagnosis, and self-ops (SSOT, version-controlled). |
+| Codex Skills | `agent/skills/codex/*/SKILL.md` | Capability manifest | Agent-specific Skill instructions and safety boundaries (source, install to `.codex/skills/`). |
+| Claude Code Skills | `agent/skills/claude-code/*/SKILL.md` | Capability manifest | Agent-specific Skill instructions and allowed behavior (source, install to `.claude/skills/`). |
+| Trae Skills | `agent/skills/trae/*/SKILL.md` | Capability manifest | Workspace Skill instructions and trigger boundaries (source, install to `.trae/skills/`). |
 
 Generated outputs include `ralph-loop`, `orag-self-check`, `orag-self-diagnose`, and `orag-self-ops`. Do not hand-edit generated MCP or Skill artifacts; update the manifest-backed generator and regenerate artifacts instead.
 
@@ -33,7 +33,7 @@ GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-c
 
 ## Start MCP Server
 
-The MCP server uses stdio and reads JSON-RPC requests from stdin. Run it from the repository root so the OpenAPI contract and generated `.mcp/tools/*.json` artifacts resolve correctly:
+The MCP server uses stdio and reads JSON-RPC requests from stdin. Run it from the repository root so the OpenAPI contract and generated `agent/mcp/tools/*.json` artifacts resolve correctly:
 
 ```sh
 ORAG_API_BASE_URL=http://localhost:8080 ORAG_API_TOKEN=replace-with-token ORAG_TENANT_ID=tenant_default ORAG_MCP_TIMEOUT=30s GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml
@@ -89,14 +89,25 @@ Self-ops apply paths use TOCTOU protection: snapshot hashes and preconditions ar
 
 ## Skill Installation
 
-Generated Skill directories are ready to copy into agent-specific locations:
+Generated Skills are stored in `agent/skills/` as the version-controlled source. Install them to agent-specific hidden directories with `make install-*`:
 
-| Client | Generated source | Example guide |
-| --- | --- | --- |
-| Codex | `.codex/skills/ralph-loop/SKILL.md` | `examples/skills/codex-ralph-loop.md` |
-| Claude Code | `.claude/skills/ralph-loop/SKILL.md` | `examples/skills/claude-code-ralph-loop.md` |
-| Trae | `.trae/skills/ralph-loop/SKILL.md` | `examples/skills/trae-ralph-loop.md` |
-| All supported clients | `orag-self-check`, `orag-self-diagnose`, `orag-self-ops` under each client Skill root | `examples/skills/self-check-diagnose-ops.md` |
+```sh
+make install-skills-codex     # copies agent/skills/codex/*     -> .codex/skills/
+make install-skills-claude    # copies agent/skills/claude-code/* -> .claude/skills/
+make install-skills-trae      # copies agent/skills/trae/*      -> .trae/skills/
+make install-skills           # installs all three
+make install-mcp              # copies agent/mcp/* -> .mcp/
+make install-agent            # installs MCP tools + all Skills
+```
+
+Hidden deployment directories (`.mcp/`, `.codex/`, `.claude/skills/`, `.trae/skills/`) are gitignored and can be regenerated anytime.
+
+| Client | Source directory | Install command | Example guide |
+| --- | --- | --- | --- |
+| Codex | `agent/skills/codex/ralph-loop/SKILL.md` | `make install-skills-codex` | `examples/skills/codex-ralph-loop.md` |
+| Claude Code | `agent/skills/claude-code/ralph-loop/SKILL.md` | `make install-skills-claude` | `examples/skills/claude-code-ralph-loop.md` |
+| Trae | `agent/skills/trae/ralph-loop/SKILL.md` | `make install-skills-trae` | `examples/skills/trae-ralph-loop.md` |
+| All supported clients | `orag-self-check`, `orag-self-diagnose`, `orag-self-ops` under each source directory | `make install-skills` | `examples/skills/self-check-diagnose-ops.md` |
 
 Operational Skill trigger boundaries are mutually exclusive:
 
@@ -115,7 +126,7 @@ Operational Skill trigger boundaries are mutually exclusive:
 | `downstream_auth_error` or `invalid_bearer_token` | Token is missing, expired, or from another tenant. | Login again and pass the fresh token as `ORAG_API_TOKEN`. |
 | `downstream_rate_limited` | ORAG API returned HTTP 429. | Retry after the server-provided backoff window. |
 | `downstream_timeout` | API call exceeded `ORAG_MCP_TIMEOUT`. | Increase `ORAG_MCP_TIMEOUT` or inspect the API trace ID. |
-| `invalid_tool_arguments` | Tool arguments do not match the generated schema. | Re-check `.mcp/tools/*.json` or the `tools/list` response. |
+| `invalid_tool_arguments` | Tool arguments do not match the generated schema. | Re-check `agent/mcp/tools/*.json` or the `tools/list` response. |
 | `agent artifacts are out of sync` | Generated MCP/Skill/OpenAPI facet outputs differ from the manifest. | Run `make agent-sync`, review changes, then run `make agent-sync-check`. |
 | `verdict=blocked` from self-ops apply | Snapshot or preconditions drifted, approval is missing, or a single-flight lock is active. | Regenerate the dry-run plan or wait for the active apply to finish. |
 

@@ -169,12 +169,12 @@ func TestGenerateAgentArtifactsCmdWritesMCPAndSkillOutputs(t *testing.T) {
 	}
 
 	for _, path := range []string{
-		".mcp/openapi-facet.json",
-		".mcp/tools/ralph-loop.json",
-		".mcp/tools/orag-self-check.json",
-		".codex/skills/orag-self-check/SKILL.md",
-		".claude/skills/orag-self-diagnose/SKILL.md",
-		".trae/skills/orag-self-ops/SKILL.md",
+		"agent/mcp/openapi-facet.json",
+		"agent/mcp/tools/ralph-loop.json",
+		"agent/mcp/tools/orag-self-check.json",
+		"agent/skills/codex/orag-self-check/SKILL.md",
+		"agent/skills/claude-code/orag-self-diagnose/SKILL.md",
+		"agent/skills/trae/orag-self-ops/SKILL.md",
 	} {
 		if !strings.Contains(out.String(), "generated ") || !strings.Contains(out.String(), path) {
 			t.Fatalf("command output missing %s\n%s", path, out.String())
@@ -197,8 +197,8 @@ func TestGenerateAgentArtifactsCmdWritesMCPAndSkillOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateAgentArtifactsCmd(--check) error = %v", err)
 	}
-	if !strings.Contains(out.String(), "checked mcp .mcp/tools/ralph-loop.json") ||
-		!strings.Contains(out.String(), "checked openapi-facet .mcp/openapi-facet.json") {
+	if !strings.Contains(out.String(), "checked mcp agent/mcp/tools/ralph-loop.json") ||
+		!strings.Contains(out.String(), "checked openapi-facet agent/mcp/openapi-facet.json") {
 		t.Fatalf("check output missing MCP artifact\n%s", out.String())
 	}
 }

@@ -112,7 +112,7 @@ func TestServerCallToolReturnsStructuredContent(t *testing.T) {
 }
 
 func TestServerListsAndRunsSelfCheckTool(t *testing.T) {
-	tools, err := LoadToolsFromArtifacts("../../.mcp/tools/orag-self-check.json")
+	tools, err := LoadToolsFromArtifacts("../../agent/mcp/tools/orag-self-check.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestServerListsAndRunsSelfCheckTool(t *testing.T) {
 }
 
 func TestServerRunsSelfOpsPlanAndApplyTools(t *testing.T) {
-	tools, err := LoadToolsFromArtifacts("../../.mcp/tools/orag-self-ops.json")
+	tools, err := LoadToolsFromArtifacts("../../agent/mcp/tools/orag-self-ops.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestServerRunsSelfOpsPlanAndApplyTools(t *testing.T) {
 }
 
 func TestServerListsAndRunsDiagnosticTools(t *testing.T) {
-	tools, err := LoadToolsFromArtifacts("../../.mcp/tools/orag-self-diagnose.json")
+	tools, err := LoadToolsFromArtifacts("../../agent/mcp/tools/orag-self-diagnose.json")
 	if err != nil {
 		t.Fatal(err)
 	}

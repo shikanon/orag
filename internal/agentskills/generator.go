@@ -58,17 +58,17 @@ func Render(manifest capabilities.Manifest) ([]GeneratedFile, error) {
 		files = append(files,
 			GeneratedFile{
 				Target:  "codex",
-				Path:    filepath.ToSlash(filepath.Join(".codex", "skills", bundle.Name, "SKILL.md")),
+				Path:    filepath.ToSlash(filepath.Join("agent", "skills", "codex", bundle.Name, "SKILL.md")),
 				Content: renderCodexSkill(manifest, bundle),
 			},
 			GeneratedFile{
 				Target:  "claude-code",
-				Path:    filepath.ToSlash(filepath.Join(".claude", "skills", bundle.Name, "SKILL.md")),
+				Path:    filepath.ToSlash(filepath.Join("agent", "skills", "claude-code", bundle.Name, "SKILL.md")),
 				Content: renderClaudeSkill(manifest, bundle),
 			},
 			GeneratedFile{
 				Target:  "trae",
-				Path:    filepath.ToSlash(filepath.Join(".trae", "skills", bundle.Name, "SKILL.md")),
+				Path:    filepath.ToSlash(filepath.Join("agent", "skills", "trae", bundle.Name, "SKILL.md")),
 				Content: renderTraeSkill(manifest, bundle),
 			},
 		)

@@ -20,9 +20,9 @@ func main() {
 		log.Fatalf("load MCP tools: %v", err)
 	}
 	for _, artifact := range []string{
-		".mcp/tools/orag-self-check.json",
-		".mcp/tools/orag-self-diagnose.json",
-		".mcp/tools/orag-self-ops.json",
+		"agent/mcp/tools/orag-self-check.json",
+		"agent/mcp/tools/orag-self-diagnose.json",
+		"agent/mcp/tools/orag-self-ops.json",
 	} {
 		if _, err := os.Stat(artifact); err != nil {
 			continue

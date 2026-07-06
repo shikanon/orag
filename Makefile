@@ -2,7 +2,7 @@ APP_NAME := orag-api
 GOFLAGS ?= -tags=stdjson,gjson
 CGO_ENABLED ?= 0
 
-.PHONY: run test vet fmt tidy dev-up dev-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke docker-build docker-run test-integration test-integration-up test-integration-down
+.PHONY: run test vet fmt tidy dev-up dev-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-claude install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down
 
 run:
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-api
@@ -47,6 +47,32 @@ mcp-self-check-smoke:
 	grep -q '"structuredContent"' "$$tmp"; \
 	grep -q '"runtime_gate_warning"' "$$tmp"; \
 	rm -f "$$tmp"
+
+install-mcp:
+	@mkdir -p .mcp/tools
+	@cp agent/mcp/openapi-facet.json .mcp/openapi-facet.json
+	@cp agent/mcp/tools/*.json .mcp/tools/
+	@echo "installed MCP tools to .mcp/"
+
+install-skills-codex:
+	@mkdir -p .codex/skills
+	@cp -R agent/skills/codex/* .codex/skills/
+	@echo "installed Codex skills to .codex/skills/"
+
+install-skills-claude:
+	@mkdir -p .claude/skills
+	@cp -R agent/skills/claude-code/* .claude/skills/
+	@echo "installed Claude Code skills to .claude/skills/"
+
+install-skills-trae:
+	@mkdir -p .trae/skills
+	@cp -R agent/skills/trae/* .trae/skills/
+	@echo "installed Trae skills to .trae/skills/"
+
+install-skills: install-skills-codex install-skills-claude install-skills-trae
+
+install-agent: install-mcp install-skills
+	@echo "installed all agent artifacts to hidden deployment directories"
 
 agent-gate: agent-sync-check agent-artifact-tests mcp-self-check-smoke openapi-validate test vet
 

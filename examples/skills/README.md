@@ -28,9 +28,9 @@ Do not use `orag-self-check` for root-cause analysis, do not use `orag-self-diag
 
 ## Example Guides
 
-| Client | Guide | Generated source |
-| --- | --- | --- |
-| All clients | `self-check-diagnose-ops.md` | `.codex/skills/orag-self-check/SKILL.md`, `.claude/skills/orag-self-diagnose/SKILL.md`, `.trae/skills/orag-self-ops/SKILL.md` |
-| Codex | `codex-ralph-loop.md` | `.codex/skills/ralph-loop/SKILL.md` |
-| Claude Code | `claude-code-ralph-loop.md` | `.claude/skills/ralph-loop/SKILL.md` |
-| Trae | `trae-ralph-loop.md` | `.trae/skills/ralph-loop/SKILL.md` |
+| Client | Guide | Generated source | Install command |
+| --- | --- | --- | --- |
+| All clients | `self-check-diagnose-ops.md` | `agent/skills/codex/orag-self-check/SKILL.md`, `agent/skills/claude-code/orag-self-diagnose/SKILL.md`, `agent/skills/trae/orag-self-ops/SKILL.md` | `make install-skills` |
+| Codex | `codex-ralph-loop.md` | `agent/skills/codex/ralph-loop/SKILL.md` | `make install-skills-codex` |
+| Claude Code | `claude-code-ralph-loop.md` | `agent/skills/claude-code/ralph-loop/SKILL.md` | `make install-skills-claude` |
+| Trae | `trae-ralph-loop.md` | `agent/skills/trae/ralph-loop/SKILL.md` | `make install-skills-trae` |

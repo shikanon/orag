@@ -22,7 +22,7 @@ head -n 2 examples/mcp/ralph-loop-stdio-smoke.jsonl \
 Expected output:
 
 - `initialize` returns protocol version `2024-11-05`.
-- `tools/list` returns `ralph_loop_run` and generated ORAG operational tools when `.mcp/tools/*.json` exists.
+- `tools/list` returns `ralph_loop_run` and generated ORAG operational tools when `agent/mcp/tools/*.json` exists.
 
 ## Self-check Stdio Smoke
 

@@ -10,13 +10,11 @@ func BuiltinManifest() Manifest {
 		GeneratorVersion:  "manifest-first.v1",
 		Generation: GenerationMetadata{
 			OpenAPIFacetPath: "api/openapi.yaml",
-			MCPToolsPath:     ".mcp/tools",
+			MCPToolsPath:     "agent/mcp/tools",
 			SkillTargets:     []string{"codex", "claude-code", "trae"},
 			ArtifactPaths: []string{
-				".mcp/tools",
-				".codex/skills",
-				".claude/skills",
-				".trae/skills",
+				"agent/mcp",
+				"agent/skills",
 			},
 		},
 		DriftChecks: []DriftCheckMetadata{
@@ -334,11 +332,11 @@ func traceAnnotations(id, displayName string) map[string]any {
 func generatedEverywhere(skillName string) CapabilityArtifact {
 	return CapabilityArtifact{
 		OpenAPIFacet: "api/openapi.yaml",
-		MCPArtifact:  ".mcp/tools/" + skillName + ".json",
+		MCPArtifact:  "agent/mcp/tools/" + skillName + ".json",
 		SkillArtifacts: []string{
-			".codex/skills/" + skillName + "/SKILL.md",
-			".claude/skills/" + skillName + "/SKILL.md",
-			".trae/skills/" + skillName + "/SKILL.md",
+			"agent/skills/codex/" + skillName + "/SKILL.md",
+			"agent/skills/claude-code/" + skillName + "/SKILL.md",
+			"agent/skills/trae/" + skillName + "/SKILL.md",
 		},
 	}
 }

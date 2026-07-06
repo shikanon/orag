@@ -20,19 +20,19 @@ func TestGenerateFromManifestProducesAgentSkillTargets(t *testing.T) {
 		byPath[file.Path] = file
 	}
 	for _, path := range []string{
-		".codex/skills/ralph-loop/SKILL.md",
-		".claude/skills/ralph-loop/SKILL.md",
-		".trae/skills/ralph-loop/SKILL.md",
-		".codex/skills/orag-self-check/SKILL.md",
-		".claude/skills/orag-self-diagnose/SKILL.md",
-		".trae/skills/orag-self-ops/SKILL.md",
+		"agent/skills/codex/ralph-loop/SKILL.md",
+		"agent/skills/claude-code/ralph-loop/SKILL.md",
+		"agent/skills/trae/ralph-loop/SKILL.md",
+		"agent/skills/codex/orag-self-check/SKILL.md",
+		"agent/skills/claude-code/orag-self-diagnose/SKILL.md",
+		"agent/skills/trae/orag-self-ops/SKILL.md",
 	} {
 		if _, ok := byPath[path]; !ok {
 			t.Fatalf("missing generated file %s in %#v", path, files)
 		}
 	}
 
-	ralph := byPath[".trae/skills/ralph-loop/SKILL.md"].Content
+	ralph := byPath["agent/skills/trae/ralph-loop/SKILL.md"].Content
 	for _, want := range []string{
 		"Generated from `orag.capabilities.v1` version `2026-07-05`",
 		"ORAG_API_BASE_URL",
@@ -49,7 +49,7 @@ func TestGenerateFromManifestProducesAgentSkillTargets(t *testing.T) {
 		}
 	}
 
-	selfCheck := byPath[".codex/skills/orag-self-check/SKILL.md"].Content
+	selfCheck := byPath["agent/skills/codex/orag-self-check/SKILL.md"].Content
 	for _, want := range []string{
 		"`orag_check`",
 		"make agent-sync-check remains the authoritative release gate",
@@ -60,14 +60,14 @@ func TestGenerateFromManifestProducesAgentSkillTargets(t *testing.T) {
 		}
 	}
 
-	diagnose := byPath[".claude/skills/orag-self-diagnose/SKILL.md"].Content
+	diagnose := byPath["agent/skills/claude-code/orag-self-diagnose/SKILL.md"].Content
 	for _, want := range []string{"`orag_diagnose`", "`orag_trace_lookup`", "`orag_runbook_suggest`", "read-only"} {
 		if !strings.Contains(diagnose, want) {
 			t.Fatalf("diagnose Skill missing %q\n%s", want, diagnose)
 		}
 	}
 
-	ops := byPath[".trae/skills/orag-self-ops/SKILL.md"].Content
+	ops := byPath["agent/skills/trae/orag-self-ops/SKILL.md"].Content
 	for _, want := range []string{"`orag_maintenance_plan`", "`orag_apply_low_risk_action`", "`orag_create_remediation_issue`", "Default to dry-run"} {
 		if !strings.Contains(ops, want) {
 			t.Fatalf("ops Skill missing %q\n%s", want, ops)
@@ -78,9 +78,9 @@ func TestGenerateFromManifestProducesAgentSkillTargets(t *testing.T) {
 func TestWriteFilesCreatesSkillDirectories(t *testing.T) {
 	dir := t.TempDir()
 	files := []GeneratedFile{
-		{Target: "codex", Path: ".codex/skills/orag-self-check/SKILL.md", Content: "# Codex\n"},
-		{Target: "claude-code", Path: ".claude/skills/orag-self-diagnose/SKILL.md", Content: "# Claude\n"},
-		{Target: "trae", Path: ".trae/skills/orag-self-ops/SKILL.md", Content: "# Trae\n"},
+		{Target: "codex", Path: "agent/skills/codex/orag-self-check/SKILL.md", Content: "# Codex\n"},
+		{Target: "claude-code", Path: "agent/skills/claude-code/orag-self-diagnose/SKILL.md", Content: "# Claude\n"},
+		{Target: "trae", Path: "agent/skills/trae/orag-self-ops/SKILL.md", Content: "# Trae\n"},
 	}
 
 	if err := WriteFiles(dir, files); err != nil {
