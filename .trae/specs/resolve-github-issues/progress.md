@@ -360,3 +360,34 @@
 - `tasks.md` 中 Task 17 及 SubTask 17.1-17.4 已全部勾选。
 - `checklist.md` 中“第二轮聚焦测试、契约测试和全量 Go 测试通过”和“所有第二轮已完成 issue 已写入关闭说明并关闭”已勾选。
 - Task 18 的 PR、merge 和本地 `main` 同步检查仍未执行，相关 checklist 项保持未勾选。
+
+## 2026-07-06 - Task 18: 提交远程分支、创建 PR 并完成合并
+
+### 分支与提交证据
+- 从本地 `main` 创建专用分支 `task18-resolve-github-issues-pr-merge`。
+- 执行全量验证命令 `GOROOT=/Users/bytedance/gopath/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.4.darwin-amd64 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local /Users/bytedance/gopath/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.4.darwin-amd64/bin/go test ./...`，命令退出码 `0`。
+- 创建提交 `e1c5a79`，提交信息为 `fix: close second-round github issues`，提交内容包含 Task 13-16 的代码、测试、文档修复，以及 `.trae/specs/resolve-github-issues` 规格文件。
+- 提交说明引用覆盖 issue：#120、#121、#142、#146、#147、#155、#156、#157。
+
+### PR 与检查证据
+- 推送分支到 `origin/task18-resolve-github-issues-pr-merge`，命令退出码 `0`。
+- 创建 PR #160：`https://github.com/shikanon/orag/pull/160`，base 为 `main`，head 为 `task18-resolve-github-issues-pr-merge`。
+- PR body 包含验证命令和 `Closes #120`、`Closes #121`、`Closes #142`、`Closes #146`、`Closes #147`、`Closes #155`、`Closes #156`、`Closes #157`。
+- 执行 `gh pr checks 160 --repo shikanon/orag --watch --interval 10`，两个 GitHub `test` checks 均通过，耗时分别为 `1m34s` 和 `1m20s`。
+- 执行 `gh pr view 160 --repo shikanon/orag --json number,state,mergeStateStatus,isDraft,mergeable,url,headRefOid,baseRefName,headRefName`，确认 PR 为非 draft、`mergeable=MERGEABLE`。
+
+### 合并与同步证据
+- 执行 `gh pr merge 160 --repo shikanon/orag --squash --delete-branch --subject "fix: close second-round github issues" --body "Covers #120 #121 #142 #146 #147 #155 #156 #157."`，命令退出码 `0`。
+- PR #160 状态为 `MERGED`，merge commit 为 `74c28d9790b04ec2f8efcab6291ff81dff81acd3`，merged at `2026-07-06T08:54:57Z`。
+- 执行 `git fetch --prune origin` 后切回 `main` 并执行 `git pull --ff-only origin main`，本地 `main` 已快进到 `origin/main` 的合并结果。
+- 执行 `git status --short --branch --untracked-files=all`，输出 `## main...origin/main`，确认本地工作区与远程 `main` 同步且无未提交业务改动。
+
+### Issue 与最终状态复核
+- 执行 `gh issue list --repo shikanon/orag --state open --limit 200 --json number,title,url --jq '.[] | [.number, .title, .url] | @tsv'`，命令退出码 `0`，输出为空，当前仓库开放 issue 列表为空。
+- 执行 `gh issue list --repo shikanon/orag --state closed --limit 200 --json number,state,closed,url --jq '[.[] | select(.number as $n | [120,121,142,146,147,155,156,157] | index($n))] | {closed_count:length,numbers:map(.number)|sort}'`，命令退出码 `0`，输出 `closed_count=8` 且编号为 `[120,121,142,146,147,155,156,157]`。
+- `tasks.md` 中 Task 18 及 SubTask 18.1-18.4 已全部勾选。
+- `checklist.md` 中 PR/checks/merge、本地 main 同步、PR merged 状态和 issue closed 状态复核两项已勾选。
+
+### Task 18 结论
+- Task 18 已完成远程分支提交、PR 创建、CI 检查、PR 合并、本地 `main` 同步和最终状态复核。
+- `resolve-github-issues` 规格的第二轮 issue 收口、PR 合并和本地同步闭环已完成。

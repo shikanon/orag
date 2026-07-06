@@ -28,5 +28,5 @@
 - [x] #156 semantic cache 在 optimizer candidate 评估中不会跨候选污染，同时保留正常 profile-scoped cache 行为。
 - [x] 第二轮聚焦测试、契约测试和全量 Go 测试通过，或记录不可运行外部依赖的明确原因。
 - [x] 所有第二轮已完成 issue 已写入关闭说明并关闭，最终开放 issue 列表不含已完成项。
-- [ ] 本轮变更已推送到远程分支，PR 已创建、通过必要检查并合并到远程 `main`。
-- [ ] 本地 `main` 已同步远程合并结果，PR merged 状态和 issue closed 状态均已复核。
+- [x] 本轮变更已推送到远程分支，PR 已创建、通过必要检查并合并到远程 `main`。
+- [x] 本地 `main` 已同步远程合并结果，PR merged 状态和 issue closed 状态均已复核。

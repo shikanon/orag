@@ -104,11 +104,11 @@
   - [x] SubTask 17.3: 运行 `CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=local go test ./...` 或记录明确环境限制。
   - [x] SubTask 17.4: 对所有已实现 issue 写入关闭说明并关闭，复查开放 issue 列表。
 
-- [ ] Task 18: 提交远程分支、创建 PR 并完成合并
-  - [ ] SubTask 18.1: 创建专用分支，提交本轮代码、测试、文档和规格更新，commit message 引用覆盖的 issue。
-  - [ ] SubTask 18.2: 推送分支到 `origin`，创建指向 `main` 的 PR，PR body 包含 `Closes #N` 或关闭说明与验证命令。
-  - [ ] SubTask 18.3: 等待或检查必要 CI 状态，若失败则修复后更新 PR。
-  - [ ] SubTask 18.4: 合并 PR 到远程仓库，更新本地 `main`，确认 PR merged 且目标 issue 均关闭。
+- [x] Task 18: 提交远程分支、创建 PR 并完成合并
+  - [x] SubTask 18.1: 创建专用分支，提交本轮代码、测试、文档和规格更新，commit message 引用覆盖的 issue。
+  - [x] SubTask 18.2: 推送分支到 `origin`，创建指向 `main` 的 PR，PR body 包含 `Closes #N` 或关闭说明与验证命令。
+  - [x] SubTask 18.3: 等待或检查必要 CI 状态，若失败则修复后更新 PR。
+  - [x] SubTask 18.4: 合并 PR 到远程仓库，更新本地 `main`，确认 PR merged 且目标 issue 均关闭。
 
 ## 第二轮 Task Dependencies
 - Task 11 必须先完成，作为第二轮 issue 分组、修复和关闭的依据。
