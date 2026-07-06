@@ -5,10 +5,46 @@ import (
 	"encoding/json"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shikanon/orag/internal/optimizer"
 )
 
 func (r *Repository) CreateOptimizationRun(ctx context.Context, run optimizer.OptimizationRun) error {
+	return insertOptimizationRun(ctx, r.evaluationQueryer(), run)
+}
+
+func (r *Repository) CreateOptimizationRunWithCandidates(ctx context.Context, run optimizer.OptimizationRun, candidates []optimizer.OptimizationCandidate) error {
+	tx, err := r.evaluationTxBeginner().BeginEvaluationTx(ctx)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	if err := insertOptimizationRun(ctx, tx, run); err != nil {
+		return err
+	}
+	for _, candidate := range candidates {
+		if err := insertOptimizationCandidate(ctx, tx, candidate); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	committed = true
+	return nil
+}
+
+type optimizationExecer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+func insertOptimizationRun(ctx context.Context, execer optimizationExecer, run optimizer.OptimizationRun) error {
 	objective, err := json.Marshal(run.Objective)
 	if err != nil {
 		return err
@@ -29,7 +65,7 @@ func (r *Repository) CreateOptimizationRun(ctx context.Context, run optimizer.Op
 	if err != nil {
 		return err
 	}
-	_, err = r.evaluationQueryer().Exec(ctx, `
+	_, err = execer.Exec(ctx, `
 		INSERT INTO optimization_runs(
 			id, tenant_id, dataset_id, knowledge_base_id, objective, search_space, runner,
 			status, status_reason, best_candidate_id, holdout_candidate_id, sampling_strategy,
@@ -102,11 +138,15 @@ func (r *Repository) UpdateOptimizationRun(ctx context.Context, run optimizer.Op
 }
 
 func (r *Repository) CreateOptimizationCandidate(ctx context.Context, candidate optimizer.OptimizationCandidate) error {
+	return insertOptimizationCandidate(ctx, r.evaluationQueryer(), candidate)
+}
+
+func insertOptimizationCandidate(ctx context.Context, execer optimizationExecer, candidate optimizer.OptimizationCandidate) error {
 	config, confidence, metrics, tokenUsage, artifacts, namespaces, err := encodeOptimizationCandidate(candidate)
 	if err != nil {
 		return err
 	}
-	_, err = r.evaluationQueryer().Exec(ctx, `
+	_, err = execer.Exec(ctx, `
 		INSERT INTO optimization_candidates(
 			id, optimization_run_id, config, status, evaluation_run_id, judge_run_id,
 			objective_score, holdout_score, confidence, metrics, token_usage, cost_usd,

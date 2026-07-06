@@ -21,6 +21,7 @@ type Repository struct {
 	traceTxBeginner traceTxBeginner
 	datasetRunner   datasetQueryer
 	evalQueryer     evalQueryer
+	evalTxBeginner  evalTxBeginner
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
@@ -110,8 +111,26 @@ type evalQueryer interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
+type evalTx interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
+}
+
+type evalTxBeginner interface {
+	BeginEvaluationTx(ctx context.Context) (evalTx, error)
+}
+
 type pgxEvalQueryer struct {
 	pool *pgxpool.Pool
+}
+
+type pgxEvalTxBeginner struct {
+	pool *pgxpool.Pool
+}
+
+func (b pgxEvalTxBeginner) BeginEvaluationTx(ctx context.Context) (evalTx, error) {
+	return b.pool.Begin(ctx)
 }
 
 func (q pgxEvalQueryer) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
@@ -131,6 +150,13 @@ func (r *Repository) evaluationQueryer() evalQueryer {
 		return r.evalQueryer
 	}
 	return r.Pool
+}
+
+func (r *Repository) evaluationTxBeginner() evalTxBeginner {
+	if r.evalTxBeginner != nil {
+		return r.evalTxBeginner
+	}
+	return pgxEvalTxBeginner{pool: r.Pool}
 }
 
 func (r *Repository) PutKnowledgeBase(ctx context.Context, item kb.KnowledgeBase) error {

@@ -18,6 +18,7 @@ var ErrOptimizationNotFound = errors.New("optimization run not found")
 
 type Repository interface {
 	CreateOptimizationRun(ctx context.Context, run OptimizationRun) error
+	CreateOptimizationRunWithCandidates(ctx context.Context, run OptimizationRun, candidates []OptimizationCandidate) error
 	GetOptimizationRun(ctx context.Context, tenantID, runID string) (OptimizationRun, bool, error)
 	UpdateOptimizationRun(ctx context.Context, run OptimizationRun) error
 	CreateOptimizationCandidate(ctx context.Context, candidate OptimizationCandidate) error
@@ -150,9 +151,7 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (OptimizationRu
 		CreatedAt:               now,
 		UpdatedAt:               now,
 	}
-	if err := s.repo().CreateOptimizationRun(ctx, run); err != nil {
-		return OptimizationRun{}, err
-	}
+	candidates := make([]OptimizationCandidate, 0, len(search.Candidates))
 	for _, config := range search.Candidates {
 		candidate := OptimizationCandidate{
 			ID:                config.ID,
@@ -166,9 +165,10 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (OptimizationRu
 			CreatedAt:         now,
 			UpdatedAt:         now,
 		}
-		if err := s.repo().CreateOptimizationCandidate(ctx, candidate); err != nil {
-			return OptimizationRun{}, err
-		}
+		candidates = append(candidates, candidate)
+	}
+	if err := s.repo().CreateOptimizationRunWithCandidates(ctx, run, candidates); err != nil {
+		return OptimizationRun{}, err
 	}
 	if !s.DisableAutoStart {
 		go s.run(context.Background(), run.ID, req)

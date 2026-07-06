@@ -834,6 +834,116 @@ func TestRepositoryStoresOptimizationRunAndCandidate(t *testing.T) {
 	}
 }
 
+func TestRepositoryCreateOptimizationRunWithCandidatesCommitsAllInTransaction(t *testing.T) {
+	tx := &fakeKnowledgeBaseTx{}
+	beginner := &fakeEvaluationTxBeginner{tx: tx}
+	repo := &Repository{evalTxBeginner: beginner}
+	now := time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC)
+	run := optimizerpkg.OptimizationRun{
+		ID:                    "opt_1",
+		TenantID:              "tenant_1",
+		DatasetID:             "ds_1",
+		KnowledgeBaseID:       "kb_1",
+		Objective:             optimizerpkg.ObjectiveSpec{Maximize: "pairwise_accuracy"},
+		SearchSpace:           optimizerpkg.SearchSpace{Retrieval: optimizerpkg.RetrievalSpace{DenseTopK: []int{4, 8}}},
+		Status:                optimizerpkg.RunStatusQueued,
+		SamplingStrategy:      optimizerpkg.SearchStrategyGrid,
+		SearchSpaceSize:       2,
+		SampledCandidateCount: 2,
+		Checkpoint:            optimizerpkg.Checkpoint{Stage: "submitted"},
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+	candidates := []optimizerpkg.OptimizationCandidate{
+		{
+			ID:                "cand_1",
+			OptimizationRunID: "opt_1",
+			Config:            optimizerpkg.CandidateConfig{Retrieval: optimizerpkg.RetrievalCandidate{DenseTopK: 4}},
+			Status:            optimizerpkg.CandidateStatusQueued,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		},
+		{
+			ID:                "cand_2",
+			OptimizationRunID: "opt_1",
+			Config:            optimizerpkg.CandidateConfig{Retrieval: optimizerpkg.RetrievalCandidate{DenseTopK: 8}},
+			Status:            optimizerpkg.CandidateStatusQueued,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		},
+	}
+
+	if err := repo.CreateOptimizationRunWithCandidates(context.Background(), run, candidates); err != nil {
+		t.Fatalf("CreateOptimizationRunWithCandidates() error = %v", err)
+	}
+	if beginner.calls != 1 {
+		t.Fatalf("begin calls = %d, want 1", beginner.calls)
+	}
+	if tx.commitCalls != 1 || tx.rollbackCalls != 0 {
+		t.Fatalf("commit/rollback calls = %d/%d, want 1/0", tx.commitCalls, tx.rollbackCalls)
+	}
+	if len(tx.execSQLs) != 3 {
+		t.Fatalf("exec count = %d, want 3", len(tx.execSQLs))
+	}
+	if !strings.Contains(tx.execSQLs[0], "INSERT INTO optimization_runs") {
+		t.Fatalf("first exec SQL = %s, want optimization_runs insert", tx.execSQLs[0])
+	}
+	for i, sql := range tx.execSQLs[1:] {
+		if !strings.Contains(sql, "INSERT INTO optimization_candidates") {
+			t.Fatalf("candidate exec %d SQL = %s, want optimization_candidates insert", i, sql)
+		}
+	}
+}
+
+func TestRepositoryCreateOptimizationRunWithCandidatesRollsBackCandidateInsertFailure(t *testing.T) {
+	want := errors.New("candidate insert failed")
+	tx := &fakeKnowledgeBaseTx{execErrs: []error{nil, nil, want}}
+	beginner := &fakeEvaluationTxBeginner{tx: tx}
+	repo := &Repository{evalTxBeginner: beginner}
+	now := time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC)
+	run := optimizerpkg.OptimizationRun{
+		ID:              "opt_1",
+		TenantID:        "tenant_1",
+		DatasetID:       "ds_1",
+		KnowledgeBaseID: "kb_1",
+		Objective:       optimizerpkg.ObjectiveSpec{Maximize: "pairwise_accuracy"},
+		SearchSpace:     optimizerpkg.SearchSpace{Retrieval: optimizerpkg.RetrievalSpace{DenseTopK: []int{4, 8}}},
+		Status:          optimizerpkg.RunStatusQueued,
+		Checkpoint:      optimizerpkg.Checkpoint{Stage: "submitted"},
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	candidates := []optimizerpkg.OptimizationCandidate{
+		{
+			ID:                "cand_1",
+			OptimizationRunID: "opt_1",
+			Config:            optimizerpkg.CandidateConfig{Retrieval: optimizerpkg.RetrievalCandidate{DenseTopK: 4}},
+			Status:            optimizerpkg.CandidateStatusQueued,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		},
+		{
+			ID:                "cand_2",
+			OptimizationRunID: "opt_1",
+			Config:            optimizerpkg.CandidateConfig{Retrieval: optimizerpkg.RetrievalCandidate{DenseTopK: 8}},
+			Status:            optimizerpkg.CandidateStatusQueued,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		},
+	}
+
+	err := repo.CreateOptimizationRunWithCandidates(context.Background(), run, candidates)
+	if !errors.Is(err, want) {
+		t.Fatalf("CreateOptimizationRunWithCandidates() error = %v, want %v", err, want)
+	}
+	if tx.commitCalls != 0 || tx.rollbackCalls != 1 {
+		t.Fatalf("commit/rollback calls = %d/%d, want 0/1", tx.commitCalls, tx.rollbackCalls)
+	}
+	if len(tx.execSQLs) != 3 {
+		t.Fatalf("exec count = %d, want run insert plus two candidate attempts", len(tx.execSQLs))
+	}
+}
+
 func TestRepositoryUpdateOptimizationRunIncludesReadbackFields(t *testing.T) {
 	queryer := &fakeKnowledgeBaseQueryer{}
 	repo := &Repository{evalQueryer: queryer}
@@ -1128,7 +1238,23 @@ type fakeKnowledgeBaseTxBeginner struct {
 	calls    int
 }
 
+type fakeEvaluationTxBeginner struct {
+	tx       *fakeKnowledgeBaseTx
+	err      error
+	beginCtx context.Context
+	calls    int
+}
+
 func (f *fakeKnowledgeBaseTxBeginner) BeginKnowledgeBaseTx(ctx context.Context) (knowledgeBaseTx, error) {
+	f.beginCtx = ctx
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.tx, nil
+}
+
+func (f *fakeEvaluationTxBeginner) BeginEvaluationTx(ctx context.Context) (evalTx, error) {
 	f.beginCtx = ctx
 	f.calls++
 	if f.err != nil {

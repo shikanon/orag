@@ -26,6 +26,22 @@ func (r *MemoryRepository) CreateOptimizationRun(_ context.Context, run Optimiza
 	return nil
 }
 
+func (r *MemoryRepository) CreateOptimizationRunWithCandidates(_ context.Context, run OptimizationRun, candidates []OptimizationCandidate) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	copies := make([]OptimizationCandidate, len(candidates))
+	for i, candidate := range candidates {
+		candidate.Config.ID = candidate.ID
+		copies[i] = candidate
+	}
+	r.runs[run.ID] = run
+	for _, candidate := range copies {
+		r.candidates[candidate.ID] = candidate
+	}
+	return nil
+}
+
 func (r *MemoryRepository) GetOptimizationRun(_ context.Context, tenantID, runID string) (OptimizationRun, bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
