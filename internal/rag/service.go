@@ -184,14 +184,16 @@ func (s *Service) GenerateDirect(ctx context.Context, req QueryRequest, profile 
 		return QueryResponse{}, err
 	}
 	return QueryResponse{
-		Answer:      strings.TrimSpace(answer),
-		TraceID:     traceID,
-		CacheStatus: "bypass",
-		Profile:     profile,
-		Route:       route,
-		Warnings:    warnings,
-		CreatedAt:   time.Now().UTC(),
-		LatencyMS:   time.Since(start).Milliseconds(),
+		Answer:          strings.TrimSpace(answer),
+		Citations:       []Citation{},
+		RetrievedChunks: []kb.SearchResult{},
+		TraceID:         traceID,
+		CacheStatus:     "bypass",
+		Profile:         profile,
+		Route:           route,
+		Warnings:        warnings,
+		CreatedAt:       time.Now().UTC(),
+		LatencyMS:       time.Since(start).Milliseconds(),
 	}, nil
 }
 

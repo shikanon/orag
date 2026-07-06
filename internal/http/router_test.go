@@ -12,6 +12,7 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/common/ut"
 	"github.com/cloudwego/hertz/pkg/route"
+	"github.com/getkin/kin-openapi/openapi3"
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/config"
 	"github.com/shikanon/orag/internal/dataset"
@@ -209,6 +210,48 @@ func TestQueryUsesRequestTraceID(t *testing.T) {
 	}
 	if body.TraceID != "trace_query_success" {
 		t.Fatalf("query trace_id = %q, want trace_query_success", body.TraceID)
+	}
+}
+
+func TestQueryDirectRouteResponseMatchesOpenAPI(t *testing.T) {
+	t.Setenv("RAG_QUERY_ROUTER_ENABLED", "true")
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSONWithTrace(h, "POST", "/v1/query", `{"knowledge_base_id":"kb_default","query":"你好"}`, token, "trace_query_direct_route")
+	if resp.Code != 200 {
+		t.Fatalf("query status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	var body rag.QueryResponse
+	if err := json.Unmarshal([]byte(resp.Body), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.CacheStatus != "bypass" {
+		t.Fatalf("cache_status = %q, want bypass body=%s", body.CacheStatus, resp.Body)
+	}
+	if body.Route == nil || body.Route.Route != rag.QueryRouteDirect {
+		t.Fatalf("route = %#v, want direct body=%s", body.Route, resp.Body)
+	}
+
+	var payload any
+	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := openapi3.NewLoader().LoadFromFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Validate(context.Background()); err != nil {
+		t.Fatalf("openapi validation failed: %v", err)
+	}
+	schemaRef := doc.Components.Schemas["QueryResponse"]
+	if schemaRef == nil || schemaRef.Value == nil {
+		t.Fatal("OpenAPI missing QueryResponse schema")
+	}
+	if err := schemaRef.Value.VisitJSON(payload, openapi3.VisitAsResponse()); err != nil {
+		t.Fatalf("direct route response does not match OpenAPI QueryResponse schema: %v body=%s", err, resp.Body)
 	}
 }
 
