@@ -11,6 +11,10 @@ import (
 	"math"
 	"net/http"
 	"strings"
+
+	"github.com/shikanon/orag/internal/diagnostics"
+	"github.com/shikanon/orag/internal/selfcheck"
+	"github.com/shikanon/orag/internal/selfops"
 )
 
 const (
@@ -27,10 +31,13 @@ const (
 )
 
 type Server struct {
-	tools  []ToolDefinition
-	byName map[string]ToolDefinition
-	client ToolClient
-	config RuntimeConfig
+	tools       []ToolDefinition
+	byName      map[string]ToolDefinition
+	client      ToolClient
+	config      RuntimeConfig
+	checks      selfCheckExecutor
+	diagnostics diagnosticsExecutor
+	ops         selfOpsExecutor
 }
 
 type ToolClient interface {
@@ -41,6 +48,21 @@ type ToolResult struct {
 	Payload any
 	TraceID string
 	Status  int
+}
+
+type selfCheckExecutor interface {
+	Execute(ctx context.Context, req selfcheck.Request) (selfcheck.Envelope, error)
+}
+
+type diagnosticsExecutor interface {
+	TraceLookup(req diagnostics.TraceLookupRequest) diagnostics.TraceLookupResponse
+	Diagnose(req diagnostics.DiagnoseRequest) diagnostics.DiagnoseResult
+	RunbookSuggest(req diagnostics.RunbookSuggestRequest) diagnostics.RunbookSuggestResponse
+}
+
+type selfOpsExecutor interface {
+	Plan(ctx context.Context, req selfops.PlanRequest) (selfops.Plan, error)
+	Apply(ctx context.Context, req selfops.ApplyRequest) (selfops.ApplyResult, error)
 }
 
 func NewServer(tools []ToolDefinition, cfg RuntimeConfig, client ToolClient) (*Server, error) {
@@ -57,7 +79,15 @@ func NewServer(tools []ToolDefinition, cfg RuntimeConfig, client ToolClient) (*S
 		}
 		byName[tool.Name] = tool
 	}
-	return &Server{tools: tools, byName: byName, client: client, config: cfg}, nil
+	return &Server{
+		tools:       tools,
+		byName:      byName,
+		client:      client,
+		config:      cfg,
+		checks:      selfcheck.NewExecutor(selfcheck.Options{}),
+		diagnostics: diagnostics.NewExecutor(),
+		ops:         selfops.NewExecutor(selfops.Options{}),
+	}, nil
 }
 
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
@@ -134,6 +164,15 @@ func (s *Server) handleToolCall(ctx context.Context, req jsonRPCRequest) ([]byte
 	if err := validateObject(tool.InputSchema, params.Arguments); err != nil {
 		return s.errorResponse(req.ID, codeInvalidParams, "invalid_tool_arguments", err.Error(), map[string]any{"tool": params.Name}), true
 	}
+	if params.Name == "orag_check" {
+		return s.handleSelfCheck(ctx, req.ID, params), true
+	}
+	if isDiagnosticTool(params.Name) {
+		return s.handleDiagnostics(req.ID, params), true
+	}
+	if isSelfOpsTool(params.Name) {
+		return s.handleSelfOps(ctx, req.ID, params), true
+	}
 
 	result, err := s.client.CallTool(ctx, s.config, tool, params.Arguments, params.Meta)
 	if err != nil {
@@ -159,6 +198,128 @@ func (s *Server) handleToolCall(ctx context.Context, req jsonRPCRequest) ([]byte
 		mcpResult["_meta"] = map[string]any{"trace_id": result.TraceID, "http_status": result.Status}
 	}
 	return s.resultResponse(req.ID, mcpResult), true
+}
+
+func (s *Server) handleSelfCheck(ctx context.Context, id json.RawMessage, params toolCallParams) []byte {
+	checkReq, err := selfCheckRequestFromArgs(params.Arguments, params.Meta)
+	if err != nil {
+		return s.errorResponse(id, codeInvalidParams, "invalid_tool_arguments", err.Error(), map[string]any{"tool": params.Name})
+	}
+	result, err := s.checks.Execute(ctx, checkReq)
+	if err != nil {
+		return s.errorResponse(id, codeInvalidParams, "invalid_tool_arguments", err.Error(), map[string]any{"tool": params.Name})
+	}
+	text, err := json.Marshal(result)
+	if err != nil {
+		return s.errorResponse(id, codeInternalError, "marshal_result_failed", "failed to encode tool result", nil)
+	}
+	mcpResult := map[string]any{
+		"content": []map[string]any{
+			{"type": "text", "text": string(text)},
+		},
+		"structuredContent": result,
+		"isError":           result.Verdict != selfcheck.VerdictPass,
+		"_meta":             map[string]any{"trace_id": result.TraceID, "exit_code": result.ExitCode},
+	}
+	return s.resultResponse(id, mcpResult)
+}
+
+func (s *Server) handleDiagnostics(id json.RawMessage, params toolCallParams) []byte {
+	var payload any
+	var verdict selfcheck.Verdict
+	var traceID string
+	switch params.Name {
+	case "orag_trace_lookup":
+		result := s.diagnostics.TraceLookup(diagnostics.TraceLookupRequest{TraceID: stringArg(params.Arguments, "trace_id")})
+		payload = result
+		verdict = result.Verdict
+		traceID = result.TraceID
+	case "orag_diagnose":
+		exitCode, err := optionalIntArg(params.Arguments, "failed_command_exit_code")
+		if err != nil {
+			return s.errorResponse(id, codeInvalidParams, "invalid_tool_arguments", err.Error(), map[string]any{"tool": params.Name})
+		}
+		traceID = stringArg(params.Arguments, "trace_id")
+		if traceID == "" {
+			traceID = traceIDFromMeta(params.Meta)
+		}
+		result := s.diagnostics.Diagnose(diagnostics.DiagnoseRequest{
+			Scope:                 stringArg(params.Arguments, "scope"),
+			Symptom:               stringArg(params.Arguments, "symptom"),
+			TraceID:               traceID,
+			FailedCommand:         stringArg(params.Arguments, "failed_command"),
+			FailedCommandExitCode: exitCode,
+			FailedCommandOutput:   stringArg(params.Arguments, "failed_command_output"),
+			AllowCommands:         boolArg(params.Arguments, "allow_commands"),
+		})
+		payload = result
+		verdict = result.Verdict
+		traceID = result.TraceID
+	case "orag_runbook_suggest":
+		result := s.diagnostics.RunbookSuggest(diagnostics.RunbookSuggestRequest{
+			Scope:   stringArg(params.Arguments, "scope"),
+			Verdict: stringArg(params.Arguments, "verdict"),
+		})
+		payload = result
+		verdict = result.Verdict
+	default:
+		return s.errorResponse(id, codeInvalidParams, "unknown_tool", "requested diagnostic tool is not available", map[string]any{"tool": params.Name})
+	}
+	text, err := json.Marshal(payload)
+	if err != nil {
+		return s.errorResponse(id, codeInternalError, "marshal_result_failed", "failed to encode tool result", nil)
+	}
+	mcpResult := map[string]any{
+		"content": []map[string]any{
+			{"type": "text", "text": string(text)},
+		},
+		"structuredContent": payload,
+		"isError":           verdict != selfcheck.VerdictPass,
+		"_meta":             map[string]any{"trace_id": traceID, "exit_code": selfcheck.ExitCode(verdict)},
+	}
+	return s.resultResponse(id, mcpResult)
+}
+
+func (s *Server) handleSelfOps(ctx context.Context, id json.RawMessage, params toolCallParams) []byte {
+	var payload any
+	var verdict string
+	var traceID string
+	var planID string
+	var err error
+	switch params.Name {
+	case "orag_maintenance_plan":
+		result, planErr := s.ops.Plan(ctx, selfOpsPlanRequestFromArgs(params.Arguments, params.Meta))
+		payload = result
+		verdict = result.Verdict
+		traceID = result.TraceID
+		planID = result.PlanID
+		err = planErr
+	case "orag_apply_low_risk_action":
+		result, applyErr := s.ops.Apply(ctx, selfOpsApplyRequestFromArgs(params.Arguments, params.Meta))
+		payload = result
+		verdict = result.Verdict
+		traceID = result.TraceID
+		planID = result.PlanID
+		err = applyErr
+	default:
+		err = fmt.Errorf("requested self-ops tool is not available")
+	}
+	if err != nil {
+		return s.errorResponse(id, codeInvalidParams, "invalid_tool_arguments", err.Error(), map[string]any{"tool": params.Name})
+	}
+	text, err := json.Marshal(payload)
+	if err != nil {
+		return s.errorResponse(id, codeInternalError, "marshal_result_failed", "failed to encode tool result", nil)
+	}
+	mcpResult := map[string]any{
+		"content": []map[string]any{
+			{"type": "text", "text": string(text)},
+		},
+		"structuredContent": payload,
+		"isError":           verdict != selfops.VerdictPass,
+		"_meta":             map[string]any{"trace_id": traceID, "plan_id": planID},
+	}
+	return s.resultResponse(id, mcpResult)
 }
 
 func (s *Server) publicTools() []ToolDefinition {
@@ -291,6 +452,10 @@ func validateValue(name string, schema map[string]any, value any) error {
 		if max, ok := numberValue(schema["maximum"]); ok && number > max {
 			return fmt.Errorf("argument %q must be <= %v", name, max)
 		}
+	case "boolean":
+		if _, ok := value.(bool); !ok {
+			return fmt.Errorf("argument %q must be a boolean", name)
+		}
 	}
 	return nil
 }
@@ -314,5 +479,77 @@ func numberValue(value any) (float64, bool) {
 		return float64(v), true
 	default:
 		return 0, false
+	}
+}
+
+func selfCheckRequestFromArgs(args map[string]any, meta map[string]any) (selfcheck.Request, error) {
+	req := selfcheck.Request{
+		Scope:   selfcheck.Scope(stringArg(args, "scope")),
+		Mode:    selfcheck.Mode(stringArg(args, "mode")),
+		TraceID: traceIDFromMeta(meta),
+	}
+	var err error
+	if req.OverallDeadlineSeconds, err = optionalIntArg(args, "overall_deadline_seconds"); err != nil {
+		return selfcheck.Request{}, err
+	}
+	if req.PerCheckTimeoutSeconds, err = optionalIntArg(args, "per_check_timeout_seconds"); err != nil {
+		return selfcheck.Request{}, err
+	}
+	return req, nil
+}
+
+func stringArg(args map[string]any, key string) string {
+	value, _ := args[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func optionalIntArg(args map[string]any, key string) (int, error) {
+	value, ok := args[key]
+	if !ok || value == nil {
+		return 0, nil
+	}
+	number, ok := numberValue(value)
+	if !ok || math.Trunc(number) != number {
+		return 0, fmt.Errorf("argument %q must be an integer", key)
+	}
+	return int(number), nil
+}
+
+func boolArg(args map[string]any, key string) bool {
+	value, _ := args[key].(bool)
+	return value
+}
+
+func selfOpsPlanRequestFromArgs(args map[string]any, meta map[string]any) selfops.PlanRequest {
+	return selfops.PlanRequest{
+		Scope:   stringArg(args, "scope"),
+		DryRun:  boolArg(args, "dry_run"),
+		TraceID: traceIDFromMeta(meta),
+	}
+}
+
+func selfOpsApplyRequestFromArgs(args map[string]any, meta map[string]any) selfops.ApplyRequest {
+	return selfops.ApplyRequest{
+		PlanID:   stringArg(args, "plan_id"),
+		Approved: boolArg(args, "approved"),
+		TraceID:  traceIDFromMeta(meta),
+	}
+}
+
+func isDiagnosticTool(name string) bool {
+	switch name {
+	case "orag_trace_lookup", "orag_diagnose", "orag_runbook_suggest":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSelfOpsTool(name string) bool {
+	switch name {
+	case "orag_maintenance_plan", "orag_apply_low_risk_action":
+		return true
+	default:
+		return false
 	}
 }

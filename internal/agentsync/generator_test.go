@@ -6,12 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shikanon/orag/internal/capabilities"
 )
 
-func TestGenerateFromOpenAPIProducesMCPAndSkillArtifacts(t *testing.T) {
-	files, err := GenerateFromOpenAPI(context.Background(), filepath.Join("..", "..", "api", "openapi.yaml"))
+func TestGenerateFromManifestProducesMCPAndSkillArtifacts(t *testing.T) {
+	files, err := GenerateFromManifest(capabilities.MustBuiltinManifest())
 	if err != nil {
-		t.Fatalf("GenerateFromOpenAPI() error = %v", err)
+		t.Fatalf("GenerateFromManifest() error = %v", err)
 	}
 
 	byPath := map[string]GeneratedFile{}
@@ -19,35 +21,71 @@ func TestGenerateFromOpenAPIProducesMCPAndSkillArtifacts(t *testing.T) {
 		byPath[file.Path] = file
 	}
 	for _, path := range []string{
-		".mcp/tools/ralph-loop.json",
-		".codex/skills/ralph-loop/SKILL.md",
-		".claude/skills/ralph-loop/SKILL.md",
-		".trae/skills/ralph-loop/SKILL.md",
+		"agent/mcp/openapi-facet.json",
+		"agent/mcp/tools/ralph-loop.json",
+		"agent/mcp/tools/orag-self-check.json",
+		"agent/mcp/tools/orag-self-diagnose.json",
+		"agent/mcp/tools/orag-self-ops.json",
+		"agent/skills/codex/ralph-loop/SKILL.md",
+		"agent/skills/claude-code/ralph-loop/SKILL.md",
+		"agent/skills/trae/ralph-loop/SKILL.md",
+		"agent/skills/codex/orag-self-check/SKILL.md",
+		"agent/skills/claude-code/orag-self-diagnose/SKILL.md",
+		"agent/skills/trae/orag-self-ops/SKILL.md",
 	} {
 		if _, ok := byPath[path]; !ok {
 			t.Fatalf("missing generated file %s in %#v", path, files)
 		}
 	}
 
-	mcpTools := byPath[".mcp/tools/ralph-loop.json"].Content
+	mcpTools := byPath["agent/mcp/tools/orag-self-diagnose.json"].Content
 	for _, want := range []string{
-		`"manifest_extension": "x-orag-agent-capabilities"`,
+		`"schema_version": "orag.capabilities.v1"`,
 		`"protocol_version": "2024-11-05"`,
-		`"name": "ralph_loop_run"`,
-		`"task_spec_path"`,
-		`"trace_id"`,
+		`"name": "orag_diagnose"`,
+		`"name": "orag_trace_lookup"`,
+		`"name": "orag_runbook_suggest"`,
+		`"runtime_gate_warning"`,
 	} {
 		if !strings.Contains(mcpTools, want) {
 			t.Fatalf("MCP tools artifact missing %q\n%s", want, mcpTools)
 		}
 	}
+
+	facet := byPath["agent/mcp/openapi-facet.json"].Content
+	for _, want := range []string{
+		`"id": "self-check"`,
+		`"path": "/v1/self-check"`,
+		`"request_schema": "#/components/schemas/SelfCheckRequest"`,
+	} {
+		if !strings.Contains(facet, want) {
+			t.Fatalf("OpenAPI facet artifact missing %q\n%s", want, facet)
+		}
+	}
 }
 
-func TestWriteAndCheckFiles(t *testing.T) {
+func TestGenerateFromOpenAPICompatibilityWrapperUsesManifest(t *testing.T) {
+	files, err := GenerateFromOpenAPI(context.Background(), filepath.Join("..", "..", "api", "openapi.yaml"))
+	if err != nil {
+		t.Fatalf("GenerateFromOpenAPI() error = %v", err)
+	}
+	var found bool
+	for _, file := range files {
+		if file.Path == "agent/mcp/tools/orag-self-check.json" && strings.Contains(file.Content, `"name": "orag_check"`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("compatibility wrapper did not generate manifest self-check tool: %#v", files)
+	}
+}
+
+func TestWriteAndCheckFilesDetectsStaticDrift(t *testing.T) {
 	dir := t.TempDir()
 	files := []GeneratedFile{
-		{Target: "mcp", Path: ".mcp/tools/ralph-loop.json", Content: "{}\n"},
-		{Target: "trae", Path: ".trae/skills/ralph-loop/SKILL.md", Content: "# Trae\n"},
+		{Target: "mcp", Path: "agent/mcp/tools/ralph-loop.json", Content: "{}\n"},
+		{Target: "openapi-facet", Path: "agent/mcp/openapi-facet.json", Content: "{}\n"},
+		{Target: "trae", Path: "agent/skills/trae/orag-self-check/SKILL.md", Content: "# Trae\n"},
 	}
 
 	if err := WriteFiles(dir, files); err != nil {
@@ -57,7 +95,7 @@ func TestWriteAndCheckFiles(t *testing.T) {
 		t.Fatalf("CheckFiles() error = %v", err)
 	}
 
-	path := filepath.Join(dir, ".trae", "skills", "ralph-loop", "SKILL.md")
+	path := filepath.Join(dir, "agent", "skills", "trae", "orag-self-check", "SKILL.md")
 	if err := os.WriteFile(path, []byte("# stale\n"), 0o644); err != nil {
 		t.Fatalf("write stale file: %v", err)
 	}

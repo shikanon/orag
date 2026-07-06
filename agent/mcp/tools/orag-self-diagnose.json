@@ -1,0 +1,232 @@
+{
+  "generated_from": "orag.capabilities.v1",
+  "schema_version": "orag.capabilities.v1",
+  "capability_version": "2026-07-05",
+  "generator_version": "manifest-first.v1",
+  "protocol_version": "2024-11-05",
+  "runtime_gate_warning": "Static make agent-sync-check is the authoritative drift gate; runtime MCP probes are convenience checks only.",
+  "tools": [
+    {
+      "name": "orag_diagnose",
+      "description": "Diagnose ORAG symptoms from trace IDs, command evidence, and user-provided symptoms without performing writes.",
+      "inputSchema": {
+        "description": "Input contract for ORAG Diagnose.",
+        "properties": {
+          "allow_commands": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "symptom": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/DiagnoseRequest"
+      },
+      "outputSchema": {
+        "description": "Output contract for ORAG Diagnose.",
+        "properties": {
+          "severity": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/DiagnoseResult"
+      },
+      "annotations": {
+        "auth": {
+          "env": [
+            "ORAG_API_BASE_URL",
+            "ORAG_API_TOKEN",
+            "ORAG_TENANT_ID"
+          ],
+          "required": true,
+          "scheme": "bearerAuth"
+        },
+        "examples": [
+          {
+            "name": "diagnose-failed-command",
+            "prompt": "Diagnose why make agent-sync-check failed and recommend the next verification command.",
+            "input": {
+              "allow_commands": false,
+              "scope": "mcp",
+              "symptom": "make agent-sync-check failed"
+            },
+            "expected_output": {
+              "severity": "warning",
+              "verdict": "pass"
+            }
+          }
+        ],
+        "operations": {
+          "side_effect": "read_only",
+          "read_only": true,
+          "dry_run_supported": false,
+          "requires_approval": false,
+          "rollback": [
+            "No rollback is required because diagnosis is read-only."
+          ]
+        },
+        "orag_capability_id": "diagnose",
+        "orag_display_name": "ORAG Diagnose",
+        "risk_level": "low",
+        "runtime_gate_warning": "Runtime probes do not replace static make agent-sync-check.",
+        "skill_manifest_name": "orag-self-diagnose",
+        "trace": {
+          "request_header": "X-Trace-ID",
+          "response_field": "trace_id",
+          "response_header": "X-Trace-ID"
+        }
+      }
+    },
+    {
+      "name": "orag_runbook_suggest",
+      "description": "Suggest ORAG runbooks and verification commands without executing writes.",
+      "inputSchema": {
+        "description": "Input contract for ORAG Runbook Suggest.",
+        "properties": {
+          "scope": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/RunbookSuggestRequest"
+      },
+      "outputSchema": {
+        "description": "Output contract for ORAG Runbook Suggest.",
+        "properties": {
+          "runbook": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/RunbookSuggestResponse"
+      },
+      "annotations": {
+        "auth": {
+          "env": [
+            "ORAG_API_BASE_URL",
+            "ORAG_API_TOKEN",
+            "ORAG_TENANT_ID"
+          ],
+          "required": true,
+          "scheme": "bearerAuth"
+        },
+        "examples": [
+          {
+            "name": "storage-runbook",
+            "prompt": "Suggest a runbook for storage readiness failures.",
+            "input": {
+              "scope": "storage",
+              "verdict": "blocked"
+            },
+            "expected_output": {
+              "runbook": "docs/operations/troubleshooting.md",
+              "verdict": "pass"
+            }
+          }
+        ],
+        "operations": {
+          "side_effect": "read_only",
+          "read_only": true,
+          "dry_run_supported": false,
+          "requires_approval": false,
+          "rollback": [
+            "No rollback is required for runbook suggestions."
+          ]
+        },
+        "orag_capability_id": "runbook-suggest",
+        "orag_display_name": "ORAG Runbook Suggest",
+        "risk_level": "low",
+        "runtime_gate_warning": "Runtime probes do not replace static make agent-sync-check.",
+        "skill_manifest_name": "orag-self-diagnose",
+        "trace": {
+          "request_header": "X-Trace-ID",
+          "response_field": "trace_id",
+          "response_header": "X-Trace-ID"
+        }
+      }
+    },
+    {
+      "name": "orag_trace_lookup",
+      "description": "Look up ORAG trace details and return evidence for diagnosis.",
+      "inputSchema": {
+        "description": "Input contract for ORAG Trace Lookup.",
+        "properties": {
+          "trace_id": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/TraceLookupRequest"
+      },
+      "outputSchema": {
+        "description": "Output contract for ORAG Trace Lookup.",
+        "properties": {
+          "trace_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/TraceLookupResponse"
+      },
+      "annotations": {
+        "auth": {
+          "env": [
+            "ORAG_API_BASE_URL",
+            "ORAG_API_TOKEN",
+            "ORAG_TENANT_ID"
+          ],
+          "required": true,
+          "scheme": "bearerAuth"
+        },
+        "examples": [
+          {
+            "name": "trace-lookup",
+            "prompt": "Look up trace trace_req and summarize the failed stage.",
+            "input": {
+              "trace_id": "trace_req"
+            },
+            "expected_output": {
+              "trace_id": "trace_req",
+              "verdict": "pass"
+            }
+          }
+        ],
+        "operations": {
+          "side_effect": "read_only",
+          "read_only": true,
+          "dry_run_supported": false,
+          "requires_approval": false,
+          "rollback": [
+            "No rollback is required for trace reads."
+          ]
+        },
+        "orag_capability_id": "trace-lookup",
+        "orag_display_name": "ORAG Trace Lookup",
+        "risk_level": "low",
+        "runtime_gate_warning": "Runtime probes do not replace static make agent-sync-check.",
+        "skill_manifest_name": "orag-self-diagnose",
+        "trace": {
+          "request_header": "X-Trace-ID",
+          "response_field": "trace_id",
+          "response_header": "X-Trace-ID"
+        }
+      }
+    }
+  ]
+}

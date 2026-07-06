@@ -26,6 +26,28 @@
 
 `/readyz` 当前不会主动调用外部模型服务。`model_provider=configured` 只表示已配置所选 provider 的必需 key，不代表 key、模型名、额度或网络出口一定可用；`model_provider=mock` 只会在显式 deterministic mock 测试模式下出现。
 
+## Agent 自检与自运维
+
+Agent 能力以 capability manifest 为 SSOT。OpenAPI 只是 HTTP facet；MCP 工具、Skills 触发边界、风险等级、运维语义和生成元数据都从 manifest 生成。不要从 OpenAPI 反推 Skill 的安全边界、调用顺序或失败处理。
+
+| 能力 | 入口 | 运维边界 |
+| --- | --- | --- |
+| 静态 drift gate | `make agent-sync-check` | CI/发布权威门禁，不依赖运行时 MCP Server。 |
+| Runtime probe | `orag_check(scope=agent_sync, mode=focused)` | 便利探针，返回 stable check ID、evidence、trace 和 gate warning；不能替代 CI gate。 |
+| 诊断 | `orag_diagnose`、`orag_trace_lookup`、`orag_runbook_suggest` | 只读，根据症状、trace、日志或失败命令给出 findings、recommended actions 和 verification commands。 |
+| Dry-run plan | `orag_maintenance_plan` | 只生成计划，包含 snapshot hash、preconditions、idempotency key、lock key、rollback 和 verification commands。 |
+| 低风险 apply | `orag_apply_low_risk_action` | 仅在明确授权后执行；apply 前复验 snapshot/preconditions，漂移时返回 `verdict=blocked`。 |
+
+常用本地检查：
+
+```bash
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-artifact-tests
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-check-smoke
+```
+
+自运维 apply 使用 TOCTOU 防护：计划生成时记录 snapshot hash 和 preconditions，执行前重新捕获状态；idempotency key 防止重复执行，single-flight lock 防止并发执行。任何漂移、缺少授权或锁冲突都应阻断写操作并要求重新生成计划。
+
 ## Metrics
 
 | 指标 | 类型 | 关键 label | 含义 |
@@ -140,5 +162,6 @@ QDRANT_GRPC_PORT=6334
 | `/readyz` 失败 | [`troubleshooting.md`](./troubleshooting.md) |
 | 查询失败或无上下文 | [`../architecture/rag-pipeline.md`](../architecture/rag-pipeline.md) |
 | 已知 `trace_id` 需要定位 RAG 节点 | `oragctl trace --trace-id <trace_id>` |
+| Agent artifact drift 或 Skill/MCP 不一致 | `make agent-sync-check`，再参考 [`../api/agent-integrations.md`](../api/agent-integrations.md) |
 | API smoke 失败 | [`../getting-started/api-smoke.md`](../getting-started/api-smoke.md) |
 | 镜像拉取或构建超时 | [`../operations.md`](../operations.md) |

@@ -169,10 +169,12 @@ func TestGenerateAgentArtifactsCmdWritesMCPAndSkillOutputs(t *testing.T) {
 	}
 
 	for _, path := range []string{
-		".mcp/tools/ralph-loop.json",
-		".codex/skills/ralph-loop/SKILL.md",
-		".claude/skills/ralph-loop/SKILL.md",
-		".trae/skills/ralph-loop/SKILL.md",
+		"agent/mcp/openapi-facet.json",
+		"agent/mcp/tools/ralph-loop.json",
+		"agent/mcp/tools/orag-self-check.json",
+		"agent/skills/codex/orag-self-check/SKILL.md",
+		"agent/skills/claude-code/orag-self-diagnose/SKILL.md",
+		"agent/skills/trae/orag-self-ops/SKILL.md",
 	} {
 		if !strings.Contains(out.String(), "generated ") || !strings.Contains(out.String(), path) {
 			t.Fatalf("command output missing %s\n%s", path, out.String())
@@ -181,7 +183,7 @@ func TestGenerateAgentArtifactsCmdWritesMCPAndSkillOutputs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read generated %s: %v", path, err)
 		}
-		if !strings.Contains(string(body), "Ralph Loop") && !strings.Contains(string(body), "ralph_loop_run") {
+		if !strings.Contains(string(body), "orag.capabilities.v1") && !strings.Contains(string(body), "ralph_loop_run") {
 			t.Fatalf("generated %s missing expected content\n%s", path, string(body))
 		}
 	}
@@ -195,7 +197,8 @@ func TestGenerateAgentArtifactsCmdWritesMCPAndSkillOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateAgentArtifactsCmd(--check) error = %v", err)
 	}
-	if !strings.Contains(out.String(), "checked mcp .mcp/tools/ralph-loop.json") {
+	if !strings.Contains(out.String(), "checked mcp agent/mcp/tools/ralph-loop.json") ||
+		!strings.Contains(out.String(), "checked openapi-facet agent/mcp/openapi-facet.json") {
 		t.Fatalf("check output missing MCP artifact\n%s", out.String())
 	}
 }

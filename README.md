@@ -198,6 +198,71 @@ OpenAPI 源文件为 `api/openapi.yaml`，服务内置文档入口为 `GET /docs
 
 `INGEST_RAPTOR_ENABLED=true` 会在入库时生成递归摘要 chunk，摘要带 `raptor_summary` metadata 并与原始 chunk 一起进入 embedding/FTS 检索层。`RAG_QUERY_ROUTER_ENABLED=true` 会按 direct、single retrieval、multi-step retrieval 路由查询；direct 查询绕过检索直接生成，complex 查询会走高精检索扩展。`RAG_GRAPH_RETRIEVAL_ENABLED=true` 会在入库时抽取轻量实体关系，并在检索后按查询实体扩展相关 chunk。
 
+## Agent MCP 与 Skills 管理
+
+ORAG 的 MCP 工具定义和 Agent Skills 统一存放在 `agent/` 目录中，作为版本控制的单一事实来源（SSOT）。各客户端（Codex、Claude Code、Trae）使用时，通过 `make install-*` 命令拷贝到对应的隐藏配置目录。
+
+### 目录结构
+
+```text
+agent/
+├── mcp/
+│   ├── openapi-facet.json          # OpenAPI facet 校验产物
+│   └── tools/
+│       ├── ralph-loop.json         # Ralph Loop MCP 工具
+│       ├── orag-self-check.json    # 自检 MCP 工具
+│       ├── orag-self-diagnose.json # 诊断 MCP 工具
+│       └── orag-self-ops.json      # 自运维 MCP 工具
+└── skills/
+    ├── codex/                      # Codex Skills（源文件）
+    │   ├── ralph-loop/
+    │   ├── orag-self-check/
+    │   ├── orag-self-diagnose/
+    │   └── orag-self-ops/
+    ├── claude-code/                # Claude Code Skills（源文件）
+    │   ├── ralph-loop/
+    │   ├── orag-self-check/
+    │   ├── orag-self-diagnose/
+    │   └── orag-self-ops/
+    └── trae/                      # Trae Skills（源文件）
+        ├── ralph-loop/
+        ├── orag-self-check/
+        ├── orag-self-diagnose/
+        └── orag-self-ops/
+```
+
+### 生成与同步
+
+```bash
+# 从 capability manifest 重新生成所有 agent artifacts 到 agent/ 目录
+make agent-sync
+
+# 校验 agent/ 目录中的产物是否与 manifest 一致（CI 门禁）
+make agent-sync-check
+```
+
+### 安装到客户端目录
+
+生成到 `agent/` 后，按需要拷贝到对应 Agent 的隐藏配置目录：
+
+```bash
+# 安装 MCP 工具到 .mcp/（本地 MCP client 使用）
+make install-mcp
+
+# 安装 Skills 到对应客户端目录
+make install-skills-codex     # 拷贝到 .codex/skills/
+make install-skills-claude    # 拷贝到 .claude/skills/
+make install-skills-trae      # 拷贝到 .trae/skills/
+
+# 一次性安装所有 Skills
+make install-skills
+
+# 安装 MCP 工具 + 所有 Skills
+make install-agent
+```
+
+安装后的隐藏目录（`.mcp/`、`.codex/`、`.claude/skills/`、`.trae/skills/`）是部署产物，不纳入版本控制，可随时通过 `make install-*` 重新生成。`.trae/specs/` 目录不受影响，仍用于本地 spec 工作流。
+
 ## 验证
 
 常用本地验证命令：

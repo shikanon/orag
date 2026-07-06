@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shikanon/orag/internal/selfcheck"
+	"github.com/shikanon/orag/internal/selfops"
 )
 
 func TestLoadToolsFromOpenAPI(t *testing.T) {
@@ -105,6 +108,154 @@ func TestServerCallToolReturnsStructuredContent(t *testing.T) {
 	meta := result["_meta"].(map[string]any)
 	if meta["trace_id"] != "trace_1" {
 		t.Fatalf("trace meta = %#v", meta)
+	}
+}
+
+func TestServerListsAndRunsSelfCheckTool(t *testing.T) {
+	tools, err := LoadToolsFromArtifacts("../../agent/mcp/tools/orag-self-check.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServer(tools, RuntimeConfig{}, fakeToolClient{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.checks = fakeSelfCheckExecutor{
+		envelope: selfcheck.Envelope{
+			SchemaVersion:      selfcheck.SchemaVersion,
+			TraceID:            "trace_selfcheck",
+			Scope:              selfcheck.ScopeAgentSync,
+			Mode:               selfcheck.ModeFocused,
+			Verdict:            selfcheck.VerdictPass,
+			ExitCode:           0,
+			RuntimeGateWarning: selfcheck.RuntimeGateWarning,
+			Results: []selfcheck.CheckResult{{
+				ID:       "orag.selfcheck.agent_sync.artifacts",
+				Scope:    selfcheck.ScopeAgentSync,
+				Name:     "Agent artifact drift",
+				Severity: selfcheck.SeverityCritical,
+				Status:   selfcheck.StatusPass,
+				Verdict:  selfcheck.VerdictPass,
+			}},
+		},
+	}
+
+	listResp := handleResponse(t, server, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
+	if listResp.Error != nil {
+		t.Fatalf("tools/list error = %#v", listResp.Error)
+	}
+	listed := listResp.Result.(map[string]any)["tools"].([]any)[0].(map[string]any)
+	if listed["name"] != "orag_check" {
+		t.Fatalf("listed tool = %#v, want orag_check", listed)
+	}
+
+	callResp := handleResponse(t, server, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"orag_check","arguments":{"scope":"agent_sync","mode":"focused"},"_meta":{"trace_id":"trace_req"}}}`)
+	if callResp.Error != nil {
+		t.Fatalf("tools/call error = %#v", callResp.Error)
+	}
+	result := callResp.Result.(map[string]any)
+	if result["isError"] != false {
+		t.Fatalf("isError = %#v", result["isError"])
+	}
+	content := result["structuredContent"].(map[string]any)
+	if content["schema_version"] != selfcheck.SchemaVersion || content["verdict"] != "pass" {
+		t.Fatalf("unexpected structured content: %#v", content)
+	}
+	if !strings.Contains(content["runtime_gate_warning"].(string), "authoritative release gate") {
+		t.Fatalf("missing gate warning: %#v", content)
+	}
+}
+
+func TestServerRunsSelfOpsPlanAndApplyTools(t *testing.T) {
+	tools, err := LoadToolsFromArtifacts("../../agent/mcp/tools/orag-self-ops.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServer(tools, RuntimeConfig{}, fakeToolClient{err: errors.New("http client should not be called")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.ops = fakeSelfOpsExecutor{
+		plan: selfops.Plan{
+			SchemaVersion:  selfops.SchemaVersion,
+			TraceID:        "trace_plan",
+			PlanID:         "plan_1",
+			Scope:          selfops.ScopeAgentArtifacts,
+			Verdict:        selfops.VerdictPass,
+			Status:         selfops.StatusPlanned,
+			DryRun:         true,
+			IdempotencyKey: "selfops:key",
+			LockKey:        "selfops:agent-artifacts",
+		},
+		apply: selfops.ApplyResult{
+			SchemaVersion:  selfops.SchemaVersion,
+			TraceID:        "trace_apply",
+			PlanID:         "plan_1",
+			Verdict:        selfops.VerdictPass,
+			Status:         selfops.StatusCompleted,
+			IdempotencyKey: "selfops:key",
+			LockKey:        "selfops:agent-artifacts",
+		},
+	}
+
+	planResp := handleResponse(t, server, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"orag_maintenance_plan","arguments":{"scope":"agent_artifacts","dry_run":true},"_meta":{"trace_id":"trace_req"}}}`)
+	if planResp.Error != nil {
+		t.Fatalf("maintenance plan error = %#v", planResp.Error)
+	}
+	planResult := planResp.Result.(map[string]any)
+	if planResult["isError"] != false {
+		t.Fatalf("plan isError = %#v", planResult["isError"])
+	}
+	planContent := planResult["structuredContent"].(map[string]any)
+	if planContent["plan_id"] != "plan_1" || planContent["lock_key"] != "selfops:agent-artifacts" {
+		t.Fatalf("unexpected plan content: %#v", planContent)
+	}
+
+	applyResp := handleResponse(t, server, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"orag_apply_low_risk_action","arguments":{"plan_id":"plan_1","approved":true},"_meta":{"trace_id":"trace_req"}}}`)
+	if applyResp.Error != nil {
+		t.Fatalf("apply error = %#v", applyResp.Error)
+	}
+	applyResult := applyResp.Result.(map[string]any)
+	applyContent := applyResult["structuredContent"].(map[string]any)
+	if applyResult["isError"] != false || applyContent["status"] != selfops.StatusCompleted {
+		t.Fatalf("unexpected apply content: %#v", applyResult)
+	}
+}
+
+func TestServerListsAndRunsDiagnosticTools(t *testing.T) {
+	tools, err := LoadToolsFromArtifacts("../../agent/mcp/tools/orag-self-diagnose.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServer(tools, RuntimeConfig{}, fakeToolClient{err: errors.New("diagnostics must not call HTTP client")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	listResp := handleResponse(t, server, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
+	if listResp.Error != nil {
+		t.Fatalf("tools/list error = %#v", listResp.Error)
+	}
+	listed := listResp.Result.(map[string]any)["tools"].([]any)
+	if len(listed) != 3 {
+		t.Fatalf("diagnostic tools len = %d, want 3", len(listed))
+	}
+
+	callResp := handleResponse(t, server, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"orag_diagnose","arguments":{"scope":"agent_sync","symptom":"make agent-sync-check failed","failed_command":"make agent-sync-check","failed_command_exit_code":1,"failed_command_output":"generated content differs","allow_commands":true},"_meta":{"trace_id":"trace_req"}}}`)
+	if callResp.Error != nil {
+		t.Fatalf("tools/call error = %#v", callResp.Error)
+	}
+	result := callResp.Result.(map[string]any)
+	if result["isError"] != true {
+		t.Fatalf("isError = %#v, want true for failed diagnosis", result["isError"])
+	}
+	content := result["structuredContent"].(map[string]any)
+	if content["schema_version"] != selfcheck.SchemaVersion || content["verdict"] != "fail" || content["read_only"] != true {
+		t.Fatalf("unexpected diagnostic structured content: %#v", content)
+	}
+	meta := result["_meta"].(map[string]any)
+	if meta["trace_id"] != "trace_req" || meta["exit_code"].(float64) != 1 {
+		t.Fatalf("unexpected diagnostic meta: %#v", meta)
 	}
 }
 
@@ -267,6 +418,38 @@ func validArgs() map[string]any {
 type fakeToolClient struct {
 	result ToolResult
 	err    error
+}
+
+type fakeSelfCheckExecutor struct {
+	envelope selfcheck.Envelope
+	err      error
+}
+
+type fakeSelfOpsExecutor struct {
+	plan  selfops.Plan
+	apply selfops.ApplyResult
+	err   error
+}
+
+func (f fakeSelfCheckExecutor) Execute(context.Context, selfcheck.Request) (selfcheck.Envelope, error) {
+	if f.err != nil {
+		return selfcheck.Envelope{}, f.err
+	}
+	return f.envelope, nil
+}
+
+func (f fakeSelfOpsExecutor) Plan(context.Context, selfops.PlanRequest) (selfops.Plan, error) {
+	if f.err != nil {
+		return selfops.Plan{}, f.err
+	}
+	return f.plan, nil
+}
+
+func (f fakeSelfOpsExecutor) Apply(context.Context, selfops.ApplyRequest) (selfops.ApplyResult, error) {
+	if f.err != nil {
+		return selfops.ApplyResult{}, f.err
+	}
+	return f.apply, nil
 }
 
 func (f fakeToolClient) CallTool(context.Context, RuntimeConfig, ToolDefinition, map[string]any, map[string]any) (ToolResult, error) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -20,6 +21,31 @@ type ToolDefinition struct {
 	Annotations  map[string]any `json:"annotations,omitempty"`
 
 	Capability Capability `json:"-"`
+}
+
+type generatedToolFile struct {
+	Tools []ToolDefinition `json:"tools"`
+}
+
+func LoadToolsFromArtifacts(paths ...string) ([]ToolDefinition, error) {
+	var tools []ToolDefinition
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read MCP artifact %s: %w", path, err)
+		}
+		var file generatedToolFile
+		if err := json.Unmarshal(data, &file); err != nil {
+			return nil, fmt.Errorf("decode MCP artifact %s: %w", path, err)
+		}
+		for _, tool := range file.Tools {
+			if strings.TrimSpace(tool.Name) == "" {
+				return nil, fmt.Errorf("MCP artifact %s contains tool with empty name", path)
+			}
+			tools = append(tools, tool)
+		}
+	}
+	return tools, nil
 }
 
 type Capability struct {

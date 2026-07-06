@@ -10,10 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/shikanon/orag/internal/agentsync"
 	core "github.com/shikanon/orag/internal/app"
+	"github.com/shikanon/orag/internal/capabilities"
 	"github.com/shikanon/orag/internal/config"
 	evalpkg "github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/platform/logger"
@@ -86,12 +88,18 @@ func generateAgentArtifactsCmd(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("generate-agent-artifacts", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	openAPIPath := fs.String("openapi", filepath.Join("api", "openapi.yaml"), "OpenAPI document path")
+	manifestPath := fs.String("manifest", "builtin", "capability manifest JSON path or builtin")
 	outputDir := fs.String("out", ".", "directory where generated MCP and Skill files are written")
 	check := fs.Bool("check", false, "verify generated files are in sync without writing")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	files, err := agentsync.GenerateFromOpenAPI(context.Background(), *openAPIPath)
+	_ = openAPIPath // kept for CLI compatibility; manifest is the Task 2 SSOT.
+	manifest, err := loadCapabilityManifest(*manifestPath)
+	if err != nil {
+		return err
+	}
+	files, err := agentsync.GenerateFromManifest(manifest)
 	if err != nil {
 		return err
 	}
@@ -111,6 +119,18 @@ func generateAgentArtifactsCmd(args []string, out io.Writer) error {
 		fmt.Fprintf(out, "generated %s %s\n", file.Target, file.Path)
 	}
 	return nil
+}
+
+func loadCapabilityManifest(path string) (capabilities.Manifest, error) {
+	if strings.TrimSpace(path) == "" || path == "builtin" {
+		return capabilities.MustBuiltinManifest(), nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return capabilities.Manifest{}, err
+	}
+	defer file.Close()
+	return capabilities.LoadJSON(file)
 }
 
 func mustApp(cfg config.Config) *core.App {

@@ -1,0 +1,116 @@
+{
+  "generated_from": "orag.capabilities.v1",
+  "schema_version": "orag.capabilities.v1",
+  "capability_version": "2026-07-05",
+  "generator_version": "manifest-first.v1",
+  "protocol_version": "2024-11-05",
+  "runtime_gate_warning": "Static make agent-sync-check is the authoritative drift gate; runtime MCP probes are convenience checks only.",
+  "tools": [
+    {
+      "name": "ralph_loop_run",
+      "description": "Execute a Ralph Loop task verification workflow through the ORAG API contract.",
+      "inputSchema": {
+        "description": "Input contract for the Ralph Loop agent capability.",
+        "properties": {
+          "base_ref": {
+            "type": "string"
+          },
+          "max_rounds": {
+            "maximum": 20,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "focused",
+              "broad"
+            ],
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task label to verify, for example Task 1.",
+            "type": "string"
+          },
+          "task_spec_path": {
+            "description": "Repository-relative path to the spec tasks file or task directory.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_spec_path",
+          "task_id",
+          "mode",
+          "max_rounds"
+        ],
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/RalphLoopRequest"
+      },
+      "outputSchema": {
+        "description": "Output contract for Ralph Loop.",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/RalphLoopResponse"
+      },
+      "annotations": {
+        "auth": {
+          "env": [
+            "ORAG_API_BASE_URL",
+            "ORAG_API_TOKEN",
+            "ORAG_TENANT_ID"
+          ],
+          "required": true,
+          "scheme": "bearerAuth"
+        },
+        "examples": [
+          {
+            "name": "verify-task1",
+            "prompt": "Run Ralph Loop for Task 1 in focused mode with at most one round, then report the verdict and trace ID.",
+            "input": {
+              "max_rounds": 1,
+              "mode": "focused",
+              "task_id": "Task 1",
+              "task_spec_path": ".trae/specs/add-ralph-loop-mcp-skills/tasks.md"
+            },
+            "expected_output": {
+              "status": "completed",
+              "trace_id": "trace_ralph_loop_example",
+              "verdict": "pass"
+            }
+          }
+        ],
+        "operations": {
+          "side_effect": "read_only",
+          "read_only": true,
+          "dry_run_supported": false,
+          "requires_approval": false,
+          "rollback": [
+            "No rollback is required because the capability is planned-only and does not perform writes."
+          ]
+        },
+        "orag_capability_id": "ralph-loop",
+        "orag_display_name": "Ralph Loop",
+        "risk_level": "low",
+        "runtime_gate_warning": "Runtime probes do not replace static make agent-sync-check.",
+        "skill_manifest_name": "ralph-loop",
+        "trace": {
+          "request_header": "X-Trace-ID",
+          "response_field": "trace_id",
+          "response_header": "X-Trace-ID"
+        }
+      }
+    }
+  ]
+}

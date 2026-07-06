@@ -1,0 +1,110 @@
+{
+  "generated_from": "orag.capabilities.v1",
+  "schema_version": "orag.capabilities.v1",
+  "capability_version": "2026-07-05",
+  "generator_version": "manifest-first.v1",
+  "protocol_version": "2024-11-05",
+  "runtime_gate_warning": "Static make agent-sync-check is the authoritative drift gate; runtime MCP probes are convenience checks only.",
+  "tools": [
+    {
+      "name": "orag_check",
+      "description": "Run a read-only ORAG self-check and return stable check IDs, evidence, verdict, and trace metadata.",
+      "inputSchema": {
+        "description": "Input contract for read-only ORAG self-checks.",
+        "properties": {
+          "mode": {
+            "enum": [
+              "focused",
+              "broad"
+            ],
+            "type": "string"
+          },
+          "overall_deadline_seconds": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_check_timeout_seconds": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "health",
+              "contract",
+              "agent_sync",
+              "smoke",
+              "storage",
+              "config",
+              "release",
+              "all"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "mode"
+        ],
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/SelfCheckRequest"
+      },
+      "outputSchema": {
+        "description": "Output contract for ORAG Self Check.",
+        "properties": {
+          "schema_version": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-orag-schema-ref": "#/components/schemas/SelfCheckResult"
+      },
+      "annotations": {
+        "auth": {
+          "env": [
+            "ORAG_API_BASE_URL",
+            "ORAG_API_TOKEN",
+            "ORAG_TENANT_ID"
+          ],
+          "required": true,
+          "scheme": "bearerAuth"
+        },
+        "examples": [
+          {
+            "name": "agent-sync-focused",
+            "prompt": "Check whether ORAG MCP and Skill artifacts are synchronized.",
+            "input": {
+              "mode": "focused",
+              "scope": "agent_sync"
+            },
+            "expected_output": {
+              "schema_version": "orag.selfops.result.v1",
+              "verdict": "pass"
+            }
+          }
+        ],
+        "operations": {
+          "side_effect": "read_only",
+          "read_only": true,
+          "dry_run_supported": false,
+          "requires_approval": false,
+          "rollback": [
+            "No rollback is required for read-only checks."
+          ]
+        },
+        "orag_capability_id": "self-check",
+        "orag_display_name": "ORAG Self Check",
+        "risk_level": "low",
+        "runtime_gate_warning": "Runtime probes do not replace static make agent-sync-check.",
+        "skill_manifest_name": "orag-self-check",
+        "trace": {
+          "request_header": "X-Trace-ID",
+          "response_field": "trace_id",
+          "response_header": "X-Trace-ID"
+        }
+      }
+    }
+  ]
+}
