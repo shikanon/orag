@@ -62,6 +62,89 @@ func TestInMemorySemanticCacheIsolatesProfileAndTopK(t *testing.T) {
 	}
 }
 
+func TestInMemorySemanticCacheIsolatesNamespace(t *testing.T) {
+	ctx := context.Background()
+	cache := NewSemanticCache(10)
+	entry := SemanticCacheEntry{
+		Namespace:       "optimizer_candidate:cand_a",
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+		Profile:         ProfileRealtime,
+		TopK:            8,
+		Response: QueryResponse{
+			Answer:  "candidate a answer",
+			Profile: ProfileRealtime,
+			Citations: []Citation{{
+				ChunkID:    "chk_a",
+				DocumentID: "doc_a",
+				SourceURI:  "memory://candidate-a",
+			}},
+		},
+	}
+	if err := cache.Store(ctx, entry); err != nil {
+		t.Fatalf("Store() error = %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		namespace string
+		wantHit   bool
+	}{
+		{name: "same namespace", namespace: entry.Namespace, wantHit: true},
+		{name: "different namespace", namespace: "optimizer_candidate:cand_b", wantHit: false},
+		{name: "empty namespace", namespace: "", wantHit: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, ok, err := cache.Lookup(ctx, SemanticCacheLookupRequest{
+				Namespace:       tt.namespace,
+				TenantID:        entry.TenantID,
+				KnowledgeBaseID: entry.KnowledgeBaseID,
+				Query:           entry.Query,
+				Profile:         entry.Profile,
+				TopK:            entry.TopK,
+			})
+			if err != nil {
+				t.Fatalf("Lookup() error = %v", err)
+			}
+			if ok != tt.wantHit {
+				t.Fatalf("Lookup() hit = %v, want %v", ok, tt.wantHit)
+			}
+			if ok {
+				if len(resp.Citations) != 1 || resp.Citations[0].ChunkID != "chk_a" {
+					t.Fatalf("Lookup() response = %#v, want candidate a chunk", resp)
+				}
+			}
+		})
+	}
+
+	legacyEntry := entry
+	legacyEntry.Namespace = ""
+	legacyEntry.Response.Answer = "legacy answer"
+	legacyEntry.Response.Citations = []Citation{{
+		ChunkID:    "chk_legacy",
+		DocumentID: "doc_legacy",
+		SourceURI:  "memory://legacy",
+	}}
+	if err := cache.Store(ctx, legacyEntry); err != nil {
+		t.Fatalf("Store() legacy error = %v", err)
+	}
+	resp, ok, err := cache.Lookup(ctx, SemanticCacheLookupRequest{
+		TenantID:        legacyEntry.TenantID,
+		KnowledgeBaseID: legacyEntry.KnowledgeBaseID,
+		Query:           legacyEntry.Query,
+		Profile:         legacyEntry.Profile,
+		TopK:            legacyEntry.TopK,
+	})
+	if err != nil {
+		t.Fatalf("Lookup() legacy error = %v", err)
+	}
+	if !ok || len(resp.Citations) != 1 || resp.Citations[0].ChunkID != "chk_legacy" {
+		t.Fatalf("legacy lookup = %#v, hit %v; want legacy chunk hit", resp, ok)
+	}
+}
+
 func TestCacheKeyIncludesProfileAndTopK(t *testing.T) {
 	base := QueryRequest{
 		TenantID:        "tenant_default",
@@ -95,6 +178,15 @@ func TestCacheKeyIncludesProfileAndTopK(t *testing.T) {
 	}
 	if CacheKey(base) != CacheKey(queryWhitespaceVariant) {
 		t.Fatalf("CacheKey() should normalize query case and whitespace")
+	}
+	if NamespacedCacheKey("", base) != CacheKey(base) {
+		t.Fatalf("empty namespace should preserve existing CacheKey() behavior")
+	}
+	if NamespacedCacheKey("optimizer_candidate:cand_a", base) == CacheKey(base) {
+		t.Fatalf("namespaced key should differ from the existing unnamespaced key")
+	}
+	if NamespacedCacheKey("optimizer_candidate:cand_a", base) == NamespacedCacheKey("optimizer_candidate:cand_b", base) {
+		t.Fatalf("namespaced key should differ by namespace")
 	}
 }
 

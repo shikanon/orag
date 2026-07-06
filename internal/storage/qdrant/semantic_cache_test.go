@@ -14,6 +14,7 @@ import (
 func TestSemanticCachePayloadRoundTrip(t *testing.T) {
 	now := time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC)
 	entry := rag.SemanticCacheEntry{
+		Namespace:       "optimizer_candidate:cand_a",
 		TenantID:        "tenant_default",
 		KnowledgeBaseID: "kb_default",
 		Query:           "qdrant cache",
@@ -49,6 +50,9 @@ func TestSemanticCachePayloadRoundTrip(t *testing.T) {
 	}
 	if got := payloadString(payload, "profile"); got != string(entry.Profile) {
 		t.Fatalf("payload profile = %q", got)
+	}
+	if got := payloadString(payload, "namespace"); got != entry.Namespace {
+		t.Fatalf("payload namespace = %q, want %q", got, entry.Namespace)
 	}
 	if got := payload["top_k"].GetIntegerValue(); got != int64(entry.TopK) {
 		t.Fatalf("payload top_k = %d", got)
@@ -102,6 +106,26 @@ func TestSemanticCacheLookupFilterIncludesProfile(t *testing.T) {
 	}
 }
 
+func TestSemanticCacheLookupFilterIncludesNamespaceWhenPresent(t *testing.T) {
+	req := rag.SemanticCacheLookupRequest{
+		Namespace:       " optimizer_candidate:cand_a ",
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Profile:         rag.ProfileRealtime,
+		TopK:            12,
+	}
+
+	filter := semanticCacheLookupFilter(req)
+	if got := filterKeyword(t, filter, "namespace"); got != "optimizer_candidate:cand_a" {
+		t.Fatalf("namespace filter = %q, want trimmed namespace", got)
+	}
+
+	req.Namespace = ""
+	if filterHasField(semanticCacheLookupFilter(req), "namespace") {
+		t.Fatalf("empty namespace should not add a namespace filter")
+	}
+}
+
 func TestSemanticCachePointKeyUsesResolvedProfile(t *testing.T) {
 	entry := rag.SemanticCacheEntry{
 		TenantID:        "tenant_default",
@@ -141,6 +165,47 @@ func TestSemanticCachePointKeyUsesResolvedProfile(t *testing.T) {
 	}
 }
 
+func TestSemanticCachePointKeyIncludesNamespace(t *testing.T) {
+	entry := rag.SemanticCacheEntry{
+		Namespace:       "optimizer_candidate:cand_a",
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant cache",
+		Profile:         rag.ProfileRealtime,
+		TopK:            8,
+	}
+
+	got := semanticCachePointKey(entry)
+	want := rag.NamespacedCacheKey(entry.Namespace, rag.QueryRequest{
+		TenantID:        entry.TenantID,
+		KnowledgeBaseID: entry.KnowledgeBaseID,
+		Query:           entry.Query,
+		Profile:         entry.Profile,
+		TopK:            entry.TopK,
+	})
+	if got != want {
+		t.Fatalf("point key = %q, want %q", got, want)
+	}
+
+	namespaceVariant := entry
+	namespaceVariant.Namespace = "optimizer_candidate:cand_b"
+	if semanticCachePointKey(namespaceVariant) == got {
+		t.Fatalf("point key should differ by namespace")
+	}
+
+	legacy := entry
+	legacy.Namespace = ""
+	if semanticCachePointKey(legacy) != rag.CacheKey(rag.QueryRequest{
+		TenantID:        legacy.TenantID,
+		KnowledgeBaseID: legacy.KnowledgeBaseID,
+		Query:           legacy.Query,
+		Profile:         legacy.Profile,
+		TopK:            legacy.TopK,
+	}) {
+		t.Fatalf("empty namespace should preserve legacy point key")
+	}
+}
+
 func TestSemanticCacheLookupPayloadRequiresMatchingProfile(t *testing.T) {
 	payload := map[string]*qdrant.Value{
 		"profile":        stringValue(string(rag.ProfileRealtime)),
@@ -164,6 +229,52 @@ func TestSemanticCacheLookupPayloadRequiresMatchingProfile(t *testing.T) {
 	delete(payload, "profile")
 	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{Profile: rag.ProfileRealtime}, payload); ok {
 		t.Fatalf("empty profile payload should miss")
+	}
+}
+
+func TestSemanticCacheLookupPayloadRequiresMatchingNamespace(t *testing.T) {
+	payload := map[string]*qdrant.Value{
+		"namespace":      stringValue("optimizer_candidate:cand_a"),
+		"profile":        stringValue(string(rag.ProfileRealtime)),
+		"answer":         stringValue("cached answer"),
+		"citations_json": stringValue("[]"),
+		"retrieved_json": stringValue("[]"),
+	}
+
+	resp, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{
+		Namespace: "optimizer_candidate:cand_a",
+		Profile:   rag.ProfileRealtime,
+	}, payload)
+	if !ok {
+		t.Fatalf("same namespace payload should hit")
+	}
+	if resp.Answer != "cached answer" {
+		t.Fatalf("response answer = %q", resp.Answer)
+	}
+
+	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{
+		Namespace: "optimizer_candidate:cand_b",
+		Profile:   rag.ProfileRealtime,
+	}, payload); ok {
+		t.Fatalf("mismatched namespace payload should miss")
+	}
+	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{
+		Profile: rag.ProfileRealtime,
+	}, payload); ok {
+		t.Fatalf("unnamespaced request should not hit namespaced payload")
+	}
+
+	delete(payload, "namespace")
+	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{
+		Namespace: "optimizer_candidate:cand_a",
+		Profile:   rag.ProfileRealtime,
+	}, payload); ok {
+		t.Fatalf("namespaced request should not hit legacy payload")
+	}
+	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{
+		Profile: rag.ProfileRealtime,
+	}, payload); !ok {
+		t.Fatalf("unnamespaced request should still hit legacy payload")
 	}
 }
 
@@ -217,6 +328,16 @@ func filterField(t *testing.T, filter *qdrant.Filter, key string) *qdrant.FieldC
 	}
 	t.Fatalf("filter missing field %q", key)
 	return nil
+}
+
+func filterHasField(filter *qdrant.Filter, key string) bool {
+	for _, cond := range filter.GetMust() {
+		field := cond.GetField()
+		if field.GetKey() == key {
+			return true
+		}
+	}
+	return false
 }
 
 type recordingPointsClient struct {

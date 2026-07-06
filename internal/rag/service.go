@@ -34,6 +34,7 @@ type Service struct {
 	TopK                   int
 	Pipeline               Pipeline
 	SemanticCacheThreshold float64
+	SemanticCacheNamespace string
 	RRFK                   int
 
 	QueryRewriteEnabled bool
@@ -225,6 +226,7 @@ func (s *Service) LookupSemanticCache(ctx context.Context, req QueryRequest, vec
 		return QueryResponse{}, false, ""
 	}
 	cached, ok, err := s.Cache.Lookup(ctx, SemanticCacheLookupRequest{
+		Namespace:       s.SemanticCacheNamespace,
 		TenantID:        req.TenantID,
 		KnowledgeBaseID: req.KnowledgeBaseID,
 		Query:           req.Query,
@@ -259,6 +261,7 @@ func (s *Service) StoreSemanticCache(ctx context.Context, req QueryRequest, vect
 	}
 	resp.Profile = cacheProfile
 	if err := s.Cache.Store(ctx, SemanticCacheEntry{
+		Namespace:       s.SemanticCacheNamespace,
 		TenantID:        req.TenantID,
 		KnowledgeBaseID: req.KnowledgeBaseID,
 		Query:           req.Query,

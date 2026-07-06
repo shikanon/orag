@@ -18,6 +18,7 @@ func TestInternalRAGRunnerAppliesCandidateToClonedService(t *testing.T) {
 		Packer:                 rag.ContextPacker{TopN: 2},
 		TopK:                   5,
 		SemanticCacheThreshold: 0.88,
+		SemanticCacheNamespace: "production",
 		RRFK:                   60,
 		MultiQueryCount:        1,
 	}
@@ -90,6 +91,9 @@ func TestInternalRAGRunnerAppliesCandidateToClonedService(t *testing.T) {
 	if capturedService.SemanticCacheThreshold != 0.96 || !capturedService.QueryRewriteEnabled || !capturedService.HyDEEnabled || capturedService.MultiQueryCount != 3 {
 		t.Fatalf("candidate graph/cache settings not applied: %#v", capturedService)
 	}
+	if capturedService.SemanticCacheNamespace != "optimizer_candidate:"+candidate.ID {
+		t.Fatalf("candidate semantic cache namespace = %q, want candidate namespace", capturedService.SemanticCacheNamespace)
+	}
 	clonedHybrid, ok := capturedService.Retriever.(*kb.HybridRetriever)
 	if !ok {
 		t.Fatalf("candidate retriever type = %T, want cloned hybrid retriever", capturedService.Retriever)
@@ -101,7 +105,7 @@ func TestInternalRAGRunnerAppliesCandidateToClonedService(t *testing.T) {
 		t.Fatalf("candidate retriever = %#v, want retrieval overrides", clonedHybrid)
 	}
 
-	if base.Packer.TopN != 2 || base.TopK != 5 || base.SemanticCacheThreshold != 0.88 || base.RRFK != 60 || base.QueryRewriteEnabled || base.HyDEEnabled || base.MultiQueryCount != 1 {
+	if base.Packer.TopN != 2 || base.TopK != 5 || base.SemanticCacheThreshold != 0.88 || base.SemanticCacheNamespace != "production" || base.RRFK != 60 || base.QueryRewriteEnabled || base.HyDEEnabled || base.MultiQueryCount != 1 {
 		t.Fatalf("base RAG was mutated: %#v", base)
 	}
 	if baseRetriever.DenseTopK != 3 || baseRetriever.SparseTopK != 4 || baseRetriever.RRFK != 30 {
@@ -155,6 +159,44 @@ func TestInternalRAGRunnerAppliesExplicitFalseGraphCandidate(t *testing.T) {
 	}
 	if !base.QueryRewriteEnabled || !base.HyDEEnabled {
 		t.Fatalf("base RAG was mutated: %#v", base)
+	}
+}
+
+func TestInternalRAGRunnerAssignsDeterministicSemanticCacheNamespace(t *testing.T) {
+	candidate := CandidateConfig{
+		Retrieval: RetrievalCandidate{RRFK: 90},
+	}
+	wantCandidate := candidate.WithDeterministicID("internal_rag")
+	base := &rag.Service{}
+	var capturedService *rag.Service
+	runner := InternalRAGRunner{
+		BaseRAG: base,
+		BuildEvaluationRunner: func(service *rag.Service) EvaluationRunner {
+			capturedService = service
+			return fakeEvaluationRunner{run: eval.RunResult{ID: "eval_candidate"}}
+		},
+	}
+
+	result, err := runner.RunCandidate(context.Background(), CandidateRunRequest{
+		TenantID:        "tenant_a",
+		DatasetID:       "ds_1",
+		KnowledgeBaseID: "kb_1",
+		Candidate:       candidate,
+	})
+	if err != nil {
+		t.Fatalf("RunCandidate() error = %v", err)
+	}
+	if result.CandidateID != wantCandidate.ID {
+		t.Fatalf("candidate id = %q, want deterministic %q", result.CandidateID, wantCandidate.ID)
+	}
+	if capturedService == nil {
+		t.Fatal("candidate service was not captured")
+	}
+	if capturedService.SemanticCacheNamespace != "optimizer_candidate:"+wantCandidate.ID {
+		t.Fatalf("candidate semantic cache namespace = %q, want deterministic candidate namespace", capturedService.SemanticCacheNamespace)
+	}
+	if base.SemanticCacheNamespace != "" {
+		t.Fatalf("base semantic cache namespace = %q, want unchanged empty namespace", base.SemanticCacheNamespace)
 	}
 }
 

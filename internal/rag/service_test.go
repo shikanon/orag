@@ -54,6 +54,53 @@ func TestLookupSemanticCachePreservesCachedProfile(t *testing.T) {
 	}
 }
 
+func TestSemanticCacheNamespacePropagatesLookupAndStore(t *testing.T) {
+	cache := &semanticCacheStub{
+		resp: QueryResponse{
+			Answer:  "cached realtime answer",
+			Profile: ProfileRealtime,
+		},
+		hit: true,
+	}
+	service := Service{
+		Cache:                  cache,
+		SemanticCacheThreshold: 0.92,
+		SemanticCacheNamespace: "optimizer_candidate:cand_a",
+	}
+	req := QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+	}
+
+	_, ok, warning := service.LookupSemanticCache(context.Background(), req, []float64{0.1, 0.2}, "trace_realtime", ProfileRealtime, 16, time.Now())
+	if warning != "" {
+		t.Fatalf("LookupSemanticCache() warning = %q", warning)
+	}
+	if !ok {
+		t.Fatalf("LookupSemanticCache() hit = false, want true")
+	}
+	if cache.lookupReq.Namespace != service.SemanticCacheNamespace {
+		t.Fatalf("lookup namespace = %q, want %q", cache.lookupReq.Namespace, service.SemanticCacheNamespace)
+	}
+
+	resp := QueryResponse{
+		Answer:  "candidate answer",
+		Profile: ProfileRealtime,
+		Citations: []Citation{{
+			ChunkID:    "chk_a",
+			DocumentID: "doc_a",
+			SourceURI:  "memory://candidate-a",
+		}},
+	}
+	if warning := service.StoreSemanticCache(context.Background(), req, []float64{0.1, 0.2}, ProfileRealtime, 16, resp); warning != "" {
+		t.Fatalf("StoreSemanticCache() warning = %q", warning)
+	}
+	if cache.storeEntry.Namespace != service.SemanticCacheNamespace {
+		t.Fatalf("store namespace = %q, want %q", cache.storeEntry.Namespace, service.SemanticCacheNamespace)
+	}
+}
+
 func TestExecuteHighPrecisionMultiQueryAndHyDEUseExpandedRetrieval(t *testing.T) {
 	ctx := context.Background()
 	retriever := &recordingServiceRetriever{}
@@ -250,10 +297,11 @@ func TestExecuteDirectRouteBypassesRetrieval(t *testing.T) {
 }
 
 type semanticCacheStub struct {
-	lookupReq SemanticCacheLookupRequest
-	resp      QueryResponse
-	hit       bool
-	err       error
+	lookupReq  SemanticCacheLookupRequest
+	storeEntry SemanticCacheEntry
+	resp       QueryResponse
+	hit        bool
+	err        error
 }
 
 type fixedQueryRouter struct {
@@ -270,7 +318,8 @@ func (s *semanticCacheStub) Lookup(_ context.Context, req SemanticCacheLookupReq
 	return s.resp, s.hit, s.err
 }
 
-func (s *semanticCacheStub) Store(context.Context, SemanticCacheEntry) error {
+func (s *semanticCacheStub) Store(_ context.Context, entry SemanticCacheEntry) error {
+	s.storeEntry = entry
 	return nil
 }
 
