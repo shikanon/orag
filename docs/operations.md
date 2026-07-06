@@ -124,12 +124,12 @@ docker build -f deployments/Dockerfile -t orag-api:local .
 docker compose -f deployments/docker-compose.yml up --build
 ```
 
-完整栈运行时，`.env` 中应使用容器网络地址：
+完整栈运行时，Compose 默认会覆盖为容器网络地址；如需显式覆盖，使用 `DOCKER_*` 变量：
 
 ```dotenv
-DATABASE_URL=postgres://orag:orag@postgres:5432/orag?sslmode=disable
-QDRANT_HOST=qdrant
-QDRANT_GRPC_PORT=6334
+DOCKER_DATABASE_URL=postgres://orag:orag@postgres:5432/orag?sslmode=disable
+DOCKER_QDRANT_HOST=qdrant
+DOCKER_QDRANT_GRPC_PORT=6334
 ```
 
 如果在 Mac 宿主机直接运行 API，则继续使用 [`.env.example`](../.env.example) 风格的 `localhost`：

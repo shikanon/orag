@@ -279,12 +279,15 @@ func (s *Service) run(ctx context.Context, runID string, req SubmitRequest) erro
 		if _, ok := completed[candidate.ID]; ok || isCandidateComplete(candidate.Status) {
 			continue
 		}
-		if stop, err := s.shouldStop(ctx, &run, req, started); err != nil || stop {
+		if stop, err := s.shouldStop(ctx, &run, req, started, true); err != nil || stop {
 			return err
 		}
 		if err := s.runCandidate(ctx, &run, &candidate, req, PhaseSelection, selectionSplit(req)); err != nil {
 			run.Checkpoint.markFailed(candidate.ID)
 			return s.failRun(ctx, &run, err)
+		}
+		if stop, err := s.shouldStop(ctx, &run, req, started, false); err != nil || stop {
+			return err
 		}
 	}
 	if run.Status == RunStatusCanceled || run.Status == RunStatusBudgetStopped {
@@ -357,6 +360,9 @@ func (s *Service) runCandidate(ctx context.Context, run *OptimizationRun, candid
 		run.Checkpoint.markCompleted(candidate.ID)
 	}
 	run.UpdatedAt = s.clock()
+	if err := s.mergeCurrentRunControlState(ctx, run); err != nil {
+		return err
+	}
 	if err := s.repo().UpdateOptimizationRun(ctx, *run); err != nil {
 		return err
 	}
@@ -470,7 +476,7 @@ func (s *Service) cleanupPendingCandidates(ctx context.Context, run *Optimizatio
 	return nil
 }
 
-func (s *Service) shouldStop(ctx context.Context, run *OptimizationRun, req SubmitRequest, started time.Time) (bool, error) {
+func (s *Service) shouldStop(ctx context.Context, run *OptimizationRun, req SubmitRequest, started time.Time, checkWallTime bool) (bool, error) {
 	current, ok, err := s.repo().GetOptimizationRun(ctx, run.TenantID, run.ID)
 	if err != nil || !ok {
 		return false, err
@@ -485,10 +491,25 @@ func (s *Service) shouldStop(ctx context.Context, run *OptimizationRun, req Subm
 	if req.Budget.MaxCostUSD > 0 && run.CostUSD >= req.Budget.MaxCostUSD {
 		return true, s.transitionRun(ctx, run, RunStatusBudgetStopped, "budget_stopped", "max cost reached")
 	}
-	if wall := req.Budget.wallTime(); wall > 0 && s.clock().Sub(started) >= wall {
+	if wall := req.Budget.wallTime(); checkWallTime && wall > 0 && s.clock().Sub(started) >= wall {
 		return true, s.transitionRun(ctx, run, RunStatusBudgetStopped, "budget_stopped", "max wall time reached")
 	}
 	return false, nil
+}
+
+func (s *Service) mergeCurrentRunControlState(ctx context.Context, run *OptimizationRun) error {
+	current, ok, err := s.repo().GetOptimizationRun(ctx, run.TenantID, run.ID)
+	if err != nil || !ok {
+		return err
+	}
+	if current.CancelRequestedAt != nil || current.Status == RunStatusCanceling || current.Status == RunStatusCanceled {
+		run.Status = current.Status
+		run.StatusReason = current.StatusReason
+		run.CancelRequestedAt = current.CancelRequestedAt
+		run.Checkpoint.CancelRequestedAt = current.Checkpoint.CancelRequestedAt
+		run.Checkpoint.StatusReason = current.Checkpoint.StatusReason
+	}
+	return nil
 }
 
 func (s *Service) transitionRun(ctx context.Context, run *OptimizationRun, status RunStatus, stage, reason string) error {

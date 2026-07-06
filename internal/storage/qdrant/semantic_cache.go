@@ -16,7 +16,10 @@ type SemanticCache struct {
 	Threshold  float64
 }
 
-const semanticCachePayloadVersion = "v2"
+const (
+	semanticCachePayloadVersion           = "v2"
+	semanticCacheNamespacedPayloadVersion = "v3"
+)
 
 func (s SemanticCache) Lookup(ctx context.Context, req rag.SemanticCacheLookupRequest) (rag.QueryResponse, bool, error) {
 	if len(req.Vector) == 0 {
@@ -82,13 +85,21 @@ func (s SemanticCache) DeleteKnowledgeBaseSemanticCache(ctx context.Context, ten
 }
 
 func semanticCacheLookupFilter(req rag.SemanticCacheLookupRequest) *qdrant.Filter {
-	return &qdrant.Filter{Must: []*qdrant.Condition{
+	version := semanticCachePayloadVersion
+	if req.SemanticCacheNamespace != "" {
+		version = semanticCacheNamespacedPayloadVersion
+	}
+	must := []*qdrant.Condition{
 		matchKeyword("tenant_id", req.TenantID),
 		matchKeyword("knowledge_base_id", req.KnowledgeBaseID),
-		matchKeyword("cache_key_version", semanticCachePayloadVersion),
+		matchKeyword("cache_key_version", version),
 		matchKeyword("profile", string(semanticCacheProfile(req.Profile))),
 		matchInteger("top_k", int64(req.TopK)),
-	}}
+	}
+	if req.SemanticCacheNamespace != "" {
+		must = append(must, matchKeyword("cache_namespace", req.SemanticCacheNamespace))
+	}
+	return &qdrant.Filter{Must: must}
 }
 
 func semanticCachePointID(entry rag.SemanticCacheEntry) *qdrant.PointId {
@@ -97,11 +108,12 @@ func semanticCachePointID(entry rag.SemanticCacheEntry) *qdrant.PointId {
 
 func semanticCachePointKey(entry rag.SemanticCacheEntry) string {
 	return rag.CacheKey(rag.QueryRequest{
-		TenantID:        entry.TenantID,
-		KnowledgeBaseID: entry.KnowledgeBaseID,
-		Query:           entry.Query,
-		Profile:         semanticCacheEntryProfile(entry),
-		TopK:            entry.TopK,
+		TenantID:               entry.TenantID,
+		KnowledgeBaseID:        entry.KnowledgeBaseID,
+		Query:                  entry.Query,
+		Profile:                semanticCacheEntryProfile(entry),
+		TopK:                   entry.TopK,
+		SemanticCacheNamespace: entry.SemanticCacheNamespace,
 	})
 }
 
@@ -112,11 +124,10 @@ func semanticCachePayload(entry rag.SemanticCacheEntry) map[string]*qdrant.Value
 	}
 	resp := entry.Response
 	profile := semanticCacheEntryProfile(entry)
-	return map[string]*qdrant.Value{
+	payload := map[string]*qdrant.Value{
 		"tenant_id":         stringValue(entry.TenantID),
 		"knowledge_base_id": stringValue(entry.KnowledgeBaseID),
 		"query":             stringValue(entry.Query),
-		"cache_key_version": stringValue(semanticCachePayloadVersion),
 		"profile":           stringValue(string(profile)),
 		"top_k":             integerValue(int64(entry.TopK)),
 		"answer":            stringValue(resp.Answer),
@@ -124,6 +135,13 @@ func semanticCachePayload(entry rag.SemanticCacheEntry) map[string]*qdrant.Value
 		"retrieved_json":    stringValue(mustMarshalString(resp.RetrievedChunks)),
 		"created_at":        stringValue(createdAt.UTC().Format(time.RFC3339Nano)),
 	}
+	if entry.SemanticCacheNamespace != "" {
+		payload["cache_key_version"] = stringValue(semanticCacheNamespacedPayloadVersion)
+		payload["cache_namespace"] = stringValue(entry.SemanticCacheNamespace)
+	} else {
+		payload["cache_key_version"] = stringValue(semanticCachePayloadVersion)
+	}
+	return payload
 }
 
 func semanticCacheLookupResponseFromPayload(req rag.SemanticCacheLookupRequest, payload map[string]*qdrant.Value) (rag.QueryResponse, bool) {

@@ -140,6 +140,7 @@ make docker-run
 ```
 
 `make docker-build` 使用 [`deployments/Dockerfile`](../deployments/Dockerfile)，构建阶段基于 `golang:1.26-alpine`，运行阶段基于 `alpine:3.20`。
+`make docker-run` 使用 [`deployments/docker-compose.yml`](../deployments/docker-compose.yml) 启动完整栈；`orag-api` 会默认覆盖为容器网络地址 `DATABASE_URL=postgres://orag:orag@postgres:5432/orag?sslmode=disable`、`QDRANT_HOST=qdrant` 和 `QDRANT_GRPC_PORT=6334`，避免继承宿主 `.env` 中用于本机运行的 `localhost` 依赖地址。如需覆盖容器内依赖地址，请使用 `DOCKER_DATABASE_URL`、`DOCKER_QDRANT_HOST` 和 `DOCKER_QDRANT_GRPC_PORT`。
 
 ## 测试矩阵
 

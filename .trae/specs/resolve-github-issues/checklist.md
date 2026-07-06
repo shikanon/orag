@@ -1,0 +1,32 @@
+- [x] 已同步远程最新代码，并确认当前分支与 `origin/main`、相关 issue 分支的差异不会丢失已有实现。
+- [x] 所有开放 GitHub issue 已导出、分组，并有关闭或继续保留的明确依据。
+- [x] PostgreSQL 知识库写入、列表和读取错误不再被吞掉，HTTP 层不会对失败写入返回假成功。
+- [x] `DELETE /v1/knowledge-bases/{id}` 会真实删除当前 tenant 的 KB、documents、chunks 和对应 Qdrant points。
+- [x] 删除缺失或跨租户 KB 返回稳定 not-found，不影响其他 tenant 数据。
+- [x] OpenAPI、API 文档和契约测试准确描述 KB 删除语义。
+- [x] Dataset item 写入和读取均校验 tenant 归属，跨租户 dataset 不会被写入或读取。
+- [x] Evaluation runner 和 optimizer 不会使用其他 tenant 的 dataset items。
+- [x] 文档入库在缺失或跨租户 KB 时失败，并且不提交 documents/chunks/jobs。
+- [x] 失败的 ingestion job 不会暴露已失败 job 的 chunk 给检索链路。
+- [x] 同一文档重新入库不会让旧 chunk 继续参与检索。
+- [x] Semantic cache 按 tenant 与 profile 隔离，同 query 不同 profile 不共享缓存结果。
+- [x] 真实模型 provider 默认要求必要 API key，mock/test 模式有显式豁免并有文档说明。
+- [x] Trace 相关 issue 已通过当前测试验证：失败 query trace 持久化、失败 node span 持久化、重复 trace_id 不混合 spans。
+- [x] 相关单元测试、契约测试和可运行的集成测试通过，或记录明确环境限制。
+- [x] 每个已实现 issue 都已在 GitHub 写入关闭说明并关闭。
+- [x] 最终开放 issue 列表中不存在已实现但未关闭的重复或完成项。
+- [x] 第二轮当前开放 issue 已逐个导出、分组，并记录 fix-or-close 决策。
+- [x] #115、#116、#117、#118 已通过代码、文档和测试验证；若已完成则关闭，若未完成则补齐实现。
+- [x] #119、#122、#123、#124、#130 的 KB 删除和写入错误重复项已验证覆盖并关闭。
+- [x] #129 的 semantic cache profile 隔离已验证覆盖，且与 optimizer candidate cache 隔离要求区分清楚。
+- [x] #120 查询接口必填字段校验返回稳定 4xx，并有 HTTP 或 service 测试覆盖。
+- [x] #121 请求级 `top_k` 在 hybrid retrieval 中保持生效，并有回归测试覆盖。
+- [x] #142 和 #147 的 Docker/docker-run 默认配置不会在容器网络内错误连接 localhost，并有文档或配置检查覆盖。
+- [x] #155 optimizer candidate clone 使用候选参数重新构建或绑定 RAG pipeline，并有测试证明候选参数生效。
+- [x] #146 optimizer cancellation 终态不会被最后一个候选完成覆盖，并有测试覆盖。
+- [x] #157 optimizer cost budget 最终超支不会标记为 completed，并有测试覆盖。
+- [x] #156 semantic cache 在 optimizer candidate 评估中不会跨候选污染，同时保留正常 profile-scoped cache 行为。
+- [x] 第二轮聚焦测试、契约测试和全量 Go 测试通过，或记录不可运行外部依赖的明确原因。
+- [x] 所有第二轮已完成 issue 已写入关闭说明并关闭，最终开放 issue 列表不含已完成项。
+- [ ] 本轮变更已推送到远程分支，PR 已创建、通过必要检查并合并到远程 `main`。
+- [ ] 本地 `main` 已同步远程合并结果，PR merged 状态和 issue closed 状态均已复核。

@@ -14,12 +14,13 @@ import (
 func TestSemanticCachePayloadRoundTrip(t *testing.T) {
 	now := time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC)
 	entry := rag.SemanticCacheEntry{
-		TenantID:        "tenant_default",
-		KnowledgeBaseID: "kb_default",
-		Query:           "qdrant cache",
-		Profile:         rag.ProfileRealtime,
-		TopK:            8,
-		CreatedAt:       now,
+		TenantID:               "tenant_default",
+		KnowledgeBaseID:        "kb_default",
+		Query:                  "qdrant cache",
+		Profile:                rag.ProfileRealtime,
+		TopK:                   8,
+		SemanticCacheNamespace: "optimizer_candidate:cand_a",
+		CreatedAt:              now,
 		Response: rag.QueryResponse{
 			Answer:  "cached answer",
 			Profile: rag.ProfileRealtime,
@@ -44,8 +45,11 @@ func TestSemanticCachePayloadRoundTrip(t *testing.T) {
 	}
 
 	payload := semanticCachePayload(entry)
-	if got := payloadString(payload, "cache_key_version"); got != semanticCachePayloadVersion {
+	if got := payloadString(payload, "cache_key_version"); got != semanticCacheNamespacedPayloadVersion {
 		t.Fatalf("cache_key_version = %q", got)
+	}
+	if got := payloadString(payload, "cache_namespace"); got != entry.SemanticCacheNamespace {
+		t.Fatalf("cache_namespace = %q", got)
 	}
 	if got := payloadString(payload, "profile"); got != string(entry.Profile) {
 		t.Fatalf("payload profile = %q", got)
@@ -73,10 +77,11 @@ func TestSemanticCachePayloadRoundTrip(t *testing.T) {
 
 func TestSemanticCacheLookupFilterIncludesProfile(t *testing.T) {
 	req := rag.SemanticCacheLookupRequest{
-		TenantID:        "tenant_default",
-		KnowledgeBaseID: "kb_default",
-		Profile:         rag.ProfileHighPrecision,
-		TopK:            12,
+		TenantID:               "tenant_default",
+		KnowledgeBaseID:        "kb_default",
+		Profile:                rag.ProfileHighPrecision,
+		TopK:                   12,
+		SemanticCacheNamespace: "optimizer_candidate:cand_a",
 	}
 
 	filter := semanticCacheLookupFilter(req)
@@ -86,7 +91,7 @@ func TestSemanticCacheLookupFilterIncludesProfile(t *testing.T) {
 	if got := filterKeyword(t, filter, "knowledge_base_id"); got != req.KnowledgeBaseID {
 		t.Fatalf("knowledge base filter = %q", got)
 	}
-	if got := filterKeyword(t, filter, "cache_key_version"); got != semanticCachePayloadVersion {
+	if got := filterKeyword(t, filter, "cache_key_version"); got != semanticCacheNamespacedPayloadVersion {
 		t.Fatalf("cache key version filter = %q", got)
 	}
 	if got := filterKeyword(t, filter, "profile"); got != string(req.Profile) {
@@ -95,6 +100,9 @@ func TestSemanticCacheLookupFilterIncludesProfile(t *testing.T) {
 	if got := filterInteger(t, filter, "top_k"); got != int64(req.TopK) {
 		t.Fatalf("top_k filter = %d", got)
 	}
+	if got := filterKeyword(t, filter, "cache_namespace"); got != req.SemanticCacheNamespace {
+		t.Fatalf("cache namespace filter = %q, want %q", got, req.SemanticCacheNamespace)
+	}
 
 	req.Profile = ""
 	if got := filterKeyword(t, semanticCacheLookupFilter(req), "profile"); got != string(rag.ProfileRealtime) {
@@ -102,12 +110,44 @@ func TestSemanticCacheLookupFilterIncludesProfile(t *testing.T) {
 	}
 }
 
-func TestSemanticCachePointKeyUsesResolvedProfile(t *testing.T) {
-	entry := rag.SemanticCacheEntry{
+func TestSemanticCacheLookupFilterOmitsEmptyNamespace(t *testing.T) {
+	req := rag.SemanticCacheLookupRequest{
 		TenantID:        "tenant_default",
 		KnowledgeBaseID: "kb_default",
-		Query:           "  Qdrant   Cache  ",
+		Profile:         rag.ProfileRealtime,
 		TopK:            8,
+	}
+
+	filter := semanticCacheLookupFilter(req)
+	if got := filterKeyword(t, filter, "cache_key_version"); got != semanticCachePayloadVersion {
+		t.Fatalf("empty namespace cache key version filter = %q, want %q", got, semanticCachePayloadVersion)
+	}
+	if hasFilterField(filter, "cache_namespace") {
+		t.Fatalf("empty semantic cache namespace should not add a Qdrant filter")
+	}
+	payload := semanticCachePayload(rag.SemanticCacheEntry{
+		TenantID:        req.TenantID,
+		KnowledgeBaseID: req.KnowledgeBaseID,
+		Query:           "qdrant cache",
+		Profile:         req.Profile,
+		TopK:            req.TopK,
+		Response:        rag.QueryResponse{Profile: req.Profile},
+	})
+	if _, ok := payload["cache_namespace"]; ok {
+		t.Fatalf("empty semantic cache namespace should not be stored in payload")
+	}
+	if got := payloadString(payload, "cache_key_version"); got != semanticCachePayloadVersion {
+		t.Fatalf("empty namespace payload version = %q, want %q", got, semanticCachePayloadVersion)
+	}
+}
+
+func TestSemanticCachePointKeyUsesResolvedProfile(t *testing.T) {
+	entry := rag.SemanticCacheEntry{
+		TenantID:               "tenant_default",
+		KnowledgeBaseID:        "kb_default",
+		Query:                  "  Qdrant   Cache  ",
+		TopK:                   8,
+		SemanticCacheNamespace: "optimizer_candidate:cand_a",
 		Response: rag.QueryResponse{
 			Profile: rag.ProfileHighPrecision,
 		},
@@ -115,11 +155,12 @@ func TestSemanticCachePointKeyUsesResolvedProfile(t *testing.T) {
 
 	got := semanticCachePointKey(entry)
 	want := rag.CacheKey(rag.QueryRequest{
-		TenantID:        entry.TenantID,
-		KnowledgeBaseID: entry.KnowledgeBaseID,
-		Query:           entry.Query,
-		Profile:         rag.ProfileHighPrecision,
-		TopK:            entry.TopK,
+		TenantID:               entry.TenantID,
+		KnowledgeBaseID:        entry.KnowledgeBaseID,
+		Query:                  entry.Query,
+		Profile:                rag.ProfileHighPrecision,
+		TopK:                   entry.TopK,
+		SemanticCacheNamespace: entry.SemanticCacheNamespace,
 	})
 	if got != want {
 		t.Fatalf("point key = %q, want %q", got, want)
@@ -138,6 +179,12 @@ func TestSemanticCachePointKeyUsesResolvedProfile(t *testing.T) {
 	topKVariant.TopK = 99
 	if semanticCachePointKey(topKVariant) == got {
 		t.Fatalf("point key should differ by top_k")
+	}
+
+	namespaceVariant := entry
+	namespaceVariant.SemanticCacheNamespace = "optimizer_candidate:cand_b"
+	if semanticCachePointKey(namespaceVariant) == got {
+		t.Fatalf("point key should differ by semantic cache namespace")
 	}
 }
 
@@ -217,6 +264,15 @@ func filterField(t *testing.T, filter *qdrant.Filter, key string) *qdrant.FieldC
 	}
 	t.Fatalf("filter missing field %q", key)
 	return nil
+}
+
+func hasFilterField(filter *qdrant.Filter, key string) bool {
+	for _, cond := range filter.GetMust() {
+		if cond.GetField().GetKey() == key {
+			return true
+		}
+	}
+	return false
 }
 
 type recordingPointsClient struct {

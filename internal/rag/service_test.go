@@ -24,6 +24,7 @@ func TestLookupSemanticCachePreservesCachedProfile(t *testing.T) {
 	service := Service{
 		Cache:                  cache,
 		SemanticCacheThreshold: 0.92,
+		SemanticCacheNamespace: "optimizer_candidate:cand_a",
 	}
 
 	resp, ok, warning := service.LookupSemanticCache(context.Background(), QueryRequest{
@@ -42,6 +43,9 @@ func TestLookupSemanticCachePreservesCachedProfile(t *testing.T) {
 	}
 	if cache.lookupReq.TopK != 16 {
 		t.Fatalf("lookup top_k = %d, want 16", cache.lookupReq.TopK)
+	}
+	if cache.lookupReq.SemanticCacheNamespace != "optimizer_candidate:cand_a" {
+		t.Fatalf("lookup semantic cache namespace = %q", cache.lookupReq.SemanticCacheNamespace)
 	}
 	if resp.Profile != ProfileRealtime {
 		t.Fatalf("response profile = %q, want cached profile %q", resp.Profile, ProfileRealtime)

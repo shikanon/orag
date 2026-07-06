@@ -16,6 +16,23 @@ func (r stubRetriever) Retrieve(context.Context, SearchRequest) ([]SearchResult,
 	return r.results, r.err
 }
 
+type capturingRetriever struct {
+	requests []SearchRequest
+	results  []SearchResult
+}
+
+func (r *capturingRetriever) Retrieve(_ context.Context, req SearchRequest) ([]SearchResult, error) {
+	r.requests = append(r.requests, req)
+	limit := req.TopK
+	if req.DenseTopK > 0 {
+		limit = req.DenseTopK
+	}
+	if req.SparseTopK > 0 {
+		limit = req.SparseTopK
+	}
+	return top(append([]SearchResult(nil), r.results...), limit), nil
+}
+
 func TestHybridRetrieverReturnsWarningsOnSingleSideFailure(t *testing.T) {
 	hybrid := HybridRetriever{
 		Dense: stubRetriever{err: errors.New("qdrant down")},
@@ -119,6 +136,78 @@ func TestHybridRetrieverMergesAndRanksStable(t *testing.T) {
 	}
 	if results[0].Chunk.ID != "chk_2" {
 		t.Fatalf("top result = %#v", results[0])
+	}
+}
+
+func TestHybridRetrieverRequestTopKOverridesConfiguredCandidateTopK(t *testing.T) {
+	dense := &capturingRetriever{results: rankedResults("dense", 20)}
+	sparse := &capturingRetriever{results: rankedResults("sparse", 20)}
+	hybrid := HybridRetriever{
+		Dense:      dense,
+		Sparse:     sparse,
+		RRFK:       60,
+		TopN:       50,
+		DenseTopK:  50,
+		SparseTopK: 50,
+	}
+
+	results, warnings, err := hybrid.RetrieveWithWarnings(context.Background(), SearchRequest{TopK: 5})
+	if err != nil {
+		t.Fatalf("RetrieveWithWarnings() error = %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if len(dense.requests) != 1 {
+		t.Fatalf("dense requests = %#v, want exactly one", dense.requests)
+	}
+	if got := dense.requests[0]; got.TopK != 5 || got.DenseTopK != 0 {
+		t.Fatalf("dense request = %#v, want TopK 5 without configured DenseTopK override", got)
+	}
+	if len(sparse.requests) != 1 {
+		t.Fatalf("sparse requests = %#v, want exactly one", sparse.requests)
+	}
+	if got := sparse.requests[0]; got.TopK != 5 || got.SparseTopK != 0 {
+		t.Fatalf("sparse request = %#v, want TopK 5 without configured SparseTopK override", got)
+	}
+	if len(results) != 5 {
+		t.Fatalf("len(results) = %d, want 5", len(results))
+	}
+}
+
+func TestHybridRetrieverUsesConfiguredCandidateTopKWhenRequestTopKAbsent(t *testing.T) {
+	dense := &capturingRetriever{results: rankedResults("dense", 60)}
+	sparse := &capturingRetriever{results: rankedResults("sparse", 60)}
+	hybrid := HybridRetriever{
+		Dense:      dense,
+		Sparse:     sparse,
+		RRFK:       60,
+		TopN:       7,
+		DenseTopK:  50,
+		SparseTopK: 40,
+	}
+
+	results, warnings, err := hybrid.RetrieveWithWarnings(context.Background(), SearchRequest{})
+	if err != nil {
+		t.Fatalf("RetrieveWithWarnings() error = %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if len(dense.requests) != 1 {
+		t.Fatalf("dense requests = %#v, want exactly one", dense.requests)
+	}
+	if got := dense.requests[0]; got.TopK != 50 || got.DenseTopK != 50 {
+		t.Fatalf("dense request = %#v, want configured DenseTopK 50", got)
+	}
+	if len(sparse.requests) != 1 {
+		t.Fatalf("sparse requests = %#v, want exactly one", sparse.requests)
+	}
+	if got := sparse.requests[0]; got.TopK != 40 || got.SparseTopK != 40 {
+		t.Fatalf("sparse request = %#v, want configured SparseTopK 40", got)
+	}
+	if len(results) != 7 {
+		t.Fatalf("len(results) = %d, want configured TopN 7", len(results))
 	}
 }
 
