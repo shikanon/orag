@@ -857,7 +857,7 @@ func (s *Server) optimizationSubmitRequest(ctx context.Context, c *app.RequestCo
 }
 
 func optimizationRequestFromSubmit(req optimizer.SubmitRequest) optimizeRequest {
-	return optimizeRequest{
+	return cloneOptimizeRequest(optimizeRequest{
 		DatasetID:           req.DatasetID,
 		KnowledgeBaseID:     req.KnowledgeBaseID,
 		Objective:           req.Objective,
@@ -870,7 +870,94 @@ func optimizationRequestFromSubmit(req optimizer.SubmitRequest) optimizeRequest 
 		SelectionSplit:      req.SelectionSplit,
 		HoldoutSplit:        req.HoldoutSplit,
 		Runner:              req.Runner,
+	})
+}
+
+func cloneOptimizeRequest(req optimizeRequest) optimizeRequest {
+	req.Objective.Constraints = cloneSlice(req.Objective.Constraints)
+	req.Objective.TieBreakers = cloneSlice(req.Objective.TieBreakers)
+	req.SearchSpace = cloneOptimizerSearchSpace(req.SearchSpace)
+	req.Runner = cloneAnyMap(req.Runner)
+	req.Profiles = cloneSlice(req.Profiles)
+	req.TopKs = cloneSlice(req.TopKs)
+	return req
+}
+
+func cloneOptimizerSearchSpace(space optimizer.SearchSpace) optimizer.SearchSpace {
+	space.Prompts = cloneSlice(space.Prompts)
+	space.Chunking.SizeTokens = cloneSlice(space.Chunking.SizeTokens)
+	space.Chunking.OverlapTokens = cloneSlice(space.Chunking.OverlapTokens)
+	space.Chunking.ParserMethods = cloneSlice(space.Chunking.ParserMethods)
+	space.Embedding.Models = cloneSlice(space.Embedding.Models)
+	space.Embedding.Dimensions = cloneSlice(space.Embedding.Dimensions)
+	space.Reranker.Providers = cloneSlice(space.Reranker.Providers)
+	space.Reranker.Models = cloneSlice(space.Reranker.Models)
+	space.Reranker.TopN = cloneSlice(space.Reranker.TopN)
+	space.Reranker.ProviderModels = cloneStringSliceMap(space.Reranker.ProviderModels)
+	space.Retrieval.DenseTopK = cloneSlice(space.Retrieval.DenseTopK)
+	space.Retrieval.SparseTopK = cloneSlice(space.Retrieval.SparseTopK)
+	space.Retrieval.RRFK = cloneSlice(space.Retrieval.RRFK)
+	space.Retrieval.SemanticCacheThresholds = cloneSlice(space.Retrieval.SemanticCacheThresholds)
+	space.Graph.QueryRewriteEnabled = cloneSlice(space.Graph.QueryRewriteEnabled)
+	space.Graph.HyDEEnabled = cloneSlice(space.Graph.HyDEEnabled)
+	space.Graph.MultiQueryCount = cloneSlice(space.Graph.MultiQueryCount)
+	space.Graph.Modules = cloneStringMatrix(space.Graph.Modules)
+	space.Harness = cloneHarnessCandidates(space.Harness)
+	return space
+}
+
+func cloneHarnessCandidates(in []optimizer.HarnessCandidate) []optimizer.HarnessCandidate {
+	if in == nil {
+		return nil
 	}
+	out := make([]optimizer.HarnessCandidate, len(in))
+	copy(out, in)
+	for i := range out {
+		out[i].Argv = cloneSlice(out[i].Argv)
+	}
+	return out
+}
+
+func cloneStringSliceMap(in map[string][]string) map[string][]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string][]string, len(in))
+	for key, value := range in {
+		out[key] = cloneSlice(value)
+	}
+	return out
+}
+
+func cloneStringMatrix(in [][]string) [][]string {
+	if in == nil {
+		return nil
+	}
+	out := make([][]string, len(in))
+	for i := range in {
+		out[i] = cloneSlice(in[i])
+	}
+	return out
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneSlice[T any](in []T) []T {
+	if in == nil {
+		return nil
+	}
+	out := make([]T, len(in))
+	copy(out, in)
+	return out
 }
 
 func (req *optimizeRequest) applyLegacyShortcutDefaults() {

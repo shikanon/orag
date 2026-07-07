@@ -808,7 +808,7 @@ func TestOptimizationAsyncHTTPLifecycle(t *testing.T) {
 	if resp.Code != 200 {
 		t.Fatalf("get status = %d body=%s", resp.Code, resp.Body)
 	}
-	var status struct {
+	type optimizationHTTPStatus struct {
 		Run struct {
 			ID                    string `json:"id"`
 			Status                string `json:"status"`
@@ -816,6 +816,11 @@ func TestOptimizationAsyncHTTPLifecycle(t *testing.T) {
 			Objective             struct {
 				Maximize string `json:"maximize"`
 			} `json:"objective"`
+			SearchSpace struct {
+				Retrieval struct {
+					DenseTopK []int `json:"dense_top_k"`
+				} `json:"retrieval"`
+			} `json:"search_space"`
 			Runner map[string]any `json:"runner"`
 		} `json:"run"`
 		Candidates []struct {
@@ -828,12 +833,33 @@ func TestOptimizationAsyncHTTPLifecycle(t *testing.T) {
 			} `json:"config"`
 		} `json:"candidates"`
 	}
+	assertOriginalCandidateSet := func(t *testing.T, status optimizationHTTPStatus, body string) {
+		t.Helper()
+		if status.Run.SampledCandidateCount != 2 {
+			t.Fatalf("sampled_candidate_count = %d, want 2 body=%s", status.Run.SampledCandidateCount, body)
+		}
+		if got := status.Run.SearchSpace.Retrieval.DenseTopK; len(got) != 2 || got[0] != 1 || got[1] != 2 {
+			t.Fatalf("run search_space dense_top_k = %#v, want [1 2] body=%s", got, body)
+		}
+		if len(status.Candidates) != 2 {
+			t.Fatalf("candidate count = %d, want 2 body=%s", len(status.Candidates), body)
+		}
+		topKCounts := map[int]int{}
+		for _, candidate := range status.Candidates {
+			topKCounts[candidate.Config.Retrieval.DenseTopK]++
+		}
+		if topKCounts[1] != 1 || topKCounts[2] != 1 || len(topKCounts) != 2 {
+			t.Fatalf("candidate dense_top_k set = %#v, want exactly [1 2] body=%s", topKCounts, body)
+		}
+	}
+	var status optimizationHTTPStatus
 	if err := json.Unmarshal([]byte(resp.Body), &status); err != nil {
 		t.Fatal(err)
 	}
 	if status.Run.ID != accepted.RunID || status.Run.Status != "queued" || status.Run.SampledCandidateCount != 2 || len(status.Candidates) != 2 {
 		t.Fatalf("unexpected optimization status: %#v body=%s", status, resp.Body)
 	}
+	assertOriginalCandidateSet(t, status, resp.Body)
 	if status.Run.Objective.Maximize != "pairwise_accuracy" || status.Run.Runner["type"] != "internal_rag" {
 		t.Fatalf("missing objective/runner metadata: %#v", status.Run)
 	}
@@ -842,6 +868,18 @@ func TestOptimizationAsyncHTTPLifecycle(t *testing.T) {
 	if resp.Code != 202 || !strings.Contains(resp.Body, `"status":"canceling"`) {
 		t.Fatalf("cancel status = %d body=%s", resp.Code, resp.Body)
 	}
+	resp = performJSONWithTrace(h, "POST", accepted.ResumeURL, `{"search_space":{"retrieval":{"dense_top_k":[1,3]}}}`, token, "trace_resume_mutates_search_space")
+	assertErrorResponse(t, resp, 400, "invalid_request", "trace_resume_mutates_search_space")
+
+	resp = performJSON(h, "GET", accepted.PollURL, "", token)
+	if resp.Code != 200 {
+		t.Fatalf("get status after rejected resume = %d body=%s", resp.Code, resp.Body)
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &status); err != nil {
+		t.Fatal(err)
+	}
+	assertOriginalCandidateSet(t, status, resp.Body)
+
 	resp = performJSON(h, "POST", accepted.ResumeURL, `{}`, token)
 	if resp.Code != 202 || !strings.Contains(resp.Body, `"status":"queued"`) {
 		t.Fatalf("resume status = %d body=%s", resp.Code, resp.Body)
