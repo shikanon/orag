@@ -258,6 +258,127 @@ paths:
           $ref: "#/components/responses/Error"
         "413":
           $ref: "#/components/responses/Error"
+  /v1/knowledge-bases/{id}/uploads:
+    post:
+      tags: [Ingestion]
+      operationId: createUploadSession
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUploadRequest"
+      responses:
+        "201":
+          description: Resumable upload session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSession"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+  /v1/uploads/{id}:
+    get:
+      tags: [Ingestion]
+      operationId: getUploadSession
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Current resumable upload session state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSession"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Ingestion]
+      operationId: appendUploadChunk
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - in: header
+          name: Upload-Offset
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+          description: Zero-based byte offset where this chunk must be appended.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Chunk accepted and session offset advanced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSession"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Ingestion]
+      operationId: cancelUploadSession
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "204":
+          description: Upload session canceled and temporary content removed.
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  "/v1/uploads/{id}:complete":
+    post:
+      tags: [Ingestion]
+      operationId: completeUploadSession
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "202":
+          description: Upload completed and document ingestion accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompleteUploadResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   "/v1/knowledge-bases/{id}/documents:import":
     post:
       tags: [Ingestion]
@@ -718,6 +839,9 @@ components:
         trace_id:
           type: string
           description: Request trace identifier used for logs and trace lookup.
+        details:
+          type: object
+          additionalProperties: true
     LoginRequest:
       type: object
       required: [username, password]
@@ -809,6 +933,66 @@ components:
           type: string
         content:
           type: string
+    CreateUploadRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        source_uri:
+          type: string
+        total_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Optional declared full object size. Completion requires received_bytes to match when provided.
+    UploadSession:
+      type: object
+      required: [id, tenant_id, knowledge_base_id, name, source_uri, total_bytes, received_bytes, status, created_at, updated_at, upload_url, complete_url]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        knowledge_base_id:
+          type: string
+        name:
+          type: string
+        source_uri:
+          type: string
+        total_bytes:
+          type: integer
+          format: int64
+        received_bytes:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [uploading, completed, canceled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        upload_url:
+          type: string
+          example: /v1/uploads/upl_xxx
+        complete_url:
+          type: string
+          example: /v1/uploads/upl_xxx:complete
+    CompleteUploadResponse:
+      type: object
+      required: [upload, document, chunks, job]
+      properties:
+        upload:
+          $ref: "#/components/schemas/UploadSession"
+        document:
+          $ref: "#/components/schemas/Document"
+        chunks:
+          type: integer
+        job:
+          $ref: "#/components/schemas/IngestionJob"
     IngestionResponse:
       type: object
       required: [document, chunks, job]

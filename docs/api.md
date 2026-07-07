@@ -289,6 +289,68 @@ curl -sS "$BASE_URL/v1/knowledge-bases/$KB_ID/documents" \
 
 响应同文本导入接口。上传文件时 `source_uri` 由服务设置为 `upload://<filename>`，`title` 使用上传文件名。
 
+### 断点续传上传
+
+大文件可先创建上传会话，再按字节 offset 上传原始分片。任一分片请求中断后，客户端调用状态查询接口读取 `received_bytes`，再从该 offset 继续上传。
+
+创建会话：
+
+```http
+POST /v1/knowledge-bases/{id}/uploads
+Content-Type: application/json
+```
+
+```json
+{
+  "name": "large.md",
+  "source_uri": "upload://large.md",
+  "total_bytes": 104857600
+}
+```
+
+响应 `201 Created`：
+
+```json
+{
+  "id": "upl_xxx",
+  "tenant_id": "tenant_default",
+  "knowledge_base_id": "kb_xxx",
+  "name": "large.md",
+  "source_uri": "upload://large.md",
+  "total_bytes": 104857600,
+  "received_bytes": 0,
+  "status": "uploading",
+  "upload_url": "/v1/uploads/upl_xxx",
+  "complete_url": "/v1/uploads/upl_xxx:complete",
+  "created_at": "2026-07-07T10:01:00Z",
+  "updated_at": "2026-07-07T10:01:00Z"
+}
+```
+
+追加分片：
+
+```http
+PUT /v1/uploads/{id}
+Upload-Offset: 0
+Content-Type: application/octet-stream
+```
+
+服务只接受 `Upload-Offset` 等于当前 `received_bytes` 的分片。若客户端 offset 过期或重复，返回 `409 upload_offset_mismatch`，`details.received_bytes` 给出服务端当前可续传位置。
+
+查询进度：
+
+```http
+GET /v1/uploads/{id}
+```
+
+完成入库：
+
+```http
+POST /v1/uploads/{id}:complete
+```
+
+如果创建会话时传了 `total_bytes`，完成前必须已收到相同字节数。成功响应为 `202 Accepted`，包含 `upload`、`document`、`chunks` 和 `job`。取消会话使用 `DELETE /v1/uploads/{id}`，会删除临时上传内容。
+
 ### 查询入库 job
 
 ```http

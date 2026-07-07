@@ -49,6 +49,7 @@ type Service struct {
 	KnowledgeBases   kb.KnowledgeBaseRepository
 	Indexer          kb.Indexer
 	Jobs             JobStore
+	Uploads          UploadStore
 	MaxDocumentBytes int64
 }
 

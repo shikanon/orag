@@ -108,6 +108,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		KnowledgeBases:   backend.store,
 		Indexer:          backend.indexer,
 		Jobs:             backend.jobs,
+		Uploads:          ingest.NewMemoryUploadStore(),
 		MaxDocumentBytes: cfg.Ingestion.MaxDocumentBytes,
 	}
 	datasets := dataset.NewService(backend.datasetRepo)

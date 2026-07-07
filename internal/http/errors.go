@@ -16,15 +16,21 @@ type ErrorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	TraceID string `json:"trace_id"`
+	Details any    `json:"details,omitempty"`
 }
 
 func writeError(c *app.RequestContext, status int, code, message string) {
+	writeErrorDetails(c, status, code, message, nil)
+}
+
+func writeErrorDetails(c *app.RequestContext, status int, code, message string, details any) {
 	traceID := requestTraceID(c)
 	c.Set("error_code", code)
 	c.JSON(status, ErrorResponse{Error: ErrorBody{
 		Code:    code,
 		Message: message,
 		TraceID: traceID,
+		Details: details,
 	}})
 }
 
