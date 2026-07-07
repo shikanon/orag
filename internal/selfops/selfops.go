@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/shikanon/orag/internal/capabilities"
 )
 
 const (
@@ -294,7 +296,7 @@ func actionForScope(scope string) Action {
 			Scope:    scope,
 			Name:     "agent-artifacts-regenerate",
 			Commands: []string{"make agent-sync"},
-			Writes:   []string{"agent/mcp/", "agent/skills/"},
+			Writes:   agentArtifactPaths(),
 		}
 	case ScopeMigrationStatus:
 		return Action{
@@ -356,6 +358,15 @@ func verificationCommandsForAction(action Action) []string {
 	default:
 		return []string{"go test ./..."}
 	}
+}
+
+func agentArtifactPaths() []string {
+	paths := capabilities.BuiltinManifest().Generation.ArtifactPaths
+	out := make([]string, 0, len(paths))
+	for _, path := range paths {
+		out = append(out, strings.TrimRight(path, "/")+"/")
+	}
+	return out
 }
 
 func preconditions(snapshot Snapshot) []Precondition {
@@ -457,7 +468,7 @@ func (p FileSnapshotProvider) Snapshot(ctx context.Context, _ string) (Snapshot,
 		ManifestHash:           hashPaths(workDir, "internal/capabilities"),
 		GitHead:                gitHead(ctx, workDir),
 		ConfigHash:             hashPaths(workDir, "Makefile", "api/openapi.yaml"),
-		GeneratedArtifactsHash: hashPaths(workDir, "agent/mcp", "agent/skills"),
+		GeneratedArtifactsHash: hashPaths(workDir, agentArtifactPaths()...),
 	}, nil
 }
 
