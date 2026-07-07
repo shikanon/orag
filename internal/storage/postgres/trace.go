@@ -91,7 +91,7 @@ func (r *Repository) StoreTrace(ctx context.Context, tenantID, traceID, query st
 			profile=EXCLUDED.profile,
 			latency_ms=EXCLUDED.latency_ms,
 			created_at=now()`,
-		traceID, tenantID, query, string(profile), latencyMS); err != nil {
+		traceID, tenantID, sanitizeTraceQuery(query), string(profile), latencyMS); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
@@ -122,14 +122,50 @@ func (r *Repository) StoreTrace(ctx context.Context, tenantID, traceID, query st
 	return tx.Commit(ctx)
 }
 
+func sanitizeTraceQuery(query string) string {
+	const maxBytes = 2048
+	query = strings.TrimSpace(query)
+	lower := strings.ToLower(query)
+	for _, marker := range []string{"authorization: bearer ", "api_key=", "api-key=", "apikey=", "token="} {
+		idx := strings.Index(lower, marker)
+		if idx < 0 {
+			continue
+		}
+		end := idx + len(marker)
+		for end < len(query) && query[end] != ' ' && query[end] != '\n' && query[end] != '\t' {
+			end++
+		}
+		query = query[:idx+len(marker)] + "[redacted]" + query[end:]
+		lower = strings.ToLower(query)
+	}
+	if len(query) > maxBytes {
+		return query[:maxBytes] + "...[truncated]"
+	}
+	return query
+}
+
 func (r *Repository) GetTrace(ctx context.Context, traceID string) (TraceRecord, bool, error) {
+	return r.getTrace(ctx, traceID, "")
+}
+
+func (r *Repository) GetTraceForTenant(ctx context.Context, tenantID, traceID string) (TraceRecord, bool, error) {
+	return r.getTrace(ctx, traceID, tenantID)
+}
+
+func (r *Repository) getTrace(ctx context.Context, traceID, tenantID string) (TraceRecord, bool, error) {
 	queryer := r.traceQueryer()
 	var record TraceRecord
 	var profile string
-	err := queryer.QueryRow(ctx, `
+	args := []any{traceID}
+	query := `
 		SELECT id, tenant_id, profile, latency_ms, created_at
 		FROM rag_traces
-		WHERE id=$1`, traceID).
+		WHERE id=$1`
+	if tenantID != "" {
+		query += " AND tenant_id=$2"
+		args = append(args, tenantID)
+	}
+	err := queryer.QueryRow(ctx, query, args...).
 		Scan(&record.ID, &record.TenantID, &profile, &record.LatencyMS, &record.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {

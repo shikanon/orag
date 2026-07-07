@@ -103,14 +103,30 @@ oragctl trace --trace-id trace_xxx
 | `orag_up` | 只表示 metrics endpoint 可渲染，不代表依赖健康。 |
 | `orag_http_requests_total{method,route,status,status_class}` | 经过 HTTP middleware 的请求才增长；无 label 总量用于兼容。 |
 | `orag_http_errors_total{method,route,status,status_class}` | 只有 4xx/5xx 响应增长。 |
+| `orag_http_request_latency_ms_bucket` | HTTP 请求延迟分桶，可按 route/status_class 聚合。 |
 | `orag_rag_queries_total{profile,cache_status,outcome}` | 只有发生 RAG 查询后才增长；失败时 `outcome="error"`。 |
 | `orag_rag_errors_total{profile,error_code}` | 只有 RAG 查询失败后增长。 |
 | `orag_rag_query_latency_ms_bucket` | 只有 RAG 查询后按延迟分桶增长。 |
+| `orag_dependency_checks_total{dependency,status}` | `/readyz` 被调用后增长，依赖失败时 status 为 error/timeout。 |
+| `orag_trace_store_total{outcome}` | RAG trace 持久化尝试次数，error 表示 trace 证据退化。 |
 | cache hit/miss | 只有查询链路经过语义缓存后才增长。 |
 
 进程重启后，当前 in-process counter 会从零开始。
 
 metrics 不包含 `trace_id`、tenant、用户输入、prompt、文档内容或模型响应等高基数字段。单次请求排查请使用结构化日志中的 `trace_id`、HTTP trace API 或 `oragctl trace`。
+
+## 告警排查
+
+| Alert | 影响 | 只读排查 | 恢复建议 |
+| --- | --- | --- | --- |
+| `ORAGMetricsMissing` | Prometheus 无法抓取 ORAG 指标。 | `curl -fsS http://localhost:8080/metrics`，检查服务和网络。 | 恢复 API 进程或修正 scrape target。 |
+| `ORAGAPIHigh5xxRate` | API 服务端错误比例升高。 | 查看 `orag_http_errors_total`、HTTP 日志和 `trace_id`。 | 根据错误码定位依赖或代码路径，先生成 diagnosis，再考虑 dry-run plan。 |
+| `ORAGRAGHighErrorRate` | RAG 查询失败比例升高。 | 查询失败响应的 `trace_id`，调用 `GET /v1/traces/{trace_id}` 或 `oragctl trace`。 | 检查模型 provider、Qdrant、PostgreSQL 和 rerank 配置。 |
+| `ORAGRAGHighLatencyP95` | 查询延迟整体升高。 | 调用 `GET /v1/traces:stats` 查看慢 node，结合 `orag_rag_query_latency_ms_bucket`。 | 降低 top_k、检查 rerank/model timeout、确认 Qdrant/PostgreSQL 负载。 |
+| `ORAGTraceStoreFailures` | trace 证据可能缺失，影响诊断。 | 查看 `orag_trace_store_total{outcome="error"}` 和 API 日志。 | 检查 PostgreSQL 连接、trace 表迁移和写入权限。 |
+| `ORAGDependencyCheckFailing` | `/readyz` 依赖失败，服务可能不能处理查询。 | `curl -fsS http://localhost:8080/readyz`，查看 postgres/qdrant/model_provider。 | 先恢复依赖，再运行 `orag_check(scope=storage)` 验证。 |
+
+告警处理默认只读：先运行 self-check 和 diagnose，再查看 runbook；任何 self-ops apply 都必须先展示 dry-run plan，并由用户明确授权。
 
 ## Agent artifact drift
 

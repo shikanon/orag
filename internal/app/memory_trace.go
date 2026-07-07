@@ -88,6 +88,16 @@ func (r *memoryTraceRepository) GetTrace(_ context.Context, traceID string) (pos
 	return copyMemoryTraceRecord(record, true), true, nil
 }
 
+func (r *memoryTraceRepository) GetTraceForTenant(_ context.Context, tenantID, traceID string) (postgres.TraceRecord, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	record, ok := r.traces[traceID]
+	if !ok || record.TenantID != tenantID {
+		return postgres.TraceRecord{}, false, nil
+	}
+	return copyMemoryTraceRecord(record, true), true, nil
+}
+
 func (r *memoryTraceRepository) ListTraces(_ context.Context, filter postgres.TraceListFilter) ([]postgres.TraceRecord, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

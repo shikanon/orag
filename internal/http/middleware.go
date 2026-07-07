@@ -43,8 +43,9 @@ func (s *Server) metricsMiddleware(ctx context.Context, c *app.RequestContext) {
 	start := time.Now()
 	c.Next(ctx)
 	status := c.Response.StatusCode()
+	latencyMS := time.Since(start).Milliseconds()
 	if s.App != nil && s.App.Metrics != nil {
-		s.App.Metrics.ObserveHTTPRequest(string(c.Method()), requestRoute(c), status)
+		s.App.Metrics.ObserveHTTP(string(c.Method()), requestRoute(c), status, latencyMS)
 	}
 	if s.App != nil && s.App.Logger != nil {
 		attrs := []slog.Attr{
@@ -52,7 +53,7 @@ func (s *Server) metricsMiddleware(ctx context.Context, c *app.RequestContext) {
 			slog.String("route", requestRoute(c)),
 			slog.String("path", string(c.Path())),
 			slog.Int("status", status),
-			slog.Int64("latency", time.Since(start).Milliseconds()),
+			slog.Int64("latency", latencyMS),
 			slog.String("trace_id", requestTraceID(c)),
 		}
 		if code := requestErrorCode(c); code != "" {

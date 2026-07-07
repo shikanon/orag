@@ -547,6 +547,57 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /v1/traces:stats:
+    get:
+      tags: [Trace]
+      operationId: traceStats
+      description: Returns node-level latency and error statistics for persisted RAG traces in the current tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: profile
+          in: query
+          schema:
+            $ref: "#/components/schemas/Profile"
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: has_error
+          in: query
+          schema:
+            type: boolean
+        - name: slow_ms
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: Trace node statistics.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraceStatsResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /v1/traces/{trace_id}:
     get:
       tags: [Trace]
@@ -1165,6 +1216,37 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TraceRecord"
+    TraceStatsResponse:
+      type: object
+      required: [tenant_id, items]
+      properties:
+        tenant_id:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraceNodeStat"
+    TraceNodeStat:
+      type: object
+      required: [node_name, count, avg_latency_ms, p95_latency_ms, p99_latency_ms, error_count]
+      properties:
+        node_name:
+          type: string
+        count:
+          type: integer
+          format: int64
+        avg_latency_ms:
+          type: number
+          format: double
+        p95_latency_ms:
+          type: number
+          format: double
+        p99_latency_ms:
+          type: number
+          format: double
+        error_count:
+          type: integer
+          format: int64
     TraceRecord:
       type: object
       required: [trace_id, tenant_id, profile, latency_ms, created_at, has_error, error_count, node_spans]

@@ -246,15 +246,24 @@ func (n NodeSet) systemPrompt(profile rag.Profile) string {
 
 func (n NodeSet) withSpan(ctx context.Context, name string, st State, fn func(*State) error) (State, error) {
 	start := time.Now()
+	spanCtx, tracerSpan := observability.StartSpan(ctx, name)
 	err := fn(&st)
-	latencyMS := time.Since(start).Milliseconds()
-	span := NodeSpan{NodeName: name, LatencyMS: latencyMS}
+	ended := time.Now()
+	tracerSpan.End(err)
+	latencyMS := ended.Sub(start).Milliseconds()
+	span := NodeSpan{
+		NodeName:  name,
+		Sequence:  len(st.Spans) + 1,
+		LatencyMS: latencyMS,
+		StartedAt: start.UTC(),
+		EndedAt:   ended.UTC(),
+	}
 	if err != nil {
 		span.Error = err.Error()
 		n.logNodeFailure(st, name, latencyMS, err)
 	}
 	st.Spans = append(st.Spans, span)
-	collectSpan(ctx, span)
+	collectSpan(spanCtx, span)
 	return st, err
 }
 

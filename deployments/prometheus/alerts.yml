@@ -1,0 +1,76 @@
+groups:
+  - name: orag.rules
+    rules:
+      - alert: ORAGMetricsMissing
+        expr: absent(orag_up) == 1
+        for: 2m
+        labels:
+          severity: critical
+          service: orag-api
+        annotations:
+          summary: ORAG metrics endpoint is missing
+          runbook: docs/operations/troubleshooting.md#告警排查
+
+      - alert: ORAGAPIHigh5xxRate
+        expr: |
+          (
+            sum(rate(orag_http_requests_total{status_class="5xx"}[5m]))
+            /
+            clamp_min(sum(rate(orag_http_requests_total[5m])), 1)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: orag-api
+        annotations:
+          summary: ORAG API 5xx rate is above 5%
+          runbook: docs/operations/troubleshooting.md#告警排查
+
+      - alert: ORAGRAGHighErrorRate
+        expr: |
+          (
+            sum(rate(orag_rag_queries_total{outcome="error"}[5m]))
+            /
+            clamp_min(sum(rate(orag_rag_queries_total[5m])), 1)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: orag-api
+        annotations:
+          summary: ORAG RAG error rate is above 5%
+          runbook: docs/operations/troubleshooting.md#告警排查
+
+      - alert: ORAGRAGHighLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(orag_rag_query_latency_ms_bucket[5m])) by (le)
+          ) > 5000
+        for: 10m
+        labels:
+          severity: warning
+          service: orag-api
+        annotations:
+          summary: ORAG RAG p95 latency is above 5s
+          runbook: docs/operations/troubleshooting.md#告警排查
+
+      - alert: ORAGTraceStoreFailures
+        expr: increase(orag_trace_store_total{outcome="error"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: orag-api
+        annotations:
+          summary: ORAG trace store failures detected
+          runbook: docs/operations/troubleshooting.md#告警排查
+
+      - alert: ORAGDependencyCheckFailing
+        expr: increase(orag_dependency_checks_total{status!="ready"}[3m]) > 0
+        for: 3m
+        labels:
+          severity: critical
+          service: orag-api
+        annotations:
+          summary: ORAG dependency readiness check is failing
+          runbook: docs/operations/troubleshooting.md#告警排查

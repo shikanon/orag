@@ -19,7 +19,10 @@ import (
 const (
 	SchemaVersion = "orag.selfops.result.v1"
 
-	ScopeAgentArtifacts = "agent_artifacts"
+	ScopeAgentArtifacts           = "agent_artifacts"
+	ScopeMigrationStatus          = "migration_status"
+	ScopeQdrantCollectionValidate = "qdrant_collection_validation"
+	ScopeRemediationIssue         = "remediation_issue"
 
 	VerdictPass    = "pass"
 	VerdictBlocked = "blocked"
@@ -112,6 +115,7 @@ type Action struct {
 	Name     string
 	Commands []string
 	Writes   []string
+	Blocked  string
 }
 
 type ActionResult struct {
@@ -192,9 +196,9 @@ func (e *Executor) Plan(ctx context.Context, req PlanRequest) (Plan, error) {
 		LockKey:              lockKey(req.Scope),
 		Snapshot:             snapshot,
 		Preconditions:        preconditions(snapshot),
-		Steps:                []Step{{ID: "selfops.agent_artifacts.regenerate", Description: "Regenerate agent artifacts from the capability manifest.", Commands: action.Commands, Writes: action.Writes}},
-		Rollback:             []string{"Discard generated artifacts and regenerate a fresh plan if any precondition drifts."},
-		VerificationCommands: []string{"make agent-sync-check"},
+		Steps:                []Step{{ID: "selfops." + strings.ReplaceAll(req.Scope, "_", ".") + "." + action.Name, Description: actionDescription(action), Commands: action.Commands, Writes: action.Writes}},
+		Rollback:             rollbackForAction(action),
+		VerificationCommands: verificationCommandsForAction(action),
 		CreatedAt:            e.now(),
 	}
 	e.mu.Lock()
@@ -225,6 +229,9 @@ func (e *Executor) Apply(ctx context.Context, req ApplyRequest) (ApplyResult, er
 	}
 	if actionForScope(plan.Scope).Name == "" {
 		return blockedApply(traceID, plan.PlanID, plan.IdempotencyKey, plan.LockKey, "scope is not authorized for low-risk apply"), nil
+	}
+	if blocked := actionForScope(plan.Scope).Blocked; blocked != "" {
+		return blockedApply(traceID, plan.PlanID, plan.IdempotencyKey, plan.LockKey, blocked), nil
 	}
 	if replay, ok := e.completedResult(plan.IdempotencyKey); ok {
 		replay.TraceID = traceID
@@ -289,8 +296,65 @@ func actionForScope(scope string) Action {
 			Commands: []string{"make agent-sync"},
 			Writes:   []string{".mcp/", ".trae/skills/", ".codex/skills/", ".claude/skills/"},
 		}
+	case ScopeMigrationStatus:
+		return Action{
+			Scope:    scope,
+			Name:     "migration-status-check",
+			Commands: []string{"go test ./internal/storage/postgres -run TestMigrations -v"},
+			Writes:   nil,
+		}
+	case ScopeQdrantCollectionValidate:
+		return Action{
+			Scope:    scope,
+			Name:     "qdrant-collection-validation",
+			Commands: []string{"curl -fsS http://localhost:8080/readyz"},
+			Writes:   nil,
+		}
+	case ScopeRemediationIssue:
+		return Action{
+			Scope:   scope,
+			Name:    "create-remediation-issue",
+			Blocked: "remediation issue backend is not configured; create the issue manually from diagnosis findings",
+		}
 	default:
 		return Action{}
+	}
+}
+
+func actionDescription(action Action) string {
+	switch action.Scope {
+	case ScopeAgentArtifacts:
+		return "Regenerate agent artifacts from the capability manifest."
+	case ScopeMigrationStatus:
+		return "Check migration status without applying migrations."
+	case ScopeQdrantCollectionValidate:
+		return "Validate Qdrant collections through the readiness endpoint without creating or deleting collections."
+	case ScopeRemediationIssue:
+		return "Create an explicitly authorized remediation issue when an issue backend is configured."
+	default:
+		return "Run a low-risk maintenance action."
+	}
+}
+
+func rollbackForAction(action Action) []string {
+	if len(action.Writes) == 0 {
+		return []string{"No rollback is required because this action is read-only."}
+	}
+	return []string{"Discard generated artifacts and regenerate a fresh plan if any precondition drifts."}
+}
+
+func verificationCommandsForAction(action Action) []string {
+	switch action.Scope {
+	case ScopeAgentArtifacts:
+		return []string{"make agent-sync-check"}
+	case ScopeMigrationStatus:
+		return []string{"go test ./internal/storage/postgres -run TestMigrations -v"}
+	case ScopeQdrantCollectionValidate:
+		return []string{"curl -fsS http://localhost:8080/readyz"}
+	case ScopeRemediationIssue:
+		return []string{"Review the created issue and rerun orag_diagnose with the same findings."}
+	default:
+		return []string{"go test ./..."}
 	}
 }
 

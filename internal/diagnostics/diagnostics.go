@@ -1,6 +1,7 @@
 package diagnostics
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -9,10 +10,32 @@ import (
 
 const defaultRunbook = "docs/operations/troubleshooting.md"
 
-type Executor struct{}
+type Executor struct {
+	Evidence EvidenceProvider
+}
 
 func NewExecutor() *Executor {
 	return &Executor{}
+}
+
+func NewExecutorWithEvidence(provider EvidenceProvider) *Executor {
+	return &Executor{Evidence: provider}
+}
+
+type EvidenceProvider interface {
+	GetTrace(ctx context.Context, traceID string) (TraceEvidence, bool, error)
+	MetricsSnapshot(ctx context.Context, scope string) ([]selfcheck.Evidence, error)
+	RecentLogs(ctx context.Context, traceID string, limit int) ([]selfcheck.Evidence, error)
+}
+
+type TraceEvidence struct {
+	TraceID     string
+	HasError    bool
+	ErrorCount  int
+	SlowestNode string
+	LatencyMS   int64
+	NodeCount   int
+	Evidence    []selfcheck.Evidence
 }
 
 type TraceLookupRequest struct {
@@ -108,18 +131,70 @@ func (e *Executor) TraceLookup(req TraceLookupRequest) TraceLookupResponse {
 		response.VerificationCommands = []string{"oragctl trace --trace-id <trace_id>"}
 		return response
 	}
-	response.Findings = []Finding{{
-		ID:       "orag.diagnostics.trace.fixture",
-		Title:    "Trace evidence stub is available for read-only diagnosis",
+	if e == nil || e.Evidence == nil {
+		response.Verdict = selfcheck.VerdictBlocked
+		response.Severity = selfcheck.SeverityWarning
+		response.Found = false
+		response.Findings = []Finding{{
+			ID:       "orag.diagnostics.trace.evidence_unavailable",
+			Title:    "trace evidence provider is not configured",
+			Severity: selfcheck.SeverityWarning,
+			Verdict:  selfcheck.VerdictBlocked,
+			Evidence: []selfcheck.Evidence{{
+				Type:    "trace",
+				Message: "No trace evidence provider is configured for diagnostics.",
+				Command: traceCommand(traceID),
+			}},
+		}}
+		response.Evidence = response.Findings[0].Evidence
+		return response
+	}
+	trace, found, err := e.Evidence.GetTrace(context.Background(), traceID)
+	if err != nil {
+		response.Verdict = selfcheck.VerdictFail
+		response.Severity = selfcheck.SeverityCritical
+		response.Found = false
+		response.Findings = []Finding{{
+			ID:       "orag.diagnostics.trace.lookup_failed",
+			Title:    "trace lookup failed",
+			Severity: selfcheck.SeverityCritical,
+			Verdict:  selfcheck.VerdictFail,
+			Evidence: []selfcheck.Evidence{{Type: "trace", Message: err.Error(), Command: traceCommand(traceID)}},
+		}}
+		response.Evidence = response.Findings[0].Evidence
+		return response
+	}
+	if !found {
+		response.Verdict = selfcheck.VerdictBlocked
+		response.Severity = selfcheck.SeverityWarning
+		response.Found = false
+		response.Findings = []Finding{{
+			ID:       "orag.diagnostics.trace.not_found",
+			Title:    "trace evidence was not found",
+			Severity: selfcheck.SeverityWarning,
+			Verdict:  selfcheck.VerdictBlocked,
+			Evidence: []selfcheck.Evidence{{Type: "trace", Message: "Trace ID was not found in the configured evidence provider.", Command: traceCommand(traceID)}},
+		}}
+		response.Evidence = response.Findings[0].Evidence
+		return response
+	}
+	finding := Finding{
+		ID:       "orag.diagnostics.trace.found",
+		Title:    fmt.Sprintf("trace has %d node spans; slowest node: %s", trace.NodeCount, firstNonEmpty(trace.SlowestNode, "unknown")),
 		Severity: selfcheck.SeverityInfo,
 		Verdict:  selfcheck.VerdictPass,
-		Evidence: []selfcheck.Evidence{{
-			Type:    "trace",
-			Message: "Read-only fixture evidence; connect a trace repository to replace this stub.",
-			Command: traceCommand(traceID),
-		}},
-	}}
-	response.Evidence = response.Findings[0].Evidence
+		Evidence: trace.Evidence,
+	}
+	if trace.HasError {
+		finding.ID = "orag.diagnostics.trace.has_error"
+		finding.Title = fmt.Sprintf("trace contains %d node errors; slowest node: %s", trace.ErrorCount, firstNonEmpty(trace.SlowestNode, "unknown"))
+		finding.Severity = selfcheck.SeverityCritical
+		finding.Verdict = selfcheck.VerdictFail
+		response.Verdict = selfcheck.VerdictFail
+		response.Severity = selfcheck.SeverityCritical
+	}
+	response.Findings = []Finding{finding}
+	response.Evidence = finding.Evidence
 	return response
 }
 
@@ -169,6 +244,35 @@ func (e *Executor) Diagnose(req DiagnoseRequest) DiagnoseResult {
 		result.RecommendedActions = []string{"不执行写操作；先重新运行验证命令确认失败，再用 orag-self-ops 生成 dry-run 修复计划。"}
 		return result
 	}
+	if strings.TrimSpace(req.TraceID) != "" && e != nil && e.Evidence != nil {
+		trace, found, err := e.Evidence.GetTrace(context.Background(), strings.TrimSpace(req.TraceID))
+		if err != nil {
+			result.Verdict = selfcheck.VerdictFail
+			result.Severity = selfcheck.SeverityCritical
+			result.Findings = []Finding{{
+				ID:       "orag.diagnostics." + scope + ".trace_lookup_failed",
+				Title:    "trace lookup failed during diagnosis",
+				Severity: selfcheck.SeverityCritical,
+				Verdict:  selfcheck.VerdictFail,
+				Evidence: []selfcheck.Evidence{{Type: "trace", Message: err.Error(), Command: traceCommand(req.TraceID)}},
+			}}
+			result.RecommendedActions = []string{"不执行写操作；先确认 trace repository 和日志证据源可用。"}
+			return result
+		}
+		if found && trace.HasError {
+			result.Verdict = selfcheck.VerdictFail
+			result.Severity = selfcheck.SeverityCritical
+			result.Findings = []Finding{{
+				ID:       "orag.diagnostics." + scope + ".trace_error",
+				Title:    fmt.Sprintf("trace evidence contains %d node errors", trace.ErrorCount),
+				Severity: selfcheck.SeverityCritical,
+				Verdict:  selfcheck.VerdictFail,
+				Evidence: trace.Evidence,
+			}}
+			result.RecommendedActions = []string{"不执行写操作；根据 trace 中的失败节点选择 runbook，再生成 dry-run 修复计划。"}
+			return result
+		}
+	}
 
 	result.Findings = []Finding{{
 		ID:       "orag.diagnostics." + scope + ".symptom",
@@ -181,6 +285,15 @@ func (e *Executor) Diagnose(req DiagnoseRequest) DiagnoseResult {
 		result.RecommendedActions = append(result.RecommendedActions, "即使 allow_commands=true，诊断工具也只返回建议命令，不会执行命令。")
 	}
 	return result
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (e *Executor) RunbookSuggest(req RunbookSuggestRequest) RunbookSuggestResponse {

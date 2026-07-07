@@ -301,6 +301,19 @@ func (s *Server) handleSelfOps(ctx context.Context, id json.RawMessage, params t
 		traceID = result.TraceID
 		planID = result.PlanID
 		err = applyErr
+	case "orag_create_remediation_issue":
+		traceID = traceIDFromMeta(params.Meta)
+		if traceID == "" {
+			traceID = "selfops_remediation_issue_blocked"
+		}
+		payload = selfops.ApplyResult{
+			SchemaVersion: selfops.SchemaVersion,
+			TraceID:       traceID,
+			Verdict:       selfops.VerdictBlocked,
+			Status:        selfops.StatusBlocked,
+			BlockedReason: "remediation issue backend is not configured; create the issue manually from diagnosis findings",
+		}
+		verdict = selfops.VerdictBlocked
 	default:
 		err = fmt.Errorf("requested self-ops tool is not available")
 	}
@@ -547,7 +560,7 @@ func isDiagnosticTool(name string) bool {
 
 func isSelfOpsTool(name string) bool {
 	switch name {
-	case "orag_maintenance_plan", "orag_apply_low_risk_action":
+	case "orag_maintenance_plan", "orag_apply_low_risk_action", "orag_create_remediation_issue":
 		return true
 	default:
 		return false

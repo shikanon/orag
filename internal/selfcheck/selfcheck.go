@@ -137,16 +137,31 @@ type CommandRunner interface {
 	Run(ctx context.Context, command Command) CommandResult
 }
 
+type Probe interface {
+	Health(ctx context.Context) ProbeResult
+	Config(ctx context.Context) ProbeResult
+	Storage(ctx context.Context) ProbeResult
+}
+
+type ProbeResult struct {
+	Status   Status
+	Verdict  Verdict
+	Severity Severity
+	Evidence []Evidence
+}
+
 type Options struct {
 	Runner  CommandRunner
 	WorkDir string
 	Now     func() time.Time
+	Probe   Probe
 }
 
 type Executor struct {
 	runner  CommandRunner
 	workDir string
 	now     func() time.Time
+	probe   Probe
 }
 
 func NewExecutor(options Options) *Executor {
@@ -158,7 +173,11 @@ func NewExecutor(options Options) *Executor {
 	if now == nil {
 		now = time.Now
 	}
-	return &Executor{runner: runner, workDir: options.WorkDir, now: now}
+	probe := options.Probe
+	if probe == nil {
+		probe = RuntimeProbe{}
+	}
+	return &Executor{runner: runner, workDir: options.WorkDir, now: now, probe: probe}
 }
 
 func (e *Executor) Execute(ctx context.Context, req Request) (Envelope, error) {
@@ -226,10 +245,7 @@ func (e *Executor) runOne(ctx context.Context, def checkDef, timeout time.Durati
 		StartedAt: started,
 	}
 	if def.command.Name == "" {
-		result.Evidence = []Evidence{{Type: "builtin", Message: def.message}}
-		result.CompletedAt = e.now()
-		result.DurationMS = result.CompletedAt.Sub(result.StartedAt).Milliseconds()
-		return result
+		return e.runProbe(ctx, def, result)
 	}
 	command := def.command
 	if command.Dir == "" {
@@ -262,6 +278,48 @@ func (e *Executor) runOne(ctx context.Context, def checkDef, timeout time.Durati
 			result.Evidence[0].Message = commandResult.Err.Error()
 		}
 	}
+	return result
+}
+
+func (e *Executor) runProbe(ctx context.Context, def checkDef, result CheckResult) CheckResult {
+	probe := e.probe
+	if probe == nil {
+		probe = RuntimeProbe{}
+	}
+	var probeResult ProbeResult
+	switch def.scope {
+	case ScopeHealth:
+		probeResult = probe.Health(ctx)
+	case ScopeConfig:
+		probeResult = probe.Config(ctx)
+	case ScopeStorage:
+		probeResult = probe.Storage(ctx)
+	default:
+		probeResult = ProbeResult{
+			Status:   StatusPass,
+			Verdict:  VerdictPass,
+			Severity: def.severity,
+			Evidence: []Evidence{{Type: "builtin", Message: def.message}},
+		}
+	}
+	if probeResult.Status == "" {
+		probeResult.Status = StatusPass
+	}
+	if probeResult.Verdict == "" {
+		probeResult.Verdict = VerdictPass
+	}
+	if probeResult.Severity == "" {
+		probeResult.Severity = def.severity
+	}
+	result.Status = probeResult.Status
+	result.Verdict = probeResult.Verdict
+	result.Severity = probeResult.Severity
+	result.Evidence = probeResult.Evidence
+	if len(result.Evidence) == 0 {
+		result.Evidence = []Evidence{{Type: "builtin", Message: def.message}}
+	}
+	result.CompletedAt = e.now()
+	result.DurationMS = result.CompletedAt.Sub(result.StartedAt).Milliseconds()
 	return result
 }
 
@@ -305,15 +363,15 @@ func checksForScope(scope Scope, mode Mode) []checkDef {
 	byScope := map[Scope][]checkDef{
 		ScopeHealth: {{
 			id: "orag.selfcheck.health.runtime", scope: ScopeHealth, name: "Runtime health", severity: SeverityInfo,
-			message: "Self-check executor is responsive and can return structured results.",
+			message: "Self-check executor and runtime probe are responsive.",
 		}},
 		ScopeConfig: {{
 			id: "orag.selfcheck.config.runtime", scope: ScopeConfig, name: "Runtime configuration", severity: SeverityInfo,
-			message: "Runtime timeout configuration is syntactically valid for MCP self-check execution.",
+			message: "Runtime configuration probe completed.",
 		}},
 		ScopeStorage: {{
 			id: "orag.selfcheck.storage.readiness", scope: ScopeStorage, name: "Storage readiness", severity: SeverityInfo,
-			message: "Storage readiness is reported as a read-only placeholder until live dependency probes are configured.",
+			message: "Storage configuration probe completed without opening dependency connections.",
 		}},
 		ScopeAgentSync: {{
 			id: "orag.selfcheck.agent_sync.artifacts", scope: ScopeAgentSync, name: "Agent artifact drift", severity: SeverityCritical,
@@ -336,6 +394,70 @@ func checksForScope(scope Scope, mode Mode) []checkDef {
 	default:
 		return byScope[scope]
 	}
+}
+
+type RuntimeProbe struct{}
+
+func (RuntimeProbe) Health(context.Context) ProbeResult {
+	return ProbeResult{
+		Status:   StatusPass,
+		Verdict:  VerdictPass,
+		Severity: SeverityInfo,
+		Evidence: []Evidence{{
+			Type:    "runtime",
+			Message: "Self-check executor is responsive and can return structured results.",
+		}},
+	}
+}
+
+func (RuntimeProbe) Config(context.Context) ProbeResult {
+	evidence := []Evidence{}
+	status := StatusPass
+	verdict := VerdictPass
+	severity := SeverityInfo
+	if timeout := strings.TrimSpace(os.Getenv("ARK_TIMEOUT")); timeout != "" {
+		if _, err := time.ParseDuration(timeout); err != nil {
+			status = StatusFail
+			verdict = VerdictFail
+			severity = SeverityCritical
+			evidence = append(evidence, Evidence{Type: "config", Message: "ARK_TIMEOUT must be a valid duration", Output: timeout})
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DETERMINISTIC_MOCK")), "true") {
+		evidence = append(evidence, Evidence{Type: "config", Message: "Deterministic mock providers are enabled; this is suitable for local tests but should be reviewed for production."})
+	}
+	if len(evidence) == 0 {
+		evidence = append(evidence, Evidence{Type: "config", Message: "Runtime timeout and mock-provider configuration are syntactically valid."})
+	}
+	return ProbeResult{Status: status, Verdict: verdict, Severity: severity, Evidence: evidence}
+}
+
+func (RuntimeProbe) Storage(context.Context) ProbeResult {
+	backend := strings.TrimSpace(os.Getenv("STORAGE_BACKEND"))
+	if backend == "" {
+		backend = "qdrant_postgres"
+	}
+	evidence := []Evidence{{Type: "dependency", Message: "storage backend selected", Output: backend}}
+	if backend == "memory" {
+		evidence = append(evidence, Evidence{Type: "dependency", Message: "memory storage backend does not require PostgreSQL or Qdrant connectivity."})
+		return ProbeResult{Status: StatusPass, Verdict: VerdictPass, Severity: SeverityInfo, Evidence: evidence}
+	}
+	status := StatusPass
+	verdict := VerdictPass
+	severity := SeverityInfo
+	if strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
+		status = StatusFail
+		verdict = VerdictFail
+		severity = SeverityCritical
+		evidence = append(evidence, Evidence{Type: "dependency", Message: "DATABASE_URL is required for non-memory storage backends."})
+	}
+	if strings.TrimSpace(os.Getenv("QDRANT_HOST")) == "" {
+		evidence = append(evidence, Evidence{Type: "dependency", Message: "QDRANT_HOST is empty; runtime will use the configured default host."})
+	}
+	if verdict == VerdictPass {
+		evidence = append(evidence, Evidence{Type: "dependency", Message: "Storage configuration is sufficient for dependency readiness checks; use /readyz for live connectivity."})
+	}
+	return ProbeResult{Status: status, Verdict: verdict, Severity: severity, Evidence: evidence}
 }
 
 func appendScopes(byScope map[Scope][]checkDef, scopes ...Scope) []checkDef {

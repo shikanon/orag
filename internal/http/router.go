@@ -70,6 +70,7 @@ func (s *Server) Hertz() *server.Hertz {
 	v1.POST("/query", s.query)
 	v1.POST("/query:stream", s.queryStream)
 	v1.GET("/traces", s.listTraces)
+	v1.GET("/traces:stats", s.traceStats)
 	v1.GET("/traces/:trace_id", s.getTrace)
 	v1.POST("/datasets", s.createDataset)
 	v1.POST("/datasets/:id/items", s.addDatasetItem)
@@ -607,12 +608,12 @@ func (s *Server) getTrace(ctx context.Context, c *app.RequestContext) {
 		writeError(c, consts.StatusBadRequest, "invalid_request", "trace_id is required")
 		return
 	}
-	trace, found, err := s.App.Traces.GetTrace(ctx, traceID)
+	trace, found, err := s.App.Traces.GetTraceForTenant(ctx, tenantID(c), traceID)
 	if err != nil {
 		writeError(c, consts.StatusInternalServerError, "trace_lookup_failed", err.Error())
 		return
 	}
-	if !found || trace.TenantID != tenantID(c) {
+	if !found {
 		writeError(c, consts.StatusNotFound, "trace_not_found", "trace not found")
 		return
 	}
@@ -639,6 +640,24 @@ func (s *Server) listTraces(ctx context.Context, c *app.RequestContext) {
 		normalizeTraceResponse(&traces[i])
 	}
 	c.JSON(consts.StatusOK, map[string]any{"items": traces})
+}
+
+func (s *Server) traceStats(ctx context.Context, c *app.RequestContext) {
+	if s.App.Traces == nil {
+		writeError(c, consts.StatusInternalServerError, "trace_repository_missing", "trace repository is not configured")
+		return
+	}
+	filter, ok := parseTraceListFilter(c)
+	if !ok {
+		return
+	}
+	filter.TenantID = tenantID(c)
+	stats, err := s.App.Traces.TraceNodeStats(ctx, filter)
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "trace_stats_failed", err.Error())
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]any{"tenant_id": filter.TenantID, "items": stats})
 }
 
 func normalizeTraceResponse(trace *postgres.TraceRecord) {

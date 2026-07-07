@@ -48,6 +48,7 @@ type App struct {
 
 type TraceRepository interface {
 	GetTrace(ctx context.Context, traceID string) (postgres.TraceRecord, bool, error)
+	GetTraceForTenant(ctx context.Context, tenantID, traceID string) (postgres.TraceRecord, bool, error)
 	ListTraces(ctx context.Context, filter postgres.TraceListFilter) ([]postgres.TraceRecord, error)
 	TraceNodeStats(ctx context.Context, filter postgres.TraceListFilter) ([]postgres.TraceNodeStat, error)
 }
@@ -92,11 +93,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		QueryRouter:         buildQueryRouter(cfg),
 		Logger:              logger,
 	}
+	metrics := observability.NewMetrics()
 	graphRunner, err := raggraph.NewRAGGraph(ctx, ragSvc)
 	if err != nil {
 		return nil, err
 	}
 	graphRunner.TraceStore = backend.traceStore
+	graphRunner.Metrics = metrics
 	ragSvc.Pipeline = graphRunner
 	ingestSvc := &ingest.Service{
 		Parser:           buildDocumentParser(cfg, model),
@@ -132,7 +135,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			Repository: backend.optimizerRepo,
 			Runner:     optimizerRunner,
 		},
-		Metrics:  observability.NewMetrics(),
+		Metrics:  metrics,
 		Traces:   backend.traceRepo,
 		Postgres: backend.pool,
 		Qdrant:   backend.qdrant,
@@ -447,33 +450,89 @@ func (a *App) Readiness(ctx context.Context) (map[string]ReadinessCheck, bool) {
 	ready := true
 	if a.Config.Storage.Backend == "memory" {
 		checks["storage"] = ReadinessCheck{Status: "ready"}
+		a.observeDependencyCheck("postgres", "ready", 0)
+		a.observeDependencyCheck("qdrant", "ready", 0)
 	} else {
 		if a.Postgres == nil {
 			checks["postgres"] = ReadinessCheck{Status: "error", Error: "not configured"}
-			ready = false
-		} else if err := a.Postgres.Ping(ctx); err != nil {
-			checks["postgres"] = ReadinessCheck{Status: "error", Error: err.Error()}
+			a.observeDependencyCheck("postgres", "error", 0)
 			ready = false
 		} else {
-			checks["postgres"] = ReadinessCheck{Status: "ready"}
+			start := time.Now()
+			checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			err := a.Postgres.Ping(checkCtx)
+			cancel()
+			status := "ready"
+			if err != nil {
+				status = "error"
+				if errors.Is(checkCtx.Err(), context.DeadlineExceeded) {
+					status = "timeout"
+				}
+				checks["postgres"] = ReadinessCheck{Status: "error", Error: err.Error()}
+				ready = false
+			} else {
+				checks["postgres"] = ReadinessCheck{Status: "ready"}
+			}
+			a.observeDependencyCheck("postgres", status, time.Since(start).Milliseconds())
 		}
 		if a.Qdrant == nil {
 			checks["qdrant"] = ReadinessCheck{Status: "error", Error: "not configured"}
+			a.observeDependencyCheck("qdrant", "error", 0)
 			ready = false
 		} else {
-			if err := a.Qdrant.ValidateCollection(ctx, a.Config.Qdrant.Collection, a.Config.Ark.EmbeddingDimensions); err != nil {
+			qdrantReady := true
+			start := time.Now()
+			checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			err := a.Qdrant.ValidateCollection(checkCtx, a.Config.Qdrant.Collection, a.Config.Ark.EmbeddingDimensions)
+			cancel()
+			status := "ready"
+			if err != nil {
+				status = "error"
+				if errors.Is(checkCtx.Err(), context.DeadlineExceeded) {
+					status = "timeout"
+				}
+				checks["qdrant.main_collection"] = ReadinessCheck{Status: "error", Error: err.Error()}
 				checks["qdrant"] = ReadinessCheck{Status: "error", Error: err.Error()}
 				ready = false
-			} else if err := a.Qdrant.ValidateCollection(ctx, a.Config.Qdrant.SemanticCacheCollection, a.Config.Ark.EmbeddingDimensions); err != nil {
-				checks["qdrant"] = ReadinessCheck{Status: "error", Error: err.Error()}
-				ready = false
+				qdrantReady = false
 			} else {
+				checks["qdrant.main_collection"] = ReadinessCheck{Status: "ready"}
+			}
+			a.observeDependencyCheck("qdrant", status, time.Since(start).Milliseconds())
+
+			start = time.Now()
+			checkCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
+			err = a.Qdrant.ValidateCollection(checkCtx, a.Config.Qdrant.SemanticCacheCollection, a.Config.Ark.EmbeddingDimensions)
+			cancel()
+			status = "ready"
+			if err != nil {
+				status = "error"
+				if errors.Is(checkCtx.Err(), context.DeadlineExceeded) {
+					status = "timeout"
+				}
+				checks["qdrant.semantic_cache_collection"] = ReadinessCheck{Status: "error", Error: err.Error()}
+				checks["qdrant"] = ReadinessCheck{Status: "error", Error: err.Error()}
+				ready = false
+				qdrantReady = false
+			} else {
+				checks["qdrant.semantic_cache_collection"] = ReadinessCheck{Status: "ready"}
+			}
+			a.observeDependencyCheck("qdrant", status, time.Since(start).Milliseconds())
+			if qdrantReady {
 				checks["qdrant"] = ReadinessCheck{Status: "ready"}
 			}
 		}
 	}
 	checks["model_provider"] = ReadinessCheck{Status: a.modelProviderStatus()}
+	a.observeDependencyCheck("model_provider", checks["model_provider"].Status, 0)
 	return checks, ready
+}
+
+func (a *App) observeDependencyCheck(dependency, status string, latencyMS int64) {
+	if a == nil || a.Metrics == nil {
+		return
+	}
+	a.Metrics.ObserveDependencyCheck(dependency, status, latencyMS)
 }
 
 func (a *App) modelProviderStatus() string {

@@ -130,3 +130,7 @@ object_storage:
 
 observability:
   record_prompts: false
+  tracing:
+    store_query: true
+    query_max_bytes: 2048
+    retention_days: 30

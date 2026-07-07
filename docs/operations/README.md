@@ -55,16 +55,40 @@ GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-che
 | `orag_up` | gauge | 无 | metrics endpoint 可渲染时固定为 `1`。 |
 | `orag_http_requests_total` | counter | `method`、`route`、`status`、`status_class` | HTTP 请求总数；同时保留无 label 兼容总量。 |
 | `orag_http_errors_total` | counter | `method`、`route`、`status`、`status_class` | HTTP 4xx/5xx 错误响应总数。 |
+| `orag_http_request_latency_ms` | histogram | `method`、`route`、`status_class`、`le` | HTTP 请求耗时分桶，单位毫秒。 |
 | `orag_rag_queries_total` | counter | `profile`、`cache_status`、`outcome` | RAG 查询总数；同时保留无 label 兼容总量。 |
 | `orag_rag_errors_total` | counter | `profile`、`error_code` | RAG 查询失败总数。 |
 | `orag_rag_cache_hits_total` | counter | 无 | 语义缓存命中的 RAG 查询总数。 |
 | `orag_rag_cache_misses_total` | counter | 无 | 未命中语义缓存的 RAG 查询总数。 |
 | `orag_rag_query_latency_ms` | histogram | `profile`、`cache_status`、`outcome`、`le` | RAG 查询耗时分桶，单位毫秒。 |
 | `orag_rag_query_latency_ms_sum` | counter | 无或 `profile`、`cache_status`、`outcome` | RAG 查询耗时累计值，单位毫秒。 |
+| `orag_dependency_checks_total` | counter | `dependency`、`status` | `/readyz` 依赖检查结果，dependency 会归一化到 postgres/qdrant/model_provider/other。 |
+| `orag_dependency_check_latency_ms` | histogram | `dependency`、`status`、`le` | 依赖检查耗时分桶。 |
+| `orag_trace_store_total` | counter | `outcome` | trace 持久化尝试次数，outcome 为 success/error。 |
+| `orag_trace_store_latency_ms` | histogram | `outcome`、`le` | trace 持久化耗时分桶。 |
 
 metrics label 只使用受控低基数字段。不要把 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本作为 Prometheus label；排查单次请求应使用日志和 trace 查询。
 
 当前指标是进程内 counter/histogram，服务重启后从零开始；当前没有分位数预聚合、持久化或 OTel exporter。
+
+## 告警接入
+
+仓库提供最小 Prometheus/Alertmanager 示例：
+
+```bash
+promtool check rules deployments/prometheus/alerts.yml
+```
+
+示例规则覆盖：
+
+- `ORAGMetricsMissing`：`orag_up` 缺失。
+- `ORAGAPIHigh5xxRate`：API 5xx 比例超过 5%。
+- `ORAGRAGHighErrorRate`：RAG error rate 超过 5%。
+- `ORAGRAGHighLatencyP95`：RAG p95 超过 5s。
+- `ORAGTraceStoreFailures`：trace store 失败。
+- `ORAGDependencyCheckFailing`：依赖检查持续失败。
+
+`deployments/alertmanager/alertmanager.example.yml` 的 webhook 指向 `http://orag-api:8080/v1/ops/alerts`，当前仅作为集成示例；运行时不会自动执行修复动作。推荐处理路径是：告警 -> `orag_check` -> `orag_diagnose` -> `orag_runbook_suggest` -> `orag_maintenance_plan(dry_run=true)` -> 人工授权低风险动作。
 
 ## 日志字段
 
@@ -106,11 +130,14 @@ HTTP API 支持按当前 tenant 查询 trace 列表和详情：
 
 ```http
 GET /v1/traces?limit=20
+GET /v1/traces:stats?limit=20
 GET /v1/traces/{trace_id}
 Authorization: Bearer <access_token>
 ```
 
-CLI 支持本地 PostgreSQL 单条、列表和统计查询。当前仍不提供跨租户聚合、采样、跨服务拓扑或外部 APM 跳转。
+CLI 支持本地 PostgreSQL 单条、列表和统计查询。HTTP `GET /v1/traces:stats` 返回当前 tenant 的 node 级 count、avg、p95、p99 和 error_count。当前仍不提供跨租户聚合、采样、跨服务拓扑或外部 APM 跳转。
+
+Trace query 存储默认会做基础治理：保存前会截断到 2048 bytes，并对常见 `authorization: bearer`、`api_key`、`token` 片段做 `[redacted]` 替换。部署侧可通过 `TRACE_STORE_QUERY`、`TRACE_QUERY_MAX_BYTES`、`TRACE_RETENTION_DAYS` 表达策略；历史数据清理需要单独 job 或数据库保留策略。
 
 ## OTel 与 LangFuse 边界
 

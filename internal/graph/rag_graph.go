@@ -14,6 +14,7 @@ import (
 type RAGGraph struct {
 	Service    *rag.Service
 	TraceStore TraceStore
+	Metrics    *observability.Metrics
 	runner     compose.Runnable[State, State]
 }
 
@@ -166,7 +167,16 @@ func (g *RAGGraph) storeTrace(ctx context.Context, req rag.QueryRequest, rec tra
 	if g.TraceStore == nil || rec.traceID == "" {
 		return nil
 	}
-	return g.TraceStore.StoreTrace(ctx, req.TenantID, rec.traceID, req.Query, rec.profile, rec.latencyMS, rec.spans)
+	start := time.Now()
+	err := g.TraceStore.StoreTrace(ctx, req.TenantID, rec.traceID, req.Query, rec.profile, rec.latencyMS, rec.spans)
+	if g.Metrics != nil {
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
+		g.Metrics.ObserveTraceStore(outcome, time.Since(start).Milliseconds())
+	}
+	return err
 }
 
 func (g *RAGGraph) profile(requested rag.Profile) rag.Profile {

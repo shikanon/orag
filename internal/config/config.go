@@ -179,6 +179,13 @@ type ObservabilityConfig struct {
 	LangFusePublicKey string
 	LangFuseSecretKey string
 	RecordPrompts     bool
+	Trace             TracePrivacyConfig
+}
+
+type TracePrivacyConfig struct {
+	StoreQuery    bool
+	QueryMaxBytes int
+	RetentionDays int
 }
 
 func Load() (Config, error) {
@@ -302,6 +309,11 @@ func Load() (Config, error) {
 			LangFusePublicKey: getenv("LANGFUSE_PUBLIC_KEY", ""),
 			LangFuseSecretKey: getenv("LANGFUSE_SECRET_KEY", ""),
 			RecordPrompts:     getenvBool("OBSERVABILITY_RECORD_PROMPTS", false),
+			Trace: TracePrivacyConfig{
+				StoreQuery:    getenvBool("TRACE_STORE_QUERY", true),
+				QueryMaxBytes: getenvInt("TRACE_QUERY_MAX_BYTES", 2048),
+				RetentionDays: getenvInt("TRACE_RETENTION_DAYS", 30),
+			},
 		},
 	}
 	cfg.Models = loadModelProviders()
@@ -402,6 +414,12 @@ func (c Config) Validate() error {
 	}
 	if c.RAG.GraphRetrieval.MaxEntitiesPerChunk <= 0 {
 		return errors.New("INGEST_GRAPH_MAX_ENTITIES_PER_CHUNK must be positive")
+	}
+	if c.Observability.Trace.QueryMaxBytes < 0 {
+		return errors.New("TRACE_QUERY_MAX_BYTES must be non-negative")
+	}
+	if c.Observability.Trace.RetentionDays <= 0 {
+		return errors.New("TRACE_RETENTION_DAYS must be positive")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))

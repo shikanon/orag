@@ -303,6 +303,7 @@ func TestTraceStatsReturnsTenantNodeStats(t *testing.T) {
 	if resp.Code != 200 {
 		t.Fatalf("query status = %d body=%s", resp.Code, resp.Body)
 	}
+
 	resp = performJSON(h, "GET", "/v1/traces:stats?limit=10", "", token)
 	if resp.Code != 200 {
 		t.Fatalf("trace stats status = %d body=%s", resp.Code, resp.Body)
