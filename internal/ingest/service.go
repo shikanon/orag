@@ -169,7 +169,7 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 	}
 	graphWarnings, err := s.storeGraphRelations(ctx, doc, chunks)
 	if err != nil {
-		return fail(err)
+		graphWarnings = append(graphWarnings, fmt.Sprintf("graph indexing failed: %v", err))
 	}
 	job.Status = JobStatusSucceeded
 	job.DocumentID = doc.ID
@@ -203,7 +203,7 @@ func (s *Service) storeGraphRelations(ctx context.Context, doc kb.Document, chun
 		return warnings, nil
 	}
 	if err := store.StoreGraphRelations(ctx, relations); err != nil {
-		return warnings, err
+		return append(warnings, fmt.Sprintf("graph indexing failed: %v", err)), nil
 	}
 	return warnings, nil
 }
