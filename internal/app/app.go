@@ -309,17 +309,21 @@ func (s knowledgeBaseStore) DeleteKnowledgeBase(ctx context.Context, tenantID, i
 	} else if !ok {
 		return false, nil
 	}
+	deleted, err := s.primary.DeleteKnowledgeBase(ctx, tenantID, id)
+	if err != nil || !deleted {
+		return deleted, err
+	}
 	if s.vectorDeleter != nil {
 		if err := s.vectorDeleter.DeleteKnowledgeBaseVectors(ctx, tenantID, id); err != nil {
-			return false, err
+			return true, err
 		}
 	}
 	if s.semanticCacheDeleter != nil {
 		if err := s.semanticCacheDeleter.DeleteKnowledgeBaseSemanticCache(ctx, tenantID, id); err != nil {
-			return false, err
+			return true, err
 		}
 	}
-	return s.primary.DeleteKnowledgeBase(ctx, tenantID, id)
+	return true, nil
 }
 
 func (s knowledgeBaseStore) StoreGraphRelations(ctx context.Context, relations []kb.GraphRelation) error {
