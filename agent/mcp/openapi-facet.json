@@ -114,16 +114,15 @@
     {
       "id": "trace-lookup",
       "status": "planned",
-      "method": "POST",
-      "path": "/v1/diagnostics/traces/{trace_id}",
-      "operation_id": "lookupTrace",
+      "method": "GET",
+      "path": "/v1/traces/{trace_id}",
+      "operation_id": "getTrace",
       "auth_scheme": "bearerAuth",
       "request_schema": "#/components/schemas/TraceLookupRequest",
       "response_schema": "#/components/schemas/TraceLookupResponse",
       "error_schema": "#/components/schemas/ErrorResponse",
       "backing_services": [
-        "trace service",
-        "agent artifact service"
+        "trace service"
       ]
     }
   ]

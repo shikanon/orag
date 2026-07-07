@@ -241,6 +241,23 @@ func TestServerListsAndRunsDiagnosticTools(t *testing.T) {
 		t.Fatalf("diagnostic tools len = %d, want 3", len(listed))
 	}
 
+	traceResp := handleResponse(t, server, `{"jsonrpc":"2.0","id":"trace-lookup","method":"tools/call","params":{"name":"orag_trace_lookup","arguments":{"trace_id":"trace_missing"}}}`)
+	if traceResp.Error != nil {
+		t.Fatalf("trace lookup error = %#v", traceResp.Error)
+	}
+	traceResult := traceResp.Result.(map[string]any)
+	if traceResult["isError"] != true {
+		t.Fatalf("trace lookup isError = %#v, want true for unavailable trace store", traceResult["isError"])
+	}
+	traceContent := traceResult["structuredContent"].(map[string]any)
+	if traceContent["schema_version"] != selfcheck.SchemaVersion || traceContent["verdict"] != "blocked" || traceContent["found"] != false || traceContent["read_only"] != true {
+		t.Fatalf("unexpected trace lookup structured content: %#v", traceContent)
+	}
+	traceFindings := traceContent["findings"].([]any)
+	if len(traceFindings) != 1 || traceFindings[0].(map[string]any)["id"] != "orag.diagnostics.trace.store_unavailable" {
+		t.Fatalf("unexpected trace lookup findings: %#v", traceFindings)
+	}
+
 	callResp := handleResponse(t, server, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"orag_diagnose","arguments":{"scope":"agent_sync","symptom":"make agent-sync-check failed","failed_command":"make agent-sync-check","failed_command_exit_code":1,"failed_command_output":"generated content differs","allow_commands":true},"_meta":{"trace_id":"trace_req"}}}`)
 	if callResp.Error != nil {
 		t.Fatalf("tools/call error = %#v", callResp.Error)
@@ -256,6 +273,113 @@ func TestServerListsAndRunsDiagnosticTools(t *testing.T) {
 	meta := result["_meta"].(map[string]any)
 	if meta["trace_id"] != "trace_req" || meta["exit_code"].(float64) != 1 {
 		t.Fatalf("unexpected diagnostic meta: %#v", meta)
+	}
+}
+
+func TestServerTraceLookupFoundTrace(t *testing.T) {
+	var gotAuth, gotTenant string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotTenant = r.Header.Get("X-ORAG-Tenant-ID")
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/traces/trace_found" {
+			t.Fatalf("trace request method=%s path=%s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{
+			"trace_id":"trace_found",
+			"tenant_id":"tenant_1",
+			"profile":"realtime",
+			"latency_ms":42,
+			"created_at":"2026-07-06T00:00:00Z",
+			"has_error":true,
+			"error_count":1,
+			"node_spans":[{
+				"id":"span_1",
+				"node_name":"retrieve",
+				"sequence":1,
+				"latency_ms":40,
+				"error":"timeout",
+				"started_at":"2026-07-06T00:00:00Z",
+				"ended_at":"2026-07-06T00:00:01Z",
+				"created_at":"2026-07-06T00:00:01Z"
+			}]
+		}`))
+	}))
+	defer api.Close()
+
+	server := newDiagnosticServer(t, RuntimeConfig{
+		BaseURL: api.URL, Token: "token_secret", TenantID: "tenant_1", Timeout: time.Second,
+	}, NewHTTPToolClient(api.Client()))
+
+	resp := handleResponse(t, server, `{"jsonrpc":"2.0","id":"trace-found","method":"tools/call","params":{"name":"orag_trace_lookup","arguments":{"trace_id":"trace_found"}}}`)
+	if resp.Error != nil {
+		t.Fatalf("trace lookup error = %#v", resp.Error)
+	}
+	result := resp.Result.(map[string]any)
+	if result["isError"] != false {
+		t.Fatalf("trace lookup isError = %#v", result["isError"])
+	}
+	content := result["structuredContent"].(map[string]any)
+	if content["verdict"] != "pass" || content["found"] != true || content["trace_id"] != "trace_found" {
+		t.Fatalf("unexpected found trace content: %#v", content)
+	}
+	findings := content["findings"].([]any)
+	if len(findings) != 1 || findings[0].(map[string]any)["id"] != "orag.diagnostics.trace.found" {
+		t.Fatalf("unexpected found trace findings: %#v", findings)
+	}
+	evidence := content["evidence"].([]any)
+	output := evidence[0].(map[string]any)["output"].(string)
+	if !strings.Contains(output, "retrieve") || strings.Contains(output, "connect a trace repository") {
+		t.Fatalf("unexpected found trace evidence: %#v", evidence)
+	}
+	if gotAuth != "Bearer token_secret" || gotTenant != "tenant_1" {
+		t.Fatalf("trace headers auth=%q tenant=%q", gotAuth, gotTenant)
+	}
+}
+
+func TestServerTraceLookupMissingTraceIsBlocked(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/traces/trace_missing" {
+			t.Fatalf("trace request method=%s path=%s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"code":"trace_not_found","message":"trace not found","trace_id":"trace_missing"}}`))
+	}))
+	defer api.Close()
+
+	server := newDiagnosticServer(t, RuntimeConfig{
+		BaseURL: api.URL, Token: "token_secret", TenantID: "tenant_1", Timeout: time.Second,
+	}, NewHTTPToolClient(api.Client()))
+
+	resp := handleResponse(t, server, `{"jsonrpc":"2.0","id":"trace-missing","method":"tools/call","params":{"name":"orag_trace_lookup","arguments":{"trace_id":"trace_missing"}}}`)
+	if resp.Error != nil {
+		t.Fatalf("trace lookup error = %#v", resp.Error)
+	}
+	result := resp.Result.(map[string]any)
+	content := result["structuredContent"].(map[string]any)
+	if result["isError"] != true || content["verdict"] != "blocked" || content["found"] != false {
+		t.Fatalf("unexpected missing trace content: %#v", result)
+	}
+	findings := content["findings"].([]any)
+	if len(findings) != 1 || findings[0].(map[string]any)["id"] != "orag.diagnostics.trace.not_found" {
+		t.Fatalf("unexpected missing trace findings: %#v", findings)
+	}
+}
+
+func TestServerTraceLookupWithoutRuntimeConfigIsBlocked(t *testing.T) {
+	server := newDiagnosticServer(t, RuntimeConfig{}, fakeToolClient{err: errors.New("trace lookup must not call generic tool client")})
+
+	resp := handleResponse(t, server, `{"jsonrpc":"2.0","id":"trace-unavailable","method":"tools/call","params":{"name":"orag_trace_lookup","arguments":{"trace_id":"trace_missing"}}}`)
+	if resp.Error != nil {
+		t.Fatalf("trace lookup error = %#v", resp.Error)
+	}
+	result := resp.Result.(map[string]any)
+	content := result["structuredContent"].(map[string]any)
+	if result["isError"] != true || content["verdict"] != "blocked" || content["found"] != false || content["read_only"] != true {
+		t.Fatalf("unexpected unavailable trace content: %#v", result)
+	}
+	findings := content["findings"].([]any)
+	if len(findings) != 1 || findings[0].(map[string]any)["id"] != "orag.diagnostics.trace.store_unavailable" {
+		t.Fatalf("unexpected unavailable trace findings: %#v", findings)
 	}
 }
 
@@ -382,6 +506,19 @@ func newTestServer(t *testing.T, client ToolClient) *Server {
 		TenantID: "tenant_1",
 		Timeout:  time.Second,
 	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return server
+}
+
+func newDiagnosticServer(t *testing.T, cfg RuntimeConfig, client ToolClient) *Server {
+	t.Helper()
+	tools, err := LoadToolsFromArtifacts("../../agent/mcp/tools/orag-self-diagnose.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServer(tools, cfg, client)
 	if err != nil {
 		t.Fatal(err)
 	}

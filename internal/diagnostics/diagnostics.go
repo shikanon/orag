@@ -2,24 +2,51 @@ package diagnostics
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/shikanon/orag/internal/selfcheck"
+	"github.com/shikanon/orag/internal/storage/postgres"
 )
 
 const defaultRunbook = "docs/operations/troubleshooting.md"
 
+type TraceGetter interface {
+	GetTrace(ctx context.Context, traceID string) (postgres.TraceRecord, bool, error)
+}
+
+type Option func(*Executor)
+
 type Executor struct {
+	traces   TraceGetter
 	Evidence EvidenceProvider
 }
 
-func NewExecutor() *Executor {
-	return &Executor{}
+func NewExecutor(options ...Option) *Executor {
+	executor := &Executor{}
+	for _, option := range options {
+		if option != nil {
+			option(executor)
+		}
+	}
+	return executor
+}
+
+func WithTraceGetter(getter TraceGetter) Option {
+	return func(e *Executor) {
+		e.traces = getter
+	}
+}
+
+func WithEvidenceProvider(provider EvidenceProvider) Option {
+	return func(e *Executor) {
+		e.Evidence = provider
+	}
 }
 
 func NewExecutorWithEvidence(provider EvidenceProvider) *Executor {
-	return &Executor{Evidence: provider}
+	return NewExecutor(WithEvidenceProvider(provider))
 }
 
 type EvidenceProvider interface {
@@ -105,15 +132,18 @@ type Finding struct {
 	Evidence []selfcheck.Evidence `json:"evidence,omitempty"`
 }
 
-func (e *Executor) TraceLookup(req TraceLookupRequest) TraceLookupResponse {
+func (e *Executor) TraceLookup(ctx context.Context, req TraceLookupRequest) TraceLookupResponse {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	traceID := strings.TrimSpace(req.TraceID)
 	response := TraceLookupResponse{
 		SchemaVersion:        selfcheck.SchemaVersion,
 		TraceID:              traceID,
-		Verdict:              selfcheck.VerdictPass,
-		Severity:             selfcheck.SeverityInfo,
-		Found:                true,
-		RecommendedActions:   []string{"使用 trace 证据继续调用 orag_diagnose；该查询不执行写操作。"},
+		Verdict:              selfcheck.VerdictBlocked,
+		Severity:             selfcheck.SeverityWarning,
+		Found:                false,
+		RecommendedActions:   []string{"配置 trace repository 或 trace API 后重试；该查询不执行写操作。"},
 		VerificationCommands: []string{traceCommand(traceID)},
 		Artifacts:            []selfcheck.Artifact{{Type: "runbook", URI: defaultRunbook}},
 		ReadOnly:             true,
@@ -131,70 +161,84 @@ func (e *Executor) TraceLookup(req TraceLookupRequest) TraceLookupResponse {
 		response.VerificationCommands = []string{"oragctl trace --trace-id <trace_id>"}
 		return response
 	}
-	if e == nil || e.Evidence == nil {
-		response.Verdict = selfcheck.VerdictBlocked
-		response.Severity = selfcheck.SeverityWarning
-		response.Found = false
-		response.Findings = []Finding{{
-			ID:       "orag.diagnostics.trace.evidence_unavailable",
-			Title:    "trace evidence provider is not configured",
-			Severity: selfcheck.SeverityWarning,
-			Verdict:  selfcheck.VerdictBlocked,
-			Evidence: []selfcheck.Evidence{{
-				Type:    "trace",
-				Message: "No trace evidence provider is configured for diagnostics.",
-				Command: traceCommand(traceID),
-			}},
-		}}
-		response.Evidence = response.Findings[0].Evidence
+	if e != nil && e.Evidence != nil {
+		trace, found, err := e.Evidence.GetTrace(ctx, traceID)
+		if err != nil {
+			response.Findings = []Finding{traceBlockedFinding(
+				"orag.diagnostics.trace.lookup_failed",
+				"trace lookup failed; retry after checking trace evidence provider availability",
+			)}
+			return response
+		}
+		if !found {
+			response.Findings = []Finding{traceBlockedFinding(
+				"orag.diagnostics.trace.not_found",
+				"trace was not found in the configured trace evidence provider",
+			)}
+			return response
+		}
+		finding := Finding{
+			ID:       "orag.diagnostics.trace.found",
+			Title:    fmt.Sprintf("trace evidence found with %d node spans; slowest node: %s", trace.NodeCount, firstNonEmpty(trace.SlowestNode, "unknown")),
+			Severity: selfcheck.SeverityInfo,
+			Verdict:  selfcheck.VerdictPass,
+			Evidence: trace.Evidence,
+		}
+		if trace.HasError {
+			finding.ID = "orag.diagnostics.trace.has_error"
+			finding.Title = fmt.Sprintf("trace contains %d node errors; slowest node: %s", trace.ErrorCount, firstNonEmpty(trace.SlowestNode, "unknown"))
+			finding.Severity = selfcheck.SeverityCritical
+			finding.Verdict = selfcheck.VerdictFail
+			response.Verdict = selfcheck.VerdictFail
+			response.Severity = selfcheck.SeverityCritical
+		} else {
+			response.Verdict = selfcheck.VerdictPass
+			response.Severity = selfcheck.SeverityInfo
+		}
+		response.Found = true
+		response.RecommendedActions = []string{"使用 trace 证据继续调用 orag_diagnose；该查询不执行写操作。"}
+		response.Findings = []Finding{finding}
+		response.Evidence = finding.Evidence
 		return response
 	}
-	trace, found, err := e.Evidence.GetTrace(context.Background(), traceID)
+	if e == nil || e.traces == nil {
+		response.Findings = []Finding{traceBlockedFinding(
+			"orag.diagnostics.trace.store_unavailable",
+			"trace store is unavailable for trace lookup",
+		)}
+		return response
+	}
+
+	record, found, err := e.traces.GetTrace(ctx, traceID)
 	if err != nil {
-		response.Verdict = selfcheck.VerdictFail
-		response.Severity = selfcheck.SeverityCritical
-		response.Found = false
-		response.Findings = []Finding{{
-			ID:       "orag.diagnostics.trace.lookup_failed",
-			Title:    "trace lookup failed",
-			Severity: selfcheck.SeverityCritical,
-			Verdict:  selfcheck.VerdictFail,
-			Evidence: []selfcheck.Evidence{{Type: "trace", Message: err.Error(), Command: traceCommand(traceID)}},
-		}}
-		response.Evidence = response.Findings[0].Evidence
+		response.Findings = []Finding{traceBlockedFinding(
+			"orag.diagnostics.trace.lookup_failed",
+			"trace lookup failed; retry after checking trace store availability",
+		)}
 		return response
 	}
 	if !found {
-		response.Verdict = selfcheck.VerdictBlocked
-		response.Severity = selfcheck.SeverityWarning
-		response.Found = false
-		response.Findings = []Finding{{
-			ID:       "orag.diagnostics.trace.not_found",
-			Title:    "trace evidence was not found",
-			Severity: selfcheck.SeverityWarning,
-			Verdict:  selfcheck.VerdictBlocked,
-			Evidence: []selfcheck.Evidence{{Type: "trace", Message: "Trace ID was not found in the configured evidence provider.", Command: traceCommand(traceID)}},
-		}}
-		response.Evidence = response.Findings[0].Evidence
+		response.Findings = []Finding{traceBlockedFinding(
+			"orag.diagnostics.trace.not_found",
+			"trace was not found in the configured trace store",
+		)}
 		return response
 	}
-	finding := Finding{
+
+	response.TraceID = firstNonEmpty(strings.TrimSpace(record.ID), traceID)
+	response.Verdict = selfcheck.VerdictPass
+	response.Severity = selfcheck.SeverityInfo
+	response.Found = true
+	response.RecommendedActions = []string{"使用 trace 证据继续调用 orag_diagnose；该查询不执行写操作。"}
+	response.VerificationCommands = []string{traceCommand(response.TraceID)}
+	response.Findings = []Finding{{
 		ID:       "orag.diagnostics.trace.found",
-		Title:    fmt.Sprintf("trace has %d node spans; slowest node: %s", trace.NodeCount, firstNonEmpty(trace.SlowestNode, "unknown")),
+		Title:    "trace evidence was found in the configured trace store",
 		Severity: selfcheck.SeverityInfo,
 		Verdict:  selfcheck.VerdictPass,
-		Evidence: trace.Evidence,
-	}
-	if trace.HasError {
-		finding.ID = "orag.diagnostics.trace.has_error"
-		finding.Title = fmt.Sprintf("trace contains %d node errors; slowest node: %s", trace.ErrorCount, firstNonEmpty(trace.SlowestNode, "unknown"))
-		finding.Severity = selfcheck.SeverityCritical
-		finding.Verdict = selfcheck.VerdictFail
-		response.Verdict = selfcheck.VerdictFail
-		response.Severity = selfcheck.SeverityCritical
-	}
-	response.Findings = []Finding{finding}
-	response.Evidence = finding.Evidence
+		Evidence: traceEvidence(record, response.TraceID),
+	}}
+	response.Evidence = response.Findings[0].Evidence
 	return response
 }
 
@@ -400,6 +444,51 @@ func traceCommand(traceID string) string {
 		return "oragctl trace --trace-id <trace_id>"
 	}
 	return "oragctl trace --trace-id " + strings.TrimSpace(traceID)
+}
+
+func traceBlockedFinding(id, title string) Finding {
+	return Finding{
+		ID:       id,
+		Title:    title,
+		Severity: selfcheck.SeverityWarning,
+		Verdict:  selfcheck.VerdictBlocked,
+	}
+}
+
+func traceEvidence(record postgres.TraceRecord, traceID string) []selfcheck.Evidence {
+	output, _ := json.Marshal(traceSummary(record, traceID))
+	return []selfcheck.Evidence{{
+		Type: "trace",
+		Message: fmt.Sprintf(
+			"Trace evidence found for %s (profile=%s latency_ms=%d errors=%d spans=%d).",
+			traceID,
+			record.Profile,
+			record.LatencyMS,
+			record.ErrorCount,
+			len(record.NodeSpans),
+		),
+		Command: traceCommand(traceID),
+		Output:  truncate(string(output)),
+	}}
+}
+
+func traceSummary(record postgres.TraceRecord, traceID string) map[string]any {
+	const maxSpans = 20
+	spans := record.NodeSpans
+	truncated := false
+	if len(spans) > maxSpans {
+		spans = spans[:maxSpans]
+		truncated = true
+	}
+	return map[string]any{
+		"trace_id":    traceID,
+		"profile":     record.Profile,
+		"latency_ms":  record.LatencyMS,
+		"error_count": record.ErrorCount,
+		"span_count":  len(record.NodeSpans),
+		"truncated":   truncated,
+		"node_spans":  spans,
+	}
 }
 
 func truncate(value string) string {

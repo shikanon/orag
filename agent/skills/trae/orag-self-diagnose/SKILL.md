@@ -1,6 +1,6 @@
 ---
 name: orag-self-diagnose
-description: "Use trace evidence as read-only input for diagnosis."
+description: "Use persisted trace evidence as read-only input for diagnosis; missing or unavailable traces must be reported as blocked."
 ---
 
 # ORAG Self Diagnose Trae Skill
@@ -8,7 +8,7 @@ description: "Use trace evidence as read-only input for diagnosis."
 Generated from `orag.capabilities.v1` version `2026-07-05` with generator `manifest-first.v1` for Trae.
 
 ## Purpose
-Use trace evidence as read-only input for diagnosis.
+Use persisted trace evidence as read-only input for diagnosis; missing or unavailable traces must be reported as blocked.
 
 ## Trigger Conditions
 - User provides symptoms, trace IDs, logs, or failed command evidence.
@@ -25,7 +25,7 @@ Use trace evidence as read-only input for diagnosis.
 ## Capabilities
 - `orag_diagnose`: `diagnose` via `POST /v1/diagnostics/diagnose`, input `#/components/schemas/DiagnoseRequest`, output `#/components/schemas/DiagnoseResult`, risk `low`, side effect `read_only`
 - `orag_runbook_suggest`: `runbook-suggest` via `POST /v1/diagnostics/runbooks/suggest`, input `#/components/schemas/RunbookSuggestRequest`, output `#/components/schemas/RunbookSuggestResponse`, risk `low`, side effect `read_only`
-- `orag_trace_lookup`: `trace-lookup` via `POST /v1/diagnostics/traces/{trace_id}`, input `#/components/schemas/TraceLookupRequest`, output `#/components/schemas/TraceLookupResponse`, risk `low`, side effect `read_only`
+- `orag_trace_lookup`: `trace-lookup` via `GET /v1/traces/{trace_id}`, input `#/components/schemas/TraceLookupRequest`, output `#/components/schemas/TraceLookupResponse`, risk `low`, side effect `read_only`
 
 ## Environment
 - `ORAG_API_BASE_URL`
@@ -38,7 +38,7 @@ Use trace evidence as read-only input for diagnosis.
 3. Report findings, severity, recommended actions, and verification commands.
 
 ## Example Prompts
-- Look up trace trace_req and summarize failing stages.
+- Look up trace trace_req; if found, summarize failing stages, otherwise report blocked.
 
 ## Example Request: `orag_diagnose`
 Diagnose why make agent-sync-check failed and recommend the next verification command.
@@ -80,7 +80,7 @@ Suggest a runbook for storage readiness failures.
 
 
 ## Example Request: `orag_trace_lookup`
-Look up trace trace_req and summarize the failed stage.
+Look up trace trace_req and summarize the failed stage when evidence exists.
 
 ```json
 {
@@ -91,6 +91,7 @@ Look up trace trace_req and summarize the failed stage.
 ## Expected Output Shape: `orag_trace_lookup`
 ```json
 {
+  "found": true,
   "trace_id": "trace_req",
   "verdict": "pass"
 }
@@ -102,6 +103,7 @@ Look up trace trace_req and summarize the failed stage.
 
 ## Failure Handling
 - Return blocked when evidence is insufficient.
+- For trace lookup, return found=false and verdict=blocked when the trace is missing or the trace store is unavailable.
 - Preserve trace IDs and failed command output as evidence.
 
 ## Trae Usage
