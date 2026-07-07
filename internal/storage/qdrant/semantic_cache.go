@@ -3,6 +3,7 @@ package qdrantstore
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	qdrant "github.com/qdrant/go-client/qdrant"
@@ -86,7 +87,7 @@ func (s SemanticCache) DeleteKnowledgeBaseSemanticCache(ctx context.Context, ten
 
 func semanticCacheLookupFilter(req rag.SemanticCacheLookupRequest) *qdrant.Filter {
 	version := semanticCachePayloadVersion
-	if req.SemanticCacheNamespace != "" {
+	if semanticCacheNamespace(req.Namespace) != "" {
 		version = semanticCacheNamespacedPayloadVersion
 	}
 	must := []*qdrant.Condition{
@@ -96,8 +97,8 @@ func semanticCacheLookupFilter(req rag.SemanticCacheLookupRequest) *qdrant.Filte
 		matchKeyword("profile", string(semanticCacheProfile(req.Profile))),
 		matchInteger("top_k", int64(req.TopK)),
 	}
-	if req.SemanticCacheNamespace != "" {
-		must = append(must, matchKeyword("cache_namespace", req.SemanticCacheNamespace))
+	if namespace := semanticCacheNamespace(req.Namespace); namespace != "" {
+		must = append(must, matchKeyword("namespace", namespace))
 	}
 	return &qdrant.Filter{Must: must}
 }
@@ -107,13 +108,12 @@ func semanticCachePointID(entry rag.SemanticCacheEntry) *qdrant.PointId {
 }
 
 func semanticCachePointKey(entry rag.SemanticCacheEntry) string {
-	return rag.CacheKey(rag.QueryRequest{
-		TenantID:               entry.TenantID,
-		KnowledgeBaseID:        entry.KnowledgeBaseID,
-		Query:                  entry.Query,
-		Profile:                semanticCacheEntryProfile(entry),
-		TopK:                   entry.TopK,
-		SemanticCacheNamespace: entry.SemanticCacheNamespace,
+	return rag.NamespacedCacheKey(semanticCacheNamespace(entry.Namespace), rag.QueryRequest{
+		TenantID:        entry.TenantID,
+		KnowledgeBaseID: entry.KnowledgeBaseID,
+		Query:           entry.Query,
+		Profile:         semanticCacheEntryProfile(entry),
+		TopK:            entry.TopK,
 	})
 }
 
@@ -127,6 +127,7 @@ func semanticCachePayload(entry rag.SemanticCacheEntry) map[string]*qdrant.Value
 	payload := map[string]*qdrant.Value{
 		"tenant_id":         stringValue(entry.TenantID),
 		"knowledge_base_id": stringValue(entry.KnowledgeBaseID),
+		"cache_key_version": stringValue(semanticCachePayloadVersion),
 		"query":             stringValue(entry.Query),
 		"profile":           stringValue(string(profile)),
 		"top_k":             integerValue(int64(entry.TopK)),
@@ -135,11 +136,9 @@ func semanticCachePayload(entry rag.SemanticCacheEntry) map[string]*qdrant.Value
 		"retrieved_json":    stringValue(mustMarshalString(resp.RetrievedChunks)),
 		"created_at":        stringValue(createdAt.UTC().Format(time.RFC3339Nano)),
 	}
-	if entry.SemanticCacheNamespace != "" {
+	if namespace := semanticCacheNamespace(entry.Namespace); namespace != "" {
 		payload["cache_key_version"] = stringValue(semanticCacheNamespacedPayloadVersion)
-		payload["cache_namespace"] = stringValue(entry.SemanticCacheNamespace)
-	} else {
-		payload["cache_key_version"] = stringValue(semanticCachePayloadVersion)
+		payload["namespace"] = stringValue(namespace)
 	}
 	return payload
 }
@@ -147,6 +146,15 @@ func semanticCachePayload(entry rag.SemanticCacheEntry) map[string]*qdrant.Value
 func semanticCacheLookupResponseFromPayload(req rag.SemanticCacheLookupRequest, payload map[string]*qdrant.Value) (rag.QueryResponse, bool) {
 	profile := payloadString(payload, "profile")
 	if profile == "" || rag.Profile(profile) != semanticCacheProfile(req.Profile) {
+		return rag.QueryResponse{}, false
+	}
+	payloadNamespace := payloadString(payload, "namespace")
+	requestNamespace := semanticCacheNamespace(req.Namespace)
+	if requestNamespace != "" {
+		if payloadNamespace != requestNamespace {
+			return rag.QueryResponse{}, false
+		}
+	} else if payloadNamespace != "" {
 		return rag.QueryResponse{}, false
 	}
 	return semanticCacheResponseFromPayload(payload), true
@@ -187,6 +195,10 @@ func semanticCacheEntryProfile(entry rag.SemanticCacheEntry) rag.Profile {
 		return entry.Profile
 	}
 	return semanticCacheProfile(entry.Response.Profile)
+}
+
+func semanticCacheNamespace(namespace string) string {
+	return strings.TrimSpace(namespace)
 }
 
 func matchInteger(key string, value int64) *qdrant.Condition {

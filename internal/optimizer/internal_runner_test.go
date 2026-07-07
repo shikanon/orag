@@ -18,6 +18,7 @@ func TestInternalRAGRunnerAppliesCandidateToClonedService(t *testing.T) {
 		Packer:                 rag.ContextPacker{TopN: 2},
 		TopK:                   5,
 		SemanticCacheThreshold: 0.88,
+		SemanticCacheNamespace: "production",
 		RRFK:                   60,
 		MultiQueryCount:        1,
 	}
@@ -91,7 +92,7 @@ func TestInternalRAGRunnerAppliesCandidateToClonedService(t *testing.T) {
 		t.Fatalf("candidate graph/cache settings not applied: %#v", capturedService)
 	}
 	if capturedService.SemanticCacheNamespace != "optimizer_candidate:"+candidate.ID {
-		t.Fatalf("candidate semantic cache namespace = %q, want candidate-scoped namespace", capturedService.SemanticCacheNamespace)
+		t.Fatalf("candidate semantic cache namespace = %q, want candidate namespace", capturedService.SemanticCacheNamespace)
 	}
 	clonedHybrid, ok := capturedService.Retriever.(*kb.HybridRetriever)
 	if !ok {
@@ -104,11 +105,8 @@ func TestInternalRAGRunnerAppliesCandidateToClonedService(t *testing.T) {
 		t.Fatalf("candidate retriever = %#v, want retrieval overrides", clonedHybrid)
 	}
 
-	if base.Packer.TopN != 2 || base.TopK != 5 || base.SemanticCacheThreshold != 0.88 || base.RRFK != 60 || base.QueryRewriteEnabled || base.HyDEEnabled || base.MultiQueryCount != 1 {
+	if base.Packer.TopN != 2 || base.TopK != 5 || base.SemanticCacheThreshold != 0.88 || base.SemanticCacheNamespace != "production" || base.RRFK != 60 || base.QueryRewriteEnabled || base.HyDEEnabled || base.MultiQueryCount != 1 {
 		t.Fatalf("base RAG was mutated: %#v", base)
-	}
-	if base.SemanticCacheNamespace != "" {
-		t.Fatalf("base semantic cache namespace = %q, want empty production namespace", base.SemanticCacheNamespace)
 	}
 	if baseRetriever.DenseTopK != 3 || baseRetriever.SparseTopK != 4 || baseRetriever.RRFK != 30 {
 		t.Fatalf("base retriever was mutated: %#v", baseRetriever)
@@ -164,6 +162,44 @@ func TestInternalRAGRunnerAppliesExplicitFalseGraphCandidate(t *testing.T) {
 	}
 }
 
+func TestInternalRAGRunnerAssignsDeterministicSemanticCacheNamespace(t *testing.T) {
+	candidate := CandidateConfig{
+		Retrieval: RetrievalCandidate{RRFK: 90},
+	}
+	wantCandidate := candidate.WithDeterministicID("internal_rag")
+	base := &rag.Service{}
+	var capturedService *rag.Service
+	runner := InternalRAGRunner{
+		BaseRAG: base,
+		BuildEvaluationRunner: func(service *rag.Service) EvaluationRunner {
+			capturedService = service
+			return fakeEvaluationRunner{run: eval.RunResult{ID: "eval_candidate"}}
+		},
+	}
+
+	result, err := runner.RunCandidate(context.Background(), CandidateRunRequest{
+		TenantID:        "tenant_a",
+		DatasetID:       "ds_1",
+		KnowledgeBaseID: "kb_1",
+		Candidate:       candidate,
+	})
+	if err != nil {
+		t.Fatalf("RunCandidate() error = %v", err)
+	}
+	if result.CandidateID != wantCandidate.ID {
+		t.Fatalf("candidate id = %q, want deterministic %q", result.CandidateID, wantCandidate.ID)
+	}
+	if capturedService == nil {
+		t.Fatal("candidate service was not captured")
+	}
+	if capturedService.SemanticCacheNamespace != "optimizer_candidate:"+wantCandidate.ID {
+		t.Fatalf("candidate semantic cache namespace = %q, want deterministic candidate namespace", capturedService.SemanticCacheNamespace)
+	}
+	if base.SemanticCacheNamespace != "" {
+		t.Fatalf("base semantic cache namespace = %q, want unchanged empty namespace", base.SemanticCacheNamespace)
+	}
+}
+
 func TestInternalRAGRunnerClearsBasePipelineForCandidateClone(t *testing.T) {
 	base := &rag.Service{
 		TopK:     5,
@@ -174,36 +210,14 @@ func TestInternalRAGRunnerClearsBasePipelineForCandidateClone(t *testing.T) {
 	cloned := runner.configureCandidateService(CandidateConfig{
 		Retrieval: RetrievalCandidate{DenseTopK: 12},
 	})
-
+	if cloned == base {
+		t.Fatal("candidate service reused base pointer")
+	}
 	if cloned.Pipeline != nil {
-		t.Fatalf("candidate pipeline = %#v, want nil so candidate parameters drive evaluation", cloned.Pipeline)
+		t.Fatalf("candidate pipeline = %#v, want nil to apply candidate overrides", cloned.Pipeline)
 	}
 	if base.Pipeline == nil {
 		t.Fatal("base pipeline was mutated")
-	}
-	if cloned.TopK != 12 {
-		t.Fatalf("top_k = %d, want candidate override", cloned.TopK)
-	}
-}
-
-func TestInternalRAGRunnerScopesSemanticCacheByCandidateID(t *testing.T) {
-	base := &rag.Service{
-		SemanticCacheNamespace: "",
-		TopK:                   5,
-	}
-	runner := InternalRAGRunner{BaseRAG: base}
-
-	first := runner.configureCandidateService(CandidateConfig{ID: "cand_a"})
-	second := runner.configureCandidateService(CandidateConfig{ID: "cand_b"})
-
-	if first.SemanticCacheNamespace == "" || second.SemanticCacheNamespace == "" {
-		t.Fatalf("candidate namespaces = %q/%q, want non-empty", first.SemanticCacheNamespace, second.SemanticCacheNamespace)
-	}
-	if first.SemanticCacheNamespace == second.SemanticCacheNamespace {
-		t.Fatalf("candidate namespaces should differ, both %q", first.SemanticCacheNamespace)
-	}
-	if base.SemanticCacheNamespace != "" {
-		t.Fatalf("base semantic cache namespace = %q, want empty production namespace", base.SemanticCacheNamespace)
 	}
 }
 
@@ -242,6 +256,12 @@ func TestTempNamespaceManagerGCAndOwnerCleanup(t *testing.T) {
 	}
 }
 
+type fakePipeline struct{}
+
+func (fakePipeline) Invoke(context.Context, rag.QueryRequest) (rag.QueryResponse, error) {
+	return rag.QueryResponse{}, nil
+}
+
 func TestTempNamespaceManagerRecordsCleanupFailure(t *testing.T) {
 	manager := NewTempNamespaceManager(failingNamespaceCleaner{})
 	manager.now = func() time.Time { return time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC) }
@@ -267,12 +287,6 @@ func (r fakeEvaluationRunner) Run(_ context.Context, req eval.RunRequest) (eval.
 		*r.req = req
 	}
 	return r.run, nil
-}
-
-type fakePipeline struct{}
-
-func (fakePipeline) Invoke(context.Context, rag.QueryRequest) (rag.QueryResponse, error) {
-	return rag.QueryResponse{}, nil
 }
 
 type recordingNamespaceCleaner struct {

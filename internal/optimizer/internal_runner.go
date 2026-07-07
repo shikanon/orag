@@ -2,7 +2,6 @@ package optimizer
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/shikanon/orag/internal/dataset"
@@ -20,10 +19,7 @@ type InternalRAGRunner struct {
 }
 
 func (r InternalRAGRunner) RunCandidate(ctx context.Context, req CandidateRunRequest) (CandidateRunResult, error) {
-	candidate := req.Candidate
-	if candidate.ID == "" {
-		candidate = candidate.WithDeterministicID("internal_rag")
-	}
+	candidate := candidateWithDeterministicID(req.Candidate)
 	candidateRAG := r.configureCandidateService(candidate)
 	namespaces := r.registerTempNamespaces(candidate, req.NamespaceTTL)
 
@@ -71,12 +67,13 @@ func (r InternalRAGRunner) GCNamespaces(ctx context.Context) ([]TempNamespace, e
 }
 
 func (r InternalRAGRunner) configureCandidateService(candidate CandidateConfig) *rag.Service {
+	candidate = candidateWithDeterministicID(candidate)
 	if r.BaseRAG == nil {
-		return &rag.Service{}
+		return &rag.Service{SemanticCacheNamespace: candidateSemanticCacheNamespace(candidate.ID)}
 	}
 	cloned := *r.BaseRAG
 	cloned.Pipeline = nil
-	cloned.SemanticCacheNamespace = semanticCacheCandidateNamespace(candidate.ID)
+	cloned.SemanticCacheNamespace = candidateSemanticCacheNamespace(candidate.ID)
 	applyRetrievalCandidate(&cloned, candidate.Retrieval)
 	applyRerankerCandidate(&cloned, candidate.Reranker)
 	applyGraphCandidate(&cloned, candidate.Graph)
@@ -103,6 +100,17 @@ func (r InternalRAGRunner) registerTempNamespaces(candidate CandidateConfig, ttl
 
 func requiresTempNamespace(candidate CandidateConfig) bool {
 	return candidate.Indexing.Namespace != "" || candidate.Chunking.Enabled || candidate.Embedding.Enabled
+}
+
+func candidateWithDeterministicID(candidate CandidateConfig) CandidateConfig {
+	if candidate.ID == "" {
+		return candidate.WithDeterministicID("internal_rag")
+	}
+	return candidate
+}
+
+func candidateSemanticCacheNamespace(candidateID string) string {
+	return "optimizer_candidate:" + candidateID
 }
 
 func applyRetrievalCandidate(service *rag.Service, candidate RetrievalCandidate) {
@@ -210,12 +218,4 @@ func maxPositive(values ...int) int {
 		}
 	}
 	return maximum
-}
-
-func semanticCacheCandidateNamespace(candidateID string) string {
-	candidateID = strings.TrimSpace(candidateID)
-	if candidateID == "" {
-		return ""
-	}
-	return "optimizer_candidate:" + candidateID
 }

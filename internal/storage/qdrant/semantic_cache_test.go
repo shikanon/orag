@@ -14,13 +14,13 @@ import (
 func TestSemanticCachePayloadRoundTrip(t *testing.T) {
 	now := time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC)
 	entry := rag.SemanticCacheEntry{
-		TenantID:               "tenant_default",
-		KnowledgeBaseID:        "kb_default",
-		Query:                  "qdrant cache",
-		Profile:                rag.ProfileRealtime,
-		TopK:                   8,
-		SemanticCacheNamespace: "optimizer_candidate:cand_a",
-		CreatedAt:              now,
+		Namespace:       "optimizer_candidate:cand_a",
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant cache",
+		Profile:         rag.ProfileRealtime,
+		TopK:            8,
+		CreatedAt:       now,
 		Response: rag.QueryResponse{
 			Answer:  "cached answer",
 			Profile: rag.ProfileRealtime,
@@ -48,11 +48,11 @@ func TestSemanticCachePayloadRoundTrip(t *testing.T) {
 	if got := payloadString(payload, "cache_key_version"); got != semanticCacheNamespacedPayloadVersion {
 		t.Fatalf("cache_key_version = %q", got)
 	}
-	if got := payloadString(payload, "cache_namespace"); got != entry.SemanticCacheNamespace {
-		t.Fatalf("cache_namespace = %q", got)
-	}
 	if got := payloadString(payload, "profile"); got != string(entry.Profile) {
 		t.Fatalf("payload profile = %q", got)
+	}
+	if got := payloadString(payload, "namespace"); got != entry.Namespace {
+		t.Fatalf("payload namespace = %q, want %q", got, entry.Namespace)
 	}
 	if got := payload["top_k"].GetIntegerValue(); got != int64(entry.TopK) {
 		t.Fatalf("payload top_k = %d", got)
@@ -77,11 +77,10 @@ func TestSemanticCachePayloadRoundTrip(t *testing.T) {
 
 func TestSemanticCacheLookupFilterIncludesProfile(t *testing.T) {
 	req := rag.SemanticCacheLookupRequest{
-		TenantID:               "tenant_default",
-		KnowledgeBaseID:        "kb_default",
-		Profile:                rag.ProfileHighPrecision,
-		TopK:                   12,
-		SemanticCacheNamespace: "optimizer_candidate:cand_a",
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Profile:         rag.ProfileHighPrecision,
+		TopK:            12,
 	}
 
 	filter := semanticCacheLookupFilter(req)
@@ -91,7 +90,7 @@ func TestSemanticCacheLookupFilterIncludesProfile(t *testing.T) {
 	if got := filterKeyword(t, filter, "knowledge_base_id"); got != req.KnowledgeBaseID {
 		t.Fatalf("knowledge base filter = %q", got)
 	}
-	if got := filterKeyword(t, filter, "cache_key_version"); got != semanticCacheNamespacedPayloadVersion {
+	if got := filterKeyword(t, filter, "cache_key_version"); got != semanticCachePayloadVersion {
 		t.Fatalf("cache key version filter = %q", got)
 	}
 	if got := filterKeyword(t, filter, "profile"); got != string(req.Profile) {
@@ -100,9 +99,6 @@ func TestSemanticCacheLookupFilterIncludesProfile(t *testing.T) {
 	if got := filterInteger(t, filter, "top_k"); got != int64(req.TopK) {
 		t.Fatalf("top_k filter = %d", got)
 	}
-	if got := filterKeyword(t, filter, "cache_namespace"); got != req.SemanticCacheNamespace {
-		t.Fatalf("cache namespace filter = %q, want %q", got, req.SemanticCacheNamespace)
-	}
 
 	req.Profile = ""
 	if got := filterKeyword(t, semanticCacheLookupFilter(req), "profile"); got != string(rag.ProfileRealtime) {
@@ -110,44 +106,32 @@ func TestSemanticCacheLookupFilterIncludesProfile(t *testing.T) {
 	}
 }
 
-func TestSemanticCacheLookupFilterOmitsEmptyNamespace(t *testing.T) {
+func TestSemanticCacheLookupFilterIncludesNamespaceWhenPresent(t *testing.T) {
 	req := rag.SemanticCacheLookupRequest{
+		Namespace:       " optimizer_candidate:cand_a ",
 		TenantID:        "tenant_default",
 		KnowledgeBaseID: "kb_default",
 		Profile:         rag.ProfileRealtime,
-		TopK:            8,
+		TopK:            12,
 	}
 
 	filter := semanticCacheLookupFilter(req)
-	if got := filterKeyword(t, filter, "cache_key_version"); got != semanticCachePayloadVersion {
-		t.Fatalf("empty namespace cache key version filter = %q, want %q", got, semanticCachePayloadVersion)
+	if got := filterKeyword(t, filter, "namespace"); got != "optimizer_candidate:cand_a" {
+		t.Fatalf("namespace filter = %q, want trimmed namespace", got)
 	}
-	if hasFilterField(filter, "cache_namespace") {
-		t.Fatalf("empty semantic cache namespace should not add a Qdrant filter")
-	}
-	payload := semanticCachePayload(rag.SemanticCacheEntry{
-		TenantID:        req.TenantID,
-		KnowledgeBaseID: req.KnowledgeBaseID,
-		Query:           "qdrant cache",
-		Profile:         req.Profile,
-		TopK:            req.TopK,
-		Response:        rag.QueryResponse{Profile: req.Profile},
-	})
-	if _, ok := payload["cache_namespace"]; ok {
-		t.Fatalf("empty semantic cache namespace should not be stored in payload")
-	}
-	if got := payloadString(payload, "cache_key_version"); got != semanticCachePayloadVersion {
-		t.Fatalf("empty namespace payload version = %q, want %q", got, semanticCachePayloadVersion)
+
+	req.Namespace = ""
+	if filterHasField(semanticCacheLookupFilter(req), "namespace") {
+		t.Fatalf("empty namespace should not add a namespace filter")
 	}
 }
 
 func TestSemanticCachePointKeyUsesResolvedProfile(t *testing.T) {
 	entry := rag.SemanticCacheEntry{
-		TenantID:               "tenant_default",
-		KnowledgeBaseID:        "kb_default",
-		Query:                  "  Qdrant   Cache  ",
-		TopK:                   8,
-		SemanticCacheNamespace: "optimizer_candidate:cand_a",
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "  Qdrant   Cache  ",
+		TopK:            8,
 		Response: rag.QueryResponse{
 			Profile: rag.ProfileHighPrecision,
 		},
@@ -155,12 +139,11 @@ func TestSemanticCachePointKeyUsesResolvedProfile(t *testing.T) {
 
 	got := semanticCachePointKey(entry)
 	want := rag.CacheKey(rag.QueryRequest{
-		TenantID:               entry.TenantID,
-		KnowledgeBaseID:        entry.KnowledgeBaseID,
-		Query:                  entry.Query,
-		Profile:                rag.ProfileHighPrecision,
-		TopK:                   entry.TopK,
-		SemanticCacheNamespace: entry.SemanticCacheNamespace,
+		TenantID:        entry.TenantID,
+		KnowledgeBaseID: entry.KnowledgeBaseID,
+		Query:           entry.Query,
+		Profile:         rag.ProfileHighPrecision,
+		TopK:            entry.TopK,
 	})
 	if got != want {
 		t.Fatalf("point key = %q, want %q", got, want)
@@ -180,11 +163,46 @@ func TestSemanticCachePointKeyUsesResolvedProfile(t *testing.T) {
 	if semanticCachePointKey(topKVariant) == got {
 		t.Fatalf("point key should differ by top_k")
 	}
+}
+
+func TestSemanticCachePointKeyIncludesNamespace(t *testing.T) {
+	entry := rag.SemanticCacheEntry{
+		Namespace:       "optimizer_candidate:cand_a",
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant cache",
+		Profile:         rag.ProfileRealtime,
+		TopK:            8,
+	}
+
+	got := semanticCachePointKey(entry)
+	want := rag.NamespacedCacheKey(entry.Namespace, rag.QueryRequest{
+		TenantID:        entry.TenantID,
+		KnowledgeBaseID: entry.KnowledgeBaseID,
+		Query:           entry.Query,
+		Profile:         entry.Profile,
+		TopK:            entry.TopK,
+	})
+	if got != want {
+		t.Fatalf("point key = %q, want %q", got, want)
+	}
 
 	namespaceVariant := entry
-	namespaceVariant.SemanticCacheNamespace = "optimizer_candidate:cand_b"
+	namespaceVariant.Namespace = "optimizer_candidate:cand_b"
 	if semanticCachePointKey(namespaceVariant) == got {
-		t.Fatalf("point key should differ by semantic cache namespace")
+		t.Fatalf("point key should differ by namespace")
+	}
+
+	legacy := entry
+	legacy.Namespace = ""
+	if semanticCachePointKey(legacy) != rag.CacheKey(rag.QueryRequest{
+		TenantID:        legacy.TenantID,
+		KnowledgeBaseID: legacy.KnowledgeBaseID,
+		Query:           legacy.Query,
+		Profile:         legacy.Profile,
+		TopK:            legacy.TopK,
+	}) {
+		t.Fatalf("empty namespace should preserve legacy point key")
 	}
 }
 
@@ -211,6 +229,52 @@ func TestSemanticCacheLookupPayloadRequiresMatchingProfile(t *testing.T) {
 	delete(payload, "profile")
 	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{Profile: rag.ProfileRealtime}, payload); ok {
 		t.Fatalf("empty profile payload should miss")
+	}
+}
+
+func TestSemanticCacheLookupPayloadRequiresMatchingNamespace(t *testing.T) {
+	payload := map[string]*qdrant.Value{
+		"namespace":      stringValue("optimizer_candidate:cand_a"),
+		"profile":        stringValue(string(rag.ProfileRealtime)),
+		"answer":         stringValue("cached answer"),
+		"citations_json": stringValue("[]"),
+		"retrieved_json": stringValue("[]"),
+	}
+
+	resp, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{
+		Namespace: "optimizer_candidate:cand_a",
+		Profile:   rag.ProfileRealtime,
+	}, payload)
+	if !ok {
+		t.Fatalf("same namespace payload should hit")
+	}
+	if resp.Answer != "cached answer" {
+		t.Fatalf("response answer = %q", resp.Answer)
+	}
+
+	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{
+		Namespace: "optimizer_candidate:cand_b",
+		Profile:   rag.ProfileRealtime,
+	}, payload); ok {
+		t.Fatalf("mismatched namespace payload should miss")
+	}
+	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{
+		Profile: rag.ProfileRealtime,
+	}, payload); ok {
+		t.Fatalf("unnamespaced request should not hit namespaced payload")
+	}
+
+	delete(payload, "namespace")
+	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{
+		Namespace: "optimizer_candidate:cand_a",
+		Profile:   rag.ProfileRealtime,
+	}, payload); ok {
+		t.Fatalf("namespaced request should not hit legacy payload")
+	}
+	if _, ok := semanticCacheLookupResponseFromPayload(rag.SemanticCacheLookupRequest{
+		Profile: rag.ProfileRealtime,
+	}, payload); !ok {
+		t.Fatalf("unnamespaced request should still hit legacy payload")
 	}
 }
 
@@ -266,9 +330,10 @@ func filterField(t *testing.T, filter *qdrant.Filter, key string) *qdrant.FieldC
 	return nil
 }
 
-func hasFilterField(filter *qdrant.Filter, key string) bool {
+func filterHasField(filter *qdrant.Filter, key string) bool {
 	for _, cond := range filter.GetMust() {
-		if cond.GetField().GetKey() == key {
+		field := cond.GetField()
+		if field.GetKey() == key {
 			return true
 		}
 	}

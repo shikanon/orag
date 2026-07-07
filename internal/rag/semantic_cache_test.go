@@ -66,19 +66,19 @@ func TestInMemorySemanticCacheIsolatesNamespace(t *testing.T) {
 	ctx := context.Background()
 	cache := NewSemanticCache(10)
 	entry := SemanticCacheEntry{
-		TenantID:               "tenant_default",
-		KnowledgeBaseID:        "kb_default",
-		Query:                  "qdrant vector search",
-		Profile:                ProfileRealtime,
-		TopK:                   8,
-		SemanticCacheNamespace: "optimizer_candidate:cand_a",
+		Namespace:       "optimizer_candidate:cand_a",
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+		Profile:         ProfileRealtime,
+		TopK:            8,
 		Response: QueryResponse{
-			Answer:  "candidate A answer",
+			Answer:  "candidate a answer",
 			Profile: ProfileRealtime,
 			Citations: []Citation{{
-				ChunkID:    "chk_1",
-				DocumentID: "doc_1",
-				SourceURI:  "memory://doc",
+				ChunkID:    "chk_a",
+				DocumentID: "doc_a",
+				SourceURI:  "memory://candidate-a",
 			}},
 		},
 	}
@@ -91,19 +91,19 @@ func TestInMemorySemanticCacheIsolatesNamespace(t *testing.T) {
 		namespace string
 		wantHit   bool
 	}{
-		{name: "same candidate namespace", namespace: "optimizer_candidate:cand_a", wantHit: true},
-		{name: "different candidate namespace", namespace: "optimizer_candidate:cand_b", wantHit: false},
-		{name: "production namespace", namespace: "", wantHit: false},
+		{name: "same namespace", namespace: entry.Namespace, wantHit: true},
+		{name: "different namespace", namespace: "optimizer_candidate:cand_b", wantHit: false},
+		{name: "empty namespace", namespace: "", wantHit: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, ok, err := cache.Lookup(ctx, SemanticCacheLookupRequest{
-				TenantID:               entry.TenantID,
-				KnowledgeBaseID:        entry.KnowledgeBaseID,
-				Query:                  entry.Query,
-				Profile:                entry.Profile,
-				TopK:                   entry.TopK,
-				SemanticCacheNamespace: tt.namespace,
+			resp, ok, err := cache.Lookup(ctx, SemanticCacheLookupRequest{
+				Namespace:       tt.namespace,
+				TenantID:        entry.TenantID,
+				KnowledgeBaseID: entry.KnowledgeBaseID,
+				Query:           entry.Query,
+				Profile:         entry.Profile,
+				TopK:            entry.TopK,
 			})
 			if err != nil {
 				t.Fatalf("Lookup() error = %v", err)
@@ -111,7 +111,37 @@ func TestInMemorySemanticCacheIsolatesNamespace(t *testing.T) {
 			if ok != tt.wantHit {
 				t.Fatalf("Lookup() hit = %v, want %v", ok, tt.wantHit)
 			}
+			if ok {
+				if len(resp.Citations) != 1 || resp.Citations[0].ChunkID != "chk_a" {
+					t.Fatalf("Lookup() response = %#v, want candidate a chunk", resp)
+				}
+			}
 		})
+	}
+
+	legacyEntry := entry
+	legacyEntry.Namespace = ""
+	legacyEntry.Response.Answer = "legacy answer"
+	legacyEntry.Response.Citations = []Citation{{
+		ChunkID:    "chk_legacy",
+		DocumentID: "doc_legacy",
+		SourceURI:  "memory://legacy",
+	}}
+	if err := cache.Store(ctx, legacyEntry); err != nil {
+		t.Fatalf("Store() legacy error = %v", err)
+	}
+	resp, ok, err := cache.Lookup(ctx, SemanticCacheLookupRequest{
+		TenantID:        legacyEntry.TenantID,
+		KnowledgeBaseID: legacyEntry.KnowledgeBaseID,
+		Query:           legacyEntry.Query,
+		Profile:         legacyEntry.Profile,
+		TopK:            legacyEntry.TopK,
+	})
+	if err != nil {
+		t.Fatalf("Lookup() legacy error = %v", err)
+	}
+	if !ok || len(resp.Citations) != 1 || resp.Citations[0].ChunkID != "chk_legacy" {
+		t.Fatalf("legacy lookup = %#v, hit %v; want legacy chunk hit", resp, ok)
 	}
 }
 
@@ -127,8 +157,6 @@ func TestCacheKeyIncludesProfileAndTopK(t *testing.T) {
 	profileVariant.Profile = ProfileHighPrecision
 	topKVariant := base
 	topKVariant.TopK = 16
-	namespaceVariant := base
-	namespaceVariant.SemanticCacheNamespace = "optimizer_candidate:cand_a"
 	tenantVariant := base
 	tenantVariant.TenantID = "tenant_other"
 	knowledgeBaseVariant := base
@@ -148,18 +176,24 @@ func TestCacheKeyIncludesProfileAndTopK(t *testing.T) {
 	if CacheKey(base) == CacheKey(topKVariant) {
 		t.Fatalf("CacheKey() should differ by top_k")
 	}
-	if CacheKey(base) == CacheKey(namespaceVariant) {
-		t.Fatalf("CacheKey() should differ by semantic cache namespace")
-	}
 	if CacheKey(base) != CacheKey(queryWhitespaceVariant) {
 		t.Fatalf("CacheKey() should normalize query case and whitespace")
+	}
+	if NamespacedCacheKey("", base) != CacheKey(base) {
+		t.Fatalf("empty namespace should preserve existing CacheKey() behavior")
+	}
+	if NamespacedCacheKey("optimizer_candidate:cand_a", base) == CacheKey(base) {
+		t.Fatalf("namespaced key should differ from the existing unnamespaced key")
+	}
+	if NamespacedCacheKey("optimizer_candidate:cand_a", base) == NamespacedCacheKey("optimizer_candidate:cand_b", base) {
+		t.Fatalf("namespaced key should differ by namespace")
 	}
 }
 
 func TestSemanticCacheStoreUsesRequestProfile(t *testing.T) {
 	ctx := context.Background()
 	cache := &recordingSemanticCache{}
-	service := Service{Cache: cache, SemanticCacheNamespace: "optimizer_candidate:cand_a"}
+	service := Service{Cache: cache}
 	req := QueryRequest{
 		TenantID:        "tenant_default",
 		KnowledgeBaseID: "kb_default",
@@ -183,9 +217,6 @@ func TestSemanticCacheStoreUsesRequestProfile(t *testing.T) {
 	}
 	if cache.entry.Response.Profile != ProfileRealtime {
 		t.Fatalf("stored response profile = %q, want %q", cache.entry.Response.Profile, ProfileRealtime)
-	}
-	if cache.entry.SemanticCacheNamespace != service.SemanticCacheNamespace {
-		t.Fatalf("stored semantic cache namespace = %q, want %q", cache.entry.SemanticCacheNamespace, service.SemanticCacheNamespace)
 	}
 
 	resp.Profile = ""

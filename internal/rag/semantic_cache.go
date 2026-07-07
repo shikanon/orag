@@ -16,26 +16,26 @@ type SemanticCacheStore interface {
 }
 
 type SemanticCacheLookupRequest struct {
-	TenantID               string
-	KnowledgeBaseID        string
-	Query                  string
-	Vector                 []float64
-	Threshold              float64
-	Profile                Profile
-	TopK                   int
-	SemanticCacheNamespace string
+	Namespace       string
+	TenantID        string
+	KnowledgeBaseID string
+	Query           string
+	Vector          []float64
+	Threshold       float64
+	Profile         Profile
+	TopK            int
 }
 
 type SemanticCacheEntry struct {
-	TenantID               string
-	KnowledgeBaseID        string
-	Query                  string
-	Vector                 []float64
-	Profile                Profile
-	TopK                   int
-	SemanticCacheNamespace string
-	Response               QueryResponse
-	CreatedAt              time.Time
+	Namespace       string
+	TenantID        string
+	KnowledgeBaseID string
+	Query           string
+	Vector          []float64
+	Profile         Profile
+	TopK            int
+	Response        QueryResponse
+	CreatedAt       time.Time
 }
 
 type CacheEntry struct {
@@ -58,7 +58,7 @@ func NewSemanticCache(max int) *InMemorySemanticCache {
 }
 
 func (c *InMemorySemanticCache) Lookup(_ context.Context, req SemanticCacheLookupRequest) (QueryResponse, bool, error) {
-	resp, ok := c.Get(cacheKey(req.TenantID, req.KnowledgeBaseID, req.Profile, req.TopK, req.SemanticCacheNamespace, req.Query))
+	resp, ok := c.Get(namespacedCacheKey(req.Namespace, req.TenantID, req.KnowledgeBaseID, req.Profile, req.TopK, req.Query))
 	return resp, ok, nil
 }
 
@@ -71,7 +71,7 @@ func (c *InMemorySemanticCache) Store(_ context.Context, entry SemanticCacheEntr
 	if resp.Profile == "" {
 		resp.Profile = profile
 	}
-	c.Put(cacheKey(entry.TenantID, entry.KnowledgeBaseID, profile, entry.TopK, entry.SemanticCacheNamespace, entry.Query), resp)
+	c.Put(namespacedCacheKey(entry.Namespace, entry.TenantID, entry.KnowledgeBaseID, profile, entry.TopK, entry.Query), resp)
 	return nil
 }
 
@@ -95,24 +95,34 @@ func (c *InMemorySemanticCache) Put(query string, resp QueryResponse) {
 }
 
 func CacheKey(req QueryRequest) string {
-	return cacheKey(req.TenantID, req.KnowledgeBaseID, req.Profile, req.TopK, req.SemanticCacheNamespace, req.Query)
+	return namespacedCacheKey(req.SemanticCacheNamespace, req.TenantID, req.KnowledgeBaseID, req.Profile, req.TopK, req.Query)
 }
 
-func cacheKey(tenantID, knowledgeBaseID string, profile Profile, topK int, namespace, query string) string {
+func NamespacedCacheKey(namespace string, req QueryRequest) string {
+	return namespacedCacheKey(namespace, req.TenantID, req.KnowledgeBaseID, req.Profile, req.TopK, req.Query)
+}
+
+func cacheKey(tenantID, knowledgeBaseID string, profile Profile, topK int, query string) string {
+	return namespacedCacheKey("", tenantID, knowledgeBaseID, profile, topK, query)
+}
+
+func namespacedCacheKey(namespace, tenantID, knowledgeBaseID string, profile Profile, topK int, query string) string {
 	if profile == "" {
 		profile = ProfileRealtime
 	}
 	parts := []string{
 		semanticCacheKeyVersion,
+	}
+	if namespace = strings.TrimSpace(namespace); namespace != "" {
+		parts = append(parts, "namespace", namespace)
+	}
+	parts = append(parts,
 		tenantID,
 		knowledgeBaseID,
 		string(profile),
 		strconv.Itoa(topK),
-	}
-	if namespace = strings.TrimSpace(namespace); namespace != "" {
-		parts = append(parts, namespace)
-	}
-	parts = append(parts, normalizeCacheQuery(query))
+		normalizeCacheQuery(query),
+	)
 	return strings.Join(parts, "\x1f")
 }
 
