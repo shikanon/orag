@@ -1,6 +1,6 @@
 # Expected Output
 
-- `30_query.sh` returns an answer grounded in imported support material.
-- The response includes citations that a support agent can attach to the reply.
-- The response includes a `trace_id` that can be inspected with `36_trace_lookup.sh` during escalation.
-- Missing service, token, knowledge base, or document state fails fast with actionable messages from the shared curl helper.
+- `go run ./examples/scenarios/customer-support` prints `scenario=customer-support`.
+- The output includes `document_id=doc_`, `answer=Found`, `citations=`, and `trace_id=trace_customer_support`.
+- `usage_dimensions` explains support users, trusted input data, ORAG capabilities, and success signals.
+- `recommended_next_steps` explains how to replace `demo-data.md` and use the trace ID during escalation.

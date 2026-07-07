@@ -1,6 +1,6 @@
 # Expected Output
 
-- `30_query.sh` returns a runbook-style answer with citations to operational source material.
-- `36_trace_lookup.sh` returns the trace record for the answer so engineers can inspect query, retrieval, and response metadata.
-- The scenario points engineers to read-only self-check and diagnose Skill examples for safe operational evidence gathering.
-- The answer can be copied into an incident ticket with cited evidence and a trace ID.
+- `go run ./examples/scenarios/engineering-runbook` prints `scenario=engineering-runbook`.
+- The output includes `document_id=doc_`, `answer=Found`, `citations=`, and `trace_id=trace_engineering_runbook`.
+- `usage_dimensions` explains engineering users, runbook inputs, ORAG capabilities, and incident success signals.
+- `recommended_next_steps` explains how to replace `demo-data.md`, attach trace evidence to tickets, and tune retrieval after an incident.

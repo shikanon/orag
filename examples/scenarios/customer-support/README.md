@@ -16,42 +16,38 @@ Choose this scenario for support consoles, internal service desks, pre-sales ass
 
 - `sample-input.md` describes the representative user input.
 - `demo-data.md` provides support-policy and escalation source material for the runnable demo.
-- `run.sh` loads `demo-data.md`, sets role-specific ORAG example variables, and runs the maintained service scripts.
+- `main.go` loads `demo-data.md`, runs an in-process ORAG memory demo, and prints support-specific usage dimensions.
 - `expected-output.md` lists the observable success signals.
-- Commands below reference maintained examples instead of duplicating raw API calls.
+- Commands below use the public `pkg/memory` facade instead of duplicating raw API calls.
 
 ## Run
 
-From the repository root, start the API first when the scenario uses service-mode curl scripts:
+From the repository root, run the Go scenario demo:
 
 ```sh
-./scripts/dev-up.sh
-make migrate
-make run
-./scripts/wait-ready.sh
-```
-
-Then run the scenario demo:
-
-```sh
-./examples/scenarios/customer-support/run.sh
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/customer-support
 ```
 
 ## Demo Implementation
 
-- `run.sh` imports `demo-data.md` through `DOC_CONTENT` and uploads the same file through `UPLOAD_PATH`.
-- The demo creates a knowledge base, imports support material, asks a customer-escalation question, and looks up the saved trace.
-- Override `BASE_URL`, `STATE_DIR`, `QUERY`, or `DOC_CONTENT` to point the demo at a different service or support article.
+- `main.go` creates an in-memory ORAG client through `pkg/memory`.
+- The demo imports `demo-data.md`, asks a customer-escalation question, and prints answer, citations, trace metadata, and support usage dimensions.
+- Use this as a code-level pattern before wiring the same flow to service-mode curl or a production API client.
+
+## Usage Dimensions
+
+- User: customer support, pre-sales, and service desk teams.
+- Business problem: answer customer questions from trusted product knowledge.
+- Input data: support policy, FAQ, troubleshooting notes, escalation rules.
+- ORAG capabilities: document ingestion, retrieval QA, citations, trace evidence.
+- Success signal: support can reply with a grounded answer and share `trace_id` for escalation.
 
 ## Reused Assets
 
-- `examples/curl/05_health_ready.sh`
-- `examples/curl/00_login.sh`
-- `examples/curl/10_create_kb.sh`
-- `examples/curl/20_upload_doc.sh`
-- `examples/curl/25_upload_file.sh`
-- `examples/curl/30_query.sh`
-- `examples/curl/36_trace_lookup.sh`
+- `examples/scenarios/customer-support/main.go`
+- `examples/scenarios/customer-support/demo-data.md`
+- `examples/scenarios/internal/demo/demo.go`
+- `pkg/memory/memory.go`
 
 ## Expected Output
 

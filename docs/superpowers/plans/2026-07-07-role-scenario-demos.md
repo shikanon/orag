@@ -4,46 +4,55 @@
 
 **Goal:** Add runnable role-based ORAG demos for customer support, engineering, platform, product, and agent developer users.
 
-**Architecture:** Each role scenario owns a `run.sh` orchestrator and `demo-data.md` input material. The scripts reuse maintained curl, MCP, Skill, and Go examples instead of duplicating raw API calls. Contract tests verify every role folder has a runnable entry, data file, sample input, expected output, README references, and existing asset references.
+**Architecture:** Each role scenario owns a `main.go` program and `demo-data.md` input material. The Go demos use the public `pkg/memory` facade through a shared `examples/scenarios/internal/demo` helper, so they run without PostgreSQL, Qdrant, Ark, or a live API service. Contract tests verify every role folder has a Go entrypoint, data file, sample input, expected output, README usage dimensions, and referenced assets.
 
-**Tech Stack:** POSIX shell, Markdown, Go contract tests, existing ORAG examples under `examples/curl`, `examples/mcp`, `examples/skills`, and `examples/go`.
+**Tech Stack:** Go, `pkg/memory`, Markdown, Go contract tests, existing ORAG examples under `examples/mcp`, `examples/skills`, and `examples/go`.
 
 ---
 
 ### Task 1: Role Demo Entrypoints
 
 **Files:**
-- Create: `examples/scenarios/customer-support/run.sh`
-- Create: `examples/scenarios/engineering-runbook/run.sh`
-- Create: `examples/scenarios/platform-team/run.sh`
-- Create: `examples/scenarios/product-team/run.sh`
-- Create: `examples/scenarios/agent-developer/run.sh`
+- Create: `examples/scenarios/internal/demo/demo.go`
+- Create: `examples/scenarios/customer-support/main.go`
+- Create: `examples/scenarios/engineering-runbook/main.go`
+- Create: `examples/scenarios/platform-team/main.go`
+- Create: `examples/scenarios/product-team/main.go`
+- Create: `examples/scenarios/agent-developer/main.go`
 
-- [ ] **Step 1: Add executable shell wrappers**
+- [x] **Step 1: Add shared Go scenario runner**
 
-Each wrapper must:
+The shared helper must load role data, add it to `pkg/memory`, run a query, read trace metadata, and print usage dimensions.
 
-```sh
-#!/usr/bin/env sh
-set -eu
-SCENARIO_DIR="$(CDPATH= cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(CDPATH= cd "$SCENARIO_DIR/../../.." && pwd)"
-cd "$REPO_ROOT"
+```go
+type Scenario struct {
+	ID string
+	Title string
+	Role string
+	BusinessGoal string
+	UserQuestion string
+	DemoDataPaths []string
+	Dimensions []Dimension
+}
 ```
 
-- [ ] **Step 2: Reuse maintained commands**
+- [x] **Step 2: Add role-specific main packages**
 
-Service-mode role demos must run existing `examples/curl/*.sh` scripts. Agent demos must run MCP and agent sync commands. The scripts must not duplicate HTTP endpoints.
+Each role package must call the shared runner with concrete role data and must not import root `internal/*` packages.
 
-- [ ] **Step 3: Make scripts executable**
+- [x] **Step 3: Remove shell wrappers**
 
-Run:
+Delete the old `run.sh` files so the primary demo path is Go:
 
 ```sh
-chmod +x examples/scenarios/customer-support/run.sh examples/scenarios/engineering-runbook/run.sh examples/scenarios/platform-team/run.sh examples/scenarios/product-team/run.sh examples/scenarios/agent-developer/run.sh
+go run ./examples/scenarios/customer-support
+go run ./examples/scenarios/engineering-runbook
+go run ./examples/scenarios/platform-team
+go run ./examples/scenarios/product-team
+go run ./examples/scenarios/agent-developer
 ```
 
-Expected: all five files are executable.
+Expected: each command prints `scenario=`, `document_id=doc_`, `answer=Found`, `trace_id=`, `usage_dimensions`, `expected_signals`, and `recommended_next_steps`.
 
 ### Task 2: Role Demo Data
 
@@ -54,34 +63,35 @@ Expected: all five files are executable.
 - Create: `examples/scenarios/product-team/demo-data.md`
 - Create: `examples/scenarios/agent-developer/demo-data.md`
 
-- [ ] **Step 1: Add role-specific material**
+- [x] **Step 1: Add role-specific material**
 
 Each data file must include concrete source material that explains the role context, the user question, and the expected ORAG capability.
 
-- [ ] **Step 2: Link data from README**
+- [x] **Step 2: Link data from README**
 
-Each role README must mention `demo-data.md` in the scenario files section and explain that the current service scripts reuse maintained sample payloads.
+Each role README must mention `demo-data.md`, `main.go`, and `pkg/memory`, and must include `## Usage Dimensions`.
 
 ### Task 3: Contract Tests
 
 **Files:**
 - Modify: `tests/contract/examples_test.go`
 
-- [ ] **Step 1: Extend scenario assertions**
+- [x] **Step 1: Extend scenario assertions**
 
 The test must require each role demo to include:
 
 ```go
 "demo-data.md",
-"run.sh",
+"main.go",
 "## Demo Implementation",
+"## Usage Dimensions",
 ```
 
-- [ ] **Step 2: Assert executable mode**
+- [x] **Step 2: Assert Go package boundaries**
 
-Add a helper that checks `run.sh` has at least one executable bit set.
+Add a helper that rejects imports of `github.com/shikanon/orag/internal/` from role demo `main.go` files.
 
-- [ ] **Step 3: Run focused tests**
+- [x] **Step 3: Run focused tests**
 
 Run:
 
@@ -96,9 +106,9 @@ Expected: PASS.
 **Files:**
 - Modify: `examples/README.md`
 
-- [ ] **Step 1: Document role demo commands**
+- [x] **Step 1: Document role demo commands**
 
-The top-level examples README must point each role scenario at `run.sh`.
+The top-level examples README must point each role scenario at `go run ./examples/scenarios/<role>`.
 
 - [ ] **Step 2: Run example validation**
 

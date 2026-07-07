@@ -16,42 +16,38 @@ Choose this scenario for feature discovery, launch readiness reviews, prompt or 
 
 - `sample-input.md` describes the representative user input.
 - `demo-data.md` provides launch-readiness review material for the runnable demo.
-- `run.sh` loads `demo-data.md`, sets role-specific query and evaluation variables, and runs the maintained service scripts.
+- `main.go` loads `demo-data.md`, runs an in-process ORAG memory demo, and prints product usage dimensions.
 - `expected-output.md` lists the observable success signals.
-- Commands below reference maintained examples instead of duplicating raw API calls.
+- Commands below use the public `pkg/memory` facade instead of duplicating raw API calls.
 
 ## Run
 
-From the repository root, start the API first when the scenario uses service-mode curl scripts:
+From the repository root, run the Go scenario demo:
 
 ```sh
-./scripts/dev-up.sh
-make migrate
-make run
-./scripts/wait-ready.sh
-```
-
-Then run the scenario demo:
-
-```sh
-./examples/scenarios/product-team/run.sh
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/product-team
 ```
 
 ## Demo Implementation
 
-- `run.sh` imports `demo-data.md` through `DOC_CONTENT`.
-- The demo creates a reviewable answer, runs evaluation, and runs optimization for launch-readiness evidence.
-- Override `BASE_URL`, `STATE_DIR`, `QUERY`, `EVAL_QUERY`, or `GROUND_TRUTH` to adapt the product review.
+- `main.go` creates an in-memory ORAG client through `pkg/memory`.
+- The demo imports `demo-data.md`, asks a launch-readiness question, and prints answer, citations, trace metadata, and product usage dimensions.
+- Use this as the code-level review demo before running live service evaluation and optimization scripts.
+
+## Usage Dimensions
+
+- User: product managers and AI feature owners.
+- Business problem: decide whether a knowledge assistant is ready to launch.
+- Input data: launch criteria, representative questions, evaluation set, optimization candidates.
+- ORAG capabilities: grounded QA, citations, trace evidence, quality metrics, retrieval tuning.
+- Success signal: product can explain launch, hold, or tune decisions with evidence.
 
 ## Reused Assets
 
-- `examples/curl/05_health_ready.sh`
-- `examples/curl/00_login.sh`
-- `examples/curl/10_create_kb.sh`
-- `examples/curl/20_upload_doc.sh`
-- `examples/curl/30_query.sh`
-- `examples/curl/40_eval.sh`
-- `examples/curl/45_optimize.sh`
+- `examples/scenarios/product-team/main.go`
+- `examples/scenarios/product-team/demo-data.md`
+- `examples/scenarios/internal/demo/demo.go`
+- `pkg/memory/memory.go`
 
 ## Expected Output
 

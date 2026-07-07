@@ -6,11 +6,11 @@ This directory is the product-user scenario demo entry point for trying ORAG. St
 
 | Scenario | When to use ORAG | Run or inspect | Reused assets | Expected output |
 | --- | --- | --- | --- | --- |
-| Customer support | Answer customer, support, and pre-sales questions from maintained product knowledge. | `examples/scenarios/customer-support/run.sh` | `examples/curl/00_login.sh`, `examples/curl/10_create_kb.sh`, `examples/curl/20_upload_doc.sh`, `examples/curl/25_upload_file.sh`, `examples/curl/30_query.sh`, `examples/curl/36_trace_lookup.sh` | Grounded support answer with citations and escalation `trace_id`. |
-| Engineering runbook | Search runbooks, incident notes, architecture docs, and API references during debugging. | `examples/scenarios/engineering-runbook/run.sh` | `examples/curl/20_upload_doc.sh`, `examples/curl/30_query.sh`, `examples/curl/36_trace_lookup.sh`, `examples/skills/self-check-diagnose-ops.md` | Runbook answer, trace detail, and read-only diagnostic evidence. |
-| Platform team | Validate ORAG as a shared RAG service layer for application teams and agents. | `examples/scenarios/platform-team/run.sh` | `examples/curl/40_eval.sh`, `examples/curl/45_optimize.sh`, `examples/mcp/README.md`, `examples/skills/README.md` | Service smoke, evaluation/optimization evidence, and agent asset sync. |
-| Product team | Decide whether a knowledge assistant is ready to launch and which retrieval settings to use. | `examples/scenarios/product-team/run.sh` | `examples/curl/30_query.sh`, `examples/curl/40_eval.sh`, `examples/curl/45_optimize.sh` | Answer review evidence, quality metrics, and selected optimization candidate. |
-| Agent developer | Expose ORAG verification and diagnostics to IDE, CLI, or MCP-based agents. | `examples/scenarios/agent-developer/run.sh` | `examples/mcp/stdio-client-config.json`, `examples/mcp/ralph-loop-stdio-smoke.jsonl`, `examples/mcp/self-check-stdio-smoke.jsonl`, `examples/skills/README.md` | MCP tool discovery, `ralph_loop_run`, `orag_check`, and Skill prompts. |
+| Customer support | Answer customer, support, and pre-sales questions from maintained product knowledge. | `go run ./examples/scenarios/customer-support` | `examples/scenarios/customer-support/main.go`, `examples/scenarios/customer-support/demo-data.md`, `pkg/memory/memory.go` | Grounded support answer with citations and escalation `trace_id`. |
+| Engineering runbook | Search runbooks, incident notes, architecture docs, and API references during debugging. | `go run ./examples/scenarios/engineering-runbook` | `examples/scenarios/engineering-runbook/main.go`, `examples/scenarios/engineering-runbook/demo-data.md`, `pkg/memory/memory.go` | Runbook answer, trace detail, and read-only diagnostic evidence. |
+| Platform team | Validate ORAG as a shared RAG service layer for application teams and agents. | `go run ./examples/scenarios/platform-team` | `examples/scenarios/platform-team/main.go`, `examples/scenarios/platform-team/demo-data.md`, `examples/mcp/README.md`, `examples/skills/README.md` | Service readiness guidance, quality dimensions, and agent asset next steps. |
+| Product team | Decide whether a knowledge assistant is ready to launch and which retrieval settings to use. | `go run ./examples/scenarios/product-team` | `examples/scenarios/product-team/main.go`, `examples/scenarios/product-team/demo-data.md`, `pkg/memory/memory.go` | Answer review evidence, quality dimensions, and launch-readiness next steps. |
+| Agent developer | Expose ORAG verification and diagnostics to IDE, CLI, or MCP-based agents. | `go run ./examples/scenarios/agent-developer` | `examples/scenarios/agent-developer/main.go`, `examples/scenarios/agent-developer/demo-data.md`, `examples/mcp/stdio-client-config.json`, `examples/skills/README.md` | Tool-style answer, `trace_id`, usage dimensions, and Skill/MCP next steps. |
 | Knowledge-base Q&A | Build a private knowledge-base assistant over imported documents. | `examples/scenarios/kb-qa/README.md` | `examples/curl/00_login.sh`, `examples/curl/10_create_kb.sh`, `examples/curl/20_upload_doc.sh`, `examples/curl/25_upload_file.sh`, `examples/curl/30_query.sh` | Answer JSON with citations and `trace_id`. |
 | Streaming assistant | Stream RAG answers to a chat UI with SSE events. | `examples/scenarios/streaming-assistant/README.md` | `examples/curl/35_query_stream.sh` | `trace`, `chunk`, `citations`, and `done` SSE events. |
 | Trace and diagnostics | Investigate a query result, latency issue, or retrieval quality concern. | `examples/scenarios/trace-diagnostics/README.md` | `examples/curl/36_trace_lookup.sh`, `examples/mcp/self-check-stdio-smoke.jsonl`, `examples/skills/self-check-diagnose-ops.md` | Trace detail plus read-only diagnostic evidence. |
@@ -57,14 +57,14 @@ Run the knowledge-base Q&A service flow in order:
 ./examples/curl/30_query.sh
 ```
 
-Run role-based scenario demos with their concrete demo data:
+Run role-based Go scenario demos with their concrete demo data:
 
 ```sh
-./examples/scenarios/customer-support/run.sh
-./examples/scenarios/engineering-runbook/run.sh
-./examples/scenarios/platform-team/run.sh
-./examples/scenarios/product-team/run.sh
-./examples/scenarios/agent-developer/run.sh
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/customer-support
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/engineering-runbook
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/platform-team
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/product-team
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/agent-developer
 ```
 
 Run the streaming, trace, evaluation, and optimization support commands after the Q&A state exists:
@@ -163,7 +163,7 @@ Or run the example package test:
 GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./examples/go/memory -v
 ```
 
-Expected output includes `document_id=doc_`, `trace_id=trace_example_memory`, `cache_status=disabled`, trace summary fields, and citation counts.
+Expected output includes `document_id=doc_`, `trace_id=trace_example_memory`, `cache_status=disabled`, trace summary fields, and citation counts. Role-based Go demos additionally print `usage_dimensions`, `expected_signals`, and `recommended_next_steps`.
 
 ## Covered Modules
 

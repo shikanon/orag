@@ -111,81 +111,73 @@ func TestExamplesScenarioDemos(t *testing.T) {
 	readme := readExamplesReadme(t)
 
 	for _, scenario := range []struct {
-		name     string
-		dir      string
-		title    string
-		runnable bool
-		assets   []string
+		name   string
+		dir    string
+		title  string
+		goDemo bool
+		assets []string
 	}{
 		{
-			name:     "customer support",
-			dir:      "examples/scenarios/customer-support",
-			title:    "# Customer Support Scenario",
-			runnable: true,
+			name:   "customer support",
+			dir:    "examples/scenarios/customer-support",
+			title:  "# Customer Support Scenario",
+			goDemo: true,
 			assets: []string{
-				"examples/curl/05_health_ready.sh",
-				"examples/curl/00_login.sh",
-				"examples/curl/10_create_kb.sh",
-				"examples/curl/20_upload_doc.sh",
-				"examples/curl/25_upload_file.sh",
-				"examples/curl/30_query.sh",
-				"examples/curl/36_trace_lookup.sh",
+				"examples/scenarios/customer-support/main.go",
+				"examples/scenarios/customer-support/demo-data.md",
+				"examples/scenarios/internal/demo/demo.go",
+				"pkg/memory/memory.go",
 			},
 		},
 		{
-			name:     "engineering runbook",
-			dir:      "examples/scenarios/engineering-runbook",
-			title:    "# Engineering Runbook Scenario",
-			runnable: true,
+			name:   "engineering runbook",
+			dir:    "examples/scenarios/engineering-runbook",
+			title:  "# Engineering Runbook Scenario",
+			goDemo: true,
 			assets: []string{
-				"examples/curl/05_health_ready.sh",
-				"examples/curl/00_login.sh",
-				"examples/curl/10_create_kb.sh",
-				"examples/curl/20_upload_doc.sh",
-				"examples/curl/30_query.sh",
-				"examples/curl/36_trace_lookup.sh",
+				"examples/scenarios/engineering-runbook/main.go",
+				"examples/scenarios/engineering-runbook/demo-data.md",
+				"examples/scenarios/internal/demo/demo.go",
+				"pkg/memory/memory.go",
 				"examples/skills/self-check-diagnose-ops.md",
 			},
 		},
 		{
-			name:     "platform team",
-			dir:      "examples/scenarios/platform-team",
-			title:    "# Platform Team Scenario",
-			runnable: true,
+			name:   "platform team",
+			dir:    "examples/scenarios/platform-team",
+			title:  "# Platform Team Scenario",
+			goDemo: true,
 			assets: []string{
-				"examples/curl/05_health_ready.sh",
-				"examples/curl/00_login.sh",
-				"examples/curl/10_create_kb.sh",
-				"examples/curl/20_upload_doc.sh",
-				"examples/curl/30_query.sh",
-				"examples/curl/36_trace_lookup.sh",
-				"examples/curl/40_eval.sh",
-				"examples/curl/45_optimize.sh",
+				"examples/scenarios/platform-team/main.go",
+				"examples/scenarios/platform-team/demo-data.md",
+				"examples/scenarios/internal/demo/demo.go",
+				"pkg/memory/memory.go",
 				"examples/mcp/README.md",
 				"examples/skills/README.md",
 			},
 		},
 		{
-			name:     "product team",
-			dir:      "examples/scenarios/product-team",
-			title:    "# Product Team Scenario",
-			runnable: true,
+			name:   "product team",
+			dir:    "examples/scenarios/product-team",
+			title:  "# Product Team Scenario",
+			goDemo: true,
 			assets: []string{
-				"examples/curl/05_health_ready.sh",
-				"examples/curl/00_login.sh",
-				"examples/curl/10_create_kb.sh",
-				"examples/curl/20_upload_doc.sh",
-				"examples/curl/30_query.sh",
-				"examples/curl/40_eval.sh",
-				"examples/curl/45_optimize.sh",
+				"examples/scenarios/product-team/main.go",
+				"examples/scenarios/product-team/demo-data.md",
+				"examples/scenarios/internal/demo/demo.go",
+				"pkg/memory/memory.go",
 			},
 		},
 		{
-			name:     "agent developer",
-			dir:      "examples/scenarios/agent-developer",
-			title:    "# Agent Developer Scenario",
-			runnable: true,
+			name:   "agent developer",
+			dir:    "examples/scenarios/agent-developer",
+			title:  "# Agent Developer Scenario",
+			goDemo: true,
 			assets: []string{
+				"examples/scenarios/agent-developer/main.go",
+				"examples/scenarios/agent-developer/demo-data.md",
+				"examples/scenarios/internal/demo/demo.go",
+				"pkg/memory/memory.go",
 				"examples/mcp/README.md",
 				"examples/mcp/stdio-client-config.json",
 				"examples/mcp/ralph-loop-stdio-smoke.jsonl",
@@ -261,11 +253,12 @@ func TestExamplesScenarioDemos(t *testing.T) {
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			readmePath := scenario.dir + "/README.md"
-			if scenario.runnable {
-				runPath := scenario.dir + "/run.sh"
-				assertReferencedPathExists(t, readme, runPath)
-				assertRepoFileExecutable(t, runPath)
+			if scenario.goDemo {
+				mainPath := scenario.dir + "/main.go"
+				assertReferencedPathExists(t, readme, mainPath)
+				assertRepoFileExists(t, mainPath)
 				assertRepoFileExists(t, scenario.dir+"/demo-data.md")
+				assertNoRootInternalImport(t, mainPath)
 			} else {
 				assertReferencedPathExists(t, readme, readmePath)
 			}
@@ -285,7 +278,6 @@ func TestExamplesScenarioDemos(t *testing.T) {
 				"## Expected Output",
 				"sample-input.md",
 				"expected-output.md",
-				"Commands below reference maintained examples instead of duplicating raw API calls.",
 			} {
 				if !strings.Contains(scenarioReadme, want) {
 					t.Fatalf("%s missing %q", readmePath, want)
@@ -295,14 +287,17 @@ func TestExamplesScenarioDemos(t *testing.T) {
 			for _, asset := range scenario.assets {
 				assertReferencedPathExists(t, scenarioReadme, asset)
 			}
-			if scenario.runnable {
+			if scenario.goDemo {
 				for _, want := range []string{
 					"demo-data.md",
-					"run.sh",
+					"main.go",
 					"## Demo Implementation",
+					"## Usage Dimensions",
+					"go run ./",
+					"pkg/memory",
 				} {
 					if !strings.Contains(scenarioReadme, want) {
-						t.Fatalf("%s missing runnable demo marker %q", readmePath, want)
+						t.Fatalf("%s missing Go demo marker %q", readmePath, want)
 					}
 				}
 			}
@@ -488,18 +483,15 @@ func assertRepoFileExists(t *testing.T, path string) {
 	}
 }
 
-func assertRepoFileExecutable(t *testing.T, path string) {
+func assertNoRootInternalImport(t *testing.T, path string) {
 	t.Helper()
 
-	info, err := os.Stat(filepath.Join("..", "..", filepath.FromSlash(path)))
+	body, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(path)))
 	if err != nil {
-		t.Fatalf("example path %s does not exist: %v", path, err)
+		t.Fatalf("read %s: %v", path, err)
 	}
-	if info.IsDir() {
-		t.Fatalf("example path %s is a directory", path)
-	}
-	if info.Mode()&0111 == 0 {
-		t.Fatalf("example path %s is not executable", path)
+	if strings.Contains(string(body), "github.com/shikanon/orag/internal/") {
+		t.Fatalf("scenario Go demo must not import root internal packages: %s", path)
 	}
 }
 

@@ -16,43 +16,40 @@ Choose this scenario for incident triage, on-call handoff, architecture lookup, 
 
 - `sample-input.md` describes the representative user input.
 - `demo-data.md` provides runbook and escalation source material for the runnable demo.
-- `run.sh` loads `demo-data.md`, sets role-specific ORAG example variables, and runs the maintained service scripts.
+- `main.go` loads `demo-data.md`, runs an in-process ORAG memory demo, and prints engineering usage dimensions.
 - `expected-output.md` lists the observable success signals.
-- Commands below reference maintained examples instead of duplicating raw API calls.
+- Commands below use the public `pkg/memory` facade instead of duplicating raw API calls.
 
 ## Run
 
-From the repository root, start the API first when the scenario uses service-mode curl scripts:
+From the repository root, run the Go scenario demo:
 
 ```sh
-./scripts/dev-up.sh
-make migrate
-make run
-./scripts/wait-ready.sh
-```
-
-Then run the scenario demo:
-
-```sh
-./examples/scenarios/engineering-runbook/run.sh
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/engineering-runbook
 ```
 
 For read-only operational checks, inspect `examples/skills/self-check-diagnose-ops.md`.
 
 ## Demo Implementation
 
-- `run.sh` imports `demo-data.md` through `DOC_CONTENT`.
-- The demo creates a knowledge base, imports runbook material, asks a latency-triage question, and looks up the saved trace.
-- Override `BASE_URL`, `STATE_DIR`, `QUERY`, or `DOC_CONTENT` to point the demo at a different service or runbook.
+- `main.go` creates an in-memory ORAG client through `pkg/memory`.
+- The demo imports `demo-data.md`, asks a latency-triage question, and prints answer, citations, trace metadata, and engineering usage dimensions.
+- Use this as a code-level pattern before wiring the same flow to a live ORAG service and incident system.
+
+## Usage Dimensions
+
+- User: engineers, SREs, and on-call responders.
+- Business problem: find actionable runbook steps during incidents.
+- Input data: runbooks, postmortems, architecture notes, API troubleshooting docs.
+- ORAG capabilities: knowledge retrieval, answer generation, trace metadata, cited source chunks.
+- Success signal: incident notes include the answer, cited runbook section, and `trace_id`.
 
 ## Reused Assets
 
-- `examples/curl/05_health_ready.sh`
-- `examples/curl/00_login.sh`
-- `examples/curl/10_create_kb.sh`
-- `examples/curl/20_upload_doc.sh`
-- `examples/curl/30_query.sh`
-- `examples/curl/36_trace_lookup.sh`
+- `examples/scenarios/engineering-runbook/main.go`
+- `examples/scenarios/engineering-runbook/demo-data.md`
+- `examples/scenarios/internal/demo/demo.go`
+- `pkg/memory/memory.go`
 - `examples/skills/self-check-diagnose-ops.md`
 
 ## Expected Output
