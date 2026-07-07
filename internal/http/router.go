@@ -61,6 +61,11 @@ func (s *Server) Hertz() *server.Hertz {
 	v1.DELETE("/knowledge-bases/:id", s.deleteKnowledgeBase)
 	v1.POST("/knowledge-bases/:id/documents", s.uploadDocument)
 	v1.POST("/knowledge-bases/:id/documents:import", s.importDocument)
+	v1.POST("/knowledge-bases/:id/uploads", s.createUploadSession)
+	v1.GET("/uploads/:id", s.getUploadSession)
+	v1.PUT("/uploads/:id", s.appendUploadChunk)
+	v1.POST("/uploads/*action", s.uploadAction)
+	v1.DELETE("/uploads/:id", s.cancelUploadSession)
 	v1.GET("/ingestion-jobs/:id", s.getIngestionJob)
 	v1.POST("/query", s.query)
 	v1.POST("/query:stream", s.queryStream)
@@ -266,6 +271,176 @@ func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	c.JSON(consts.StatusAccepted, map[string]any{"document": result.Document, "chunks": len(result.Chunks), "job": result.Job})
+}
+
+type createUploadRequest struct {
+	Name       string `json:"name"`
+	SourceURI  string `json:"source_uri"`
+	TotalBytes int64  `json:"total_bytes,omitempty"`
+}
+
+func (s *Server) createUploadSession(ctx context.Context, c *app.RequestContext) {
+	kbID := c.Param("id")
+	if !s.requireKnowledgeBase(ctx, c, kbID) {
+		return
+	}
+	var req createUploadRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "name is required")
+		return
+	}
+	if req.TotalBytes < 0 {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "total_bytes must be non-negative")
+		return
+	}
+	if maxBytes := s.App.Config.Ingestion.MaxDocumentBytes; maxBytes > 0 && req.TotalBytes > maxBytes {
+		writeError(c, http.StatusRequestEntityTooLarge, "payload_too_large", "document exceeds max size")
+		return
+	}
+	sourceURI := strings.TrimSpace(req.SourceURI)
+	if sourceURI == "" {
+		sourceURI = "upload://" + req.Name
+	}
+	session, err := s.uploadStore().CreateUpload(ctx, ingest.UploadSession{
+		TenantID:        tenantID(c),
+		KnowledgeBaseID: kbID,
+		Name:            req.Name,
+		SourceURI:       sourceURI,
+		TotalBytes:      req.TotalBytes,
+	})
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "upload_create_failed", err.Error())
+		return
+	}
+	c.JSON(consts.StatusCreated, uploadSessionResponse(session))
+}
+
+func (s *Server) getUploadSession(ctx context.Context, c *app.RequestContext) {
+	session, ok, err := s.uploadStore().GetUpload(ctx, tenantID(c), c.Param("id"))
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "upload_lookup_failed", err.Error())
+		return
+	}
+	if !ok {
+		writeUploadNotFound(c)
+		return
+	}
+	c.JSON(consts.StatusOK, uploadSessionResponse(session))
+}
+
+func (s *Server) appendUploadChunk(ctx context.Context, c *app.RequestContext) {
+	offsetHeader := strings.TrimSpace(string(c.GetHeader("Upload-Offset")))
+	if offsetHeader == "" {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "Upload-Offset header is required")
+		return
+	}
+	offset, err := strconv.ParseInt(offsetHeader, 10, 64)
+	if err != nil || offset < 0 {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "Upload-Offset must be a non-negative integer")
+		return
+	}
+	session, err := s.uploadStore().AppendUpload(ctx, tenantID(c), c.Param("id"), offset, c.Request.Body(), s.App.Config.Ingestion.MaxDocumentBytes)
+	if err != nil {
+		writeUploadError(c, err, session)
+		return
+	}
+	c.JSON(consts.StatusOK, uploadSessionResponse(session))
+}
+
+func (s *Server) uploadAction(ctx context.Context, c *app.RequestContext) {
+	action := strings.TrimPrefix(c.Param("action"), "/")
+	if strings.HasSuffix(action, ":complete") {
+		s.completeUploadSession(ctx, c, strings.TrimSuffix(action, ":complete"))
+		return
+	}
+	writeError(c, consts.StatusNotFound, "upload_action_not_found", "upload action not found")
+}
+
+func (s *Server) completeUploadSession(ctx context.Context, c *app.RequestContext, uploadID string) {
+	session, body, err := s.uploadStore().ReadUpload(ctx, tenantID(c), uploadID)
+	if err != nil {
+		writeUploadError(c, err, session)
+		return
+	}
+	result, err := s.App.Ingest.Ingest(ctx, ingest.Request{
+		TenantID:        tenantID(c),
+		KnowledgeBaseID: session.KnowledgeBaseID,
+		SourceURI:       session.SourceURI,
+		Name:            session.Name,
+		Content:         body,
+	})
+	if err != nil {
+		writeIngestError(c, err)
+		return
+	}
+	completed, err := s.uploadStore().CompleteUpload(ctx, tenantID(c), uploadID)
+	if err != nil {
+		writeUploadError(c, err, completed)
+		return
+	}
+	c.JSON(consts.StatusAccepted, map[string]any{
+		"upload":   uploadSessionResponse(completed),
+		"document": result.Document,
+		"chunks":   len(result.Chunks),
+		"job":      result.Job,
+	})
+}
+
+func (s *Server) cancelUploadSession(ctx context.Context, c *app.RequestContext) {
+	if err := s.uploadStore().CancelUpload(ctx, tenantID(c), c.Param("id")); err != nil {
+		writeUploadError(c, err, ingest.UploadSession{})
+		return
+	}
+	c.Status(consts.StatusNoContent)
+}
+
+func (s *Server) uploadStore() ingest.UploadStore {
+	if s.App.Ingest.Uploads == nil {
+		s.App.Ingest.Uploads = ingest.NewMemoryUploadStore()
+	}
+	return s.App.Ingest.Uploads
+}
+
+func uploadSessionResponse(session ingest.UploadSession) map[string]any {
+	return map[string]any{
+		"id":                session.ID,
+		"tenant_id":         session.TenantID,
+		"knowledge_base_id": session.KnowledgeBaseID,
+		"name":              session.Name,
+		"source_uri":        session.SourceURI,
+		"total_bytes":       session.TotalBytes,
+		"received_bytes":    session.ReceivedBytes,
+		"status":            session.Status,
+		"created_at":        session.CreatedAt,
+		"updated_at":        session.UpdatedAt,
+		"upload_url":        "/v1/uploads/" + session.ID,
+		"complete_url":      "/v1/uploads/" + session.ID + ":complete",
+	}
+}
+
+func writeUploadError(c *app.RequestContext, err error, session ingest.UploadSession) {
+	switch {
+	case errors.Is(err, ingest.ErrUploadNotFound):
+		writeUploadNotFound(c)
+	case errors.Is(err, ingest.ErrUploadOffsetMismatch):
+		writeErrorDetails(c, consts.StatusConflict, "upload_offset_mismatch", "Upload-Offset does not match received bytes", map[string]any{"received_bytes": session.ReceivedBytes})
+	case errors.Is(err, ingest.ErrUploadAlreadyClosed):
+		writeError(c, consts.StatusConflict, "upload_closed", "upload is already closed")
+	case errors.Is(err, ingest.ErrUploadIncomplete):
+		writeErrorDetails(c, consts.StatusConflict, "upload_incomplete", "upload has not received the declared total bytes", map[string]any{"received_bytes": session.ReceivedBytes, "total_bytes": session.TotalBytes})
+	case errors.Is(err, ingest.ErrUploadTooLarge):
+		writeError(c, http.StatusRequestEntityTooLarge, "payload_too_large", "document exceeds max size")
+	default:
+		writeError(c, consts.StatusInternalServerError, "upload_failed", err.Error())
+	}
+}
+
+func writeUploadNotFound(c *app.RequestContext) {
+	writeError(c, consts.StatusNotFound, "upload_not_found", "upload session not found")
 }
 
 func (s *Server) requireKnowledgeBase(ctx context.Context, c *app.RequestContext, kbID string) bool {

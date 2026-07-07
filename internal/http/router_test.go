@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"mime/multipart"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -290,6 +291,24 @@ func TestQueryRepeatedTraceIDInvokesPipelinePerRequest(t *testing.T) {
 	}
 	if pipeline.requests[0].Query == pipeline.requests[1].Query {
 		t.Fatalf("pipeline requests were not distinct: %#v", pipeline.requests)
+	}
+}
+
+func TestTraceStatsReturnsTenantNodeStats(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSONWithTrace(h, "POST", "/v1/query", `{"knowledge_base_id":"kb_default","query":"trace stats"}`, token, "trace_stats_http")
+	if resp.Code != 200 {
+		t.Fatalf("query status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "GET", "/v1/traces:stats?limit=10", "", token)
+	if resp.Code != 200 {
+		t.Fatalf("trace stats status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"tenant_id":"tenant_default"`) || !strings.Contains(resp.Body, `"node_name":"init"`) {
+		t.Fatalf("trace stats body = %s", resp.Body)
 	}
 }
 
@@ -1196,6 +1215,108 @@ func TestDocumentIngestionMapsServiceMissingKnowledgeBaseTo404(t *testing.T) {
 	assertNoChunks(t, app, "kb_default")
 }
 
+func TestResumableUploadCanContinueFromLastOffsetAndComplete(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	content := "ORAG resumable upload test content with enough searchable words."
+	createBody := `{"name":"resume.md","source_uri":"test://resume.md","total_bytes":` + strconv.Itoa(len(content)) + `}`
+	resp := performJSON(h, "POST", "/v1/knowledge-bases/kb_default/uploads", createBody, token)
+	if resp.Code != 201 {
+		t.Fatalf("create upload status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created struct {
+		ID            string `json:"id"`
+		UploadURL     string `json:"upload_url"`
+		CompleteURL   string `json:"complete_url"`
+		ReceivedBytes int64  `json:"received_bytes"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" || created.UploadURL == "" || created.CompleteURL == "" || created.ReceivedBytes != 0 {
+		t.Fatalf("unexpected upload create response: %#v body=%s", created, resp.Body)
+	}
+
+	first := content[:12]
+	resp = performRaw(h, "PUT", created.UploadURL, first, token, ut.Header{Key: "Upload-Offset", Value: "0"})
+	if resp.Code != 200 || !strings.Contains(resp.Body, `"received_bytes":12`) {
+		t.Fatalf("first chunk status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "GET", created.UploadURL, "", token)
+	if resp.Code != 200 || !strings.Contains(resp.Body, `"received_bytes":12`) {
+		t.Fatalf("resume status lookup = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performRaw(h, "PUT", created.UploadURL, content[12:], token, ut.Header{Key: "Upload-Offset", Value: "12"})
+	if resp.Code != 200 || !strings.Contains(resp.Body, `"received_bytes":`+strconv.Itoa(len(content))) {
+		t.Fatalf("second chunk status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	resp = performJSON(h, "POST", created.CompleteURL, `{}`, token)
+	if resp.Code != 202 {
+		t.Fatalf("complete status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"status":"completed"`) || !strings.Contains(resp.Body, `"document"`) || !strings.Contains(resp.Body, `"job"`) {
+		t.Fatalf("complete response missing upload/document/job: %s", resp.Body)
+	}
+}
+
+func TestResumableUploadRejectsWrongOffsetWithCurrentOffset(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/knowledge-bases/kb_default/uploads", `{"name":"offset.md","total_bytes":6}`, token)
+	if resp.Code != 201 {
+		t.Fatalf("create upload status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created struct {
+		UploadURL string `json:"upload_url"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+	resp = performRaw(h, "PUT", created.UploadURL, "abc", token, ut.Header{Key: "Upload-Offset", Value: "0"})
+	if resp.Code != 200 {
+		t.Fatalf("first chunk status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	resp = performRaw(h, "PUT", created.UploadURL, "def", token, ut.Header{Key: "Upload-Offset", Value: "0"})
+	if resp.Code != 409 {
+		t.Fatalf("wrong offset status = %d body=%s", resp.Code, resp.Body)
+	}
+	if !strings.Contains(resp.Body, `"code":"upload_offset_mismatch"`) || !strings.Contains(resp.Body, `"received_bytes":3`) {
+		t.Fatalf("wrong offset response missing current offset: %s", resp.Body)
+	}
+}
+
+func TestResumableUploadCancelRemovesSession(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/knowledge-bases/kb_default/uploads", `{"name":"cancel.md","total_bytes":6}`, token)
+	if resp.Code != 201 {
+		t.Fatalf("create upload status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created struct {
+		UploadURL string `json:"upload_url"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	resp = performJSON(h, "DELETE", created.UploadURL, "", token)
+	if resp.Code != 204 {
+		t.Fatalf("cancel status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "GET", created.UploadURL, "", token)
+	if resp.Code != 404 || !strings.Contains(resp.Body, `"code":"upload_not_found"`) {
+		t.Fatalf("lookup canceled status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
 func TestDatasetItemAndEvaluationRequireTenantOwnership(t *testing.T) {
 	ctx := context.Background()
 	h, app, closeApp := newTestHertzWithApp(t)
@@ -1312,6 +1433,22 @@ func performJSONWithHeaders(h *route.Engine, method, path, body, token string, e
 		reqBody = &ut.Body{Body: bytes.NewBufferString(body), Len: len(body)}
 	}
 	w := ut.PerformRequest(h, method, path, reqBody, headers...)
+	result := w.Result()
+	return testResponse{
+		Code:          result.StatusCode(),
+		Body:          string(result.Body()),
+		ContentType:   string(result.Header.ContentType()),
+		TraceIDHeader: result.Header.Get(observability.TraceIDHeader),
+	}
+}
+
+func performRaw(h *route.Engine, method, path, body, token string, extraHeaders ...ut.Header) testResponse {
+	headers := []ut.Header{{Key: "Content-Type", Value: "application/octet-stream"}}
+	if token != "" {
+		headers = append(headers, ut.Header{Key: "Authorization", Value: "Bearer " + token})
+	}
+	headers = append(headers, extraHeaders...)
+	w := ut.PerformRequest(h, method, path, &ut.Body{Body: bytes.NewBufferString(body), Len: len(body)}, headers...)
 	result := w.Result()
 	return testResponse{
 		Code:          result.StatusCode(),

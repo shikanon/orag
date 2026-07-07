@@ -103,6 +103,44 @@ Content-Type: multipart/form-data
 
 `mineru` 需要配置 `MINERU_APISERVER`；`docling` 需要配置 `DOCLING_SERVER_URL`。如果上传格式不属于远程解析器支持范围，服务会回退到 `basic` 解析。
 
+## 断点续传上传
+
+```http
+POST /v1/knowledge-bases/{id}/uploads
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+该入口用于大文件或弱网络场景。创建会话时传入 `name`、可选 `source_uri` 和可选 `total_bytes`。服务返回 `upload_url`、`complete_url` 和当前 `received_bytes`。
+
+```json
+{
+  "name": "large.md",
+  "source_uri": "upload://large.md",
+  "total_bytes": 104857600
+}
+```
+
+客户端按当前 offset 追加原始字节：
+
+```http
+PUT /v1/uploads/{id}
+Authorization: Bearer <access_token>
+Upload-Offset: 0
+Content-Type: application/octet-stream
+```
+
+如果请求中断，客户端先调用 `GET /v1/uploads/{id}`，读取响应中的 `received_bytes`，再用该值作为下一次 `Upload-Offset` 继续上传。若 offset 不匹配，服务返回 `409 upload_offset_mismatch`，并在 `error.details.received_bytes` 中返回可续传位置。
+
+上传完成后调用：
+
+```http
+POST /v1/uploads/{id}:complete
+Authorization: Bearer <access_token>
+```
+
+完成接口会把已接收的临时文件交给现有入库管线处理，成功返回 `upload`、`document`、`chunks` 和 `job`。取消上传使用 `DELETE /v1/uploads/{id}`，会删除临时内容并让该会话不可再查询。
+
 ## 查询入库任务
 
 ```http
