@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/shikanon/orag/internal/eval"
+	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/rag"
 )
 
@@ -104,6 +105,97 @@ func TestServiceBudgetStopAndResumeSkipsCompletedCandidate(t *testing.T) {
 	}
 	if len(runner.selectionIDs()) != 2 {
 		t.Fatalf("runner calls = %#v, resume should skip completed and run incomplete once", runner.calls)
+	}
+}
+
+func TestServiceRejectsConfigChangingResume(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*SubmitRequest)
+	}{
+		{
+			name: "dataset_id",
+			mutate: func(req *SubmitRequest) {
+				req.DatasetID = "ds_2"
+			},
+		},
+		{
+			name: "knowledge_base_id",
+			mutate: func(req *SubmitRequest) {
+				req.KnowledgeBaseID = "kb_2"
+			},
+		},
+		{
+			name: "objective",
+			mutate: func(req *SubmitRequest) {
+				req.Objective = ObjectiveSpec{Maximize: "faithfulness"}
+			},
+		},
+		{
+			name: "search_space",
+			mutate: func(req *SubmitRequest) {
+				req.SearchSpace.Retrieval.DenseTopK = []int{1, 3}
+			},
+		},
+		{
+			name: "search",
+			mutate: func(req *SubmitRequest) {
+				req.Search.MaxCandidates = 1
+			},
+		},
+		{
+			name: "profile",
+			mutate: func(req *SubmitRequest) {
+				req.Profile = rag.ProfileHighPrecision
+			},
+		},
+		{
+			name: "top_k",
+			mutate: func(req *SubmitRequest) {
+				req.TopK = 5
+			},
+		},
+		{
+			name: "namespace_ttl",
+			mutate: func(req *SubmitRequest) {
+				req.NamespaceTTL = time.Minute
+			},
+		},
+		{
+			name: "selection_split",
+			mutate: func(req *SubmitRequest) {
+				req.SelectionSplit = "dev"
+			},
+		},
+		{
+			name: "holdout_split",
+			mutate: func(req *SubmitRequest) {
+				req.HoldoutSplit = "test"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newMemoryOptimizationRepository()
+			service := &Service{Repository: repo, Runner: &recordingCandidateRunner{}, DisableAutoStart: true}
+			req := basicSubmitRequest()
+			req.Profile = rag.ProfileRealtime
+			req.TopK = 3
+			req.NamespaceTTL = 30 * time.Second
+
+			run, err := service.Submit(context.Background(), req)
+			if err != nil {
+				t.Fatalf("Submit() error = %v", err)
+			}
+			resumeReq := req
+			tt.mutate(&resumeReq)
+
+			_, err = service.Resume(context.Background(), "tenant_a", run.ID, resumeReq)
+			if !apperrors.IsCode(err, apperrors.CodeValidation) {
+				t.Fatalf("Resume() error = %v, want validation error", err)
+			}
+		})
 	}
 }
 

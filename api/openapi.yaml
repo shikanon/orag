@@ -793,6 +793,10 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ID"
       requestBody:
+        description: |
+          Optional resume body. It is accepted only for compatible resume/control
+          changes. Changes to candidate-defining optimization configuration are
+          rejected with `400`.
         required: false
         content:
           application/json:

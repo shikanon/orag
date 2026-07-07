@@ -3,8 +3,10 @@ package optimizer
 import (
 	"context"
 	"errors"
+	"reflect"
 	"time"
 
+	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -220,6 +222,9 @@ func (s *Service) Resume(ctx context.Context, tenantID, runID string, req Submit
 	}
 	if resumeReq.TenantID == "" {
 		resumeReq.TenantID = tenantID
+	}
+	if err := validateResumeConfigInvariant(run, resumeReq); err != nil {
+		return OptimizationRun{}, err
 	}
 	now := s.clock()
 	run.DatasetID = resumeReq.DatasetID
@@ -587,4 +592,47 @@ func costBudget(req SubmitRequest) *float64 {
 
 func isEmptySubmitRequest(req SubmitRequest) bool {
 	return len(req.Runner) == 0 && RunConfigFromSubmitRequest(req).IsZero()
+}
+
+func validateResumeConfigInvariant(run OptimizationRun, req SubmitRequest) error {
+	stored := run.storedConfig()
+	requested := RunConfigFromSubmitRequest(req)
+	if field := changedResumeConfigField(stored, requested); field != "" {
+		return apperrors.New(apperrors.CodeValidation, "resume request changes "+field+"; submit a new optimization run")
+	}
+	return nil
+}
+
+func changedResumeConfigField(stored, requested RunConfig) string {
+	if stored.DatasetID != requested.DatasetID {
+		return "dataset_id"
+	}
+	if stored.KnowledgeBaseID != requested.KnowledgeBaseID {
+		return "knowledge_base_id"
+	}
+	if !reflect.DeepEqual(stored.Objective, requested.Objective) {
+		return "objective"
+	}
+	if !reflect.DeepEqual(stored.SearchSpace, requested.SearchSpace) {
+		return "search_space"
+	}
+	if !reflect.DeepEqual(stored.Search, requested.Search) {
+		return "search"
+	}
+	if stored.Profile != requested.Profile {
+		return "profile"
+	}
+	if stored.TopK != requested.TopK {
+		return "top_k"
+	}
+	if stored.NamespaceTTL != requested.NamespaceTTL {
+		return "namespace_ttl"
+	}
+	if stored.SelectionSplit != requested.SelectionSplit {
+		return "selection_split"
+	}
+	if stored.HoldoutSplit != requested.HoldoutSplit {
+		return "holdout_split"
+	}
+	return ""
 }
