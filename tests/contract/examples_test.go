@@ -16,6 +16,7 @@ func TestExamplesReadmeIndex(t *testing.T) {
 
 	for _, want := range []string{
 		"# ORAG Examples",
+		"## Scenario Demos",
 		"## Prerequisites",
 		"## Commands",
 		"## Service/Curl Examples",
@@ -56,6 +57,23 @@ func TestExamplesReadmeIndex(t *testing.T) {
 	}
 }
 
+func TestExamplesReadmeScenarioPositioning(t *testing.T) {
+	readme := readExamplesReadme(t)
+
+	for _, want := range []string{
+		"product-user scenario demo entry point",
+		"Start with the role-based scenario demos below to decide why and when a support, engineering, platform, product, or agent team should use ORAG",
+		"lower-level curl, Go, MCP, and Skill examples are supporting assets",
+		"Each scenario directory contains a focused README, sample input, expected output, and command references back to the maintained examples",
+		"supporting assets",
+		"Scenario demos cover customer support, engineering runbooks, platform onboarding, product launch review, agent development, knowledge-base Q&A, streaming assistant, trace/diagnostics, evaluation/optimization, in-process Go embedding, and agent/MCP integration from the user perspective.",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("examples README missing scenario positioning %q", want)
+		}
+	}
+}
+
 func TestExamplesScriptPaths(t *testing.T) {
 	readme := readExamplesReadme(t)
 
@@ -86,6 +104,209 @@ func TestExamplesScriptPaths(t *testing.T) {
 		"examples/skills/trae-ralph-loop.md",
 	} {
 		assertReferencedPathExists(t, readme, path)
+	}
+}
+
+func TestExamplesScenarioDemos(t *testing.T) {
+	readme := readExamplesReadme(t)
+
+	for _, scenario := range []struct {
+		name     string
+		dir      string
+		title    string
+		runnable bool
+		assets   []string
+	}{
+		{
+			name:     "customer support",
+			dir:      "examples/scenarios/customer-support",
+			title:    "# Customer Support Scenario",
+			runnable: true,
+			assets: []string{
+				"examples/curl/05_health_ready.sh",
+				"examples/curl/00_login.sh",
+				"examples/curl/10_create_kb.sh",
+				"examples/curl/20_upload_doc.sh",
+				"examples/curl/25_upload_file.sh",
+				"examples/curl/30_query.sh",
+				"examples/curl/36_trace_lookup.sh",
+			},
+		},
+		{
+			name:     "engineering runbook",
+			dir:      "examples/scenarios/engineering-runbook",
+			title:    "# Engineering Runbook Scenario",
+			runnable: true,
+			assets: []string{
+				"examples/curl/05_health_ready.sh",
+				"examples/curl/00_login.sh",
+				"examples/curl/10_create_kb.sh",
+				"examples/curl/20_upload_doc.sh",
+				"examples/curl/30_query.sh",
+				"examples/curl/36_trace_lookup.sh",
+				"examples/skills/self-check-diagnose-ops.md",
+			},
+		},
+		{
+			name:     "platform team",
+			dir:      "examples/scenarios/platform-team",
+			title:    "# Platform Team Scenario",
+			runnable: true,
+			assets: []string{
+				"examples/curl/05_health_ready.sh",
+				"examples/curl/00_login.sh",
+				"examples/curl/10_create_kb.sh",
+				"examples/curl/20_upload_doc.sh",
+				"examples/curl/30_query.sh",
+				"examples/curl/36_trace_lookup.sh",
+				"examples/curl/40_eval.sh",
+				"examples/curl/45_optimize.sh",
+				"examples/mcp/README.md",
+				"examples/skills/README.md",
+			},
+		},
+		{
+			name:     "product team",
+			dir:      "examples/scenarios/product-team",
+			title:    "# Product Team Scenario",
+			runnable: true,
+			assets: []string{
+				"examples/curl/05_health_ready.sh",
+				"examples/curl/00_login.sh",
+				"examples/curl/10_create_kb.sh",
+				"examples/curl/20_upload_doc.sh",
+				"examples/curl/30_query.sh",
+				"examples/curl/40_eval.sh",
+				"examples/curl/45_optimize.sh",
+			},
+		},
+		{
+			name:     "agent developer",
+			dir:      "examples/scenarios/agent-developer",
+			title:    "# Agent Developer Scenario",
+			runnable: true,
+			assets: []string{
+				"examples/mcp/README.md",
+				"examples/mcp/stdio-client-config.json",
+				"examples/mcp/ralph-loop-stdio-smoke.jsonl",
+				"examples/mcp/self-check-stdio-smoke.jsonl",
+				"examples/skills/README.md",
+				"examples/skills/codex-ralph-loop.md",
+				"examples/skills/claude-code-ralph-loop.md",
+				"examples/skills/trae-ralph-loop.md",
+				"examples/skills/self-check-diagnose-ops.md",
+			},
+		},
+		{
+			name:  "knowledge-base Q&A",
+			dir:   "examples/scenarios/kb-qa",
+			title: "# Knowledge-base Q&A Scenario",
+			assets: []string{
+				"examples/curl/05_health_ready.sh",
+				"examples/curl/00_login.sh",
+				"examples/curl/10_create_kb.sh",
+				"examples/curl/20_upload_doc.sh",
+				"examples/curl/25_upload_file.sh",
+				"examples/curl/30_query.sh",
+			},
+		},
+		{
+			name:  "streaming assistant",
+			dir:   "examples/scenarios/streaming-assistant",
+			title: "# Streaming Assistant Scenario",
+			assets: []string{
+				"examples/curl/35_query_stream.sh",
+				"examples/curl/20_upload_doc.sh",
+			},
+		},
+		{
+			name:  "trace and diagnostics",
+			dir:   "examples/scenarios/trace-diagnostics",
+			title: "# Trace and Diagnostics Scenario",
+			assets: []string{
+				"examples/curl/36_trace_lookup.sh",
+				"examples/mcp/self-check-stdio-smoke.jsonl",
+				"examples/skills/self-check-diagnose-ops.md",
+			},
+		},
+		{
+			name:  "evaluation and optimization",
+			dir:   "examples/scenarios/eval-optimization",
+			title: "# Evaluation and Optimization Scenario",
+			assets: []string{
+				"examples/curl/40_eval.sh",
+				"examples/curl/45_optimize.sh",
+			},
+		},
+		{
+			name:  "in-process Go embedding",
+			dir:   "examples/scenarios/go-embedding",
+			title: "# In-process Go Embedding Scenario",
+			assets: []string{
+				"examples/go/memory/main.go",
+				"examples/go/memory/main_test.go",
+			},
+		},
+		{
+			name:  "agent and MCP integration",
+			dir:   "examples/scenarios/agent-mcp-integration",
+			title: "# Agent and MCP Integration Scenario",
+			assets: []string{
+				"examples/mcp/README.md",
+				"examples/mcp/stdio-client-config.json",
+				"examples/mcp/ralph-loop-stdio-smoke.jsonl",
+				"examples/skills/README.md",
+			},
+		},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			readmePath := scenario.dir + "/README.md"
+			if scenario.runnable {
+				runPath := scenario.dir + "/run.sh"
+				assertReferencedPathExists(t, readme, runPath)
+				assertRepoFileExecutable(t, runPath)
+				assertRepoFileExists(t, scenario.dir+"/demo-data.md")
+			} else {
+				assertReferencedPathExists(t, readme, readmePath)
+			}
+			assertRepoFileExists(t, readmePath)
+			assertRepoFileExists(t, scenario.dir+"/sample-input.md")
+			assertRepoFileExists(t, scenario.dir+"/expected-output.md")
+
+			scenarioReadme := readRepoFile(t, readmePath)
+			for _, want := range []string{
+				scenario.title,
+				"## Role",
+				"## Why Use ORAG",
+				"## When To Use It",
+				"## Scenario Files",
+				"## Run",
+				"## Reused Assets",
+				"## Expected Output",
+				"sample-input.md",
+				"expected-output.md",
+				"Commands below reference maintained examples instead of duplicating raw API calls.",
+			} {
+				if !strings.Contains(scenarioReadme, want) {
+					t.Fatalf("%s missing %q", readmePath, want)
+				}
+			}
+
+			for _, asset := range scenario.assets {
+				assertReferencedPathExists(t, scenarioReadme, asset)
+			}
+			if scenario.runnable {
+				for _, want := range []string{
+					"demo-data.md",
+					"run.sh",
+					"## Demo Implementation",
+				} {
+					if !strings.Contains(scenarioReadme, want) {
+						t.Fatalf("%s missing runnable demo marker %q", readmePath, want)
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -252,6 +473,33 @@ func assertReferencedPathExists(t *testing.T, readme, path string) {
 	}
 	if info.IsDir() {
 		t.Fatalf("referenced example path %s is a directory", path)
+	}
+}
+
+func assertRepoFileExists(t *testing.T, path string) {
+	t.Helper()
+
+	info, err := os.Stat(filepath.Join("..", "..", filepath.FromSlash(path)))
+	if err != nil {
+		t.Fatalf("example path %s does not exist: %v", path, err)
+	}
+	if info.IsDir() {
+		t.Fatalf("example path %s is a directory", path)
+	}
+}
+
+func assertRepoFileExecutable(t *testing.T, path string) {
+	t.Helper()
+
+	info, err := os.Stat(filepath.Join("..", "..", filepath.FromSlash(path)))
+	if err != nil {
+		t.Fatalf("example path %s does not exist: %v", path, err)
+	}
+	if info.IsDir() {
+		t.Fatalf("example path %s is a directory", path)
+	}
+	if info.Mode()&0111 == 0 {
+		t.Fatalf("example path %s is not executable", path)
 	}
 }
 

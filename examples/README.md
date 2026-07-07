@@ -1,7 +1,24 @@
 # ORAG Examples
 
-This directory is the smoke-test entry point for trying ORAG core capabilities in service mode.
-The curl examples exercise the public HTTP API end-to-end with shared state, helpers, and actionable failures.
+This directory is the product-user scenario demo entry point for trying ORAG. Start with the role-based scenario demos below to decide why and when a support, engineering, platform, product, or agent team should use ORAG; the lower-level curl, Go, MCP, and Skill examples are supporting assets that keep the runnable commands small and maintained in one place.
+
+## Scenario Demos
+
+| Scenario | When to use ORAG | Run or inspect | Reused assets | Expected output |
+| --- | --- | --- | --- | --- |
+| Customer support | Answer customer, support, and pre-sales questions from maintained product knowledge. | `examples/scenarios/customer-support/run.sh` | `examples/curl/00_login.sh`, `examples/curl/10_create_kb.sh`, `examples/curl/20_upload_doc.sh`, `examples/curl/25_upload_file.sh`, `examples/curl/30_query.sh`, `examples/curl/36_trace_lookup.sh` | Grounded support answer with citations and escalation `trace_id`. |
+| Engineering runbook | Search runbooks, incident notes, architecture docs, and API references during debugging. | `examples/scenarios/engineering-runbook/run.sh` | `examples/curl/20_upload_doc.sh`, `examples/curl/30_query.sh`, `examples/curl/36_trace_lookup.sh`, `examples/skills/self-check-diagnose-ops.md` | Runbook answer, trace detail, and read-only diagnostic evidence. |
+| Platform team | Validate ORAG as a shared RAG service layer for application teams and agents. | `examples/scenarios/platform-team/run.sh` | `examples/curl/40_eval.sh`, `examples/curl/45_optimize.sh`, `examples/mcp/README.md`, `examples/skills/README.md` | Service smoke, evaluation/optimization evidence, and agent asset sync. |
+| Product team | Decide whether a knowledge assistant is ready to launch and which retrieval settings to use. | `examples/scenarios/product-team/run.sh` | `examples/curl/30_query.sh`, `examples/curl/40_eval.sh`, `examples/curl/45_optimize.sh` | Answer review evidence, quality metrics, and selected optimization candidate. |
+| Agent developer | Expose ORAG verification and diagnostics to IDE, CLI, or MCP-based agents. | `examples/scenarios/agent-developer/run.sh` | `examples/mcp/stdio-client-config.json`, `examples/mcp/ralph-loop-stdio-smoke.jsonl`, `examples/mcp/self-check-stdio-smoke.jsonl`, `examples/skills/README.md` | MCP tool discovery, `ralph_loop_run`, `orag_check`, and Skill prompts. |
+| Knowledge-base Q&A | Build a private knowledge-base assistant over imported documents. | `examples/scenarios/kb-qa/README.md` | `examples/curl/00_login.sh`, `examples/curl/10_create_kb.sh`, `examples/curl/20_upload_doc.sh`, `examples/curl/25_upload_file.sh`, `examples/curl/30_query.sh` | Answer JSON with citations and `trace_id`. |
+| Streaming assistant | Stream RAG answers to a chat UI with SSE events. | `examples/scenarios/streaming-assistant/README.md` | `examples/curl/35_query_stream.sh` | `trace`, `chunk`, `citations`, and `done` SSE events. |
+| Trace and diagnostics | Investigate a query result, latency issue, or retrieval quality concern. | `examples/scenarios/trace-diagnostics/README.md` | `examples/curl/36_trace_lookup.sh`, `examples/mcp/self-check-stdio-smoke.jsonl`, `examples/skills/self-check-diagnose-ops.md` | Trace detail plus read-only diagnostic evidence. |
+| Evaluation and optimization | Compare retrieval quality and tune profile/top-k settings. | `examples/scenarios/eval-optimization/README.md` | `examples/curl/40_eval.sh`, `examples/curl/45_optimize.sh` | Evaluation metrics and selected optimization candidate. |
+| In-process Go embedding | Embed a dependency-free ORAG memory client in a Go process. | `examples/scenarios/go-embedding/README.md` | `examples/go/memory/main.go`, `examples/go/memory/main_test.go` | `document_id`, `trace_id`, metadata, and citations. |
+| Agent/MCP integration | Expose ORAG operations to MCP clients and agent Skills. | `examples/scenarios/agent-mcp-integration/README.md` | `examples/mcp/README.md`, `examples/mcp/stdio-client-config.json`, `examples/mcp/ralph-loop-stdio-smoke.jsonl`, `examples/skills/README.md` | MCP tool discovery and agent verdict evidence. |
+
+Each scenario directory contains a focused README, sample input, expected output, and command references back to the maintained examples. This keeps role demos stable while preventing drift-prone API call duplication.
 
 ## Prerequisites
 
@@ -29,7 +46,7 @@ Wait until the API reports readiness:
 ./scripts/wait-ready.sh
 ```
 
-Run the service-mode curl examples in order:
+Run the knowledge-base Q&A service flow in order:
 
 ```sh
 ./examples/curl/05_health_ready.sh
@@ -38,6 +55,21 @@ Run the service-mode curl examples in order:
 ./examples/curl/20_upload_doc.sh
 ./examples/curl/25_upload_file.sh
 ./examples/curl/30_query.sh
+```
+
+Run role-based scenario demos with their concrete demo data:
+
+```sh
+./examples/scenarios/customer-support/run.sh
+./examples/scenarios/engineering-runbook/run.sh
+./examples/scenarios/platform-team/run.sh
+./examples/scenarios/product-team/run.sh
+./examples/scenarios/agent-developer/run.sh
+```
+
+Run the streaming, trace, evaluation, and optimization support commands after the Q&A state exists:
+
+```sh
 ./examples/curl/35_query_stream.sh
 ./examples/curl/36_trace_lookup.sh
 ./examples/curl/40_eval.sh
@@ -63,6 +95,12 @@ Validate generated MCP/Skill artifacts are in sync with `api/openapi.yaml`:
 GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
 ```
 
+Run the in-process Go memory demo:
+
+```sh
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
+```
+
 Stop local dependencies when finished:
 
 ```sh
@@ -76,6 +114,8 @@ GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/c
 ```
 
 ## Service/Curl Examples
+
+These scripts are the maintained service-mode building blocks behind the scenario demos.
 
 | Script | Covered module | What it does | Expected output |
 | --- | --- | --- | --- |
@@ -100,7 +140,7 @@ Scripts fail fast with actionable messages when `curl` is missing, the service i
 | `examples/mcp/README.md` | MCP stdio | Documents local discovery, focused self-check, and live `tools/call` smoke commands. | `initialize` and `tools/list` JSON-RPC responses; optional live `structuredContent`. |
 | `examples/mcp/stdio-client-config.json` | MCP client config | Shows a copyable `mcpServers.orag-ralph-loop` config that starts `go run ./cmd/orag-mcp`. | A client can discover `ralph_loop_run` through stdio. |
 | `examples/mcp/ralph-loop-stdio-smoke.jsonl` | MCP JSON-RPC | Provides initialize, `tools/list`, and `tools/call` request lines. | Discovery responses without live API; live call response with verdict and trace. |
-| `examples/mcp/self-check-stdio-smoke.jsonl` | MCP self-check smoke | Provides initialize, `tools/list`, and focused `orag_check(scope=agent_sync)` request lines. | `structuredContent.verdict`, stable check IDs, evidence, trace, and CI gate warning. |
+| `examples/mcp/self-check-stdio-smoke.jsonl` | MCP self-check smoke | Provides initialize, `tools/list`, and focused `orag_check` request lines. | `structuredContent.verdict`, stable check IDs, evidence, trace, and CI gate warning. |
 | `examples/skills/README.md` | Skill overview | Links Codex, Claude Code, Trae, and operational Skill usage examples. | Agent-specific setup path, shared environment, and mutual-exclusion boundaries. |
 | `examples/skills/self-check-diagnose-ops.md` | Operational Skills | Shows `orag-self-check`, `orag-self-diagnose`, and `orag-self-ops` prompts and safety boundaries. | Prompt examples stay read-only unless apply is explicitly approved. |
 | `examples/skills/codex-ralph-loop.md` | Codex Skill | Shows install, environment, prompt, and expected evidence. | Codex calls `/v1/ralph-loop` and reports verdict evidence. |
@@ -127,9 +167,10 @@ Expected output includes `document_id=doc_`, `trace_id=trace_example_memory`, `c
 
 ## Covered Modules
 
-- Service scripts cover health/ready checks, auth, knowledge base creation, JSON document import, multipart document upload, normal query, SSE query, trace list/detail, dataset creation, evaluation, and optimization.
-- The Go memory example covers in-process document ingestion, querying, citations, trace lookup, and response metadata through `pkg/memory`.
-- The MCP examples cover stdio initialize, tool discovery, copyable client configuration, a focused `orag_check` smoke, and an optional live `ralph_loop_run` tool call.
-- The Skill examples cover Codex, Claude Code, Trae, and the mutually exclusive `orag-self-check`, `orag-self-diagnose`, and `orag-self-ops` boundaries.
+- Scenario demos cover customer support, engineering runbooks, platform onboarding, product launch review, agent development, knowledge-base Q&A, streaming assistant, trace/diagnostics, evaluation/optimization, in-process Go embedding, and agent/MCP integration from the user perspective.
+- Service scripts cover health/ready checks, Auth, Knowledge base creation, Document import, Document upload, Query, SSE query, Trace list/detail, Dataset and evaluation, and Optimization.
+- The Go memory example covers in-process document ingestion, querying, citations, trace lookup, response metadata, and the public `pkg/memory` facade.
+- The MCP examples cover MCP stdio initialize, tool discovery, copyable client configuration, a focused `orag_check` smoke, and an optional live `ralph_loop_run` tool call.
+- The Skill examples cover Codex Skill, Claude Code Skill, Trae Skill, and the mutually exclusive `orag-self-check`, `orag-self-diagnose`, and `orag-self-ops` boundaries.
 - Existing repository scripts cover local dependency startup, readiness polling, and dependency shutdown.
 - The contract test validates important script paths and public HTTP endpoints against `api/openapi.yaml` to catch example drift.
