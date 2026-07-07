@@ -294,7 +294,7 @@ func actionForScope(scope string) Action {
 			Scope:    scope,
 			Name:     "agent-artifacts-regenerate",
 			Commands: []string{"make agent-sync"},
-			Writes:   []string{".mcp/", ".trae/skills/", ".codex/skills/", ".claude/skills/"},
+			Writes:   []string{"agent/mcp/", "agent/skills/"},
 		}
 	case ScopeMigrationStatus:
 		return Action{
@@ -457,7 +457,7 @@ func (p FileSnapshotProvider) Snapshot(ctx context.Context, _ string) (Snapshot,
 		ManifestHash:           hashPaths(workDir, "internal/capabilities"),
 		GitHead:                gitHead(ctx, workDir),
 		ConfigHash:             hashPaths(workDir, "Makefile", "api/openapi.yaml"),
-		GeneratedArtifactsHash: hashPaths(workDir, ".mcp", ".trae/skills", ".codex/skills", ".claude/skills"),
+		GeneratedArtifactsHash: hashPaths(workDir, "agent/mcp", "agent/skills"),
 	}, nil
 }
 

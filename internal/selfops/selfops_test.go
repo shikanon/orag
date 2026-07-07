@@ -2,6 +2,8 @@ package selfops
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -38,6 +40,42 @@ func TestPlanDryRunIncludesTOCTOUFieldsAndDoesNotWrite(t *testing.T) {
 	}
 	if runner.calls() != 0 {
 		t.Fatalf("dry-run plan executed writes, calls=%d", runner.calls())
+	}
+}
+
+func TestApplyBlocksWhenVersionedAgentArtifactsDrift(t *testing.T) {
+	workDir := t.TempDir()
+	artifact := filepath.Join(workDir, "agent", "mcp", "tools", "orag-self-check.json")
+	if err := os.MkdirAll(filepath.Dir(artifact), 0o755); err != nil {
+		t.Fatalf("create artifact dir: %v", err)
+	}
+	if err := os.WriteFile(artifact, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+	runner := &recordingRunner{}
+	executor := NewExecutor(Options{
+		WorkDir:   workDir,
+		Snapshots: FileSnapshotProvider{WorkDir: workDir},
+		Runner:    runner,
+		Now:       fixedClock(),
+	})
+	plan, err := executor.Plan(context.Background(), PlanRequest{Scope: ScopeAgentArtifacts, DryRun: true})
+	if err != nil {
+		t.Fatalf("Plan() error = %v", err)
+	}
+	if err := os.WriteFile(artifact, []byte("{\"drifted\":true}\n"), 0o644); err != nil {
+		t.Fatalf("mutate artifact: %v", err)
+	}
+
+	result, err := executor.Apply(context.Background(), ApplyRequest{PlanID: plan.PlanID, Approved: true})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if result.Verdict != VerdictBlocked || !strings.Contains(result.BlockedReason, "generated_artifacts_hash") {
+		t.Fatalf("unexpected drift result: %#v", result)
+	}
+	if runner.calls() != 0 {
+		t.Fatalf("runner calls = %d, want 0", runner.calls())
 	}
 }
 
