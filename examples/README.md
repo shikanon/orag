@@ -11,6 +11,7 @@ This directory is the product-user scenario demo entry point for trying ORAG. St
 | Platform team | Validate ORAG as a shared RAG service layer for application teams and agents. | `go run ./examples/scenarios/platform-team` | `examples/scenarios/platform-team/main.go`, `examples/scenarios/platform-team/demo-data.md`, `examples/mcp/README.md`, `examples/skills/README.md` | Service readiness guidance, quality dimensions, and agent asset next steps. |
 | Product team | Decide whether a knowledge assistant is ready to launch and which retrieval settings to use. | `go run ./examples/scenarios/product-team` | `examples/scenarios/product-team/main.go`, `examples/scenarios/product-team/demo-data.md`, `pkg/memory/memory.go` | Answer review evidence, quality dimensions, and launch-readiness next steps. |
 | Agent developer | Expose ORAG verification and diagnostics to IDE, CLI, or MCP-based agents. | `go run ./examples/scenarios/agent-developer` | `examples/scenarios/agent-developer/main.go`, `examples/scenarios/agent-developer/demo-data.md`, `examples/mcp/stdio-client-config.json`, `examples/skills/README.md` | Tool-style answer, `trace_id`, usage dimensions, and Skill/MCP next steps. |
+| Multimodal assets | Validate shared image, BGM, video, long-video upload, and docx script fixture coverage. | `go run ./examples/scenarios/multimodal-assets` | `examples/scenarios/multimodal-assets/main.go`, `examples/scenarios/multimodal-assets/demo-data.md` | Remote asset manifest with HTTPS validation and upload-only long-video marker. |
 | Knowledge-base Q&A | Build a private knowledge-base assistant over imported documents. | `examples/scenarios/kb-qa/README.md` | `examples/curl/00_login.sh`, `examples/curl/10_create_kb.sh`, `examples/curl/20_upload_doc.sh`, `examples/curl/25_upload_file.sh`, `examples/curl/30_query.sh` | Answer JSON with citations and `trace_id`. |
 | Streaming assistant | Stream RAG answers to a chat UI with SSE events. | `examples/scenarios/streaming-assistant/README.md` | `examples/curl/35_query_stream.sh` | `trace`, `chunk`, `citations`, and `done` SSE events. |
 | Trace and diagnostics | Investigate a query result, latency issue, or retrieval quality concern. | `examples/scenarios/trace-diagnostics/README.md` | `examples/curl/36_trace_lookup.sh`, `examples/mcp/self-check-stdio-smoke.jsonl`, `examples/skills/self-check-diagnose-ops.md` | Trace detail plus read-only diagnostic evidence. |
@@ -65,6 +66,7 @@ GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples
 GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/platform-team
 GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/product-team
 GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/agent-developer
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/multimodal-assets
 ```
 
 Run the streaming, trace, evaluation, and optimization support commands after the Q&A state exists:
@@ -167,7 +169,7 @@ Expected output includes `document_id=doc_`, `trace_id=trace_example_memory`, `c
 
 ## Covered Modules
 
-- Scenario demos cover customer support, engineering runbooks, platform onboarding, product launch review, agent development, knowledge-base Q&A, streaming assistant, trace/diagnostics, evaluation/optimization, in-process Go embedding, and agent/MCP integration from the user perspective.
+- Scenario demos cover customer support, engineering runbooks, platform onboarding, product launch review, agent development, multimodal test assets, knowledge-base Q&A, streaming assistant, trace/diagnostics, evaluation/optimization, in-process Go embedding, and agent/MCP integration from the user perspective.
 - Service scripts cover health/ready checks, Auth, Knowledge base creation, Document import, Document upload, Query, SSE query, Trace list/detail, Dataset and evaluation, and Optimization.
 - The Go memory example covers in-process document ingestion, querying, citations, trace lookup, response metadata, and the public `pkg/memory` facade.
 - The MCP examples cover MCP stdio initialize, tool discovery, copyable client configuration, a focused `orag_check` smoke, and an optional live `ralph_loop_run` tool call.

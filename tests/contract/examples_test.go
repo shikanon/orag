@@ -66,7 +66,7 @@ func TestExamplesReadmeScenarioPositioning(t *testing.T) {
 		"lower-level curl, Go, MCP, and Skill examples are supporting assets",
 		"Each scenario directory contains a focused README, sample input, expected output, and command references back to the maintained examples",
 		"supporting assets",
-		"Scenario demos cover customer support, engineering runbooks, platform onboarding, product launch review, agent development, knowledge-base Q&A, streaming assistant, trace/diagnostics, evaluation/optimization, in-process Go embedding, and agent/MCP integration from the user perspective.",
+		"Scenario demos cover customer support, engineering runbooks, platform onboarding, product launch review, agent development, multimodal test assets, knowledge-base Q&A, streaming assistant, trace/diagnostics, evaluation/optimization, in-process Go embedding, and agent/MCP integration from the user perspective.",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("examples README missing scenario positioning %q", want)
@@ -111,17 +111,19 @@ func TestExamplesScenarioDemos(t *testing.T) {
 	readme := readExamplesReadme(t)
 
 	for _, scenario := range []struct {
-		name   string
-		dir    string
-		title  string
-		goDemo bool
-		assets []string
+		name       string
+		dir        string
+		title      string
+		goDemo     bool
+		memoryDemo bool
+		assets     []string
 	}{
 		{
-			name:   "customer support",
-			dir:    "examples/scenarios/customer-support",
-			title:  "# Customer Support Scenario",
-			goDemo: true,
+			name:       "customer support",
+			dir:        "examples/scenarios/customer-support",
+			title:      "# Customer Support Scenario",
+			goDemo:     true,
+			memoryDemo: true,
 			assets: []string{
 				"examples/scenarios/customer-support/main.go",
 				"examples/scenarios/customer-support/demo-data.md",
@@ -130,10 +132,11 @@ func TestExamplesScenarioDemos(t *testing.T) {
 			},
 		},
 		{
-			name:   "engineering runbook",
-			dir:    "examples/scenarios/engineering-runbook",
-			title:  "# Engineering Runbook Scenario",
-			goDemo: true,
+			name:       "engineering runbook",
+			dir:        "examples/scenarios/engineering-runbook",
+			title:      "# Engineering Runbook Scenario",
+			goDemo:     true,
+			memoryDemo: true,
 			assets: []string{
 				"examples/scenarios/engineering-runbook/main.go",
 				"examples/scenarios/engineering-runbook/demo-data.md",
@@ -143,10 +146,11 @@ func TestExamplesScenarioDemos(t *testing.T) {
 			},
 		},
 		{
-			name:   "platform team",
-			dir:    "examples/scenarios/platform-team",
-			title:  "# Platform Team Scenario",
-			goDemo: true,
+			name:       "platform team",
+			dir:        "examples/scenarios/platform-team",
+			title:      "# Platform Team Scenario",
+			goDemo:     true,
+			memoryDemo: true,
 			assets: []string{
 				"examples/scenarios/platform-team/main.go",
 				"examples/scenarios/platform-team/demo-data.md",
@@ -157,10 +161,11 @@ func TestExamplesScenarioDemos(t *testing.T) {
 			},
 		},
 		{
-			name:   "product team",
-			dir:    "examples/scenarios/product-team",
-			title:  "# Product Team Scenario",
-			goDemo: true,
+			name:       "product team",
+			dir:        "examples/scenarios/product-team",
+			title:      "# Product Team Scenario",
+			goDemo:     true,
+			memoryDemo: true,
 			assets: []string{
 				"examples/scenarios/product-team/main.go",
 				"examples/scenarios/product-team/demo-data.md",
@@ -169,10 +174,11 @@ func TestExamplesScenarioDemos(t *testing.T) {
 			},
 		},
 		{
-			name:   "agent developer",
-			dir:    "examples/scenarios/agent-developer",
-			title:  "# Agent Developer Scenario",
-			goDemo: true,
+			name:       "agent developer",
+			dir:        "examples/scenarios/agent-developer",
+			title:      "# Agent Developer Scenario",
+			goDemo:     true,
+			memoryDemo: true,
 			assets: []string{
 				"examples/scenarios/agent-developer/main.go",
 				"examples/scenarios/agent-developer/demo-data.md",
@@ -187,6 +193,16 @@ func TestExamplesScenarioDemos(t *testing.T) {
 				"examples/skills/claude-code-ralph-loop.md",
 				"examples/skills/trae-ralph-loop.md",
 				"examples/skills/self-check-diagnose-ops.md",
+			},
+		},
+		{
+			name:   "multimodal assets",
+			dir:    "examples/scenarios/multimodal-assets",
+			title:  "# Multimodal Assets Scenario",
+			goDemo: true,
+			assets: []string{
+				"examples/scenarios/multimodal-assets/main.go",
+				"examples/scenarios/multimodal-assets/demo-data.md",
 			},
 		},
 		{
@@ -294,14 +310,48 @@ func TestExamplesScenarioDemos(t *testing.T) {
 					"## Demo Implementation",
 					"## Usage Dimensions",
 					"go run ./",
-					"pkg/memory",
 				} {
 					if !strings.Contains(scenarioReadme, want) {
 						t.Fatalf("%s missing Go demo marker %q", readmePath, want)
 					}
 				}
+				if scenario.memoryDemo && !strings.Contains(scenarioReadme, "pkg/memory") {
+					t.Fatalf("%s missing memory demo marker %q", readmePath, "pkg/memory")
+				}
 			}
 		})
+	}
+}
+
+func TestExamplesMultimodalAssetsUseProvidedURLs(t *testing.T) {
+	mainSource := readRepoFile(t, "examples/scenarios/multimodal-assets/main.go")
+	demoData := readRepoFile(t, "examples/scenarios/multimodal-assets/demo-data.md")
+	expectedOutput := readRepoFile(t, "examples/scenarios/multimodal-assets/expected-output.md")
+
+	for _, assetURL := range []string{
+		"https://lensrhyme.tos-cn-hongkong.volces.com/test/girl.jpg",
+		"https://lensrhyme.tos-cn-hongkong.volces.com/test/man.jpg",
+		"https://lensrhyme.tos-cn-hongkong.volces.com/test/music.mp4",
+		"https://lensrhyme.tos-cn-hongkong.volces.com/test/TestVideo.mp4",
+		"https://lensrhyme.tos-cn-hongkong.volces.com/test/gamevideo.mp4",
+		"https://lensrhyme.tos-cn-hongkong.volces.com/test/TestLongVideo.mp4",
+		"https://lensrhyme.tos-cn-hongkong.volces.com/test/test.docx",
+	} {
+		if !strings.Contains(mainSource, assetURL) {
+			t.Fatalf("multimodal main.go missing asset URL %q", assetURL)
+		}
+		if !strings.Contains(demoData, assetURL) {
+			t.Fatalf("multimodal demo-data.md missing asset URL %q", assetURL)
+		}
+	}
+	for _, want := range []string{
+		"asset_count=7",
+		"TestLongVideo.mp4",
+		"large_file_only=true",
+	} {
+		if !strings.Contains(expectedOutput, want) {
+			t.Fatalf("multimodal expected-output.md missing %q", want)
+		}
 	}
 }
 
