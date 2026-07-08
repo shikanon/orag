@@ -151,6 +151,7 @@ func (n NodeSet) ContextPack(ctx context.Context, st State) (State, error) {
 		if st.Cached || len(st.Results) == 0 {
 			return nil
 		}
+		st.Results = n.Service.ApplyShadowRetrieval(ctx, st.Request, st.Results)
 		st.Context, st.Citations = n.Service.Packer.Pack(st.Results)
 		return nil
 	})

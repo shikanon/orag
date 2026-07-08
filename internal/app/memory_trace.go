@@ -29,7 +29,7 @@ func newMemoryTraceRepository() *memoryTraceRepository {
 	return &memoryTraceRepository{traces: map[string]postgres.TraceRecord{}}
 }
 
-func (r *memoryTraceRepository) StoreTrace(_ context.Context, tenantID, traceID, _ string, profile rag.Profile, latencyMS int64, spans []raggraph.NodeSpan) error {
+func (r *memoryTraceRepository) StoreTrace(_ context.Context, tenantID, kbID, traceID, query string, profile rag.Profile, latencyMS int64, answer string, retrievedChunks []string, spans []raggraph.NodeSpan) error {
 	if traceID == "" {
 		return nil
 	}
@@ -40,13 +40,23 @@ func (r *memoryTraceRepository) StoreTrace(_ context.Context, tenantID, traceID,
 	record, ok := r.traces[traceID]
 	if !ok {
 		record = postgres.TraceRecord{
-			ID:        traceID,
-			TenantID:  tenantID,
-			Profile:   profile,
-			LatencyMS: latencyMS,
-			CreatedAt: now,
+			ID:              traceID,
+			TenantID:        tenantID,
+			KBID:            kbID,
+			Query:           query,
+			Profile:         profile,
+			Answer:          answer,
+			RetrievedChunks: append([]string(nil), retrievedChunks...),
+			LatencyMS:       latencyMS,
+			CreatedAt:       now,
 		}
 	}
+	record.KBID = kbID
+	record.Query = query
+	record.Answer = answer
+	record.RetrievedChunks = append([]string(nil), retrievedChunks...)
+	record.Profile = profile
+	record.LatencyMS = latencyMS
 	spanBySequence := make(map[int]postgres.TraceNodeSpan, len(record.NodeSpans)+len(spans))
 	for _, span := range record.NodeSpans {
 		spanBySequence[span.Sequence] = span
@@ -150,6 +160,9 @@ func memoryTraceMatchesFilter(record postgres.TraceRecord, filter postgres.Trace
 	if filter.TenantID != "" && record.TenantID != filter.TenantID {
 		return false
 	}
+	if filter.KBID != "" && record.KBID != filter.KBID {
+		return false
+	}
 	if filter.Profile != "" && record.Profile != filter.Profile {
 		return false
 	}
@@ -215,6 +228,7 @@ func memoryTracePercentileCont(values []float64, percentile float64) float64 {
 
 func copyMemoryTraceRecord(record postgres.TraceRecord, includeSpans bool) postgres.TraceRecord {
 	out := record
+	out.RetrievedChunks = append([]string(nil), record.RetrievedChunks...)
 	if includeSpans {
 		out.NodeSpans = append([]postgres.TraceNodeSpan(nil), record.NodeSpans...)
 	} else {

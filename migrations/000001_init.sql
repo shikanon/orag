@@ -163,8 +163,11 @@ CREATE TABLE IF NOT EXISTS rag_profiles (
 CREATE TABLE IF NOT EXISTS rag_traces (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL REFERENCES tenants(id),
+    knowledge_base_id TEXT NOT NULL DEFAULT '',
     query TEXT NOT NULL,
     profile TEXT NOT NULL,
+    answer TEXT NOT NULL DEFAULT '',
+    retrieved_chunks_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     latency_ms BIGINT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

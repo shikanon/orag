@@ -23,6 +23,7 @@ type Config struct {
 	Ingestion     IngestionConfig
 	ObjectStorage ObjectStorageConfig
 	Observability ObservabilityConfig
+	Maintenance   MaintenanceConfig
 }
 
 type StorageConfig struct {
@@ -188,6 +189,52 @@ type TracePrivacyConfig struct {
 	RetentionDays int
 }
 
+type MaintenanceConfig struct {
+	OfflineKnowledgeOrganizer OfflineKnowledgeOrganizerConfig
+}
+
+type OfflineKnowledgeOrganizerConfig struct {
+	Enabled                         bool
+	Schedule                        string
+	Targets                         []OfflineKnowledgeOrganizerTargetConfig
+	LookbackDays                    int
+	MaxQuestionsPerRun              int
+	MaxClustersPerRun               int
+	CodexEnabled                    bool
+	CodexCommand                    string
+	CodexEndpoint                   string
+	MaxCodexConcurrency             int
+	MaxCodexDeepSearchSteps         int
+	MaxCodexTokensPerQuestion       int
+	MaxToolQPSPerTenant             int
+	MaxToolRowsPerCall              int
+	MaxReplayConcurrency            int
+	MaxEvalConcurrency              int
+	MinQuestionOccurrence           int
+	LongTailSamplingRate            float64
+	ExplicitNegativeFeedbackBoost   int
+	MinVerifyConfidence             float64
+	MinPublishConfidence            float64
+	EvidenceValidationEnabled       bool
+	ConclusionJudgeEnabled          bool
+	ShadowRetrievalEnabled          bool
+	ShadowInjectEnabled             bool
+	ShadowEventTTLDays              int
+	ShadowEventSamplingRate         float64
+	AutoPublishEnabled              bool
+	RegressionEvalEnabled           bool
+	RegressionDatasetID             string
+	FullRegressionForRewriteEnabled bool
+	MinRecallLift                   float64
+	MinAnswerQualityLift            float64
+	MaxLatencyDeltaMS               int
+}
+
+type OfflineKnowledgeOrganizerTargetConfig struct {
+	TenantID string
+	KBID     string
+}
+
 func Load() (Config, error) {
 	cfg := Config{
 		Server: ServerConfig{
@@ -315,7 +362,50 @@ func Load() (Config, error) {
 				RetentionDays: getenvInt("TRACE_RETENTION_DAYS", 30),
 			},
 		},
+		Maintenance: MaintenanceConfig{
+			OfflineKnowledgeOrganizer: OfflineKnowledgeOrganizerConfig{
+				Enabled:                         getenvBool("OFFLINE_KNOWLEDGE_ORGANIZER_ENABLED", false),
+				Schedule:                        getenv("OFFLINE_KNOWLEDGE_ORGANIZER_SCHEDULE", "0 2 * * *"),
+				Targets:                         nil,
+				LookbackDays:                    getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_LOOKBACK_DAYS", 7),
+				MaxQuestionsPerRun:              getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_QUESTIONS_PER_RUN", 500),
+				MaxClustersPerRun:               getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CLUSTERS_PER_RUN", 200),
+				CodexEnabled:                    getenvBool("OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENABLED", false),
+				CodexCommand:                    getenv("OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_COMMAND", ""),
+				CodexEndpoint:                   getenv("OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENDPOINT", ""),
+				MaxCodexConcurrency:             getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CODEX_CONCURRENCY", 4),
+				MaxCodexDeepSearchSteps:         getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CODEX_DEEP_SEARCH_STEPS", 12),
+				MaxCodexTokensPerQuestion:       getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CODEX_TOKENS_PER_QUESTION", 20000),
+				MaxToolQPSPerTenant:             getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_TOOL_QPS_PER_TENANT", 20),
+				MaxToolRowsPerCall:              getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_TOOL_ROWS_PER_CALL", 50),
+				MaxReplayConcurrency:            getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_REPLAY_CONCURRENCY", 8),
+				MaxEvalConcurrency:              getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_EVAL_CONCURRENCY", 4),
+				MinQuestionOccurrence:           getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_QUESTION_OCCURRENCE", 2),
+				LongTailSamplingRate:            getenvFloat("OFFLINE_KNOWLEDGE_ORGANIZER_LONG_TAIL_SAMPLING_RATE", 0.05),
+				ExplicitNegativeFeedbackBoost:   getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_EXPLICIT_NEGATIVE_FEEDBACK_BOOST", 10),
+				MinVerifyConfidence:             getenvFloat("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_VERIFY_CONFIDENCE", 0.8),
+				MinPublishConfidence:            getenvFloat("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_PUBLISH_CONFIDENCE", 0.9),
+				EvidenceValidationEnabled:       getenvBool("OFFLINE_KNOWLEDGE_ORGANIZER_EVIDENCE_VALIDATION_ENABLED", true),
+				ConclusionJudgeEnabled:          getenvBool("OFFLINE_KNOWLEDGE_ORGANIZER_CONCLUSION_JUDGE_ENABLED", true),
+				ShadowRetrievalEnabled:          getenvBool("OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_RETRIEVAL_ENABLED", true),
+				ShadowInjectEnabled:             getenvBool("OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_INJECT_ENABLED", false),
+				ShadowEventTTLDays:              getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_EVENT_TTL_DAYS", 14),
+				ShadowEventSamplingRate:         getenvFloat("OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_EVENT_SAMPLING_RATE", 1.0),
+				AutoPublishEnabled:              getenvBool("OFFLINE_KNOWLEDGE_ORGANIZER_AUTO_PUBLISH_ENABLED", false),
+				RegressionEvalEnabled:           getenvBool("OFFLINE_KNOWLEDGE_ORGANIZER_REGRESSION_EVAL_ENABLED", true),
+				RegressionDatasetID:             getenv("OFFLINE_KNOWLEDGE_ORGANIZER_REGRESSION_DATASET_ID", ""),
+				FullRegressionForRewriteEnabled: getenvBool("OFFLINE_KNOWLEDGE_ORGANIZER_FULL_REGRESSION_FOR_REWRITE_ENABLED", true),
+				MinRecallLift:                   getenvFloat("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_RECALL_LIFT", 0.05),
+				MinAnswerQualityLift:            getenvFloat("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_ANSWER_QUALITY_LIFT", 0.03),
+				MaxLatencyDeltaMS:               getenvInt("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_LATENCY_DELTA_MS", 300),
+			},
+		},
 	}
+	targets, err := parseOfflineKnowledgeOrganizerTargets(getenv("OFFLINE_KNOWLEDGE_ORGANIZER_TARGETS", ""))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Maintenance.OfflineKnowledgeOrganizer.Targets = targets
 	cfg.Models = loadModelProviders()
 	cfg.applyModelProviderDefaults()
 	if cfg.Ark.APIKey == "" {
@@ -421,54 +511,170 @@ func (c Config) Validate() error {
 	if c.Observability.Trace.RetentionDays <= 0 {
 		return errors.New("TRACE_RETENTION_DAYS must be positive")
 	}
+	if err := c.Maintenance.OfflineKnowledgeOrganizer.Validate(); err != nil {
+		return err
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
 	}
 	return nil
 }
 
+func (c OfflineKnowledgeOrganizerConfig) Validate() error {
+	if strings.TrimSpace(c.Schedule) == "" || len(strings.Fields(c.Schedule)) != 5 {
+		return errors.New("OFFLINE_KNOWLEDGE_ORGANIZER_SCHEDULE must be a 5-field cron expression")
+	}
+	positive := map[string]int{
+		"OFFLINE_KNOWLEDGE_ORGANIZER_LOOKBACK_DAYS":                    c.LookbackDays,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MAX_QUESTIONS_PER_RUN":            c.MaxQuestionsPerRun,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CLUSTERS_PER_RUN":             c.MaxClustersPerRun,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CODEX_CONCURRENCY":            c.MaxCodexConcurrency,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CODEX_DEEP_SEARCH_STEPS":      c.MaxCodexDeepSearchSteps,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CODEX_TOKENS_PER_QUESTION":    c.MaxCodexTokensPerQuestion,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MAX_TOOL_QPS_PER_TENANT":          c.MaxToolQPSPerTenant,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MAX_TOOL_ROWS_PER_CALL":           c.MaxToolRowsPerCall,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MAX_REPLAY_CONCURRENCY":           c.MaxReplayConcurrency,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MAX_EVAL_CONCURRENCY":             c.MaxEvalConcurrency,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MIN_QUESTION_OCCURRENCE":          c.MinQuestionOccurrence,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_EXPLICIT_NEGATIVE_FEEDBACK_BOOST": c.ExplicitNegativeFeedbackBoost,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_EVENT_TTL_DAYS":            c.ShadowEventTTLDays,
+	}
+	for key, value := range positive {
+		if value <= 0 {
+			return fmt.Errorf("%s must be positive", key)
+		}
+	}
+	if c.MaxLatencyDeltaMS < 0 {
+		return errors.New("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_LATENCY_DELTA_MS must be non-negative")
+	}
+	if !c.CodexEnabled && (strings.TrimSpace(c.CodexCommand) != "" || strings.TrimSpace(c.CodexEndpoint) != "") {
+		return errors.New("OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENABLED must be true when Codex command or endpoint is configured")
+	}
+	if !isRate(c.LongTailSamplingRate) {
+		return errors.New("OFFLINE_KNOWLEDGE_ORGANIZER_LONG_TAIL_SAMPLING_RATE must be in [0, 1]")
+	}
+	if !isRate(c.ShadowEventSamplingRate) {
+		return errors.New("OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_EVENT_SAMPLING_RATE must be in [0, 1]")
+	}
+	if !isRate(c.MinVerifyConfidence) || c.MinVerifyConfidence <= 0 {
+		return errors.New("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_VERIFY_CONFIDENCE must be in (0, 1]")
+	}
+	if !isRate(c.MinPublishConfidence) || c.MinPublishConfidence <= 0 {
+		return errors.New("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_PUBLISH_CONFIDENCE must be in (0, 1]")
+	}
+	if c.MinPublishConfidence < c.MinVerifyConfidence {
+		return errors.New("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_PUBLISH_CONFIDENCE must be greater than or equal to OFFLINE_KNOWLEDGE_ORGANIZER_MIN_VERIFY_CONFIDENCE")
+	}
+	if c.MinRecallLift < 0 {
+		return errors.New("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_RECALL_LIFT must be non-negative")
+	}
+	if c.MinAnswerQualityLift < 0 {
+		return errors.New("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_ANSWER_QUALITY_LIFT must be non-negative")
+	}
+	return nil
+}
+
+func isRate(value float64) bool {
+	return value >= 0 && value <= 1
+}
+
 func (c Config) RedactedEnv() map[string]string {
 	return map[string]string{
-		"HOST":                                c.Server.Host,
-		"PORT":                                strconv.Itoa(c.Server.Port),
-		"DATABASE_URL":                        redact(c.Database.URL),
-		"STORAGE_BACKEND":                     c.Storage.Backend,
-		"QDRANT_HOST":                         c.Qdrant.Host,
-		"QDRANT_GRPC_PORT":                    strconv.Itoa(c.Qdrant.GRPCPort),
-		"QDRANT_COLLECTION":                   c.Qdrant.Collection,
-		"QDRANT_SEMANTIC_CACHE_COLLECTION":    c.Qdrant.SemanticCacheCollection,
-		"ARK_BASE_URL":                        c.Ark.BaseURL,
-		"ARK_API_KEY":                         redact(c.Ark.APIKey),
-		"ARK_CHAT_MODEL":                      c.Ark.ChatModel,
-		"ARK_EMBEDDING_MODEL":                 c.Ark.EmbeddingModel,
-		"LLM_CHAT_PROVIDER":                   c.Models.ChatProvider,
-		"LLM_EMBEDDING_PROVIDER":              c.Models.EmbeddingProvider,
-		"LLM_RERANK_PROVIDER":                 c.Models.RerankProvider,
-		"LLM_MULTIMODAL_PROVIDER":             c.Models.MultimodalProvider,
-		"ALLOW_DETERMINISTIC_MOCK":            strconv.FormatBool(c.Models.AllowDeterministicMock),
-		"INGEST_PARSER_METHOD":                c.Ingestion.ParserMethod,
-		"INGEST_CONTEXTUAL_RETRIEVAL_ENABLED": strconv.FormatBool(c.Ingestion.ContextualRetrieval.Enabled),
-		"INGEST_CONTEXTUAL_FAILURE_MODE":      c.Ingestion.ContextualRetrieval.FailureMode,
-		"INGEST_RAPTOR_ENABLED":               strconv.FormatBool(c.Ingestion.RAPTOR.Enabled),
-		"INGEST_RAPTOR_MAX_LEVELS":            strconv.Itoa(c.Ingestion.RAPTOR.MaxLevels),
-		"MINERU_APISERVER":                    c.Ingestion.MinerU.APIURL,
-		"MINERU_SERVER_URL":                   c.Ingestion.MinerU.ServerURL,
-		"MINERU_BACKEND":                      c.Ingestion.MinerU.Backend,
-		"MINERU_PARSE_METHOD":                 c.Ingestion.MinerU.ParseMethod,
-		"DOCLING_SERVER_URL":                  c.Ingestion.Docling.ServerURL,
-		"RERANK_PROVIDER":                     c.Ark.RerankProvider,
-		"ARK_RERANK_MODEL":                    c.Ark.RerankModel,
-		"ALIYUN_RERANK_API_KEY":               redact(c.Ark.RerankAPIKey),
-		"JWT_SECRET":                          redact(c.Auth.JWTSecret),
-		"RAG_QUERY_REWRITE_ENABLED":           strconv.FormatBool(c.RAG.QueryRewriteEnabled),
-		"RAG_MULTI_QUERY_COUNT":               strconv.Itoa(c.RAG.MultiQueryCount),
-		"RAG_HYDE_ENABLED":                    strconv.FormatBool(c.RAG.HyDEEnabled),
-		"RAG_QUERY_ROUTER_ENABLED":            strconv.FormatBool(c.RAG.QueryRouter.Enabled),
-		"RAG_QUERY_ROUTER_STRATEGY":           c.RAG.QueryRouter.Strategy,
-		"RAG_GRAPH_RETRIEVAL_ENABLED":         strconv.FormatBool(c.RAG.GraphRetrieval.Enabled),
-		"RAG_GRAPH_RETRIEVAL_TOP_K":           strconv.Itoa(c.RAG.GraphRetrieval.TopK),
-		"PROMPT_CACHE_MODE":                   c.RAG.PromptCacheMode,
+		"HOST":                                              c.Server.Host,
+		"PORT":                                              strconv.Itoa(c.Server.Port),
+		"DATABASE_URL":                                      redact(c.Database.URL),
+		"STORAGE_BACKEND":                                   c.Storage.Backend,
+		"QDRANT_HOST":                                       c.Qdrant.Host,
+		"QDRANT_GRPC_PORT":                                  strconv.Itoa(c.Qdrant.GRPCPort),
+		"QDRANT_COLLECTION":                                 c.Qdrant.Collection,
+		"QDRANT_SEMANTIC_CACHE_COLLECTION":                  c.Qdrant.SemanticCacheCollection,
+		"ARK_BASE_URL":                                      c.Ark.BaseURL,
+		"ARK_API_KEY":                                       redact(c.Ark.APIKey),
+		"ARK_CHAT_MODEL":                                    c.Ark.ChatModel,
+		"ARK_EMBEDDING_MODEL":                               c.Ark.EmbeddingModel,
+		"LLM_CHAT_PROVIDER":                                 c.Models.ChatProvider,
+		"LLM_EMBEDDING_PROVIDER":                            c.Models.EmbeddingProvider,
+		"LLM_RERANK_PROVIDER":                               c.Models.RerankProvider,
+		"LLM_MULTIMODAL_PROVIDER":                           c.Models.MultimodalProvider,
+		"ALLOW_DETERMINISTIC_MOCK":                          strconv.FormatBool(c.Models.AllowDeterministicMock),
+		"INGEST_PARSER_METHOD":                              c.Ingestion.ParserMethod,
+		"INGEST_CONTEXTUAL_RETRIEVAL_ENABLED":               strconv.FormatBool(c.Ingestion.ContextualRetrieval.Enabled),
+		"INGEST_CONTEXTUAL_FAILURE_MODE":                    c.Ingestion.ContextualRetrieval.FailureMode,
+		"INGEST_RAPTOR_ENABLED":                             strconv.FormatBool(c.Ingestion.RAPTOR.Enabled),
+		"INGEST_RAPTOR_MAX_LEVELS":                          strconv.Itoa(c.Ingestion.RAPTOR.MaxLevels),
+		"MINERU_APISERVER":                                  c.Ingestion.MinerU.APIURL,
+		"MINERU_SERVER_URL":                                 c.Ingestion.MinerU.ServerURL,
+		"MINERU_BACKEND":                                    c.Ingestion.MinerU.Backend,
+		"MINERU_PARSE_METHOD":                               c.Ingestion.MinerU.ParseMethod,
+		"DOCLING_SERVER_URL":                                c.Ingestion.Docling.ServerURL,
+		"RERANK_PROVIDER":                                   c.Ark.RerankProvider,
+		"ARK_RERANK_MODEL":                                  c.Ark.RerankModel,
+		"ALIYUN_RERANK_API_KEY":                             redact(c.Ark.RerankAPIKey),
+		"JWT_SECRET":                                        redact(c.Auth.JWTSecret),
+		"RAG_QUERY_REWRITE_ENABLED":                         strconv.FormatBool(c.RAG.QueryRewriteEnabled),
+		"RAG_MULTI_QUERY_COUNT":                             strconv.Itoa(c.RAG.MultiQueryCount),
+		"RAG_HYDE_ENABLED":                                  strconv.FormatBool(c.RAG.HyDEEnabled),
+		"RAG_QUERY_ROUTER_ENABLED":                          strconv.FormatBool(c.RAG.QueryRouter.Enabled),
+		"RAG_QUERY_ROUTER_STRATEGY":                         c.RAG.QueryRouter.Strategy,
+		"RAG_GRAPH_RETRIEVAL_ENABLED":                       strconv.FormatBool(c.RAG.GraphRetrieval.Enabled),
+		"RAG_GRAPH_RETRIEVAL_TOP_K":                         strconv.Itoa(c.RAG.GraphRetrieval.TopK),
+		"PROMPT_CACHE_MODE":                                 c.RAG.PromptCacheMode,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_ENABLED":               strconv.FormatBool(c.Maintenance.OfflineKnowledgeOrganizer.Enabled),
+		"OFFLINE_KNOWLEDGE_ORGANIZER_SCHEDULE":              c.Maintenance.OfflineKnowledgeOrganizer.Schedule,
+		"OFFLINE_KNOWLEDGE_ORGANIZER_TARGETS":               formatOfflineKnowledgeOrganizerTargets(c.Maintenance.OfflineKnowledgeOrganizer.Targets),
+		"OFFLINE_KNOWLEDGE_ORGANIZER_LOOKBACK_DAYS":         strconv.Itoa(c.Maintenance.OfflineKnowledgeOrganizer.LookbackDays),
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MAX_QUESTIONS_PER_RUN": strconv.Itoa(c.Maintenance.OfflineKnowledgeOrganizer.MaxQuestionsPerRun),
+		"OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CLUSTERS_PER_RUN":  strconv.Itoa(c.Maintenance.OfflineKnowledgeOrganizer.MaxClustersPerRun),
+		"OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENABLED":         strconv.FormatBool(c.Maintenance.OfflineKnowledgeOrganizer.CodexEnabled),
+		"OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENDPOINT":        redact(c.Maintenance.OfflineKnowledgeOrganizer.CodexEndpoint),
+		"OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_EVENT_TTL_DAYS": strconv.Itoa(c.Maintenance.OfflineKnowledgeOrganizer.ShadowEventTTLDays),
+		"OFFLINE_KNOWLEDGE_ORGANIZER_REGRESSION_DATASET_ID": c.Maintenance.OfflineKnowledgeOrganizer.RegressionDatasetID,
 	}
+}
+
+func parseOfflineKnowledgeOrganizerTargets(raw string) ([]OfflineKnowledgeOrganizerTargetConfig, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	targets := make([]OfflineKnowledgeOrganizerTargetConfig, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		pieces := strings.Split(part, ":")
+		if len(pieces) != 2 {
+			return nil, fmt.Errorf("OFFLINE_KNOWLEDGE_ORGANIZER_TARGETS entry %q must use tenant:kb format", part)
+		}
+		target := OfflineKnowledgeOrganizerTargetConfig{
+			TenantID: strings.TrimSpace(pieces[0]),
+			KBID:     strings.TrimSpace(pieces[1]),
+		}
+		if target.TenantID == "" || target.KBID == "" {
+			return nil, fmt.Errorf("OFFLINE_KNOWLEDGE_ORGANIZER_TARGETS entry %q must include tenant and kb", part)
+		}
+		key := target.TenantID + "\x00" + target.KBID
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		targets = append(targets, target)
+	}
+	return targets, nil
+}
+
+func formatOfflineKnowledgeOrganizerTargets(targets []OfflineKnowledgeOrganizerTargetConfig) string {
+	if len(targets) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if target.TenantID == "" && target.KBID == "" {
+			continue
+		}
+		parts = append(parts, target.TenantID+":"+target.KBID)
+	}
+	return strings.Join(parts, ",")
 }
 
 func loadModelProviders() ModelProviderConfig {

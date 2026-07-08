@@ -323,6 +323,7 @@ func (r *Repository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chu
 		if existingID != "" {
 			chunk.DocumentID = existingID
 		}
+		chunk = chunkWithDocVersion(chunk, doc.ContentHash)
 		_, err = tx.Exec(ctx, `
 			INSERT INTO chunks(id, tenant_id, knowledge_base_id, document_id, content, contextual_text, source_uri, page, section, offset_start, metadata, searchable)
 			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
@@ -400,9 +401,12 @@ func (r *Repository) Activate(ctx context.Context, doc kb.Document, chunks []kb.
 
 func (r *Repository) Chunks(tenantID, kbID string) []kb.Chunk {
 	rows, err := r.Pool.Query(context.Background(), `
-		SELECT id, tenant_id, knowledge_base_id, document_id, content, contextual_text, source_uri, page, section, offset_start, metadata
-		FROM chunks
-		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND searchable
+		SELECT c.id, c.tenant_id, c.knowledge_base_id, c.document_id, c.content, c.contextual_text,
+		       c.source_uri, c.page, c.section, c.offset_start, c.metadata, COALESCE(d.content_hash, '')
+		FROM chunks c
+		LEFT JOIN documents d
+		  ON d.id=c.document_id AND d.tenant_id=c.tenant_id AND d.knowledge_base_id=c.knowledge_base_id
+		WHERE c.tenant_id=$1 AND c.knowledge_base_id=$2 AND c.searchable
 		ORDER BY id`, tenantID, kbID)
 	if err != nil {
 		return nil
@@ -410,7 +414,7 @@ func (r *Repository) Chunks(tenantID, kbID string) []kb.Chunk {
 	defer rows.Close()
 	var out []kb.Chunk
 	for rows.Next() {
-		chunk, err := scanChunk(rows)
+		chunk, err := scanChunkWithDocVersion(rows)
 		if err == nil {
 			out = append(out, chunk)
 		}
@@ -566,6 +570,37 @@ func scanChunk(row kbScanner) (kb.Chunk, error) {
 	}
 	chunk.Metadata = stringMap(meta)
 	return chunk, nil
+}
+
+func scanChunkWithDocVersion(row kbScanner) (kb.Chunk, error) {
+	var chunk kb.Chunk
+	var meta []byte
+	var docVersion string
+	err := row.Scan(&chunk.ID, &chunk.TenantID, &chunk.KnowledgeBaseID, &chunk.DocumentID, &chunk.Content, &chunk.ContextualText, &chunk.SourceURI, &chunk.Page, &chunk.Section, &chunk.Offset, &meta, &docVersion)
+	if err != nil {
+		return chunk, err
+	}
+	chunk.Metadata = stringMap(meta)
+	return chunkWithDocVersion(chunk, docVersion), nil
+}
+
+func chunkWithDocVersion(chunk kb.Chunk, docVersion string) kb.Chunk {
+	if strings.TrimSpace(docVersion) == "" {
+		return chunk
+	}
+	if chunk.Metadata == nil {
+		chunk.Metadata = map[string]string{}
+	} else {
+		copied := make(map[string]string, len(chunk.Metadata)+1)
+		for key, value := range chunk.Metadata {
+			copied[key] = value
+		}
+		chunk.Metadata = copied
+	}
+	if chunk.Metadata["doc_version"] == "" {
+		chunk.Metadata["doc_version"] = docVersion
+	}
+	return chunk
 }
 
 func mustJSON(v any) []byte {

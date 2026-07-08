@@ -21,8 +21,10 @@ import (
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
+	"github.com/shikanon/orag/internal/offlineknowledge"
 	"github.com/shikanon/orag/internal/platform/logger"
 	"github.com/shikanon/orag/internal/rag"
+	"time"
 )
 
 func TestLoginValidatesPassword(t *testing.T) {
@@ -940,6 +942,274 @@ func TestOptimizationAcceptsLegacyProfilesTopKsShortcut(t *testing.T) {
 	}
 }
 
+func TestOfflineKnowledgeManualRunHTTP(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	repo := installOfflineKnowledgeService(app, offlineknowledge.ServiceOptions{Now: fixedOfflineKnowledgeNow})
+
+	token := loginToken(t, h)
+	body := `{
+		"kb_id":"kb_default",
+		"window_start":"2026-07-07T00:00:00Z",
+		"window_end":"2026-07-08T00:00:00Z",
+		"config_hash":"config_http"
+	}`
+	resp := performJSON(h, "POST", "/v1/offline-knowledge/runs", body, token)
+	if resp.Code != 202 {
+		t.Fatalf("create offline run status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created struct {
+		Run offlineknowledge.OfflineKnowledgeRun `json:"run"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Run.ID == "" || created.Run.TenantID != "tenant_default" || created.Run.KBID != "kb_default" || created.Run.Status != offlineknowledge.RunStatusPending {
+		t.Fatalf("unexpected created run: %#v body=%s", created.Run, resp.Body)
+	}
+
+	if err := repo.UpsertQuestionCluster(ctx, offlineknowledge.QuestionCluster{
+		ID:                 "cluster_http",
+		TenantID:           "tenant_default",
+		RunID:              created.Run.ID,
+		KBID:               "kb_default",
+		CanonicalQuestion:  "What is ORAG?",
+		NormalizedQuestion: "what is orag?",
+		QuestionHash:       "hash_http",
+		SampleQuestions:    []string{"What is ORAG?"},
+		TraceIDs:           []string{"trace_http"},
+		CreatedAt:          fixedOfflineKnowledgeNow(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp = performJSON(h, "GET", "/v1/offline-knowledge/runs?status=pending&kb_id=kb_default", "", token)
+	if resp.Code != 200 || !strings.Contains(resp.Body, created.Run.ID) {
+		t.Fatalf("list offline runs status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "GET", "/v1/offline-knowledge/runs/"+created.Run.ID, "", token)
+	if resp.Code != 200 || !strings.Contains(resp.Body, `"config_hash":"config_http"`) {
+		t.Fatalf("get offline run status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "GET", "/v1/offline-knowledge/runs/"+created.Run.ID+"/questions", "", token)
+	if resp.Code != 200 || !strings.Contains(resp.Body, `"id":"cluster_http"`) {
+		t.Fatalf("list offline questions status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
+func TestOfflineKnowledgeRunExecuteHTTPStatuses(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	installOfflineKnowledgeService(app, httpExecutableOfflineKnowledgeOptions())
+
+	token := loginToken(t, h)
+	body := `{
+		"kb_id":"kb_default",
+		"window_start":"2026-07-07T00:00:00Z",
+		"window_end":"2026-07-08T00:00:00Z",
+		"config_hash":"config_execute"
+	}`
+	resp := performJSON(h, "POST", "/v1/offline-knowledge/runs", body, token)
+	if resp.Code != 202 {
+		t.Fatalf("create run status = %d body=%s", resp.Code, resp.Body)
+	}
+	var created struct {
+		Run offlineknowledge.OfflineKnowledgeRun `json:"run"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	resp = performJSON(h, "POST", "/v1/offline-knowledge/runs/"+created.Run.ID+"/execute", `{}`, token)
+	if resp.Code != 202 || !strings.Contains(resp.Body, `"status":"completed"`) {
+		t.Fatalf("execute run status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "POST", "/v1/offline-knowledge/runs/"+created.Run.ID+"/execute", `{}`, token)
+	if resp.Code != 409 || !strings.Contains(resp.Body, `"code":"offline_knowledge_run_execution_conflict"`) {
+		t.Fatalf("second execute status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
+func TestOfflineKnowledgeSchedulerTriggerDisabledReturns503(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/offline-knowledge/scheduler:trigger", `{}`, token)
+	if resp.Code != 503 || !strings.Contains(resp.Body, `"code":"offline_knowledge_scheduler_disabled"`) {
+		t.Fatalf("scheduler trigger status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
+func TestOfflineKnowledgeDisabledDependenciesReturn503(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	repo := installOfflineKnowledgeService(app, offlineknowledge.ServiceOptions{
+		RegressionRunner: offlineknowledge.DisabledRegressionRunner{},
+		Now:              fixedOfflineKnowledgeNow,
+	})
+	if err := repo.CreateOptimizationItem(context.Background(), offlineKnowledgeItem("item_regression_disabled", "tenant_default", "kb_1", offlineknowledge.ItemStatusShadowEnabled, offlineknowledge.ItemTypeAnswer)); err != nil {
+		t.Fatal(err)
+	}
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/optimization-items/item_regression_disabled/run-regression", `{}`, token)
+	if resp.Code != 503 || !strings.Contains(resp.Body, `"code":"offline_knowledge_dependency_unavailable"`) {
+		t.Fatalf("disabled regression status = %d body=%s", resp.Code, resp.Body)
+	}
+
+	resp = performJSON(h, "POST", "/v1/offline-knowledge/runs/run_missing/execute", `{}`, token)
+	if resp.Code != 503 || !strings.Contains(resp.Body, `"code":"offline_knowledge_dependency_unavailable"`) {
+		t.Fatalf("execute missing dependencies status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
+func TestOfflineKnowledgeOptimizationItemListFiltersAndTenantIsolation(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	repo := installOfflineKnowledgeService(app, offlineknowledge.ServiceOptions{Now: fixedOfflineKnowledgeNow})
+	for _, item := range []offlineknowledge.OptimizationItem{
+		offlineKnowledgeItem("item_match", "tenant_default", "kb_1", offlineknowledge.ItemStatusVerified, offlineknowledge.ItemTypeAnswer),
+		offlineKnowledgeItem("item_wrong_status", "tenant_default", "kb_1", offlineknowledge.ItemStatusRejected, offlineknowledge.ItemTypeAnswer),
+		offlineKnowledgeItem("item_wrong_type", "tenant_default", "kb_1", offlineknowledge.ItemStatusVerified, offlineknowledge.ItemTypeQueryRewrite),
+		offlineKnowledgeItem("item_other_tenant", "tenant_other", "kb_1", offlineknowledge.ItemStatusVerified, offlineknowledge.ItemTypeAnswer),
+	} {
+		if err := repo.CreateOptimizationItem(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "GET", "/v1/optimization-items?status=verified&kb_id=kb_1&item_type=answer_item", "", token)
+	if resp.Code != 200 {
+		t.Fatalf("list optimization items status = %d body=%s", resp.Code, resp.Body)
+	}
+	var listed struct {
+		Items []offlineknowledge.OptimizationItem `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) != 1 || listed.Items[0].ID != "item_match" {
+		t.Fatalf("filtered optimization items = %#v body=%s", listed.Items, resp.Body)
+	}
+
+	otherToken, err := app.Auth.IssueToken("tenant_other", "user_other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp = performJSON(h, "GET", "/v1/optimization-items/item_match", "", otherToken)
+	if resp.Code != 404 || !strings.Contains(resp.Body, `"code":"optimization_item_not_found"`) {
+		t.Fatalf("cross-tenant get item status = %d body=%s", resp.Code, resp.Body)
+	}
+}
+
+func TestOfflineKnowledgeOptimizationItemDisable(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	repo := installOfflineKnowledgeService(app, offlineknowledge.ServiceOptions{Now: fixedOfflineKnowledgeNow})
+	if err := repo.CreateOptimizationItem(ctx, offlineKnowledgeItem("item_disable", "tenant_default", "kb_1", offlineknowledge.ItemStatusPublished, offlineknowledge.ItemTypeAnswer)); err != nil {
+		t.Fatal(err)
+	}
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/optimization-items/item_disable/disable", `{}`, token)
+	if resp.Code != 202 || !strings.Contains(resp.Body, `"status":"deprecated"`) {
+		t.Fatalf("disable item status = %d body=%s", resp.Code, resp.Body)
+	}
+	stored, found, err := repo.GetOptimizationItem(ctx, "tenant_default", "item_disable")
+	if err != nil || !found {
+		t.Fatalf("lookup disabled item found=%v err=%v", found, err)
+	}
+	if stored.Status != offlineknowledge.ItemStatusDeprecated {
+		t.Fatalf("stored disabled status = %q, want deprecated", stored.Status)
+	}
+}
+
+func TestOfflineKnowledgeOptimizationItemVerifyNeedsReview(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	repo := installOfflineKnowledgeService(app, offlineknowledge.ServiceOptions{Now: fixedOfflineKnowledgeNow})
+	if err := repo.CreateOptimizationItem(ctx, offlineKnowledgeItem("item_review_verify", "tenant_default", "kb_1", offlineknowledge.ItemStatusNeedsReview, offlineknowledge.ItemTypeAnswer)); err != nil {
+		t.Fatal(err)
+	}
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/optimization-items/item_review_verify/verify", `{}`, token)
+	if resp.Code != 202 || !strings.Contains(resp.Body, `"status":"verified"`) {
+		t.Fatalf("verify needs_review item status = %d body=%s", resp.Code, resp.Body)
+	}
+	stored, found, err := repo.GetOptimizationItem(ctx, "tenant_default", "item_review_verify")
+	if err != nil || !found {
+		t.Fatalf("lookup verified item found=%v err=%v", found, err)
+	}
+	if stored.Status != offlineknowledge.ItemStatusVerified {
+		t.Fatalf("stored verified status = %q, want verified", stored.Status)
+	}
+}
+
+func TestOfflineKnowledgeOptimizationItemRejectsIllegalPublish(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	repo := installOfflineKnowledgeService(app, offlineknowledge.ServiceOptions{Now: fixedOfflineKnowledgeNow})
+	if err := repo.CreateOptimizationItem(ctx, offlineKnowledgeItem("item_illegal_publish", "tenant_default", "kb_1", offlineknowledge.ItemStatusVerified, offlineknowledge.ItemTypeAnswer)); err != nil {
+		t.Fatal(err)
+	}
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/optimization-items/item_illegal_publish/publish", `{}`, token)
+	if resp.Code != 409 || !strings.Contains(resp.Body, `"code":"invalid_optimization_item_transition"`) {
+		t.Fatalf("illegal publish status = %d body=%s", resp.Code, resp.Body)
+	}
+	stored, found, err := repo.GetOptimizationItem(ctx, "tenant_default", "item_illegal_publish")
+	if err != nil || !found {
+		t.Fatalf("lookup illegal publish item found=%v err=%v", found, err)
+	}
+	if stored.Status != offlineknowledge.ItemStatusVerified {
+		t.Fatalf("illegal publish mutated status = %q, want verified", stored.Status)
+	}
+}
+
+func TestOfflineKnowledgeOptimizationItemRevalidate(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	validator := &httpOfflineKnowledgeValidator{}
+	repo := installOfflineKnowledgeService(app, offlineknowledge.ServiceOptions{Validator: validator, Now: fixedOfflineKnowledgeNow})
+	for _, item := range []offlineknowledge.OptimizationItem{
+		offlineKnowledgeStaleItem("item_single_revalidate", "sha256:single"),
+		offlineKnowledgeStaleItem("item_bulk_revalidate", "sha256:bulk"),
+		offlineKnowledgeStaleItem("item_bulk_other_hash", "sha256:other"),
+	} {
+		if err := repo.CreateOptimizationItem(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	token := loginToken(t, h)
+	resp := performJSON(h, "POST", "/v1/optimization-items/item_single_revalidate/revalidate", `{}`, token)
+	if resp.Code != 202 || !strings.Contains(resp.Body, `"new_status":"verified"`) {
+		t.Fatalf("single revalidate status = %d body=%s", resp.Code, resp.Body)
+	}
+	resp = performJSON(h, "POST", "/v1/optimization-items/revalidate", `{"kb_id":"kb_1","source_content_hash":"sha256:bulk"}`, token)
+	if resp.Code != 202 || !strings.Contains(resp.Body, `"matched":1`) || !strings.Contains(resp.Body, `"updated":1`) {
+		t.Fatalf("bulk revalidate status = %d body=%s", resp.Code, resp.Body)
+	}
+	if validator.calls != 2 {
+		t.Fatalf("validator calls = %d, want 2", validator.calls)
+	}
+	bulk, _, _ := repo.GetOptimizationItem(ctx, "tenant_default", "item_bulk_revalidate")
+	other, _, _ := repo.GetOptimizationItem(ctx, "tenant_default", "item_bulk_other_hash")
+	if bulk.Status != offlineknowledge.ItemStatusVerified || other.Status != offlineknowledge.ItemStatusStale {
+		t.Fatalf("bulk statuses = %q/%q, want verified/stale", bulk.Status, other.Status)
+	}
+}
+
 func TestHealthReadyAndMetrics(t *testing.T) {
 	h, closeApp := newTestHertz(t)
 	defer closeApp()
@@ -1436,6 +1706,131 @@ func newTestHertzWithLoggerAndApp(t *testing.T, logg *slog.Logger) (*route.Engin
 	}
 	h := NewServer(app).Hertz()
 	return h.Engine, app, func() { _ = app.Close() }
+}
+
+func installOfflineKnowledgeService(app *core.App, opts offlineknowledge.ServiceOptions) *offlineknowledge.MemoryRepository {
+	repo := offlineknowledge.NewMemoryRepository()
+	app.OfflineKnowledge = offlineknowledge.NewService(repo, opts)
+	return repo
+}
+
+func httpExecutableOfflineKnowledgeOptions() offlineknowledge.ServiceOptions {
+	return offlineknowledge.ServiceOptions{
+		HistorySource:     httpOfflineKnowledgeHistory{},
+		QuestionClusterer: httpOfflineKnowledgeClusterer{},
+		RecallReplayer:    httpOfflineKnowledgeReplayer{},
+		CodexAnalyzer:     httpOfflineKnowledgeCodex{},
+		ToolQuota: offlineknowledge.ToolQuota{
+			MaxDeepSearchSteps: 2,
+		},
+		Now: fixedOfflineKnowledgeNow,
+	}
+}
+
+type httpOfflineKnowledgeHistory struct{}
+
+func (httpOfflineKnowledgeHistory) ExtractHistory(context.Context, offlineknowledge.HistoryRequest) ([]offlineknowledge.HistorySignal, error) {
+	return []offlineknowledge.HistorySignal{
+		{
+			TenantID: "tenant_default",
+			KBID:     "kb_default",
+			Query:    "What is ORAG?",
+			TraceID:  "trace_http_execute",
+		},
+	}, nil
+}
+
+type httpOfflineKnowledgeClusterer struct{}
+
+func (httpOfflineKnowledgeClusterer) ClusterQuestions(_ context.Context, req offlineknowledge.ClusterRequest) ([]offlineknowledge.QuestionCluster, error) {
+	return []offlineknowledge.QuestionCluster{
+		{
+			ID:                 "cluster_http_execute",
+			TenantID:           req.Run.TenantID,
+			RunID:              req.Run.ID,
+			KBID:               req.Run.KBID,
+			CanonicalQuestion:  "What is ORAG?",
+			NormalizedQuestion: "what is orag",
+			QuestionHash:       "hash_http_execute",
+			OccurrenceCount:    1,
+			SampleQuestions:    []string{"What is ORAG?"},
+			TraceIDs:           []string{"trace_http_execute"},
+		},
+	}, nil
+}
+
+type httpOfflineKnowledgeReplayer struct{}
+
+func (httpOfflineKnowledgeReplayer) ReplayRecall(context.Context, offlineknowledge.QuestionCluster) (offlineknowledge.RecallReplayResult, error) {
+	return offlineknowledge.RecallReplayResult{
+		BaselineRecallResults: []offlineknowledge.BaselineRecallItem{
+			{TraceID: "trace_http_execute", ChunkID: "chunk_1", DocID: "doc_1", Rank: 1, Score: 0.91, Matched: true},
+		},
+		TraceSummaries: []offlineknowledge.TraceSummary{
+			{TraceID: "trace_http_execute", Query: "What is ORAG?"},
+		},
+		SourceFingerprints: []offlineknowledge.SourceFingerprint{
+			{DocID: "doc_1", DocVersion: "v1", ChunkID: "chunk_1", ChunkContentHash: "sha256:chunk_1"},
+		},
+	}, nil
+}
+
+type httpOfflineKnowledgeCodex struct{}
+
+func (httpOfflineKnowledgeCodex) AnalyzeCodex(context.Context, offlineknowledge.CodexAnalyzeRequest) (offlineknowledge.CodexAnalyzeResponse, error) {
+	return offlineknowledge.CodexAnalyzeResponse{
+		ItemType:          offlineknowledge.ItemTypeKnowledgeGap,
+		RecommendedAction: offlineknowledge.RecommendedActionCreateKnowledgeGapItem,
+		RecallQuality:     offlineknowledge.RecallQualityNoAnswerInKB,
+		FailureType:       offlineknowledge.FailureTypeKnowledgeGap,
+		Confidence:        0.9,
+	}, nil
+}
+
+func fixedOfflineKnowledgeNow() time.Time {
+	return time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+}
+
+func offlineKnowledgeItem(id, tenantID, kbID string, status offlineknowledge.ItemStatus, itemType offlineknowledge.ItemType) offlineknowledge.OptimizationItem {
+	now := fixedOfflineKnowledgeNow()
+	return offlineknowledge.OptimizationItem{
+		ID:                id,
+		TenantID:          tenantID,
+		RunID:             "run_http",
+		KBID:              kbID,
+		QuestionClusterID: "cluster_http",
+		ItemType:          itemType,
+		Status:            status,
+		CanonicalQuestion: "What is ORAG?",
+		FinalAnswer:       "ORAG is a RAG framework.",
+		RecallQuality:     offlineknowledge.RecallQualityMiss,
+		FailureType:       offlineknowledge.FailureTypeSemanticGap,
+		Confidence:        0.9,
+		SourceFingerprints: []offlineknowledge.SourceFingerprint{
+			{DocID: "doc_1", DocVersion: "v1", ChunkID: "chunk_1", ChunkContentHash: "sha256:chunk_1"},
+		},
+		Evidence: []offlineknowledge.Evidence{
+			{ChunkID: "chunk_1", DocID: "doc_1", Quote: "ORAG is a retrieval augmented generation framework", Supports: "definition"},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+}
+
+func offlineKnowledgeStaleItem(id, contentHash string) offlineknowledge.OptimizationItem {
+	item := offlineKnowledgeItem(id, "tenant_default", "kb_1", offlineknowledge.ItemStatusStale, offlineknowledge.ItemTypeAnswer)
+	item.SourceFingerprints[0].ChunkContentHash = contentHash
+	return item
+}
+
+type httpOfflineKnowledgeValidator struct {
+	calls int
+	err   error
+}
+
+func (v *httpOfflineKnowledgeValidator) ValidateItem(context.Context, string, string, offlineknowledge.OptimizationItem) error {
+	v.calls++
+	return v.err
 }
 
 func loginToken(t *testing.T, h *route.Engine) string {

@@ -203,7 +203,7 @@ func (s *MemoryStore) Store(ctx context.Context, doc Document, chunks []Chunk) e
 	s.documents[doc.ID] = doc
 	s.deleteGraphRelationsLocked(doc.TenantID, doc.KnowledgeBaseID, doc.ID)
 	for _, chunk := range chunks {
-		s.chunks[chunk.ID] = chunk
+		s.chunks[chunk.ID] = chunkWithDocumentVersion(chunk, doc)
 	}
 	return nil
 }
@@ -239,7 +239,7 @@ func (s *MemoryStore) stageDocumentLocked(doc Document, chunks []Chunk) {
 	s.deletePendingDocumentSourceLocked(doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI)
 	s.pendingDocuments[doc.ID] = doc
 	for _, chunk := range chunks {
-		s.pendingChunks[chunk.ID] = chunk
+		s.pendingChunks[chunk.ID] = chunkWithDocumentVersion(chunk, doc)
 	}
 }
 
@@ -357,11 +357,33 @@ func (s *MemoryStore) Chunks(tenantID, kbID string) []Chunk {
 	out := make([]Chunk, 0, len(s.chunks))
 	for _, chunk := range s.chunks {
 		if chunk.TenantID == tenantID && chunk.KnowledgeBaseID == kbID {
+			if doc, ok := s.documents[chunk.DocumentID]; ok {
+				chunk = chunkWithDocumentVersion(chunk, doc)
+			}
 			out = append(out, chunk)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+func chunkWithDocumentVersion(chunk Chunk, doc Document) Chunk {
+	if doc.ContentHash == "" {
+		return chunk
+	}
+	if chunk.Metadata == nil {
+		chunk.Metadata = map[string]string{}
+	} else {
+		copied := make(map[string]string, len(chunk.Metadata)+1)
+		for key, value := range chunk.Metadata {
+			copied[key] = value
+		}
+		chunk.Metadata = copied
+	}
+	if chunk.Metadata["doc_version"] == "" {
+		chunk.Metadata["doc_version"] = doc.ContentHash
+	}
+	return chunk
 }
 
 func NormalizeQuery(q string) string {

@@ -19,7 +19,7 @@
 | [`examples/curl/50_optimize.sh`](../examples/curl/50_optimize.sh) | `POST /v1/optimizations`、`GET /v1/optimizations/{id}` | 提交目标驱动异步优化 run，保存 `.orag-demo/optimization_id` 并轮询状态。 |
 | [`examples/curl/lib.sh`](../examples/curl/lib.sh) | 无直接业务端点 | 提供 `BASE_URL`、`.orag-demo/` 状态文件、`TOKEN`/`KB_ID` 覆盖和简单 JSON 转义。 |
 
-未被 curl 脚本覆盖但已实现的接口包括：`GET /v1/knowledge-bases`、`GET /v1/knowledge-bases/{id}`、`DELETE /v1/knowledge-bases/{id}`、`GET /v1/ingestion-jobs/{id}`、`GET /v1/evaluations/{id}`、`POST /v1/optimizations/{id}:cancel` 和 `POST /v1/optimizations/{id}:resume`。
+未被 curl 脚本覆盖但已实现的接口包括：`GET /v1/knowledge-bases`、`GET /v1/knowledge-bases/{id}`、`DELETE /v1/knowledge-bases/{id}`、`GET /v1/ingestion-jobs/{id}`、`GET /v1/evaluations/{id}`、`POST /v1/optimizations/{id}:cancel`、`POST /v1/optimizations/{id}:resume`、`GET/POST /v1/offline-knowledge/runs`、`POST /v1/offline-knowledge/scheduler:trigger`、`GET /v1/offline-knowledge/runs/{id}`、`POST /v1/offline-knowledge/runs/{id}/execute`、`GET /v1/offline-knowledge/runs/{id}/questions`、`GET /v1/optimization-items`、`GET /v1/optimization-items/{id}`、`POST /v1/optimization-items/{id}/{action}` 和 `POST /v1/optimization-items/revalidate`。
 
 ## 通用约定
 
@@ -85,7 +85,9 @@ Content-Type: application/json
 | `404` | `dataset_not_found` | 写入样本、运行评估或优化时，数据集不存在或不属于当前 tenant。 |
 | `404` | `ingestion_job_not_found` | 查询不存在的入库 job。 |
 | `404` | `evaluation_not_found` | 查询不存在的评估结果。 |
+| `409` | `offline_knowledge_run_execution_conflict`、`invalid_optimization_item_transition` | Offline Knowledge run 当前状态不可执行，或优化项动作不满足状态机。 |
 | `413` | `payload_too_large` | 入库内容超过 `INGEST_MAX_DOCUMENT_BYTES`。 |
+| `503` | `offline_knowledge_scheduler_disabled`、`offline_knowledge_dependency_unavailable` | Offline Knowledge scheduler 被禁用，或真实运行依赖未启用/不可用，例如 Codex、source reader、validator、judge、regression dataset id。 |
 | `500` | `knowledge_base_create_failed`、`knowledge_base_list_failed`、`knowledge_base_lookup_failed`、`knowledge_base_delete_failed`、`ingest_failed`、`query_failed`、`evaluation_failed`、`optimization_failed` | 知识库创建/列表/详情/删除后端失败，或后端入库、查询、评估、优化链路失败。 |
 
 `trace_id` 用于排查同一次请求链路。服务优先复用请求头 `X-Trace-ID`；未传入时自动生成，并把同一个值写入响应头 `X-Trace-ID`、JSON 错误体、SSE 事件、结构化日志和 RAG trace 持久化记录。`POST /v1/query:stream` 在 RAG 查询阶段失败时返回 `text/event-stream`，事件名为 `error`，事件数据仍包含 `code`、`message`、`trace_id`。
@@ -723,3 +725,153 @@ POST /v1/optimizations/{id}:resume
 ```
 
 取消会把 run 标记为 `canceling` 并写入 checkpoint；worker 观察到取消请求后停止调度新候选。续跑会清除取消标记，并从 checkpoint 跳过已完成候选，仅重试未完成候选。
+
+## Offline Knowledge
+
+Offline Knowledge API 用于离线分析历史 query/trace，聚类高价值问题，重放召回，产出带证据的优化项，并通过人工审核、shadow、回归验证和发布流程把优化建议安全引入线上召回链路。所有接口都按当前 Bearer token 所属 tenant 过滤。
+
+### 创建与查询运行
+
+```http
+POST /v1/offline-knowledge/runs
+POST /v1/offline-knowledge/scheduler:trigger
+GET /v1/offline-knowledge/runs
+GET /v1/offline-knowledge/runs/{id}
+POST /v1/offline-knowledge/runs/{id}/execute
+GET /v1/offline-knowledge/runs/{id}/questions
+```
+
+创建运行请求：
+
+```json
+{
+  "kb_id": "kb_xxx",
+  "window_start": "2026-07-07T00:00:00Z",
+  "window_end": "2026-07-08T00:00:00Z",
+  "config_hash": "cfg_sha256",
+  "config_json": {
+    "lookback_days": 1,
+    "max_deep_search_steps": 12
+  },
+  "max_questions": 500,
+  "max_clusters": 200
+}
+```
+
+`window_start` 和 `window_end` 必填，且 `window_end` 必须晚于 `window_start`。`kb_id` 可为空；服务端也接受兼容字段 `knowledge_base_id`。同一 tenant、知识库、时间窗口和配置 hash 已存在时，响应为 `200 OK` 且 `deduplicated=true`；新建运行返回 `202 Accepted`。创建 run 只写入 `pending` 状态；`POST /v1/offline-knowledge/runs/{id}/execute` 才执行真实 runtime 链路。
+
+运行响应：
+
+```json
+{
+  "run": {
+    "id": "run_xxx",
+    "tenant_id": "tenant_default",
+    "kb_id": "kb_xxx",
+    "status": "pending",
+    "window_start": "2026-07-07T00:00:00Z",
+    "window_end": "2026-07-08T00:00:00Z",
+    "config_hash": "cfg_sha256",
+    "started_at": "2026-07-08T02:00:00Z"
+  },
+  "deduplicated": false
+}
+```
+
+`GET /v1/offline-knowledge/runs` 支持 `kb_id`、`knowledge_base_id`、`status` 和 `limit` 查询参数；`status` 取值为 `pending`、`running`、`completed`、`failed`。`GET /v1/offline-knowledge/runs/{id}/questions` 返回本次运行产生的 `QuestionCluster` 列表，包含 `canonical_question`、`question_hash`、`occurrence_count`、`sample_questions` 和 `trace_ids`，用于解释优化项来自哪些真实问题。
+
+`POST /v1/offline-knowledge/runs/{id}/execute` 只接受 `pending` 或 `failed` run；其他状态返回 `409 offline_knowledge_run_execution_conflict`。执行过程会读取真实 trace/history、执行问题聚类、重放 RAG 召回、调用 Codex analyzer/tool、做 source fingerprint/evidence validation 并写入 metrics。`POST /v1/offline-knowledge/scheduler:trigger` 手动触发已启用 scheduler 的 targets；scheduler 禁用或核心依赖缺失时返回 `503`。
+
+### 优化项
+
+```http
+GET /v1/optimization-items
+GET /v1/optimization-items/{id}
+POST /v1/optimization-items/{id}/{action}
+POST /v1/optimization-items/revalidate
+```
+
+列表接口支持 `kb_id`、`knowledge_base_id`、`run_id`、`status`、`item_type` 和 `limit`。`item_type` 取值包括 `answer_item`、`query_rewrite_item`、`knowledge_gap_item`；`status` 覆盖 `candidate`、`evidence_validating`、`needs_review`、`verified`、`shadow_enabled`、`regression_passed`、`regression_failed`、`published`、`knowledge_gap`、`rejected`、`stale` 和 `deprecated`。
+
+优化项示例：
+
+```json
+{
+  "id": "item_xxx",
+  "tenant_id": "tenant_default",
+  "run_id": "run_xxx",
+  "kb_id": "kb_xxx",
+  "question_cluster_id": "cluster_xxx",
+  "item_type": "answer_item",
+  "status": "verified",
+  "canonical_question": "ORAG 如何处理 stale source？",
+  "final_answer": "通过 doc_version 和 chunk_content_hash 校验来源。",
+  "recall_quality": "miss",
+  "failure_type": "semantic_gap",
+  "confidence": 0.92,
+  "source_fingerprints": [
+    {
+      "doc_id": "doc_xxx",
+      "doc_version": "v3",
+      "chunk_id": "chk_xxx",
+      "chunk_content_hash": "sha256:abc123"
+    }
+  ],
+  "evidence": [
+    {
+      "chunk_id": "chk_xxx",
+      "doc_id": "doc_xxx",
+      "quote": "source validation uses doc_version and chunk_content_hash",
+      "supports": "source fingerprint validation"
+    }
+  ],
+  "deep_search_steps": [
+    {
+      "step": 1,
+      "tool": "trace_lookup",
+      "query": "trace_xxx",
+      "observation": "baseline recall missed the source chunk",
+      "decision": "create answer_item guidance"
+    }
+  ],
+  "created_at": "2026-07-08T02:01:00Z",
+  "updated_at": "2026-07-08T02:01:00Z"
+}
+```
+
+`answer_item` 只做召回引导，不是直接答案注入机制。shadow retrieval 可以把 `source_fingerprints`、`evidence` 和 `guidance_metadata` 暴露给召回/重排链路，但线上回答仍必须由真实召回 chunk 和生成链路完成，不能直接把 `final_answer` 当作用户答案返回。
+
+source 校验必须使用 `doc_version` 和 `chunk_content_hash`。`doc_id` 或 `chunk_id` 只能定位来源，不能证明内容未变；revalidate 会对比当前 chunk 的版本和内容 hash，过期或缺失时把优化项推进到 `deprecated` 或需要复核的状态。
+
+### 状态动作与 Revalidate
+
+`POST /v1/optimization-items/{id}/{action}` 支持：
+
+| action | 目标状态/行为 |
+| --- | --- |
+| `verify` | 将可人工确认的项推进到 `verified`。 |
+| `reject` | 将当前项标记为 `rejected`。 |
+| `enable-shadow` | 将 `verified` 项推进到 `shadow_enabled`。 |
+| `publish` | 将通过回归的项推进到 `published`。 |
+| `disable` | 将已发布或 stale 项推进到 `deprecated`。 |
+| `revalidate` | 对单个 stale 项重新执行 source/evidence 校验。 |
+| `run-regression` | 使用真实 eval/RAG runner 和配置的 regression dataset id 执行 baseline/with-optimization 对比。 |
+
+非法状态迁移返回 `409 invalid_optimization_item_transition`，不存在或跨 tenant 的 item 返回 `404 optimization_item_not_found`。`run-regression` 依赖 `OFFLINE_KNOWLEDGE_ORGANIZER_REGRESSION_DATASET_ID`；回归禁用、dataset id 缺失或 eval/RAG 依赖不可用时返回 `503 offline_knowledge_dependency_unavailable`。
+
+批量 revalidate 请求：
+
+```json
+{
+  "kb_id": "kb_xxx",
+  "status": "stale",
+  "source_content_hash": "sha256:abc123",
+  "limit": 100
+}
+```
+
+也可以传 `source_fingerprint`、`source_doc_id` 或 `source_chunk_id` 作为过滤条件。响应包含 `matched`、`updated`、`skipped` 和逐项 `results`；单项结果包含 `old_status`、`new_status`、`updated`、`skipped` 和当前 `item`。
+
+### Shadow 默认行为
+
+shadow retrieval 默认是非侵入模式：`shadow_retrieval_enabled` 可记录匹配、rank、score 和效果指标，`shadow_inject_enabled` 默认关闭，因此不会把优化库内容直接注入用户可见上下文。只有显式开启注入后，系统才会把匹配结果作为召回引导参与后续链路；即使开启，`answer_item` 也只能提供 evidence/source guidance，不能绕过真实 source 校验和生成流程。

@@ -69,6 +69,160 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.RAG.GraphRetrieval.Enabled {
 		t.Fatal("graph retrieval should default to disabled")
 	}
+	offline := cfg.Maintenance.OfflineKnowledgeOrganizer
+	if offline.Enabled {
+		t.Fatal("offline knowledge organizer should default to disabled")
+	}
+	if offline.Schedule != "0 2 * * *" {
+		t.Fatalf("offline knowledge schedule = %q", offline.Schedule)
+	}
+	if offline.LookbackDays != 7 || offline.MaxQuestionsPerRun != 500 || offline.MaxClustersPerRun != 200 {
+		t.Fatalf("offline knowledge defaults = %#v", offline)
+	}
+	if len(offline.Targets) != 0 {
+		t.Fatalf("offline knowledge default targets = %#v, want empty", offline.Targets)
+	}
+	if offline.MaxCodexConcurrency != 4 || offline.MaxCodexDeepSearchSteps != 12 {
+		t.Fatalf("offline knowledge Codex defaults = %#v", offline)
+	}
+	if offline.CodexEnabled || offline.CodexCommand != "" || offline.CodexEndpoint != "" {
+		t.Fatalf("offline knowledge Codex runtime defaults = %#v", offline)
+	}
+	if offline.ShadowEventTTLDays != 14 {
+		t.Fatalf("offline knowledge shadow ttl = %d", offline.ShadowEventTTLDays)
+	}
+	if offline.MinVerifyConfidence != 0.8 || offline.MinPublishConfidence != 0.9 {
+		t.Fatalf("offline knowledge confidence defaults = %#v", offline)
+	}
+	if !offline.EvidenceValidationEnabled || !offline.ConclusionJudgeEnabled || !offline.ShadowRetrievalEnabled {
+		t.Fatalf("offline knowledge feature toggles = %#v", offline)
+	}
+}
+
+func TestLoadOfflineKnowledgeOrganizerConfig(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "ark-test-key")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_ENABLED", "true")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_SCHEDULE", "15 3 * * *")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_TARGETS", "tenant_1:kb_1, tenant_2:kb_2,tenant_1:kb_1")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_LOOKBACK_DAYS", "14")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_QUESTIONS_PER_RUN", "600")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CLUSTERS_PER_RUN", "300")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENABLED", "true")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_COMMAND", "codex analyze")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENDPOINT", "https://codex.example.test/analyze")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CODEX_CONCURRENCY", "6")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CODEX_DEEP_SEARCH_STEPS", "16")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_CODEX_TOKENS_PER_QUESTION", "24000")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_TOOL_QPS_PER_TENANT", "25")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_TOOL_ROWS_PER_CALL", "80")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_REPLAY_CONCURRENCY", "10")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_EVAL_CONCURRENCY", "5")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_QUESTION_OCCURRENCE", "3")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_LONG_TAIL_SAMPLING_RATE", "0.15")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_EXPLICIT_NEGATIVE_FEEDBACK_BOOST", "12")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_VERIFY_CONFIDENCE", "0.81")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_PUBLISH_CONFIDENCE", "0.93")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_EVIDENCE_VALIDATION_ENABLED", "false")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_CONCLUSION_JUDGE_ENABLED", "false")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_RETRIEVAL_ENABLED", "false")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_INJECT_ENABLED", "true")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_EVENT_TTL_DAYS", "21")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_EVENT_SAMPLING_RATE", "0.5")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_AUTO_PUBLISH_ENABLED", "true")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_REGRESSION_EVAL_ENABLED", "false")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_REGRESSION_DATASET_ID", "ds_regression")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_FULL_REGRESSION_FOR_REWRITE_ENABLED", "false")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_RECALL_LIFT", "0.07")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_ANSWER_QUALITY_LIFT", "0.04")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MAX_LATENCY_DELTA_MS", "450")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got := cfg.Maintenance.OfflineKnowledgeOrganizer
+	if !got.Enabled || got.Schedule != "15 3 * * *" || got.LookbackDays != 14 || got.MaxQuestionsPerRun != 600 || got.MaxClustersPerRun != 300 {
+		t.Fatalf("offline knowledge organizer config = %#v", got)
+	}
+	if len(got.Targets) != 2 || got.Targets[0].TenantID != "tenant_1" || got.Targets[0].KBID != "kb_1" || got.Targets[1].TenantID != "tenant_2" || got.Targets[1].KBID != "kb_2" {
+		t.Fatalf("offline knowledge organizer targets = %#v", got.Targets)
+	}
+	if got.MaxCodexConcurrency != 6 || got.MaxCodexDeepSearchSteps != 16 || got.MaxCodexTokensPerQuestion != 24000 {
+		t.Fatalf("offline knowledge Codex config = %#v", got)
+	}
+	if !got.CodexEnabled || got.CodexCommand != "codex analyze" || got.CodexEndpoint != "https://codex.example.test/analyze" {
+		t.Fatalf("offline knowledge Codex runtime config = %#v", got)
+	}
+	if got.MaxToolQPSPerTenant != 25 || got.MaxToolRowsPerCall != 80 || got.MaxReplayConcurrency != 10 || got.MaxEvalConcurrency != 5 {
+		t.Fatalf("offline knowledge quota config = %#v", got)
+	}
+	if got.MinQuestionOccurrence != 3 || got.LongTailSamplingRate != 0.15 || got.ExplicitNegativeFeedbackBoost != 12 {
+		t.Fatalf("offline knowledge mining config = %#v", got)
+	}
+	if got.MinVerifyConfidence != 0.81 || got.MinPublishConfidence != 0.93 {
+		t.Fatalf("offline knowledge confidence config = %#v", got)
+	}
+	if got.EvidenceValidationEnabled || got.ConclusionJudgeEnabled || got.ShadowRetrievalEnabled || !got.ShadowInjectEnabled {
+		t.Fatalf("offline knowledge toggles = %#v", got)
+	}
+	if got.ShadowEventTTLDays != 21 || got.ShadowEventSamplingRate != 0.5 || !got.AutoPublishEnabled {
+		t.Fatalf("offline knowledge shadow config = %#v", got)
+	}
+	if got.RegressionEvalEnabled || got.RegressionDatasetID != "ds_regression" || got.FullRegressionForRewriteEnabled || got.MinRecallLift != 0.07 || got.MinAnswerQualityLift != 0.04 || got.MaxLatencyDeltaMS != 450 {
+		t.Fatalf("offline knowledge regression config = %#v", got)
+	}
+	env := cfg.RedactedEnv()
+	if env["OFFLINE_KNOWLEDGE_ORGANIZER_ENABLED"] != "true" || env["OFFLINE_KNOWLEDGE_ORGANIZER_SCHEDULE"] != "15 3 * * *" || env["OFFLINE_KNOWLEDGE_ORGANIZER_TARGETS"] != "tenant_1:kb_1,tenant_2:kb_2" {
+		t.Fatalf("redacted offline knowledge env = %#v", env)
+	}
+	if env["OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENABLED"] != "true" || env["OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENDPOINT"] == "" {
+		t.Fatalf("redacted offline knowledge Codex env = %#v", env)
+	}
+	if env["OFFLINE_KNOWLEDGE_ORGANIZER_REGRESSION_DATASET_ID"] != "ds_regression" {
+		t.Fatalf("redacted offline knowledge regression env = %#v", env)
+	}
+}
+
+func TestInvalidOfflineKnowledgeOrganizerTargets(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "ark-test-key")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_TARGETS", "tenant_only")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid offline knowledge target format error")
+	}
+
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_TARGETS", "tenant_1:")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected empty offline knowledge target kb error")
+	}
+}
+
+func TestInvalidOfflineKnowledgeOrganizerConfig(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "ark-test-key")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_SCHEDULE", "not-cron")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid offline knowledge schedule error")
+	}
+
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_SCHEDULE", "0 2 * * *")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENDPOINT", "https://codex.example.test/analyze")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENABLED", "false")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected Codex endpoint without enablement error")
+	}
+
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_SCHEDULE", "0 2 * * *")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_VERIFY_CONFIDENCE", "0.95")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_PUBLISH_CONFIDENCE", "0.90")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid offline knowledge confidence order error")
+	}
+
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_VERIFY_CONFIDENCE", "0.80")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_MIN_PUBLISH_CONFIDENCE", "0.90")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_SHADOW_EVENT_SAMPLING_RATE", "1.5")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid offline knowledge sampling rate error")
+	}
 }
 
 func TestLoadQueryRouterConfig(t *testing.T) {
