@@ -19,14 +19,16 @@ type RAGGraph struct {
 }
 
 type TraceStore interface {
-	StoreTrace(ctx context.Context, tenantID, traceID, query string, profile rag.Profile, latencyMS int64, spans []NodeSpan) error
+	StoreTrace(ctx context.Context, tenantID, kbID, traceID, query string, profile rag.Profile, latencyMS int64, answer string, retrievedChunks []string, spans []NodeSpan) error
 }
 
 type traceRecord struct {
-	traceID   string
-	profile   rag.Profile
-	latencyMS int64
-	spans     []NodeSpan
+	traceID         string
+	profile         rag.Profile
+	answer          string
+	retrievedChunks []string
+	latencyMS       int64
+	spans           []NodeSpan
 }
 
 type spanCollectorKey struct{}
@@ -156,10 +158,12 @@ func (g *RAGGraph) traceRecord(req rag.QueryRequest, fallbackTraceID string, fal
 		spans = fallbackSpans
 	}
 	return traceRecord{
-		traceID:   traceID,
-		profile:   profile,
-		latencyMS: latencyMS,
-		spans:     spans,
+		traceID:         traceID,
+		profile:         profile,
+		answer:          storableAnswer(st.Response),
+		retrievedChunks: storableRetrievedChunks(st.Response),
+		latencyMS:       latencyMS,
+		spans:           spans,
 	}
 }
 
@@ -168,7 +172,7 @@ func (g *RAGGraph) storeTrace(ctx context.Context, req rag.QueryRequest, rec tra
 		return nil
 	}
 	start := time.Now()
-	err := g.TraceStore.StoreTrace(ctx, req.TenantID, rec.traceID, req.Query, rec.profile, rec.latencyMS, rec.spans)
+	err := g.TraceStore.StoreTrace(ctx, req.TenantID, req.KnowledgeBaseID, rec.traceID, req.Query, rec.profile, rec.latencyMS, rec.answer, rec.retrievedChunks, rec.spans)
 	if g.Metrics != nil {
 		outcome := "success"
 		if err != nil {
@@ -177,6 +181,20 @@ func (g *RAGGraph) storeTrace(ctx context.Context, req rag.QueryRequest, rec tra
 		g.Metrics.ObserveTraceStore(outcome, time.Since(start).Milliseconds())
 	}
 	return err
+}
+
+func storableAnswer(resp rag.QueryResponse) string {
+	return resp.Answer
+}
+
+func storableRetrievedChunks(resp rag.QueryResponse) []string {
+	out := make([]string, 0, len(resp.RetrievedChunks))
+	for _, result := range resp.RetrievedChunks {
+		if result.Chunk.ID != "" {
+			out = append(out, result.Chunk.ID)
+		}
+	}
+	return out
 }
 
 func (g *RAGGraph) profile(requested rag.Profile) rag.Profile {

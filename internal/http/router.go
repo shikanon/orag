@@ -19,6 +19,7 @@ import (
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
+	"github.com/shikanon/orag/internal/offlineknowledge"
 	"github.com/shikanon/orag/internal/optimizer"
 	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/platform/id"
@@ -79,6 +80,16 @@ func (s *Server) Hertz() *server.Hertz {
 	v1.POST("/optimizations", s.optimize)
 	v1.GET("/optimizations/:id", s.getOptimization)
 	v1.POST("/optimizations/*action", s.optimizationAction)
+	v1.POST("/offline-knowledge/runs", s.createOfflineKnowledgeRun)
+	v1.POST("/offline-knowledge/scheduler:trigger", s.triggerOfflineKnowledgeScheduler)
+	v1.GET("/offline-knowledge/runs", s.listOfflineKnowledgeRuns)
+	v1.GET("/offline-knowledge/runs/:id", s.getOfflineKnowledgeRun)
+	v1.POST("/offline-knowledge/runs/:id/:action", s.offlineKnowledgeRunAction)
+	v1.GET("/offline-knowledge/runs/:id/questions", s.listOfflineKnowledgeQuestions)
+	v1.GET("/optimization-items", s.listOptimizationItems)
+	v1.POST("/optimization-items/revalidate", s.bulkRevalidateOptimizationItems)
+	v1.GET("/optimization-items/:id", s.getOptimizationItem)
+	v1.POST("/optimization-items/:id/:action", s.optimizationItemAction)
 	return h
 }
 
@@ -1273,6 +1284,362 @@ func writeOptimizationError(c *app.RequestContext, err error) {
 
 func writeOptimizationNotFound(c *app.RequestContext) {
 	writeError(c, consts.StatusNotFound, "optimization_not_found", "optimization run not found")
+}
+
+type offlineKnowledgeRunRequest struct {
+	KnowledgeBaseID string         `json:"knowledge_base_id"`
+	KBID            string         `json:"kb_id"`
+	WindowStart     time.Time      `json:"window_start"`
+	WindowEnd       time.Time      `json:"window_end"`
+	ConfigHash      string         `json:"config_hash"`
+	ConfigJSON      map[string]any `json:"config_json,omitempty"`
+	MaxQuestions    int            `json:"max_questions,omitempty"`
+	MaxClusters     int            `json:"max_clusters,omitempty"`
+}
+
+func (s *Server) createOfflineKnowledgeRun(ctx context.Context, c *app.RequestContext) {
+	if !s.requireOfflineKnowledge(c) {
+		return
+	}
+	var req offlineKnowledgeRunRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if req.WindowStart.IsZero() || req.WindowEnd.IsZero() || !req.WindowEnd.After(req.WindowStart) {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "window_start and window_end are required and window_end must be after window_start")
+		return
+	}
+	kbID := firstNonEmpty(req.KBID, req.KnowledgeBaseID)
+	run, deduped, err := s.App.OfflineKnowledge.CreateRun(ctx, offlineknowledge.RunRequest{
+		TenantID:     tenantID(c),
+		KBID:         kbID,
+		WindowStart:  req.WindowStart,
+		WindowEnd:    req.WindowEnd,
+		ConfigHash:   req.ConfigHash,
+		ConfigJSON:   req.ConfigJSON,
+		MaxQuestions: req.MaxQuestions,
+		MaxClusters:  req.MaxClusters,
+	})
+	if err != nil {
+		writeOfflineKnowledgeError(c, err, "offline_knowledge_run_create_failed")
+		return
+	}
+	status := consts.StatusAccepted
+	if deduped {
+		status = consts.StatusOK
+	}
+	c.JSON(status, map[string]any{"run": run, "deduplicated": deduped})
+}
+
+func (s *Server) listOfflineKnowledgeRuns(ctx context.Context, c *app.RequestContext) {
+	if !s.requireOfflineKnowledge(c) {
+		return
+	}
+	runs, err := s.App.OfflineKnowledge.ListRuns(ctx, offlineknowledge.RunFilter{
+		TenantID: tenantID(c),
+		KBID:     strings.TrimSpace(firstNonEmpty(c.Query("kb_id"), c.Query("knowledge_base_id"))),
+		Status:   offlineknowledge.RunStatus(strings.TrimSpace(c.Query("status"))),
+		Limit:    queryPositiveInt(c, "limit"),
+	})
+	if err != nil {
+		writeOfflineKnowledgeError(c, err, "offline_knowledge_run_list_failed")
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]any{"items": runs})
+}
+
+func (s *Server) getOfflineKnowledgeRun(ctx context.Context, c *app.RequestContext) {
+	if !s.requireOfflineKnowledge(c) {
+		return
+	}
+	run, found, err := s.App.OfflineKnowledge.GetRun(ctx, tenantID(c), c.Param("id"))
+	if err != nil {
+		writeOfflineKnowledgeError(c, err, "offline_knowledge_run_lookup_failed")
+		return
+	}
+	if !found {
+		writeError(c, consts.StatusNotFound, "offline_knowledge_run_not_found", "offline knowledge run not found")
+		return
+	}
+	c.JSON(consts.StatusOK, run)
+}
+
+func (s *Server) offlineKnowledgeRunAction(ctx context.Context, c *app.RequestContext) {
+	if !s.requireOfflineKnowledge(c) {
+		return
+	}
+	switch strings.TrimSpace(c.Param("action")) {
+	case "execute":
+		result, err := s.App.OfflineKnowledge.ExecuteRun(ctx, tenantID(c), c.Param("id"))
+		if err != nil {
+			writeOfflineKnowledgeError(c, err, "offline_knowledge_run_execute_failed")
+			return
+		}
+		c.JSON(consts.StatusAccepted, offlineKnowledgeRunResultResponse(result))
+	default:
+		writeError(c, consts.StatusNotFound, "offline_knowledge_run_action_not_found", "offline knowledge run action not found")
+	}
+}
+
+func (s *Server) triggerOfflineKnowledgeScheduler(ctx context.Context, c *app.RequestContext) {
+	if s.App == nil || s.App.OfflineScheduler == nil || !s.App.OfflineScheduler.Enabled() {
+		writeError(c, consts.StatusServiceUnavailable, "offline_knowledge_scheduler_disabled", "offline knowledge scheduler is disabled")
+		return
+	}
+	var req struct {
+		ScheduledAt time.Time `json:"scheduled_at"`
+	}
+	if len(c.Request.Body()) > 0 && !bindJSON(c, &req) {
+		return
+	}
+	scheduledAt := req.ScheduledAt
+	if scheduledAt.IsZero() {
+		scheduledAt = time.Now().UTC()
+	}
+	results := s.App.OfflineScheduler.Trigger(ctx, scheduledAt)
+	for _, result := range results {
+		if result.Err != nil {
+			writeOfflineKnowledgeError(c, result.Err, "offline_knowledge_scheduler_trigger_failed")
+			return
+		}
+	}
+	items := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		items = append(items, map[string]any{
+			"target": map[string]any{
+				"tenant_id": result.Target.TenantID,
+				"kb_id":     result.Target.KBID,
+			},
+			"request": map[string]any{
+				"kb_id":         result.Request.KBID,
+				"window_start":  result.Request.WindowStart,
+				"window_end":    result.Request.WindowEnd,
+				"config_hash":   result.Request.ConfigHash,
+				"config_json":   result.Request.ConfigJSON,
+				"max_questions": result.Request.MaxQuestions,
+				"max_clusters":  result.Request.MaxClusters,
+			},
+			"result":       offlineKnowledgeRunResultResponse(result.Result),
+			"deduplicated": result.Deduplicated,
+		})
+	}
+	c.JSON(consts.StatusAccepted, map[string]any{"items": items})
+}
+
+func offlineKnowledgeRunResultResponse(result offlineknowledge.RunResult) map[string]any {
+	createdItems := result.CreatedItems
+	if createdItems == nil {
+		createdItems = []offlineknowledge.OptimizationItem{}
+	}
+	return map[string]any{
+		"run":               result.Run,
+		"deduplicated":      result.Deduplicated,
+		"processed_cluster": result.ProcessedCluster,
+		"created_items":     createdItems,
+	}
+}
+
+func (s *Server) listOfflineKnowledgeQuestions(ctx context.Context, c *app.RequestContext) {
+	if !s.requireOfflineKnowledge(c) {
+		return
+	}
+	clusters, err := s.App.OfflineKnowledge.ListQuestionClusters(ctx, offlineknowledge.QuestionClusterFilter{
+		TenantID: tenantID(c),
+		RunID:    c.Param("id"),
+		KBID:     strings.TrimSpace(firstNonEmpty(c.Query("kb_id"), c.Query("knowledge_base_id"))),
+		Limit:    queryPositiveInt(c, "limit"),
+	})
+	if err != nil {
+		writeOfflineKnowledgeError(c, err, "offline_knowledge_questions_list_failed")
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]any{"items": clusters})
+}
+
+func (s *Server) listOptimizationItems(ctx context.Context, c *app.RequestContext) {
+	if !s.requireOfflineKnowledge(c) {
+		return
+	}
+	items, err := s.App.OfflineKnowledge.ListOptimizationItems(ctx, offlineknowledge.OptimizationItemFilter{
+		TenantID: tenantID(c),
+		KBID:     strings.TrimSpace(firstNonEmpty(c.Query("kb_id"), c.Query("knowledge_base_id"))),
+		RunID:    strings.TrimSpace(c.Query("run_id")),
+		Status:   offlineknowledge.ItemStatus(strings.TrimSpace(c.Query("status"))),
+		ItemType: offlineknowledge.ItemType(strings.TrimSpace(c.Query("item_type"))),
+		Limit:    queryPositiveInt(c, "limit"),
+	})
+	if err != nil {
+		writeOfflineKnowledgeError(c, err, "optimization_item_list_failed")
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) getOptimizationItem(ctx context.Context, c *app.RequestContext) {
+	if !s.requireOfflineKnowledge(c) {
+		return
+	}
+	item, found, err := s.App.OfflineKnowledge.GetOptimizationItem(ctx, tenantID(c), c.Param("id"))
+	if err != nil {
+		writeOfflineKnowledgeError(c, err, "optimization_item_lookup_failed")
+		return
+	}
+	if !found {
+		writeOptimizationItemNotFound(c)
+		return
+	}
+	c.JSON(consts.StatusOK, item)
+}
+
+func (s *Server) optimizationItemAction(ctx context.Context, c *app.RequestContext) {
+	if !s.requireOfflineKnowledge(c) {
+		return
+	}
+	action := strings.TrimSpace(c.Param("action"))
+	switch action {
+	case "verify", "reject", "enable-shadow", "publish", "disable":
+		item, err := s.App.OfflineKnowledge.TransitionOptimizationItem(ctx, tenantID(c), c.Param("id"), offlineKnowledgeActionStatus(action))
+		if err != nil {
+			writeOfflineKnowledgeError(c, err, "optimization_item_action_failed")
+			return
+		}
+		c.JSON(consts.StatusAccepted, item)
+	case "revalidate":
+		result, err := s.App.OfflineKnowledge.RevalidateItem(ctx, tenantID(c), c.Param("id"))
+		if err != nil {
+			writeOfflineKnowledgeError(c, err, "optimization_item_revalidate_failed")
+			return
+		}
+		c.JSON(consts.StatusAccepted, result)
+	case "run-regression":
+		item, err := s.App.OfflineKnowledge.RunRegressionForItem(ctx, tenantID(c), c.Param("id"))
+		if err != nil {
+			writeOfflineKnowledgeError(c, err, "optimization_item_regression_failed")
+			return
+		}
+		c.JSON(consts.StatusAccepted, item)
+	default:
+		writeError(c, consts.StatusNotFound, "optimization_item_action_not_found", "optimization item action not found")
+	}
+}
+
+func (s *Server) bulkRevalidateOptimizationItems(ctx context.Context, c *app.RequestContext) {
+	if !s.requireOfflineKnowledge(c) {
+		return
+	}
+	var req struct {
+		KnowledgeBaseID   string                             `json:"knowledge_base_id"`
+		KBID              string                             `json:"kb_id"`
+		Status            offlineknowledge.ItemStatus        `json:"status"`
+		SourceFingerprint offlineknowledge.SourceFingerprint `json:"source_fingerprint"`
+		SourceDocID       string                             `json:"source_doc_id"`
+		SourceChunkID     string                             `json:"source_chunk_id"`
+		SourceContentHash string                             `json:"source_content_hash"`
+		Limit             int                                `json:"limit"`
+	}
+	if len(c.Request.Body()) > 0 && !bindJSON(c, &req) {
+		return
+	}
+	result, err := s.App.OfflineKnowledge.BulkRevalidate(ctx, offlineknowledge.BulkRevalidateRequest{
+		TenantID:          tenantID(c),
+		KBID:              firstNonEmpty(req.KBID, req.KnowledgeBaseID),
+		Status:            req.Status,
+		SourceFingerprint: req.SourceFingerprint,
+		SourceDocID:       req.SourceDocID,
+		SourceChunkID:     req.SourceChunkID,
+		SourceContentHash: req.SourceContentHash,
+		Limit:             req.Limit,
+	})
+	if err != nil {
+		writeOfflineKnowledgeError(c, err, "optimization_item_revalidate_failed")
+		return
+	}
+	c.JSON(consts.StatusAccepted, result)
+}
+
+func (s *Server) requireOfflineKnowledge(c *app.RequestContext) bool {
+	if s.App == nil || s.App.OfflineKnowledge == nil {
+		writeError(c, consts.StatusNotFound, "offline_knowledge_not_configured", "offline knowledge service is not configured")
+		return false
+	}
+	return true
+}
+
+func offlineKnowledgeActionStatus(action string) offlineknowledge.ItemStatus {
+	switch action {
+	case "verify":
+		return offlineknowledge.ItemStatusVerified
+	case "reject":
+		return offlineknowledge.ItemStatusRejected
+	case "enable-shadow":
+		return offlineknowledge.ItemStatusShadowEnabled
+	case "publish":
+		return offlineknowledge.ItemStatusPublished
+	case "disable":
+		return offlineknowledge.ItemStatusDeprecated
+	default:
+		return ""
+	}
+}
+
+func writeOptimizationItemNotFound(c *app.RequestContext) {
+	writeError(c, consts.StatusNotFound, "optimization_item_not_found", "optimization item not found")
+}
+
+func writeOfflineKnowledgeError(c *app.RequestContext, err error, fallbackCode string) {
+	switch {
+	case errors.Is(err, offlineknowledge.ErrRunNotFound):
+		writeError(c, consts.StatusNotFound, "offline_knowledge_run_not_found", "offline knowledge run not found")
+	case errors.Is(err, offlineknowledge.ErrRunExecutionConflict):
+		writeError(c, consts.StatusConflict, "offline_knowledge_run_execution_conflict", err.Error())
+	case errors.Is(err, offlineknowledge.ErrOptimizationItemNotFound):
+		writeOptimizationItemNotFound(c)
+	case errors.Is(err, offlineknowledge.ErrInvalidItemTransition):
+		writeError(c, consts.StatusConflict, "invalid_optimization_item_transition", err.Error())
+	case errors.Is(err, offlineknowledge.ErrServiceRepositoryRequired):
+		writeError(c, consts.StatusServiceUnavailable, "offline_knowledge_not_configured", "offline knowledge service is not configured")
+	case errors.Is(err, offlineknowledge.ErrValidatorRequired), errors.Is(err, offlineknowledge.ErrValidatorDisabled):
+		writeError(c, consts.StatusServiceUnavailable, "offline_knowledge_validator_missing", "offline knowledge validator is not configured")
+	case errors.Is(err, offlineknowledge.ErrHistorySourceRequired),
+		errors.Is(err, offlineknowledge.ErrQuestionClustererRequired),
+		errors.Is(err, offlineknowledge.ErrRecallReplayerRequired),
+		errors.Is(err, offlineknowledge.ErrCodexAnalyzerRequired),
+		errors.Is(err, offlineknowledge.ErrCodexDisabled),
+		errors.Is(err, offlineknowledge.ErrCodexUnavailable),
+		errors.Is(err, offlineknowledge.ErrSourceReaderUnavailable),
+		errors.Is(err, offlineknowledge.ErrConclusionDisabled),
+		errors.Is(err, offlineknowledge.ErrConclusionUnavailable),
+		errors.Is(err, offlineknowledge.ErrRegressionRunnerRequired),
+		errors.Is(err, offlineknowledge.ErrRegressionDisabled),
+		errors.Is(err, offlineknowledge.ErrRegressionUnavailable),
+		errors.Is(err, offlineknowledge.ErrRegressionDatasetRequired),
+		errors.Is(err, offlineknowledge.ErrSchedulerServiceRequired),
+		errors.Is(err, offlineknowledge.ErrSchedulerTargetRequired):
+		writeError(c, consts.StatusServiceUnavailable, "offline_knowledge_dependency_unavailable", err.Error())
+	default:
+		writeError(c, consts.StatusInternalServerError, fallbackCode, err.Error())
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func queryPositiveInt(c *app.RequestContext, key string) int {
+	value := strings.TrimSpace(c.Query(key))
+	if value == "" {
+		return 0
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return 0
+	}
+	return parsed
 }
 
 func writeDatasetError(c *app.RequestContext, fallbackCode string, err error) {

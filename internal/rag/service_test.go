@@ -2,6 +2,7 @@ package rag
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -300,6 +301,166 @@ func TestExecuteDirectRouteBypassesRetrieval(t *testing.T) {
 	}
 }
 
+func TestExecuteShadowRetrievalDefaultRecordsWithoutChangingAnswer(t *testing.T) {
+	ctx := context.Background()
+	shadow := &recordingShadowRetriever{
+		matches: []ShadowMatch{shadowTestMatch("shadow_chunk")},
+	}
+	service := Service{
+		Retriever:       &recordingServiceRetriever{},
+		Model:           &scriptedServiceModel{},
+		Packer:          ContextPacker{MaxTokens: 512, TopN: 4},
+		PromptStrategy:  prompt.NewStrategy("auto"),
+		DefaultProfile:  ProfileRealtime,
+		NoContextAnswer: "no context",
+		TopK:            4,
+		Shadow:          ShadowOptions{Enabled: true, Inject: false, Limit: 3},
+		ShadowRetriever: shadow,
+		ShadowSourceReader: staticShadowSourceReader{
+			chunks: map[string]ShadowSourceChunk{
+				"shadow_chunk": {
+					TenantID: "tenant_default",
+					KBID:     "kb_default",
+					DocID:    "shadow_doc",
+					ChunkID:  "shadow_chunk",
+					Text:     "shadow optimization source text",
+				},
+			},
+		},
+	}
+
+	resp, err := service.Execute(ctx, QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+		TraceID:         "trace_shadow_default",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(shadow.requests) != 1 {
+		t.Fatalf("shadow retrieve calls = %d, want 1", len(shadow.requests))
+	}
+	if shadow.requests[0].Inject {
+		t.Fatalf("shadow inject flag = true, want false by default")
+	}
+	if shadow.requests[0].TraceID != "trace_shadow_default" {
+		t.Fatalf("shadow trace id = %q, want trace_shadow_default", shadow.requests[0].TraceID)
+	}
+	if resp.Answer != "answer [chk_service_1]" {
+		t.Fatalf("answer = %q, want online answer unchanged", resp.Answer)
+	}
+	if len(resp.Citations) != 1 || resp.Citations[0].ChunkID != "chk_service_1" {
+		t.Fatalf("citations = %#v, want only online citation", resp.Citations)
+	}
+	if len(resp.RetrievedChunks) != 1 || resp.RetrievedChunks[0].Chunk.ID != "chk_service_1" {
+		t.Fatalf("retrieved chunks = %#v, want only online chunk", resp.RetrievedChunks)
+	}
+}
+
+func TestExecuteShadowRetrievalFailureDegradesToOnlineAnswer(t *testing.T) {
+	ctx := context.Background()
+	shadow := &recordingShadowRetriever{err: errors.New("shadow write failed")}
+	service := Service{
+		Retriever:       &recordingServiceRetriever{},
+		Model:           &scriptedServiceModel{},
+		Packer:          ContextPacker{MaxTokens: 512, TopN: 4},
+		PromptStrategy:  prompt.NewStrategy("auto"),
+		DefaultProfile:  ProfileRealtime,
+		NoContextAnswer: "no context",
+		TopK:            4,
+		Shadow:          ShadowOptions{Enabled: true, Inject: false, Limit: 3},
+		ShadowRetriever: shadow,
+	}
+
+	resp, err := service.Execute(ctx, QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v, want degradation to success", err)
+	}
+	if resp.Answer != "answer [chk_service_1]" {
+		t.Fatalf("answer = %q, want online answer after shadow failure", resp.Answer)
+	}
+	if len(resp.Citations) != 1 || resp.Citations[0].ChunkID != "chk_service_1" {
+		t.Fatalf("citations = %#v, want only online citation", resp.Citations)
+	}
+}
+
+func TestExecuteShadowInjectUsesSourceChunkWithoutFinalAnswer(t *testing.T) {
+	ctx := context.Background()
+	model := &scriptedServiceModel{}
+	service := Service{
+		Retriever:       &recordingServiceRetriever{},
+		Model:           model,
+		Packer:          ContextPacker{MaxTokens: 512, TopN: 4},
+		PromptStrategy:  prompt.NewStrategy("auto"),
+		DefaultProfile:  ProfileRealtime,
+		NoContextAnswer: "no context",
+		TopK:            4,
+		Shadow:          ShadowOptions{Enabled: true, Inject: true, Limit: 3},
+		ShadowRetriever: &recordingShadowRetriever{
+			matches: []ShadowMatch{{
+				ItemID:   "item_shadow",
+				ItemType: "answer_item",
+				Source:   "optimization_library",
+				Score:    1,
+				Rank:     1,
+				Metadata: map[string]any{
+					"canonical_question": "What is ORAG?",
+					"final_answer":       "SECRET FINAL ANSWER",
+				},
+				AnswerItem: &ShadowAnswerItem{
+					Evidence: []ShadowEvidence{{ChunkID: "shadow_chunk", DocID: "shadow_doc", Quote: "real source"}},
+					GuidanceMetadata: map[string]any{
+						"canonical_question": "What is ORAG?",
+						"final_answer":       "SECRET FINAL ANSWER",
+					},
+				},
+			}},
+		},
+		ShadowSourceReader: staticShadowSourceReader{
+			chunks: map[string]ShadowSourceChunk{
+				"shadow_chunk": {
+					TenantID:         "tenant_default",
+					KBID:             "kb_default",
+					DocID:            "shadow_doc",
+					DocVersion:       "v1",
+					ChunkID:          "shadow_chunk",
+					ChunkContentHash: "sha256:shadow",
+					Text:             "real shadow source chunk",
+				},
+			},
+		},
+	}
+
+	resp, err := service.Execute(ctx, QueryRequest{
+		TenantID:        "tenant_default",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(resp.Citations) == 0 || resp.Citations[0].ChunkID != "shadow_chunk" {
+		t.Fatalf("citations = %#v, want injected source chunk first", resp.Citations)
+	}
+	if !model.sawUserPrompt("real shadow source chunk") {
+		t.Fatalf("shadow source chunk was not injected into prompt: %#v", model.userPrompts)
+	}
+	if !model.sawUserPrompt("canonical_question") {
+		t.Fatalf("shadow guidance metadata was not injected into prompt: %#v", model.userPrompts)
+	}
+	if model.sawUserPrompt("SECRET FINAL ANSWER") {
+		t.Fatalf("final_answer leaked into prompt: %#v", model.userPrompts)
+	}
+	if strings.Contains(resp.Answer, "SECRET FINAL ANSWER") {
+		t.Fatalf("final_answer leaked into response answer: %q", resp.Answer)
+	}
+}
+
 type semanticCacheStub struct {
 	lookupReq  SemanticCacheLookupRequest
 	storeEntry SemanticCacheEntry
@@ -402,6 +563,7 @@ func (r *topKServiceRetriever) Retrieve(_ context.Context, req kb.SearchRequest)
 
 type scriptedServiceModel struct {
 	systemPrompts []string
+	userPrompts   []string
 	rerankTopNs   []int
 }
 
@@ -410,7 +572,9 @@ func (m *scriptedServiceModel) Chat(_ context.Context, messages []ark.ChatMessag
 	for _, message := range messages {
 		if message.Role == "system" {
 			system = message.Content
-			break
+		}
+		if message.Role == "user" {
+			m.userPrompts = append(m.userPrompts, message.Content)
 		}
 	}
 	m.systemPrompts = append(m.systemPrompts, system)
@@ -451,4 +615,56 @@ func (m *scriptedServiceModel) sawSystemPrompt(value string) bool {
 		}
 	}
 	return false
+}
+
+func (m *scriptedServiceModel) sawUserPrompt(value string) bool {
+	for _, prompt := range m.userPrompts {
+		if strings.Contains(prompt, value) {
+			return true
+		}
+	}
+	return false
+}
+
+type recordingShadowRetriever struct {
+	requests []ShadowRetrieveRequest
+	matches  []ShadowMatch
+	err      error
+}
+
+func (r *recordingShadowRetriever) RetrieveShadow(_ context.Context, req ShadowRetrieveRequest) ([]ShadowMatch, error) {
+	r.requests = append(r.requests, req)
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.matches, nil
+}
+
+type staticShadowSourceReader struct {
+	chunks map[string]ShadowSourceChunk
+	err    error
+}
+
+func (r staticShadowSourceReader) ReadShadowSourceChunk(_ context.Context, _, _, chunkID string) (ShadowSourceChunk, bool, error) {
+	if r.err != nil {
+		return ShadowSourceChunk{}, false, r.err
+	}
+	chunk, ok := r.chunks[chunkID]
+	return chunk, ok, nil
+}
+
+func shadowTestMatch(chunkID string) ShadowMatch {
+	return ShadowMatch{
+		ItemID:   "item_shadow",
+		ItemType: "answer_item",
+		Source:   "optimization_library",
+		Score:    1,
+		Rank:     1,
+		AnswerItem: &ShadowAnswerItem{
+			Evidence: []ShadowEvidence{{ChunkID: chunkID, DocID: "shadow_doc", Quote: "shadow source"}},
+			GuidanceMetadata: map[string]any{
+				"canonical_question": "What is ORAG?",
+			},
+		},
+	}
 }

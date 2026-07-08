@@ -13,6 +13,7 @@ tags:
   - name: Query
   - name: Trace
   - name: Evaluation
+  - name: OfflineKnowledge
 x-orag-agent-capabilities:
   version: 1
   source: openapi
@@ -205,6 +206,8 @@ paths:
         "401":
           $ref: "#/components/responses/Error"
         "404":
+          $ref: "#/components/responses/Error"
+        "503":
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
@@ -841,6 +844,323 @@ paths:
         "401":
           $ref: "#/components/responses/Error"
         "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/offline-knowledge/runs:
+    get:
+      tags: [OfflineKnowledge]
+      operationId: listOfflineKnowledgeRuns
+      description: Lists offline knowledge mining runs for the current tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: kb_id
+          in: query
+          schema:
+            type: string
+          description: Optional knowledge base filter. `knowledge_base_id` is accepted as a compatibility alias by the runtime.
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/OfflineKnowledgeRunStatus"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Offline knowledge run list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfflineKnowledgeRunListResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [OfflineKnowledge]
+      operationId: createOfflineKnowledgeRun
+      description: Creates a tenant-scoped offline knowledge mining run for a historical query window.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOfflineKnowledgeRunRequest"
+      responses:
+        "202":
+          description: Offline knowledge run accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfflineKnowledgeRunCreateResponse"
+        "200":
+          description: Existing matching run returned when the window and config hash already exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfflineKnowledgeRunCreateResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/offline-knowledge/scheduler:trigger:
+    post:
+      tags: [OfflineKnowledge]
+      operationId: triggerOfflineKnowledgeScheduler
+      description: |
+        Manually triggers the real offline knowledge scheduler for its configured
+        tenant/kb targets. Returns `503` when the scheduler is disabled,
+        unconfigured, or a required runtime dependency is unavailable.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OfflineKnowledgeSchedulerTriggerRequest"
+      responses:
+        "202":
+          description: Scheduler trigger accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfflineKnowledgeSchedulerTriggerResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /v1/offline-knowledge/runs/{id}:
+    get:
+      tags: [OfflineKnowledge]
+      operationId: getOfflineKnowledgeRun
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Offline knowledge run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfflineKnowledgeRun"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/offline-knowledge/runs/{id}/execute:
+    post:
+      tags: [OfflineKnowledge]
+      operationId: executeOfflineKnowledgeRun
+      description: |
+        Executes an existing `pending` or `failed` offline knowledge run with
+        real history extraction, question clustering, recall replay, Codex
+        analysis, evidence validation, and metrics updates. Returns `409` for
+        non-executable run statuses and `503` for disabled/unavailable
+        dependencies such as Codex, validator, source reader, or retriever.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "202":
+          description: Run execution accepted and completed synchronously by the runtime.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfflineKnowledgeRunResult"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/offline-knowledge/runs/{id}/questions:
+    get:
+      tags: [OfflineKnowledge]
+      operationId: listOfflineKnowledgeQuestions
+      description: Lists question clusters produced by an offline knowledge run.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - name: kb_id
+          in: query
+          schema:
+            type: string
+          description: Optional knowledge base filter. `knowledge_base_id` is accepted as a compatibility alias by the runtime.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Question cluster list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuestionClusterListResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/optimization-items:
+    get:
+      tags: [OfflineKnowledge]
+      operationId: listOptimizationItems
+      description: Lists offline knowledge optimization items for review, shadow enablement, publishing, or revalidation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: kb_id
+          in: query
+          schema:
+            type: string
+          description: Optional knowledge base filter. `knowledge_base_id` is accepted as a compatibility alias by the runtime.
+        - name: run_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/OptimizationItemStatus"
+        - name: item_type
+          in: query
+          schema:
+            $ref: "#/components/schemas/OptimizationItemType"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Optimization item list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizationItemListResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/optimization-items/{id}:
+    get:
+      tags: [OfflineKnowledge]
+      operationId: getOptimizationItem
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Optimization item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizationItem"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/optimization-items/{id}/{action}:
+    post:
+      tags: [OfflineKnowledge]
+      operationId: actOnOptimizationItem
+      description: |
+        Applies a workflow action to an optimization item. Supported actions are
+        `verify`, `reject`, `enable-shadow`, `publish`, `disable`,
+        `revalidate`, and `run-regression`. State-transition actions return the
+        updated `OptimizationItem`; `revalidate` returns `RevalidateResult`.
+        `run-regression` uses the configured real regression dataset id and
+        returns `503` when regression is disabled or unavailable.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [verify, reject, enable-shadow, publish, disable, revalidate, run-regression]
+      responses:
+        "202":
+          description: Action accepted.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/OptimizationItem"
+                  - $ref: "#/components/schemas/RevalidateResult"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/optimization-items/revalidate:
+    post:
+      tags: [OfflineKnowledge]
+      operationId: bulkRevalidateOptimizationItems
+      description: Revalidates stale optimization items that match optional source filters.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkRevalidateRequest"
+      responses:
+        "202":
+          description: Bulk revalidation result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkRevalidateResult"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
@@ -1662,6 +1982,499 @@ components:
           type: string
         metrics:
           $ref: "#/components/schemas/EvaluationMetrics"
+    CreateOfflineKnowledgeRunRequest:
+      type: object
+      required: [window_start, window_end]
+      properties:
+        knowledge_base_id:
+          type: string
+          description: Optional compatibility alias for `kb_id`.
+        kb_id:
+          type: string
+          description: Knowledge base scope. Empty scope uses the service default/all-knowledge-bases behavior.
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          type: string
+          format: date-time
+        config_hash:
+          type: string
+          description: Optional idempotency hash for the organizer configuration. If omitted, the service derives it from `config_json`.
+        config_json:
+          type: object
+          additionalProperties: true
+        max_questions:
+          type: integer
+          minimum: 1
+        max_clusters:
+          type: integer
+          minimum: 1
+    OfflineKnowledgeRunCreateResponse:
+      type: object
+      required: [run, deduplicated]
+      properties:
+        run:
+          $ref: "#/components/schemas/OfflineKnowledgeRun"
+        deduplicated:
+          type: boolean
+          description: True when an existing run matched tenant, knowledge base, time window, and config hash.
+    OfflineKnowledgeRunResult:
+      type: object
+      required: [run, deduplicated, processed_cluster, created_items]
+      properties:
+        run:
+          $ref: "#/components/schemas/OfflineKnowledgeRun"
+        deduplicated:
+          type: boolean
+        processed_cluster:
+          type: integer
+        created_items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptimizationItem"
+    OfflineKnowledgeSchedulerTriggerRequest:
+      type: object
+      properties:
+        scheduled_at:
+          type: string
+          format: date-time
+          description: Optional trigger time. Defaults to the server clock when omitted.
+    OfflineKnowledgeSchedulerTriggerResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [target, request, result, deduplicated]
+            properties:
+              target:
+                type: object
+                required: [tenant_id, kb_id]
+                properties:
+                  tenant_id:
+                    type: string
+                  kb_id:
+                    type: string
+              request:
+                $ref: "#/components/schemas/CreateOfflineKnowledgeRunRequest"
+              result:
+                $ref: "#/components/schemas/OfflineKnowledgeRunResult"
+              deduplicated:
+                type: boolean
+              err:
+                type: object
+                additionalProperties: true
+    OfflineKnowledgeRunListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OfflineKnowledgeRun"
+    QuestionClusterListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuestionCluster"
+    OptimizationItemListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptimizationItem"
+    OfflineKnowledgeRunStatus:
+      type: string
+      enum: [pending, running, completed, failed]
+    OptimizationItemStatus:
+      type: string
+      enum: [candidate, evidence_validating, needs_review, verified, shadow_enabled, regression_passed, regression_failed, published, knowledge_gap, rejected, stale, deprecated]
+    OptimizationItemType:
+      type: string
+      enum: [answer_item, query_rewrite_item, knowledge_gap_item]
+    RecallQuality:
+      type: string
+      enum: [hit, partial_hit, miss, bad_answer, no_answer_in_kb, ambiguous, duplicate]
+    FailureType:
+      type: string
+      enum: [keyword_mismatch, semantic_gap, chunk_boundary, rerank_error, graph_missing, generation_error, knowledge_gap, unclear_question]
+    OfflineKnowledgeRun:
+      type: object
+      required: [id, tenant_id, kb_id, status, window_start, window_end, config_hash, started_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        kb_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/OfflineKnowledgeRunStatus"
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          type: string
+          format: date-time
+        config_hash:
+          type: string
+        config_json:
+          type: object
+          additionalProperties: true
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+    QuestionCluster:
+      type: object
+      required: [id, tenant_id, run_id, kb_id, canonical_question, normalized_question, question_hash, occurrence_count, sample_questions, trace_ids, created_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        run_id:
+          type: string
+        kb_id:
+          type: string
+        canonical_question:
+          type: string
+        normalized_question:
+          type: string
+        question_hash:
+          type: string
+        embedding_ref:
+          type: string
+        embedding_json:
+          type: array
+          items:
+            type: number
+            format: double
+        occurrence_count:
+          type: integer
+        sample_questions:
+          type: array
+          items:
+            type: string
+        trace_ids:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+    OptimizationItem:
+      type: object
+      required: [id, tenant_id, run_id, kb_id, question_cluster_id, item_type, status, canonical_question, recall_quality, confidence, source_fingerprints, evidence, deep_search_steps, created_at, updated_at]
+      description: |
+        Offline knowledge recommendation item. `answer_item` values are recall
+        guidance only: shadow retrieval may surface source fingerprints and
+        evidence metadata, but the runtime must still ground answers in recalled
+        chunks rather than injecting `final_answer` as a direct response.
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        run_id:
+          type: string
+        kb_id:
+          type: string
+        question_cluster_id:
+          type: string
+        item_type:
+          $ref: "#/components/schemas/OptimizationItemType"
+        status:
+          $ref: "#/components/schemas/OptimizationItemStatus"
+        canonical_question:
+          type: string
+        final_answer:
+          type: string
+          description: Candidate answer text retained for review and evidence validation; not a direct answer-injection payload.
+        recall_quality:
+          $ref: "#/components/schemas/RecallQuality"
+        failure_type:
+          $ref: "#/components/schemas/FailureType"
+        confidence:
+          type: number
+          format: double
+        source_fingerprints:
+          type: array
+          description: Source identity uses `doc_version` and `chunk_content_hash` to detect stale or mutated evidence.
+          items:
+            $ref: "#/components/schemas/SourceFingerprint"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+        deep_search_steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeepSearchStep"
+        eval_report_json:
+          $ref: "#/components/schemas/EvalReport"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        published_at:
+          type: string
+          format: date-time
+    SourceFingerprint:
+      type: object
+      required: [doc_id, doc_version, chunk_id, chunk_content_hash]
+      description: Stable source fingerprint. Validation compares both `doc_version` and `chunk_content_hash`; doc ID alone is not sufficient.
+      properties:
+        doc_id:
+          type: string
+        doc_version:
+          type: string
+        chunk_id:
+          type: string
+        chunk_content_hash:
+          type: string
+          example: sha256:abc123
+    Evidence:
+      type: object
+      required: [chunk_id, doc_id, quote, supports]
+      properties:
+        chunk_id:
+          type: string
+        doc_id:
+          type: string
+        quote:
+          type: string
+          description: Exact text that must be contained in the current source chunk.
+        supports:
+          type: string
+          description: Claim or answer fragment supported by this quote.
+    DeepSearchStep:
+      type: object
+      required: [step, tool, query, observation, decision]
+      properties:
+        step:
+          type: integer
+        tool:
+          type: string
+        query:
+          type: string
+        observation:
+          type: string
+        decision:
+          type: string
+    EvalReport:
+      type: object
+      required: [result, thresholds, passed, full_dataset_required, full_dataset_used, evaluated_at]
+      properties:
+        result:
+          $ref: "#/components/schemas/RegressionResult"
+        thresholds:
+          $ref: "#/components/schemas/RegressionThresholds"
+        passed:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
+        full_dataset_required:
+          type: boolean
+        full_dataset_used:
+          type: boolean
+        evaluated_at:
+          type: string
+          format: date-time
+    RegressionResult:
+      type: object
+      required: [recall_lift, answer_quality_lift, citation_coverage_lift, latency_delta_ms, token_cost_delta, hallucination_risk, full_dataset_used, passed]
+      properties:
+        recall_lift:
+          type: number
+          format: double
+        answer_quality_lift:
+          type: number
+          format: double
+        citation_coverage_lift:
+          type: number
+          format: double
+        latency_delta_ms:
+          type: integer
+          format: int64
+          description: Latency delta between with-optimization and baseline runs in milliseconds.
+        token_cost_delta:
+          type: number
+          format: double
+        hallucination_risk:
+          type: number
+          format: double
+        full_dataset_used:
+          type: boolean
+        passed:
+          type: boolean
+    RegressionThresholds:
+      type: object
+      properties:
+        min_recall_lift:
+          type: number
+          format: double
+        min_answer_quality_lift:
+          type: number
+          format: double
+        min_citation_coverage_lift:
+          type: number
+          format: double
+        max_latency_delta:
+          type: integer
+          format: int64
+          description: Go duration encoded as nanoseconds in JSON.
+        max_token_cost_delta:
+          type: number
+          format: double
+        max_hallucination_risk:
+          type: number
+          format: double
+    BulkRevalidateRequest:
+      type: object
+      properties:
+        knowledge_base_id:
+          type: string
+          description: Optional compatibility alias for `kb_id`.
+        kb_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/OptimizationItemStatus"
+        source_fingerprint:
+          $ref: "#/components/schemas/SourceFingerprint"
+        source_doc_id:
+          type: string
+        source_chunk_id:
+          type: string
+        source_content_hash:
+          type: string
+          description: Filters by `source_fingerprints[].chunk_content_hash`.
+        limit:
+          type: integer
+          minimum: 1
+    RevalidateResult:
+      type: object
+      required: [item, updated, skipped, old_status, new_status]
+      properties:
+        item:
+          $ref: "#/components/schemas/OptimizationItem"
+        updated:
+          type: boolean
+        skipped:
+          type: boolean
+        old_status:
+          $ref: "#/components/schemas/OptimizationItemStatus"
+        new_status:
+          $ref: "#/components/schemas/OptimizationItemStatus"
+        error:
+          type: string
+          nullable: true
+    BulkRevalidateResult:
+      type: object
+      required: [matched, updated, skipped, results]
+      properties:
+        matched:
+          type: integer
+        updated:
+          type: integer
+        skipped:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/RevalidateResult"
+    ShadowMatch:
+      type: object
+      required: [item_id, item_type, source, score, rank]
+      description: Shadow retrieval match. By default this is non-invasive guidance; injection requires explicit runtime configuration.
+      properties:
+        item_id:
+          type: string
+        item_type:
+          $ref: "#/components/schemas/OptimizationItemType"
+        source:
+          type: string
+          enum: [optimization_library]
+        score:
+          type: number
+          format: double
+        rank:
+          type: integer
+        answer_item:
+          $ref: "#/components/schemas/ShadowAnswerItem"
+        metadata:
+          type: object
+          additionalProperties: true
+    ShadowAnswerItem:
+      type: object
+      required: [source_fingerprints, evidence]
+      description: Recall guidance metadata for an `answer_item`; it is not a direct generated answer.
+      properties:
+        source_fingerprints:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceFingerprint"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+        guidance_metadata:
+          type: object
+          additionalProperties: true
+    ShadowRetrievalEvent:
+      type: object
+      required: [id, tenant_id, kb_id, item_id, trace_id, query, matched, injected, created_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        kb_id:
+          type: string
+        item_id:
+          type: string
+        trace_id:
+          type: string
+        query:
+          type: string
+        matched:
+          type: boolean
+        injected:
+          type: boolean
+          description: False for default non-invasive shadow mode.
+        rank:
+          type: integer
+        score:
+          type: number
+          format: double
+        recall_lift:
+          type: number
+          format: double
+        answer_lift:
+          type: number
+          format: double
+        hallucination_risk:
+          type: number
+          format: double
+        created_at:
+          type: string
+          format: date-time
     RalphLoopRequest:
       type: object
       required: [task_spec_path, task_id, mode, max_rounds]

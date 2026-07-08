@@ -36,6 +36,9 @@ type Service struct {
 	SemanticCacheThreshold float64
 	SemanticCacheNamespace string
 	RRFK                   int
+	Shadow                 ShadowOptions
+	ShadowRetriever        ShadowRetriever
+	ShadowSourceReader     ShadowSourceReader
 
 	QueryRewriteEnabled bool
 	MultiQueryCount     int
@@ -121,6 +124,7 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		}, nil
 	}
 	results = s.ApplyRerank(ctx, req.Query, results, topK)
+	results = s.ApplyShadowRetrieval(ctx, req, results)
 	contextText, citations := s.Packer.Pack(results)
 	system := "你是一个严格基于给定上下文回答的 RAG 助手。回答必须使用中文，并在事实来自上下文时引用 chunk id。"
 	if profile == ProfileHighPrecision {

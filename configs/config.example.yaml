@@ -134,3 +134,42 @@ observability:
     store_query: true
     query_max_bytes: 2048
     retention_days: 30
+
+maintenance:
+  offline_knowledge_organizer:
+    enabled: false
+    schedule: "0 2 * * *"
+    # Equivalent env: OFFLINE_KNOWLEDGE_ORGANIZER_TARGETS=tenant_default:kb_default,tenant_acme:kb_docs
+    targets:
+      - tenant_id: tenant_default
+        kb_id: kb_default
+      - tenant_id: tenant_acme
+        kb_id: kb_docs
+    lookback_days: 7
+    max_questions_per_run: 500
+    max_clusters_per_run: 200
+    max_codex_concurrency: 4
+    max_codex_deep_search_steps: 12
+    max_codex_tokens_per_question: 20000
+    max_tool_qps_per_tenant: 20
+    max_tool_rows_per_call: 50
+    max_replay_concurrency: 8
+    max_eval_concurrency: 4
+    min_question_occurrence: 2
+    long_tail_sampling_rate: 0.05
+    explicit_negative_feedback_boost: 10
+    min_verify_confidence: 0.8
+    min_publish_confidence: 0.9
+    evidence_validation_enabled: true
+    conclusion_judge_enabled: true
+    shadow_retrieval_enabled: true
+    shadow_inject_enabled: false
+    shadow_event_ttl_days: 14
+    shadow_event_sampling_rate: 1.0
+    auto_publish_enabled: false
+    regression_eval_enabled: true
+    regression_dataset_id: ds_offline_regression
+    full_regression_for_rewrite_enabled: true
+    min_recall_lift: 0.05
+    min_answer_quality_lift: 0.03
+    max_latency_delta_ms: 300

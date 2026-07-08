@@ -63,6 +63,59 @@ func TestReadinessReportsExplicitMockModelProvider(t *testing.T) {
 	}
 }
 
+func TestReadinessReportsOfflineKnowledgeDisabledAndConfiguredRegression(t *testing.T) {
+	t.Setenv("STORAGE_BACKEND", "memory")
+	t.Setenv("ARK_API_KEY", "ark-test-key")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	app, err := New(context.Background(), cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer app.Close()
+
+	checks, ready := app.Readiness(context.Background())
+	if !ready {
+		t.Fatalf("ready = false checks=%#v", checks)
+	}
+	if checks["offline_knowledge.service"].Status != "ready" {
+		t.Fatalf("offline knowledge service readiness = %#v", checks["offline_knowledge.service"])
+	}
+	if checks["offline_knowledge.codex"].Status != "disabled" {
+		t.Fatalf("offline knowledge codex readiness = %#v", checks["offline_knowledge.codex"])
+	}
+	if checks["offline_knowledge.regression"].Status != "configured" {
+		t.Fatalf("offline knowledge regression readiness = %#v", checks["offline_knowledge.regression"])
+	}
+}
+
+func TestReadinessFailsWhenEnabledOfflineKnowledgeCodexUnavailable(t *testing.T) {
+	t.Setenv("STORAGE_BACKEND", "memory")
+	t.Setenv("ARK_API_KEY", "ark-test-key")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_ENABLED", "true")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_TARGETS", "tenant_default:kb_default")
+	t.Setenv("OFFLINE_KNOWLEDGE_ORGANIZER_CODEX_ENABLED", "true")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	app, err := New(context.Background(), cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer app.Close()
+
+	checks, ready := app.Readiness(context.Background())
+	if ready {
+		t.Fatalf("ready = true checks=%#v", checks)
+	}
+	if checks["offline_knowledge.codex"].Status != "unavailable" {
+		t.Fatalf("offline knowledge codex readiness = %#v", checks["offline_knowledge.codex"])
+	}
+}
+
 func TestReadinessReportsQdrantMainCollectionVectorConfigMismatch(t *testing.T) {
 	app := &App{
 		Config: readinessQdrantConfig(),

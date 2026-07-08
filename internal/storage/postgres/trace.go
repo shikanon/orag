@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -11,18 +12,23 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	raggraph "github.com/shikanon/orag/internal/graph"
+	"github.com/shikanon/orag/internal/offlineknowledge"
 	"github.com/shikanon/orag/internal/rag"
 )
 
 type TraceRecord struct {
-	ID         string          `json:"trace_id"`
-	TenantID   string          `json:"tenant_id"`
-	Profile    rag.Profile     `json:"profile"`
-	LatencyMS  int64           `json:"latency_ms"`
-	CreatedAt  time.Time       `json:"created_at"`
-	HasError   bool            `json:"has_error"`
-	ErrorCount int             `json:"error_count"`
-	NodeSpans  []TraceNodeSpan `json:"node_spans"`
+	ID              string          `json:"trace_id"`
+	TenantID        string          `json:"tenant_id"`
+	KBID            string          `json:"kb_id,omitempty"`
+	Query           string          `json:"query"`
+	Profile         rag.Profile     `json:"profile"`
+	Answer          string          `json:"answer,omitempty"`
+	RetrievedChunks []string        `json:"retrieved_chunks,omitempty"`
+	LatencyMS       int64           `json:"latency_ms"`
+	CreatedAt       time.Time       `json:"created_at"`
+	HasError        bool            `json:"has_error"`
+	ErrorCount      int             `json:"error_count"`
+	NodeSpans       []TraceNodeSpan `json:"node_spans"`
 }
 
 type TraceNodeSpan struct {
@@ -43,6 +49,7 @@ const (
 
 type TraceListFilter struct {
 	TenantID string
+	KBID     string
 	Profile  rag.Profile
 	Since    time.Time
 	Until    time.Time
@@ -76,22 +83,29 @@ type traceRows interface {
 	Scan(dest ...any) error
 }
 
-func (r *Repository) StoreTrace(ctx context.Context, tenantID, traceID, query string, profile rag.Profile, latencyMS int64, spans []raggraph.NodeSpan) error {
+func (r *Repository) StoreTrace(ctx context.Context, tenantID, kbID, traceID, query string, profile rag.Profile, latencyMS int64, answer string, retrievedChunks []string, spans []raggraph.NodeSpan) error {
 	tx, err := r.traceTxStarter().BeginTraceTx(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
+	retrievedChunksJSON, err := json.Marshal(retrievedChunks)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO rag_traces(id, tenant_id, query, profile, latency_ms)
-		VALUES($1,$2,$3,$4,$5)
+		INSERT INTO rag_traces(id, tenant_id, knowledge_base_id, query, profile, answer, retrieved_chunks_json, latency_ms)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8)
 		ON CONFLICT (id) DO UPDATE SET
 			tenant_id=EXCLUDED.tenant_id,
+			knowledge_base_id=EXCLUDED.knowledge_base_id,
 			query=EXCLUDED.query,
 			profile=EXCLUDED.profile,
+			answer=EXCLUDED.answer,
+			retrieved_chunks_json=EXCLUDED.retrieved_chunks_json,
 			latency_ms=EXCLUDED.latency_ms,
 			created_at=now()`,
-		traceID, tenantID, sanitizeTraceQuery(query), string(profile), latencyMS); err != nil {
+		traceID, tenantID, kbID, sanitizeTraceQuery(query), string(profile), answer, retrievedChunksJSON, latencyMS); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
@@ -156,9 +170,10 @@ func (r *Repository) getTrace(ctx context.Context, traceID, tenantID string) (Tr
 	queryer := r.traceQueryer()
 	var record TraceRecord
 	var profile string
+	var retrievedChunksJSON []byte
 	args := []any{traceID}
 	query := `
-		SELECT id, tenant_id, profile, latency_ms, created_at
+		SELECT id, tenant_id, knowledge_base_id, query, profile, answer, retrieved_chunks_json, latency_ms, created_at
 		FROM rag_traces
 		WHERE id=$1`
 	if tenantID != "" {
@@ -166,7 +181,7 @@ func (r *Repository) getTrace(ctx context.Context, traceID, tenantID string) (Tr
 		args = append(args, tenantID)
 	}
 	err := queryer.QueryRow(ctx, query, args...).
-		Scan(&record.ID, &record.TenantID, &profile, &record.LatencyMS, &record.CreatedAt)
+		Scan(&record.ID, &record.TenantID, &record.KBID, &record.Query, &profile, &record.Answer, &retrievedChunksJSON, &record.LatencyMS, &record.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return TraceRecord{}, false, nil
@@ -174,6 +189,9 @@ func (r *Repository) getTrace(ctx context.Context, traceID, tenantID string) (Tr
 		return TraceRecord{}, false, err
 	}
 	record.Profile = rag.Profile(profile)
+	if err := json.Unmarshal(retrievedChunksJSON, &record.RetrievedChunks); err != nil {
+		return TraceRecord{}, false, err
+	}
 
 	rows, err := queryer.Query(ctx, `
 		SELECT id, node_name, sequence, latency_ms, error, started_at, ended_at, created_at
@@ -209,7 +227,11 @@ func (r *Repository) ListTraces(ctx context.Context, filter TraceListFilter) ([]
 		SELECT
 			t.id,
 			t.tenant_id,
+			t.knowledge_base_id,
+			t.query,
 			t.profile,
+			t.answer,
+			t.retrieved_chunks_json,
 			t.latency_ms,
 			t.created_at,
 			EXISTS (
@@ -236,11 +258,15 @@ func (r *Repository) ListTraces(ctx context.Context, filter TraceListFilter) ([]
 	for rows.Next() {
 		var record TraceRecord
 		var profile string
+		var retrievedChunksJSON []byte
 		var errorCount int64
-		if err := rows.Scan(&record.ID, &record.TenantID, &profile, &record.LatencyMS, &record.CreatedAt, &record.HasError, &errorCount); err != nil {
+		if err := rows.Scan(&record.ID, &record.TenantID, &record.KBID, &record.Query, &profile, &record.Answer, &retrievedChunksJSON, &record.LatencyMS, &record.CreatedAt, &record.HasError, &errorCount); err != nil {
 			return nil, err
 		}
 		record.Profile = rag.Profile(profile)
+		if err := json.Unmarshal(retrievedChunksJSON, &record.RetrievedChunks); err != nil {
+			return nil, err
+		}
 		record.ErrorCount = int(errorCount)
 		traces = append(traces, record)
 	}
@@ -294,6 +320,10 @@ func appendTraceListFilters(query *strings.Builder, args *[]any, filter TraceLis
 		query.WriteString(" AND t.tenant_id=")
 		query.WriteString(addTraceArg(args, filter.TenantID))
 	}
+	if filter.KBID != "" {
+		query.WriteString(" AND t.knowledge_base_id=")
+		query.WriteString(addTraceArg(args, filter.KBID))
+	}
 	if filter.Profile != "" {
 		query.WriteString(" AND t.profile=")
 		query.WriteString(addTraceArg(args, string(filter.Profile)))
@@ -317,6 +347,44 @@ func appendTraceListFilters(query *strings.Builder, args *[]any, filter TraceLis
 		query.WriteString(" AND t.latency_ms >= ")
 		query.WriteString(addTraceArg(args, filter.SlowMS))
 	}
+}
+
+func (r *Repository) ListHistoryTraces(ctx context.Context, filter offlineknowledge.HistoryTraceFilter) ([]offlineknowledge.HistoryTrace, error) {
+	traces, err := r.ListTraces(ctx, TraceListFilter{
+		TenantID: filter.TenantID,
+		KBID:     filter.KBID,
+		Since:    filter.Since,
+		Until:    filter.Until,
+		Limit:    filter.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]offlineknowledge.HistoryTrace, 0, len(traces))
+	for _, trace := range traces {
+		out = append(out, offlineknowledge.HistoryTrace{
+			TenantID:        trace.TenantID,
+			KBID:            trace.KBID,
+			TraceID:         trace.ID,
+			Query:           trace.Query,
+			Answer:          trace.Answer,
+			RetrievedChunks: append([]string(nil), trace.RetrievedChunks...),
+			Latency:         time.Duration(trace.LatencyMS) * time.Millisecond,
+			HasError:        trace.HasError,
+			Error:           firstTraceError(trace.NodeSpans),
+			CreatedAt:       trace.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
+func firstTraceError(spans []TraceNodeSpan) string {
+	for _, span := range spans {
+		if span.Error != "" {
+			return span.Error
+		}
+	}
+	return ""
 }
 
 func addTraceArg(args *[]any, value any) string {

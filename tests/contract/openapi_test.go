@@ -49,6 +49,16 @@ func TestOpenAPI(t *testing.T) {
 		{http.MethodGet, "/v1/optimizations/{id}"},
 		{http.MethodPost, "/v1/optimizations/{id}:cancel"},
 		{http.MethodPost, "/v1/optimizations/{id}:resume"},
+		{http.MethodGet, "/v1/offline-knowledge/runs"},
+		{http.MethodPost, "/v1/offline-knowledge/runs"},
+		{http.MethodPost, "/v1/offline-knowledge/scheduler:trigger"},
+		{http.MethodGet, "/v1/offline-knowledge/runs/{id}"},
+		{http.MethodPost, "/v1/offline-knowledge/runs/{id}/execute"},
+		{http.MethodGet, "/v1/offline-knowledge/runs/{id}/questions"},
+		{http.MethodGet, "/v1/optimization-items"},
+		{http.MethodGet, "/v1/optimization-items/{id}"},
+		{http.MethodPost, "/v1/optimization-items/{id}/{action}"},
+		{http.MethodPost, "/v1/optimization-items/revalidate"},
 	} {
 		item := doc.Paths.Find(route.path)
 		if item == nil {
@@ -86,6 +96,12 @@ func TestOpenAPI(t *testing.T) {
 		"SearchSpace",
 		"ObjectiveSpec",
 		"ReadinessResponse",
+		"OfflineKnowledgeRun",
+		"OfflineKnowledgeRunResult",
+		"OfflineKnowledgeSchedulerTriggerResponse",
+		"OptimizationItem",
+		"SourceFingerprint",
+		"EvalReport",
 	} {
 		if doc.Components.Schemas[schema] == nil {
 			t.Fatalf("missing schema %s", schema)
@@ -109,6 +125,11 @@ func TestOpenAPI(t *testing.T) {
 		{http.MethodGet, "/v1/optimizations/{id}", http.StatusNotFound},
 		{http.MethodPost, "/v1/optimizations/{id}:cancel", http.StatusNotFound},
 		{http.MethodPost, "/v1/optimizations/{id}:resume", http.StatusNotFound},
+		{http.MethodPost, "/v1/offline-knowledge/runs/{id}/execute", http.StatusConflict},
+		{http.MethodPost, "/v1/offline-knowledge/runs/{id}/execute", http.StatusServiceUnavailable},
+		{http.MethodPost, "/v1/offline-knowledge/scheduler:trigger", http.StatusServiceUnavailable},
+		{http.MethodPost, "/v1/optimization-items/{id}/{action}", http.StatusConflict},
+		{http.MethodPost, "/v1/optimization-items/{id}/{action}", http.StatusServiceUnavailable},
 	} {
 		op := doc.Paths.Find(route.path).GetOperation(route.method)
 		if op.Responses.Get(route.status) == nil {

@@ -1068,14 +1068,14 @@ func TestRepositoryStoreTraceReplacesSpansForRepeatedTraceID(t *testing.T) {
 	repo := &Repository{traceReader: db, traceTxBeginner: db}
 	ctx := context.Background()
 
-	err := repo.StoreTrace(ctx, "tenant_1", "trace_reused", "first query", rag.ProfileRealtime, 111, []raggraph.NodeSpan{
+	err := repo.StoreTrace(ctx, "tenant_1", "kb_1", "trace_reused", "first query", rag.ProfileRealtime, 111, "first answer", []string{"chunk_first"}, []raggraph.NodeSpan{
 		{NodeName: "retrieve_first", LatencyMS: 12},
 		{NodeName: "generate_first", LatencyMS: 99, Error: "first failure"},
 	})
 	if err != nil {
 		t.Fatalf("first StoreTrace() error = %v", err)
 	}
-	err = repo.StoreTrace(ctx, "tenant_1", "trace_reused", "second query", rag.ProfileHighPrecision, 222, []raggraph.NodeSpan{
+	err = repo.StoreTrace(ctx, "tenant_1", "kb_2", "trace_reused", "second query", rag.ProfileHighPrecision, 222, "second answer", []string{"chunk_second"}, []raggraph.NodeSpan{
 		{NodeName: "retrieve_second", LatencyMS: 21},
 		{NodeName: "generate_second", LatencyMS: 201},
 	})
@@ -1090,7 +1090,7 @@ func TestRepositoryStoreTraceReplacesSpansForRepeatedTraceID(t *testing.T) {
 	if !found {
 		t.Fatal("GetTrace() found = false, want true")
 	}
-	if got.Profile != rag.ProfileHighPrecision || got.LatencyMS != 222 {
+	if got.Profile != rag.ProfileHighPrecision || got.LatencyMS != 222 || got.KBID != "kb_2" || got.Query != "second query" || got.Answer != "second answer" || got.RetrievedChunks[0] != "chunk_second" {
 		t.Fatalf("GetTrace() metadata = %#v, want second trace metadata", got)
 	}
 	if got.HasError || got.ErrorCount != 0 {
@@ -1114,7 +1114,7 @@ func TestRepositoryStoreTraceFailureSpanReadsHasError(t *testing.T) {
 	repo := &Repository{traceReader: db, traceTxBeginner: db}
 	ctx := context.Background()
 
-	err := repo.StoreTrace(ctx, "tenant_1", "trace_failed", "query", rag.ProfileHighPrecision, 47, []raggraph.NodeSpan{
+	err := repo.StoreTrace(ctx, "tenant_1", "kb_1", "trace_failed", "query", rag.ProfileHighPrecision, 47, "answer", []string{"chunk_1"}, []raggraph.NodeSpan{
 		{NodeName: "init", LatencyMS: 1},
 		{NodeName: "hybrid_retrieve", LatencyMS: 46, Error: "retrieval unavailable"},
 	})
@@ -1140,7 +1140,7 @@ func TestRepositoryStoreTraceFailureSpanReadsHasError(t *testing.T) {
 func TestRepositoryGetTraceFound(t *testing.T) {
 	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
 	reader := &fakeTraceReader{
-		row: fakeTraceRow{values: []any{"trace_1", "tenant_1", "realtime", int64(123), createdAt}},
+		row: fakeTraceRow{values: []any{"trace_1", "tenant_1", "kb_1", "query", "realtime", "answer", []byte(`["chunk_1"]`), int64(123), createdAt}},
 		rows: &fakeTraceRows{rows: [][]any{
 			{"span_1", "retrieve", 1, int64(12), "", createdAt, createdAt.Add(12 * time.Millisecond), createdAt.Add(time.Millisecond)},
 			{"span_2", "generate", 2, int64(111), "llm timeout", createdAt, createdAt.Add(111 * time.Millisecond), createdAt.Add(2 * time.Millisecond)},
@@ -1155,7 +1155,7 @@ func TestRepositoryGetTraceFound(t *testing.T) {
 	if !found {
 		t.Fatal("GetTrace() found = false, want true")
 	}
-	if got.ID != "trace_1" || got.TenantID != "tenant_1" || got.Profile != rag.Profile("realtime") || got.LatencyMS != 123 {
+	if got.ID != "trace_1" || got.TenantID != "tenant_1" || got.KBID != "kb_1" || got.Query != "query" || got.Profile != rag.Profile("realtime") || got.Answer != "answer" || got.RetrievedChunks[0] != "chunk_1" || got.LatencyMS != 123 {
 		t.Fatalf("GetTrace() metadata = %#v", got)
 	}
 	if !got.HasError || got.ErrorCount != 1 {
@@ -1201,11 +1201,15 @@ type fakeTraceDB struct {
 }
 
 type fakeStoredTrace struct {
-	id        string
-	tenantID  string
-	profile   string
-	latencyMS int64
-	createdAt time.Time
+	id              string
+	tenantID        string
+	kbID            string
+	query           string
+	profile         string
+	answer          string
+	retrievedChunks []string
+	latencyMS       int64
+	createdAt       time.Time
 }
 
 type fakeTraceTx struct {
@@ -1289,7 +1293,8 @@ func (db *fakeTraceDB) QueryRow(_ context.Context, sql string, args ...any) trac
 	if !ok {
 		return fakeTraceRow{err: pgx.ErrNoRows}
 	}
-	return fakeTraceRow{values: []any{record.id, record.tenantID, record.profile, record.latencyMS, record.createdAt}}
+	retrievedChunks, _ := json.Marshal(record.retrievedChunks)
+	return fakeTraceRow{values: []any{record.id, record.tenantID, record.kbID, record.query, record.profile, record.answer, retrievedChunks, record.latencyMS, record.createdAt}}
 }
 
 func (db *fakeTraceDB) Query(_ context.Context, sql string, args ...any) (traceRows, error) {
@@ -1309,14 +1314,24 @@ func (tx *fakeTraceTx) Exec(_ context.Context, sql string, args ...any) (pgconn.
 	case strings.Contains(sql, "INSERT INTO rag_traces"):
 		traceID, _ := args[0].(string)
 		tenantID, _ := args[1].(string)
-		profile, _ := args[3].(string)
-		latencyMS, _ := args[4].(int64)
+		kbID, _ := args[2].(string)
+		query, _ := args[3].(string)
+		profile, _ := args[4].(string)
+		answer, _ := args[5].(string)
+		retrievedChunksJSON, _ := args[6].([]byte)
+		latencyMS, _ := args[7].(int64)
+		var retrievedChunks []string
+		_ = json.Unmarshal(retrievedChunksJSON, &retrievedChunks)
 		tx.records[traceID] = fakeStoredTrace{
-			id:        traceID,
-			tenantID:  tenantID,
-			profile:   profile,
-			latencyMS: latencyMS,
-			createdAt: tx.nextTime(),
+			id:              traceID,
+			tenantID:        tenantID,
+			kbID:            kbID,
+			query:           query,
+			profile:         profile,
+			answer:          answer,
+			retrievedChunks: retrievedChunks,
+			latencyMS:       latencyMS,
+			createdAt:       tx.nextTime(),
 		}
 		return pgconn.NewCommandTag("INSERT 1"), nil
 	case strings.Contains(sql, "DELETE FROM rag_node_spans"):

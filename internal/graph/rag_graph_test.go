@@ -404,17 +404,23 @@ func TestRAGGraphDirectRouteEmitsRouteSpanAndBypassesRetrieval(t *testing.T) {
 }
 
 type capturingTraceStore struct {
-	traceID     string
-	traceIDs    []string
-	spans       []NodeSpan
-	spanBatches [][]NodeSpan
-	calls       int
+	traceID         string
+	traceIDs        []string
+	kbID            string
+	answer          string
+	retrievedChunks []string
+	spans           []NodeSpan
+	spanBatches     [][]NodeSpan
+	calls           int
 }
 
-func (s *capturingTraceStore) StoreTrace(_ context.Context, _, traceID, _ string, _ rag.Profile, _ int64, spans []NodeSpan) error {
+func (s *capturingTraceStore) StoreTrace(_ context.Context, _, kbID, traceID, _ string, _ rag.Profile, _ int64, answer string, retrievedChunks []string, spans []NodeSpan) error {
 	s.calls++
 	s.traceID = traceID
 	s.traceIDs = append(s.traceIDs, traceID)
+	s.kbID = kbID
+	s.answer = answer
+	s.retrievedChunks = append([]string(nil), retrievedChunks...)
 	s.spans = append([]NodeSpan(nil), spans...)
 	s.spanBatches = append(s.spanBatches, append([]NodeSpan(nil), spans...))
 	return nil

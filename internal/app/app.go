@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,6 +20,7 @@ import (
 	"github.com/shikanon/orag/internal/llm/ark"
 	modelprovider "github.com/shikanon/orag/internal/llm/provider"
 	"github.com/shikanon/orag/internal/observability"
+	"github.com/shikanon/orag/internal/offlineknowledge"
 	"github.com/shikanon/orag/internal/optimizer"
 	"github.com/shikanon/orag/internal/platform/httpclient"
 	"github.com/shikanon/orag/internal/platform/id"
@@ -29,17 +31,19 @@ import (
 )
 
 type App struct {
-	Config    config.Config
-	Logger    *slog.Logger
-	Auth      *auth.Service
-	KBStore   kb.KnowledgeBaseRepository
-	Ingest    *ingest.Service
-	RAG       *rag.Service
-	Datasets  *dataset.Service
-	Eval      eval.Runner
-	Optimizer *optimizer.Service
-	Metrics   *observability.Metrics
-	Traces    TraceRepository
+	Config           config.Config
+	Logger           *slog.Logger
+	Auth             *auth.Service
+	KBStore          kb.KnowledgeBaseRepository
+	Ingest           *ingest.Service
+	RAG              *rag.Service
+	Datasets         *dataset.Service
+	Eval             eval.Runner
+	Optimizer        *optimizer.Service
+	OfflineKnowledge *offlineknowledge.Service
+	OfflineScheduler *offlineknowledge.Scheduler
+	Metrics          *observability.Metrics
+	Traces           TraceRepository
 
 	Postgres *pgxpool.Pool
 	Qdrant   *qdrantstore.Client
@@ -122,6 +126,22 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Repository: backend.evalRepo,
 		Namespaces: optimizer.NewTempNamespaceManager(nil),
 	}
+	offlineKnowledgeOptions := buildOfflineKnowledgeOptions(cfg, backend, model, retriever, ragSvc, datasets, metrics)
+	configureRAGShadow(ragSvc, cfg.Maintenance.OfflineKnowledgeOrganizer, offlineKnowledgeOptions)
+	offlineKnowledgeSvc := offlineknowledge.NewService(backend.offlineKnowledgeRepo, offlineKnowledgeOptions)
+	offlineScheduler := buildOfflineKnowledgeScheduler(cfg, offlineKnowledgeSvc, logger)
+	closers := append([]func() error{}, backend.closers...)
+	if offlineScheduler != nil && offlineScheduler.Enabled() {
+		if err := offlineScheduler.Start(context.Background()); err != nil {
+			for i := len(closers) - 1; i >= 0; i-- {
+				if closers[i] != nil {
+					_ = closers[i]()
+				}
+			}
+			return nil, err
+		}
+		closers = append(closers, offlineScheduler.Stop)
+	}
 	return &App{
 		Config:   cfg,
 		Logger:   logger,
@@ -135,11 +155,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			Repository: backend.optimizerRepo,
 			Runner:     optimizerRunner,
 		},
-		Metrics:  metrics,
-		Traces:   backend.traceRepo,
-		Postgres: backend.pool,
-		Qdrant:   backend.qdrant,
-		closers:  backend.closers,
+		OfflineKnowledge: offlineKnowledgeSvc,
+		OfflineScheduler: offlineScheduler,
+		Metrics:          metrics,
+		Traces:           backend.traceRepo,
+		Postgres:         backend.pool,
+		Qdrant:           backend.qdrant,
+		closers:          closers,
 	}, nil
 }
 
@@ -250,6 +272,274 @@ func buildRAGRetriever(cfg config.Config, base kb.Retriever, store kb.KnowledgeB
 	return kb.GraphRetriever{Base: base, Store: graphStore, TopK: cfg.RAG.GraphRetrieval.TopK}
 }
 
+func buildOfflineKnowledgeOptions(cfg config.Config, backend knowledgeBackend, model offlineKnowledgeChatModel, retriever kb.Retriever, ragSvc *rag.Service, datasets *dataset.Service, metrics *observability.Metrics) offlineknowledge.ServiceOptions {
+	organizer := cfg.Maintenance.OfflineKnowledgeOrganizer
+	quota := offlineknowledge.ToolQuota{
+		MaxTokens:          organizer.MaxCodexTokensPerQuestion,
+		MaxDeepSearchSteps: organizer.MaxCodexDeepSearchSteps,
+		MaxRowsPerCall:     organizer.MaxToolRowsPerCall,
+		MaxQPSPerTenant:    organizer.MaxToolQPSPerTenant,
+		// Use the model timeout as the upper bound for each controlled Codex tool call.
+		MaxTimeout: cfg.Ark.Timeout,
+	}
+	sourceReader := offlineknowledge.NewStoreSourceReader(backend.chunkSource)
+	replayer := offlineknowledge.NewRetrieverRecallReplayer(retriever, offlineknowledge.NewChunkSourceMetadataReader(), cfg.RAG.ContextTopN)
+	graphStore, _ := backend.store.(kb.GraphStore)
+	var runtimeMetrics offlineknowledge.MetricsRecorder
+	var codexToolMetrics offlineknowledge.CodexToolMetrics
+	if metrics != nil {
+		runtimeMetrics = metrics
+		codexToolMetrics = metrics
+	}
+	shadowOptions := offlineknowledge.ShadowRetrieverOptions{
+		Limit:                organizer.MaxClustersPerRun,
+		EventSamplingRate:    organizer.ShadowEventSamplingRate,
+		EventSamplingRateSet: true,
+	}
+	if metrics != nil {
+		shadowOptions.DropMetric = metrics
+		shadowOptions.HitMetric = metrics
+	}
+	feedbackSource := backend.offlineKnowledgeRepo
+	if feedbackSource == nil {
+		feedbackSource = offlineknowledge.NewMemoryRepository()
+	}
+	opts := offlineknowledge.ServiceOptions{
+		HistorySource:     offlineknowledge.NewTraceHistoryExtractor(traceHistorySource{repo: backend.traceRepo}, feedbackSource),
+		QuestionClusterer: offlineknowledge.NewDeterministicQuestionClusterer(time.Now),
+		RecallReplayer:    replayer,
+		SourceReader:      sourceReader,
+		CodexAnalyzer:     buildOfflineKnowledgeCodexAnalyzer(cfg),
+		CodexTools: offlineknowledge.NewCodexToolRegistry(offlineknowledge.CodexToolRegistryOptions{
+			Retriever:   retriever,
+			ChunkSource: backend.chunkSource,
+			GraphStore:  graphStore,
+			Repository:  backend.offlineKnowledgeRepo,
+			EvalLookup:  offlineknowledge.EvalRepositoryToolLookup{Repository: backend.evalRepo},
+			Replayer:    replayer,
+			Quota:       quota,
+			MaxSteps:    organizer.MaxCodexDeepSearchSteps,
+			Audit:       backend.offlineKnowledgeRepo,
+			Metrics:     codexToolMetrics,
+			DefaultRows: organizer.MaxToolRowsPerCall,
+		}),
+		ShadowRetriever: offlineknowledge.NewShadowRetriever(backend.offlineKnowledgeRepo, shadowOptions),
+		RegressionLimits: offlineknowledge.RegressionThresholds{
+			MinRecallLift:        organizer.MinRecallLift,
+			MinAnswerQualityLift: organizer.MinAnswerQualityLift,
+			MaxLatencyDelta:      time.Duration(organizer.MaxLatencyDeltaMS) * time.Millisecond,
+		},
+		MaxQuestions: organizer.MaxQuestionsPerRun,
+		MaxClusters:  organizer.MaxClustersPerRun,
+		ToolQuota:    quota,
+		Metrics:      runtimeMetrics,
+	}
+	opts.RegressionRunner = buildOfflineKnowledgeRegressionRunner(organizer, ragSvc, datasets, backend.evalRepo, opts)
+	if !organizer.EvidenceValidationEnabled {
+		opts.Validator = offlineknowledge.DisabledItemValidator{}
+		return opts
+	}
+	var judge offlineknowledge.ConclusionJudge
+	if organizer.ConclusionJudgeEnabled {
+		judge = offlineknowledge.NewEvalConclusionJudge(eval.NewLLMJudge(judgeChatModelAdapter{
+			Model:     model,
+			ModelName: cfg.Ark.ChatModel,
+		}, eval.JudgeConfig{
+			Model:         cfg.Ark.ChatModel,
+			Metrics:       []eval.JudgeMetric{eval.JudgeMetricGroundedness, eval.JudgeMetricCitationSupport},
+			Timeout:       cfg.Ark.Timeout,
+			MaxRetries:    cfg.Ark.RetryTimes,
+			MaxJudgeCalls: 1,
+		}), organizer.MinVerifyConfidence)
+	} else {
+		judge = offlineknowledge.DisabledConclusionJudge{}
+	}
+	opts.Validator = offlineknowledge.NewValidator(sourceReader, judge, offlineknowledge.ValidatorOptions{
+		MinConfidence: organizer.MinVerifyConfidence,
+	})
+	return opts
+}
+
+func buildOfflineKnowledgeCodexAnalyzer(cfg config.Config) offlineknowledge.CodexAnalyzer {
+	organizer := cfg.Maintenance.OfflineKnowledgeOrganizer
+	command := strings.Fields(strings.TrimSpace(organizer.CodexCommand))
+	return offlineknowledge.NewCodexRunnerAdapter(offlineknowledge.CodexRunnerConfig{
+		Enabled:  organizer.CodexEnabled,
+		Command:  command,
+		Endpoint: strings.TrimSpace(organizer.CodexEndpoint),
+		Timeout:  cfg.Ark.Timeout,
+	})
+}
+
+func buildOfflineKnowledgeRegressionRunner(organizer config.OfflineKnowledgeOrganizerConfig, ragSvc *rag.Service, datasets *dataset.Service, repo eval.Repository, opts offlineknowledge.ServiceOptions) offlineknowledge.RegressionRunner {
+	if !organizer.RegressionEvalEnabled {
+		return offlineknowledge.DisabledRegressionRunner{}
+	}
+	if ragSvc == nil || datasets == nil {
+		return offlineknowledge.UnavailableRegressionRunner{}
+	}
+	baselineRAG := cloneRAGForRegression(ragSvc, rag.ShadowOptions{})
+	withOptimizationRAG := cloneRAGForRegression(ragSvc, rag.ShadowOptions{
+		Enabled: true,
+		Inject:  true,
+		Limit:   organizer.MaxClustersPerRun,
+	}, opts)
+	return offlineknowledge.NewEvalRegressionRunner(offlineknowledge.EvalRegressionRunnerOptions{
+		BaselineRunner: eval.Runner{
+			RAG:        baselineRAG,
+			Datasets:   datasets,
+			Repository: repo,
+		},
+		WithOptimization: eval.Runner{
+			RAG:        withOptimizationRAG,
+			Datasets:   datasets,
+			Repository: repo,
+		},
+		Datasets:                datasets,
+		DatasetID:               organizer.RegressionDatasetID,
+		BaselineProfile:         rag.ProfileRealtime,
+		WithOptimizationProfile: rag.ProfileHighPrecision,
+		TopK:                    cfgTopKForRegression(organizer),
+	})
+}
+
+func cloneRAGForRegression(base *rag.Service, shadow rag.ShadowOptions, opts ...offlineknowledge.ServiceOptions) *rag.Service {
+	if base == nil {
+		return nil
+	}
+	cp := *base
+	cp.Shadow = shadow
+	cp.ShadowRetriever = nil
+	cp.ShadowSourceReader = nil
+	if shadow.Enabled && len(opts) > 0 {
+		if opts[0].ShadowRetriever != nil {
+			cp.ShadowRetriever = offlineKnowledgeShadowRetrieverAdapter{retriever: opts[0].ShadowRetriever}
+		}
+		if opts[0].SourceReader != nil {
+			cp.ShadowSourceReader = offlineKnowledgeShadowSourceReaderAdapter{reader: opts[0].SourceReader}
+		}
+	}
+	return &cp
+}
+
+func cfgTopKForRegression(organizer config.OfflineKnowledgeOrganizerConfig) int {
+	if organizer.MaxClustersPerRun > 0 {
+		return organizer.MaxClustersPerRun
+	}
+	return 0
+}
+
+func buildOfflineKnowledgeScheduler(cfg config.Config, svc *offlineknowledge.Service, logger *slog.Logger) *offlineknowledge.Scheduler {
+	organizer := cfg.Maintenance.OfflineKnowledgeOrganizer
+	if !organizer.Enabled {
+		return nil
+	}
+	return offlineknowledge.NewScheduler(svc, offlineknowledge.SchedulerConfig{
+		Enabled:            organizer.Enabled,
+		Schedule:           organizer.Schedule,
+		LookbackDays:       organizer.LookbackDays,
+		MaxQuestionsPerRun: organizer.MaxQuestionsPerRun,
+		MaxClustersPerRun:  organizer.MaxClustersPerRun,
+		Targets:            offlineKnowledgeSchedulerTargets(organizer.Targets),
+		ConfigJSON: map[string]any{
+			"max_codex_concurrency":               organizer.MaxCodexConcurrency,
+			"max_codex_deep_search_steps":         organizer.MaxCodexDeepSearchSteps,
+			"max_codex_tokens_per_question":       organizer.MaxCodexTokensPerQuestion,
+			"max_tool_qps_per_tenant":             organizer.MaxToolQPSPerTenant,
+			"max_tool_rows_per_call":              organizer.MaxToolRowsPerCall,
+			"max_replay_concurrency":              organizer.MaxReplayConcurrency,
+			"max_eval_concurrency":                organizer.MaxEvalConcurrency,
+			"min_question_occurrence":             organizer.MinQuestionOccurrence,
+			"long_tail_sampling_rate":             organizer.LongTailSamplingRate,
+			"explicit_negative_feedback_boost":    organizer.ExplicitNegativeFeedbackBoost,
+			"evidence_validation_enabled":         organizer.EvidenceValidationEnabled,
+			"conclusion_judge_enabled":            organizer.ConclusionJudgeEnabled,
+			"shadow_retrieval_enabled":            organizer.ShadowRetrievalEnabled,
+			"shadow_inject_enabled":               organizer.ShadowInjectEnabled,
+			"auto_publish_enabled":                organizer.AutoPublishEnabled,
+			"regression_eval_enabled":             organizer.RegressionEvalEnabled,
+			"regression_dataset_id":               organizer.RegressionDatasetID,
+			"full_regression_for_rewrite_enabled": organizer.FullRegressionForRewriteEnabled,
+		},
+	}, offlineknowledge.SchedulerOptions{Logger: logger})
+}
+
+func offlineKnowledgeSchedulerTargets(targets []config.OfflineKnowledgeOrganizerTargetConfig) []offlineknowledge.SchedulerTarget {
+	out := make([]offlineknowledge.SchedulerTarget, 0, len(targets))
+	for _, target := range targets {
+		out = append(out, offlineknowledge.SchedulerTarget{
+			TenantID: target.TenantID,
+			KBID:     target.KBID,
+		})
+	}
+	return out
+}
+
+type traceHistorySource struct {
+	repo TraceRepository
+}
+
+func (s traceHistorySource) ListHistoryTraces(ctx context.Context, filter offlineknowledge.HistoryTraceFilter) ([]offlineknowledge.HistoryTrace, error) {
+	if s.repo == nil {
+		return nil, offlineknowledge.ErrHistorySourceRequired
+	}
+	traces, err := s.repo.ListTraces(ctx, postgres.TraceListFilter{
+		TenantID: filter.TenantID,
+		KBID:     filter.KBID,
+		Since:    filter.Since,
+		Until:    filter.Until,
+		Limit:    filter.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]offlineknowledge.HistoryTrace, 0, len(traces))
+	for _, trace := range traces {
+		out = append(out, offlineknowledge.HistoryTrace{
+			TenantID:        trace.TenantID,
+			KBID:            trace.KBID,
+			TraceID:         trace.ID,
+			Query:           trace.Query,
+			Answer:          trace.Answer,
+			RetrievedChunks: append([]string(nil), trace.RetrievedChunks...),
+			Latency:         time.Duration(trace.LatencyMS) * time.Millisecond,
+			HasError:        trace.HasError,
+			Error:           firstTraceSpanError(trace.NodeSpans),
+			CreatedAt:       trace.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
+func firstTraceSpanError(spans []postgres.TraceNodeSpan) string {
+	for _, span := range spans {
+		if span.Error != "" {
+			return span.Error
+		}
+	}
+	return ""
+}
+
+type offlineKnowledgeChatModel interface {
+	Chat(ctx context.Context, messages []ark.ChatMessage) (string, error)
+}
+
+type judgeChatModelAdapter struct {
+	Model     offlineKnowledgeChatModel
+	ModelName string
+}
+
+func (a judgeChatModelAdapter) Chat(ctx context.Context, prompt string) (eval.JudgeChatResponse, error) {
+	if a.Model == nil {
+		return eval.JudgeChatResponse{}, offlineknowledge.ErrConclusionUnavailable
+	}
+	content, err := a.Model.Chat(ctx, []ark.ChatMessage{{Role: "user", Content: prompt}})
+	if err != nil {
+		return eval.JudgeChatResponse{}, err
+	}
+	return eval.JudgeChatResponse{Content: content, Model: a.ModelName}, nil
+}
+
 func buildQueryRouter(cfg config.Config) rag.QueryRouter {
 	if !cfg.RAG.QueryRouter.Enabled {
 		return nil
@@ -261,20 +551,22 @@ func buildQueryRouter(cfg config.Config) rag.QueryRouter {
 }
 
 type knowledgeBackend struct {
-	store         kb.KnowledgeBaseRepository
-	indexer       kb.Indexer
-	dense         kb.Retriever
-	sparse        kb.Retriever
-	cache         rag.SemanticCacheStore
-	jobs          ingest.JobStore
-	traceStore    raggraph.TraceStore
-	traceRepo     TraceRepository
-	datasetRepo   dataset.Repository
-	evalRepo      eval.Repository
-	optimizerRepo optimizer.Repository
-	pool          *pgxpool.Pool
-	qdrant        *qdrantstore.Client
-	closers       []func() error
+	store                kb.KnowledgeBaseRepository
+	indexer              kb.Indexer
+	dense                kb.Retriever
+	sparse               kb.Retriever
+	cache                rag.SemanticCacheStore
+	jobs                 ingest.JobStore
+	traceStore           raggraph.TraceStore
+	traceRepo            TraceRepository
+	datasetRepo          dataset.Repository
+	evalRepo             eval.Repository
+	optimizerRepo        optimizer.Repository
+	offlineKnowledgeRepo offlineknowledge.Repository
+	chunkSource          kb.ChunkSource
+	pool                 *pgxpool.Pool
+	qdrant               *qdrantstore.Client
+	closers              []func() error
 }
 
 type knowledgeBaseVectorDeleter interface {
@@ -350,17 +642,19 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			return knowledgeBackend{}, err
 		}
 		return knowledgeBackend{
-			store:         store,
-			indexer:       store,
-			dense:         kb.DenseRetriever{Store: store},
-			sparse:        kb.SparseRetriever{Store: store},
-			cache:         rag.NewSemanticCache(cfg.RAG.SemanticCacheMaxEntries),
-			jobs:          ingest.NewMemoryJobStore(),
-			traceStore:    traceRepo,
-			traceRepo:     traceRepo,
-			datasetRepo:   dataset.NewMemoryRepository(),
-			evalRepo:      eval.NewMemoryRepository(),
-			optimizerRepo: optimizer.NewMemoryRepository(),
+			store:                store,
+			indexer:              store,
+			dense:                kb.DenseRetriever{Store: store},
+			sparse:               kb.SparseRetriever{Store: store},
+			cache:                rag.NewSemanticCache(cfg.RAG.SemanticCacheMaxEntries),
+			jobs:                 ingest.NewMemoryJobStore(),
+			traceStore:           traceRepo,
+			traceRepo:            traceRepo,
+			datasetRepo:          dataset.NewMemoryRepository(),
+			evalRepo:             eval.NewMemoryRepository(),
+			optimizerRepo:        optimizer.NewMemoryRepository(),
+			offlineKnowledgeRepo: offlineknowledge.NewMemoryRepository(),
+			chunkSource:          store,
 		}, nil
 	}
 
@@ -403,19 +697,21 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 	indexer := kb.CompositeIndexer{Indexers: []kb.Indexer{repo, vectors}}
 	cache := qdrantstore.SemanticCache{Client: qdrantClient, Collection: cfg.Qdrant.SemanticCacheCollection, Threshold: cfg.RAG.SemanticCacheThreshold}
 	return knowledgeBackend{
-		store:         knowledgeBaseStore{primary: repo, vectorDeleter: vectors, semanticCacheDeleter: cache},
-		indexer:       indexer,
-		dense:         vectors,
-		sparse:        postgres.NewFTSRetriever(repo),
-		cache:         cache,
-		jobs:          repo,
-		traceStore:    repo,
-		traceRepo:     repo,
-		datasetRepo:   repo,
-		evalRepo:      repo,
-		optimizerRepo: repo,
-		pool:          pool,
-		qdrant:        qdrantClient,
+		store:                knowledgeBaseStore{primary: repo, vectorDeleter: vectors, semanticCacheDeleter: cache},
+		indexer:              indexer,
+		dense:                vectors,
+		sparse:               postgres.NewFTSRetriever(repo),
+		cache:                cache,
+		jobs:                 repo,
+		traceStore:           repo,
+		traceRepo:            repo,
+		datasetRepo:          repo,
+		evalRepo:             repo,
+		optimizerRepo:        repo,
+		offlineKnowledgeRepo: repo,
+		chunkSource:          repo,
+		pool:                 pool,
+		qdrant:               qdrantClient,
 		closers: []func() error{
 			qdrantClient.Conn.Close,
 			func() error {
@@ -529,6 +825,13 @@ func (a *App) Readiness(ctx context.Context) (map[string]ReadinessCheck, bool) {
 	}
 	checks["model_provider"] = ReadinessCheck{Status: a.modelProviderStatus()}
 	a.observeDependencyCheck("model_provider", checks["model_provider"].Status, 0)
+	for name, check := range a.offlineKnowledgeReadinessChecks() {
+		checks[name] = check
+		a.observeDependencyCheck(name, check.Status, 0)
+		if a.Config.Maintenance.OfflineKnowledgeOrganizer.Enabled && (check.Status == "unavailable" || check.Status == "error") {
+			ready = false
+		}
+	}
 	return checks, ready
 }
 
@@ -553,6 +856,38 @@ func (a *App) modelProviderStatus() string {
 		}
 	}
 	return "configured"
+}
+
+func (a *App) offlineKnowledgeReadinessChecks() map[string]ReadinessCheck {
+	organizer := a.Config.Maintenance.OfflineKnowledgeOrganizer
+	checks := map[string]ReadinessCheck{}
+	if a.OfflineKnowledge == nil {
+		checks["offline_knowledge.service"] = ReadinessCheck{Status: "error", Error: "not configured"}
+		return checks
+	}
+	checks["offline_knowledge.service"] = ReadinessCheck{Status: "ready"}
+	if !organizer.CodexEnabled {
+		checks["offline_knowledge.codex"] = ReadinessCheck{Status: "disabled"}
+	} else if strings.TrimSpace(organizer.CodexCommand) == "" && strings.TrimSpace(organizer.CodexEndpoint) == "" {
+		checks["offline_knowledge.codex"] = ReadinessCheck{Status: "unavailable", Error: offlineknowledge.ErrCodexUnavailable.Error()}
+	} else {
+		checks["offline_knowledge.codex"] = ReadinessCheck{Status: "configured"}
+	}
+	if !organizer.ConclusionJudgeEnabled {
+		checks["offline_knowledge.judge"] = ReadinessCheck{Status: "disabled"}
+	} else if a.modelProviderStatus() == "missing_credentials" {
+		checks["offline_knowledge.judge"] = ReadinessCheck{Status: "unavailable", Error: offlineknowledge.ErrConclusionUnavailable.Error()}
+	} else {
+		checks["offline_knowledge.judge"] = ReadinessCheck{Status: "configured"}
+	}
+	if !organizer.RegressionEvalEnabled {
+		checks["offline_knowledge.regression"] = ReadinessCheck{Status: "disabled"}
+	} else if a.RAG == nil || a.Datasets == nil {
+		checks["offline_knowledge.regression"] = ReadinessCheck{Status: "unavailable", Error: offlineknowledge.ErrRegressionUnavailable.Error()}
+	} else {
+		checks["offline_knowledge.regression"] = ReadinessCheck{Status: "configured"}
+	}
+	return checks
 }
 
 func (a *App) Close() error {
