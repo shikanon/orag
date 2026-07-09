@@ -580,7 +580,16 @@ POST /v1/evaluations
   "dataset_id": "ds_xxx",
   "knowledge_base_id": "kb_xxx",
   "profile": "realtime",
-  "top_k": 8
+  "top_k": 8,
+  "split": "holdout",
+  "scoped_shadow_item_id": "opt_xxx",
+  "holdout_gate": {
+    "enabled": true,
+    "min_sample_count": 1,
+    "min_weighted_sample_count": 1,
+    "quality_metric": "deterministic_answer_match",
+    "min_quality": 0.8
+  }
 }
 ```
 
@@ -596,11 +605,30 @@ POST /v1/evaluations
   "total": 1,
   "hit_rate": 1,
   "accuracy": 1,
+  "weighted_sample_count": 1,
+  "unweighted_sample_count": 1,
+  "split": "holdout",
+  "split_summary": {
+    "holdout": {
+      "unweighted_sample_count": 1,
+      "weighted_sample_count": 1
+    }
+  },
+  "holdout_gate": {
+    "enabled": true,
+    "passed": true,
+    "split": "holdout",
+    "quality_metric": "deterministic_answer_match",
+    "quality": 1,
+    "min_quality": 0.8,
+    "sample_count": 1,
+    "weighted_sample_count": 1
+  },
   "metrics": {
+    "deterministic_answer_match": 1,
     "answer_accuracy": 1,
     "accuracy": 1,
     "hit_rate": 1,
-    "pairwise_accuracy": 1,
     "citation_hit_rate": 1,
     "context_recall": 1,
     "citation_precision": 1,
@@ -622,11 +650,12 @@ POST /v1/evaluations
 }
 ```
 
-当前评估 runner 会对数据集中的每个样本调用同一条 `POST /v1/query` 背后的 RAG 查询链路，并计算运行级汇总指标。请求可选 `judge` 和 `qag` 配置；启用后会额外执行 LLM-as-Judge 或 QAG claim verification，并持久化 judge run、raw/parsed response、token usage 和 cost。
+当前评估 runner 会对数据集中的每个样本调用同一条 `POST /v1/query` 背后的 RAG 查询链路，并计算运行级汇总指标。请求可选 `split` 过滤 `train` / `eval` / `holdout` / `gold` 样本；样本 `weight` 会参与 answer、retrieval、citation、latency、cost、Judge 和 QAG 等可聚合指标。请求可选 `holdout_gate`，用于记录 holdout 质量门禁是否通过；`scoped_shadow_item_id` 只用于 offline regression 的候选路径约束。请求可选 `judge` 和 `qag` 配置；启用后会额外执行 LLM-as-Judge 或 QAG claim verification，并持久化 judge run、raw/parsed response、token usage 和 cost。
 
+- `deterministic_answer_match`：规则型答案命中指标，替代过去未执行 pairwise judge 时写入 `pairwise_accuracy` 的行为。
 - `answer_accuracy`：答案包含 `ground_truth` 中长度大于 3 的关键项时记为命中，citation 不会提升该指标。
-- `accuracy` / `hit_rate`：新运行中与 `answer_accuracy` 保持一致，作为兼容字段保留；历史已存运行可能没有 `answer_accuracy`、`citation_hit_rate` 或 `pairwise_accuracy`。
-- `pairwise_accuracy`：优化器主质量指标；未执行 pairwise judge 时由 `answer_accuracy` 填充，启用成对比较后表示候选在成对比较中的胜出或不输比例。
+- `accuracy` / `hit_rate`：新运行中与 `answer_accuracy` 保持一致，作为兼容字段保留；历史已存运行可能没有 `answer_accuracy`、`citation_hit_rate` 或 `deterministic_answer_match`。
+- `pairwise_accuracy`：仅表示真实 pairwise judge 的胜出或不输比例；历史已存运行可能仍包含规则型兼容值，新 rule-only 运行不再写入该字段。
 - `faithfulness`、`groundedness`、`citation_support`、`hallucination`、`completeness` 等 Judge 指标：仅当请求包含 `judge` 时产生，分数和理由会进入评估明细。
 - `qag_score`、`qag_claim_coverage`、`qag_question_count`、`qag_unverifiable_rate`：仅当请求包含 `qag` 时产生，用于基于 claim 的上下文支撑验证。
 - `citation_hit_rate`：响应存在至少一个 citation 时记为 `1`，用于单独观察证据存在性。
@@ -636,10 +665,12 @@ POST /v1/evaluations
 - `coverage` / `retrieval_failure_rate`：基于 `relevant_doc_ids` 判断是否至少召回一个相关文档；未标注时不会报失败。
 - `redundancy_rate` / `duplicate_count` / `deduped_top_k_count`：基于 chunk ID、hash/dedupe key 或规范化文本判断重复召回，不依赖人工标注。
 - `alpha_ndcg` / `aspect_coverage`：基于 `diversity_annotations` 的多样性指标；缺少有效 aspect/subquestion 标注时跳过，不参与运行级聚合。
-- `latency_p95_ms`：样本查询延迟的 p95。
+- `weighted_sample_count` / `unweighted_sample_count`：分别表示参与本次运行的样本权重总和与样本条数；`split_summary` 返回各 split 的样本统计。
+- `holdout_gate`：当请求启用门禁时返回 `passed`、失败 `reasons`、质量指标、样本数和阈值；缺失 split、样本不足或质量低于阈值都会失败。
+- `latency_p95_ms`：样本查询延迟的加权 p95。
 - `cache_hit_rate`：查询响应中 `cache_status=hit` 的比例。
 
-`pairwise_accuracy` 是候选排序的主指标，`accuracy` 和 `hit_rate` 保留用于向后兼容。复杂召回策略如更大的 `top_k`、高精度 profile、融合召回或 rerank 可能提升 `pairwise_accuracy`、`ndcg_at_k`、`recall_at_k`，但也可能提高 `latency_p95_ms`；线上调参时建议先按 `pairwise_accuracy` 选候选，再用 `latency_p95_ms` 约束尾延迟是否满足业务 SLO。
+`deterministic_answer_match` 是未启用真实 pairwise judge 时的默认规则排序信号，`pairwise_accuracy` 只用于真实成对评审或读取历史兼容结果。复杂召回策略如更大的 `top_k`、高精度 profile、融合召回或 rerank 可能提升 `deterministic_answer_match`、`pairwise_accuracy`、`ndcg_at_k`、`recall_at_k`，但也可能提高 `latency_p95_ms`；线上调参时建议明确配置 `objective.maximize`，再用 `latency_p95_ms` 约束尾延迟是否满足业务 SLO。
 
 ### 查询评估结果
 
@@ -667,7 +698,7 @@ POST /v1/optimizations
   "knowledge_base_id": "kb_xxx",
   "profile": "realtime",
   "objective": {
-    "maximize": "pairwise_accuracy",
+    "maximize": "deterministic_answer_match",
     "constraints": [
       {"expression": "latency_p95_ms <= 1000"}
     ],

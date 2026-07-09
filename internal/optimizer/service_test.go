@@ -3,6 +3,7 @@ package optimizer
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -61,6 +62,93 @@ func TestServiceSubmitRunsAsyncAndEvaluatesHoldout(t *testing.T) {
 	}
 	if runner.saw(loserID, PhaseHoldout, "holdout") {
 		t.Fatalf("runner calls = %#v, holdout must not run for losing candidate", runner.calls)
+	}
+}
+
+func TestServiceBlocksPromotionWhenHoldoutGateFailsQuality(t *testing.T) {
+	repo := newMemoryOptimizationRepository()
+	runner := &recordingCandidateRunner{
+		metrics: func(req CandidateRunRequest) map[string]float64 {
+			if req.Phase == PhaseHoldout {
+				return map[string]float64{
+					"pairwise_accuracy":       0.7,
+					"unweighted_sample_count": 2,
+					"weighted_sample_count":   2,
+					"missing_split":           0,
+					"cost_usd":                0.1,
+				}
+			}
+			if req.Candidate.Retrieval.DenseTopK == 2 {
+				return map[string]float64{"pairwise_accuracy": 0.9, "cost_usd": 0.1}
+			}
+			return map[string]float64{"pairwise_accuracy": 0.7, "cost_usd": 0.1}
+		},
+	}
+	service := &Service{Repository: repo, Runner: runner, DisableAutoStart: true}
+	req := basicSubmitRequest()
+	req.HoldoutGate = eval.HoldoutGateConfig{
+		Enabled:        true,
+		MinSampleCount: 2,
+		QualityMetric:  "pairwise_accuracy",
+		MinQuality:     0.8,
+	}
+
+	run, err := service.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	err = service.RunPending(context.Background(), "tenant_a", run.ID, req)
+	if !apperrors.IsCode(err, apperrors.CodeValidation) || !strings.Contains(err.Error(), eval.HoldoutGateReasonQualityBelowMin) {
+		t.Fatalf("RunPending() error = %v, want holdout gate quality validation", err)
+	}
+	status, ok, err := service.Get(context.Background(), "tenant_a", run.ID)
+	if err != nil || !ok {
+		t.Fatalf("Get() = ok %v error %v", ok, err)
+	}
+	if status.Run.Status != RunStatusFailed || status.Run.HoldoutGate.Passed {
+		t.Fatalf("run = %#v, want failed with failed holdout gate", status.Run)
+	}
+	best := candidateWithDenseTopK(status.Candidates, 2)
+	if best.Status == CandidateStatusPromoted || status.Run.HoldoutCandidateID != "" {
+		t.Fatalf("best status=%q holdout_candidate=%q, want promotion blocked", best.Status, status.Run.HoldoutCandidateID)
+	}
+	if !runner.saw(best.ID, PhaseHoldout, "holdout") {
+		t.Fatalf("runner calls = %#v, want holdout evaluation before block", runner.calls)
+	}
+}
+
+func TestServiceDefaultObjectiveUsesDeterministicFallback(t *testing.T) {
+	repo := newMemoryOptimizationRepository()
+	runner := &recordingCandidateRunner{
+		metrics: func(req CandidateRunRequest) map[string]float64 {
+			if req.Candidate.Retrieval.DenseTopK == 2 {
+				return map[string]float64{eval.PrimaryMetricDeterministicAnswerMatch: 0.9, "cost_usd": 0.1}
+			}
+			return map[string]float64{eval.PrimaryMetricDeterministicAnswerMatch: 0.7, "cost_usd": 0.1}
+		},
+	}
+	service := &Service{Repository: repo, Runner: runner, DisableAutoStart: true}
+	req := basicSubmitRequest()
+	req.Objective = ObjectiveSpec{}
+	req.HoldoutSplit = ""
+
+	run, err := service.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	if err := service.RunPending(context.Background(), "tenant_a", run.ID, req); err != nil {
+		t.Fatalf("RunPending() error = %v", err)
+	}
+	status, ok, err := service.Get(context.Background(), "tenant_a", run.ID)
+	if err != nil || !ok {
+		t.Fatalf("Get() = ok %v error %v", ok, err)
+	}
+	best := candidateWithDenseTopK(status.Candidates, 2)
+	if status.Run.BestCandidateID != best.ID || best.ObjectiveScore != 0.9 {
+		t.Fatalf("best = %q score=%v, want dense_top_k=2 deterministic fallback", status.Run.BestCandidateID, best.ObjectiveScore)
+	}
+	if _, ok := best.Confidence["pairwise_win_rate"]; ok {
+		t.Fatalf("confidence = %#v, fallback run must not write pairwise win-rate", best.Confidence)
 	}
 }
 
@@ -663,6 +751,7 @@ type recordingCandidateRunner struct {
 	blockOnFirst chan struct{}
 	releaseFirst chan struct{}
 	afterCall    func(CandidateRunRequest)
+	metrics      func(CandidateRunRequest) map[string]float64
 }
 
 func (r *recordingCandidateRunner) RunCandidate(ctx context.Context, req CandidateRunRequest) (CandidateRunResult, error) {
@@ -694,6 +783,9 @@ func (r *recordingCandidateRunner) RunCandidate(ctx context.Context, req Candida
 		r.afterCall(req)
 	}
 	metrics := metricsForRequest(req)
+	if r.metrics != nil {
+		metrics = r.metrics(req)
+	}
 	return CandidateRunResult{
 		CandidateID:   req.Candidate.ID,
 		EvaluationRun: eval.RunResult{ID: "eval_" + req.Candidate.ID + "_" + req.Phase, Metrics: metrics},

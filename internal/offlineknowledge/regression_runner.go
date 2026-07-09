@@ -28,6 +28,8 @@ type EvalRegressionRunnerOptions struct {
 	BaselineProfile         rag.Profile
 	WithOptimizationProfile rag.Profile
 	TopK                    int
+	HoldoutSplit            dataset.DatasetSplit
+	HoldoutGate             eval.HoldoutGateConfig
 	Judge                   *eval.JudgeConfig
 	QAG                     *eval.JudgeConfig
 }
@@ -40,6 +42,8 @@ type EvalRegressionRunner struct {
 	baselineProfile         rag.Profile
 	withOptimizationProfile rag.Profile
 	topK                    int
+	holdoutSplit            dataset.DatasetSplit
+	holdoutGate             eval.HoldoutGateConfig
 	judge                   *eval.JudgeConfig
 	qag                     *eval.JudgeConfig
 }
@@ -53,6 +57,8 @@ func NewEvalRegressionRunner(opts EvalRegressionRunnerOptions) RegressionRunner 
 		baselineProfile:         opts.BaselineProfile,
 		withOptimizationProfile: opts.WithOptimizationProfile,
 		topK:                    opts.TopK,
+		holdoutSplit:            opts.HoldoutSplit,
+		holdoutGate:             opts.HoldoutGate,
 		judge:                   cloneJudgeConfig(opts.Judge),
 		qag:                     cloneJudgeConfig(opts.QAG),
 	}
@@ -91,7 +97,9 @@ func (r *EvalRegressionRunner) RunRegression(ctx context.Context, request Regres
 		QAG:             cloneJudgeConfig(r.qag),
 	}
 	withReq := baselineReq
-	withReq.Profile = defaultProfile(r.withOptimizationProfile, rag.ProfileHighPrecision)
+	withReq.Profile = defaultProfile(r.withOptimizationProfile, baselineReq.Profile)
+	scopedItemID := regressionScopedItemID(request)
+	withReq.ScopedShadowItemID = scopedItemID
 
 	baseline, err := r.baseline.Run(ctx, baselineReq)
 	if err != nil {
@@ -101,8 +109,24 @@ func (r *EvalRegressionRunner) RunRegression(ctx context.Context, request Regres
 	if err != nil {
 		return RegressionResult{}, err
 	}
+	holdoutGate := eval.HoldoutGateResult{}
+	gateConfig := regressionHoldoutGate(request, r.holdoutGate)
+	if gateConfig.Enabled {
+		holdoutReq := withReq
+		holdoutReq.Split = regressionHoldoutSplit(r.holdoutSplit)
+		holdoutReq.HoldoutGate = &gateConfig
+		holdout, err := r.optimized.Run(ctx, holdoutReq)
+		if err != nil {
+			return RegressionResult{}, err
+		}
+		holdoutGate = holdout.HoldoutGate
+		if !holdoutGate.Enabled {
+			holdoutGate = eval.EvaluateHoldoutGate(holdout, gateConfig)
+		}
+	}
 
 	fullDatasetUsed := baseline.Total == len(items) && withOptimization.Total == len(items)
+	profileNeutrality := profileNeutralityMetadata(baselineReq.Profile, withReq.Profile)
 	result := RegressionResult{
 		RecallLift:           metric(withOptimization, "recall_at_k", "context_recall") - metric(baseline, "recall_at_k", "context_recall"),
 		AnswerQualityLift:    metric(withOptimization, "answer_accuracy", "accuracy", eval.PrimaryMetricPairwiseAccuracy) - metric(baseline, "answer_accuracy", "accuracy", eval.PrimaryMetricPairwiseAccuracy),
@@ -112,9 +136,22 @@ func (r *EvalRegressionRunner) RunRegression(ctx context.Context, request Regres
 		HallucinationRisk:    hallucinationRisk(withOptimization),
 		FullDatasetUsed:      fullDatasetUsed,
 		Passed:               true,
+		ScopedItemID:         scopedItemID,
+		ProfileNeutrality:    profileNeutrality,
+		HoldoutGate:          holdoutGate,
+	}
+	if !profileNeutrality.SameProfile {
+		result.ProfileExperiment = &ProfileExperimentMetadata{
+			Enabled:          true,
+			BaselineProfile:  string(baselineReq.Profile),
+			CandidateProfile: string(withReq.Profile),
+		}
 	}
 	result.LatencyDelta = durationFromMS(result.LatencyDeltaMS)
 	if request.FullDatasetRequired && !fullDatasetUsed {
+		result.Passed = false
+	}
+	if gateConfig.Enabled && !holdoutGate.Passed {
 		result.Passed = false
 	}
 	return result, nil
@@ -150,6 +187,37 @@ func defaultProfile(value, fallback rag.Profile) rag.Profile {
 		return value
 	}
 	return fallback
+}
+
+func regressionScopedItemID(request RegressionRequest) string {
+	if strings.TrimSpace(request.ItemID) != "" {
+		return request.ItemID
+	}
+	return request.Item.ID
+}
+
+func profileNeutralityMetadata(baseline, candidate rag.Profile) ProfileNeutralityMetadata {
+	same := baseline == candidate
+	return ProfileNeutralityMetadata{
+		BaselineProfile:      string(baseline),
+		CandidateProfile:     string(candidate),
+		SameProfile:          same,
+		OptimizationLiftOnly: same,
+	}
+}
+
+func regressionHoldoutGate(request RegressionRequest, fallback eval.HoldoutGateConfig) eval.HoldoutGateConfig {
+	if request.HoldoutGate.Enabled {
+		return request.HoldoutGate
+	}
+	return fallback
+}
+
+func regressionHoldoutSplit(split dataset.DatasetSplit) dataset.DatasetSplit {
+	if split != "" {
+		return split
+	}
+	return dataset.DatasetSplitHoldout
 }
 
 func cloneJudgeConfig(in *eval.JudgeConfig) *eval.JudgeConfig {

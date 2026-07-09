@@ -204,7 +204,8 @@ func TestBuildOfflineKnowledgeOptionsWiresRealRegressionRunnerWhenEnabled(t *tes
 	evalRepo := eval.NewMemoryRepository()
 	cfg := offlineKnowledgeAppConfig(true)
 	cfg.Maintenance.OfflineKnowledgeOrganizer.RegressionDatasetID = "ds_regression"
-	ragSvc := &rag.Service{Pipeline: appRegressionPipeline{}}
+	pipeline := &appRecordingRegressionPipeline{}
+	ragSvc := &rag.Service{Pipeline: pipeline}
 	opts := buildOfflineKnowledgeOptions(cfg, knowledgeBackend{
 		store:                kb.NewMemoryStore(),
 		offlineKnowledgeRepo: offlineknowledge.NewMemoryRepository(),
@@ -228,6 +229,18 @@ func TestBuildOfflineKnowledgeOptionsWiresRealRegressionRunnerWhenEnabled(t *tes
 	}
 	if !result.Passed || !result.FullDatasetUsed {
 		t.Fatalf("regression result = %#v, want passed with full dataset", result)
+	}
+	if len(pipeline.requests) != 2 {
+		t.Fatalf("pipeline requests = %d, want baseline and candidate", len(pipeline.requests))
+	}
+	if pipeline.requests[0].Profile != rag.ProfileRealtime || pipeline.requests[1].Profile != rag.ProfileRealtime {
+		t.Fatalf("pipeline profiles = %q/%q, want same realtime", pipeline.requests[0].Profile, pipeline.requests[1].Profile)
+	}
+	if pipeline.requests[0].ScopedShadowItemID != "" || pipeline.requests[1].ScopedShadowItemID != "item_regression_app" {
+		t.Fatalf("pipeline scoped ids = %q/%q, want empty/current item", pipeline.requests[0].ScopedShadowItemID, pipeline.requests[1].ScopedShadowItemID)
+	}
+	if !result.ProfileNeutrality.SameProfile || !result.ProfileNeutrality.OptimizationLiftOnly {
+		t.Fatalf("profile neutrality = %#v, want neutral optimization lift", result.ProfileNeutrality)
 	}
 	if _, found, err := evalRepo.GetEvaluationDetail(ctx, "tenant_1", "missing", eval.EvaluationDetailOptions{}); err != nil || found {
 		t.Fatalf("unexpected eval repo behavior found=%v err=%v", found, err)
@@ -609,4 +622,13 @@ func (appRegressionPipeline) Invoke(_ context.Context, req rag.QueryRequest) (ra
 		TraceID:   req.TraceID,
 		LatencyMS: 5,
 	}, nil
+}
+
+type appRecordingRegressionPipeline struct {
+	requests []rag.QueryRequest
+}
+
+func (p *appRecordingRegressionPipeline) Invoke(ctx context.Context, req rag.QueryRequest) (rag.QueryResponse, error) {
+	p.requests = append(p.requests, req)
+	return appRegressionPipeline{}.Invoke(ctx, req)
 }

@@ -19,6 +19,7 @@ type ShadowRetrieveRequest struct {
 	TraceID                    string
 	Limit                      int
 	Inject                     bool
+	ScopedItemID               string
 	AllowLowConfidenceFallback bool
 }
 
@@ -73,6 +74,13 @@ type ShadowRetriever struct {
 	dropMetric        ShadowDropMetric
 	hitMetric         ShadowHitMetric
 }
+
+var (
+	ErrScopedShadowItemMissing  = errors.New("offline knowledge scoped shadow item missing")
+	ErrScopedShadowItemDisabled = errors.New("offline knowledge scoped shadow item disabled")
+	ErrScopedShadowItemStale    = errors.New("offline knowledge scoped shadow item stale")
+	ErrScopedShadowItemMismatch = errors.New("offline knowledge scoped shadow item source mismatch")
+)
 
 func NewShadowRetriever(repo Repository, opts ShadowRetrieverOptions) *ShadowRetriever {
 	now := opts.Now
@@ -170,6 +178,22 @@ func (r *ShadowRetriever) RecordShadowEvent(ctx context.Context, event ShadowRet
 }
 
 func (r *ShadowRetriever) listEligibleItems(ctx context.Context, request ShadowRetrieveRequest) ([]OptimizationItem, error) {
+	if strings.TrimSpace(request.ScopedItemID) != "" {
+		item, found, err := r.repo.GetOptimizationItem(ctx, request.TenantID, request.ScopedItemID)
+		if err != nil {
+			return nil, err
+		}
+		if !found || normalizeOptionalKBID(item.KBID) != normalizeOptionalKBID(request.KBID) {
+			return nil, ErrScopedShadowItemMissing
+		}
+		if item.Status == ItemStatusStale || item.Status == ItemStatusDeprecated {
+			return nil, ErrScopedShadowItemStale
+		}
+		if !shadowStatusEligible(item.Status) {
+			return nil, ErrScopedShadowItemDisabled
+		}
+		return []OptimizationItem{item}, nil
+	}
 	statuses := []ItemStatus{
 		ItemStatusVerified,
 		ItemStatusShadowEnabled,
@@ -189,6 +213,13 @@ func (r *ShadowRetriever) listEligibleItems(ctx context.Context, request ShadowR
 		out = append(out, items...)
 	}
 	return out, nil
+}
+
+func shadowStatusEligible(status ItemStatus) bool {
+	return status == ItemStatusVerified ||
+		status == ItemStatusShadowEnabled ||
+		status == ItemStatusRegressionPassed ||
+		status == ItemStatusPublished
 }
 
 func (r *ShadowRetriever) shouldSampleEvent() bool {

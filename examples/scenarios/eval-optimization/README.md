@@ -6,7 +6,7 @@ Product, platform, and ML quality teams use ORAG evaluation results to compare r
 
 ## Why Use ORAG
 
-Use ORAG evaluation when retrieval quality needs repeatable metrics instead of one-off manual inspection.
+Use ORAG evaluation when retrieval quality needs repeatable metrics instead of one-off manual inspection. Evaluation results expose split-aware and weight-aware aggregates, holdout gates, deterministic answer matching, and real pairwise judge metrics when available.
 
 ## When To Use It
 

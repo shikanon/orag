@@ -391,3 +391,20 @@
 ### Task 18 结论
 - Task 18 已完成远程分支提交、PR 创建、CI 检查、PR 合并、本地 `main` 同步和最终状态复核。
 - `resolve-github-issues` 规格的第二轮 issue 收口、PR 合并和本地同步闭环已完成。
+
+## Round 3
+
+- 完成第二轮开放 issue 审计、重复/已实现项验证关闭、Task 13-16 修复、Task 17 最终验证和 Task 18 PR 合并交付。
+- 修复并验证查询必填字段与 `top_k` 传递、Docker 容器默认依赖地址、optimizer 候选 clone/取消/预算终态、optimizer candidate semantic cache namespace 隔离。
+- 关键决策：将已实现历史功能 issue 与重复 KB/cache issue 先验证关闭，将仍需修复的查询、Docker、optimizer、cache 问题合并到 PR #160，使用 go1.26.4 local toolchain 完成 `GOTOOLCHAIN=local` 验证。
+- 文件变更包括 `deployments/docker-compose.yml`、`docs/operations*`、`docs/development.md`、`internal/kb`、`internal/optimizer`、`internal/rag`、`internal/storage/qdrant`、`tests/contract/docker_compose_test.go` 和 `.trae/specs/resolve-github-issues/*`。
+
+## Round 2
+
+- **裁定**: PASS
+- **复核范围**: 第二轮 GitHub issue 收口、PR #160 合并状态、本地/远程 `main` 同步、查询参数与 `top_k`、Docker Compose 默认配置、optimizer 取消/预算/candidate pipeline、semantic cache candidate namespace、契约测试与集成测试入口。
+- **验证结果**:
+  - Build/Runtime: PASS；`go version` 为 `go1.26.4 darwin/amd64`；本地 `main` 与 `origin/main` 均为 `9944837d10c13da7ebdd2d5965519fc2c37f68af`；`go build ./...`、`go vet ./...` 均退出码 `0`；`gh pr view 160` 确认为 `MERGED`，merge commit 为 `74c28d9790b04ec2f8efcab6291ff81dff81acd3`。
+  - Tests/Coverage: PASS；`CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./... -count=1`、`go test ./tests/contract -v -count=1`、Task 13-16 对抗性聚焦用例、`go test ./tests/integration -v -count=1` 均退出码 `0`；集成测试在未设置 `ORAG_INTEGRATION_TESTS=1` 时按设计跳过外部 PostgreSQL/Qdrant 用例。
+  - Checklist audit: 32/32 passed, 0 failed；`checklist.md` 无未勾选项；`gh issue list --state open` 输出 `0`；目标 issue #115-#124、#129、#130、#142、#146、#147、#155-#157 的 closed 复查计数为 `18`；`docker compose config` 显示默认依赖为 `postgres`、`qdrant`、`6334`。
+- **风险与问题**: 未发现本轮范围内阻塞问题；剩余风险为真实 PostgreSQL/Qdrant 集成服务未在本轮启动，外部依赖集成用例仅验证了 skip 入口语义。

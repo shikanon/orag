@@ -26,12 +26,14 @@ type CandidateRunRequest struct {
 	NamespaceTTL    time.Duration
 	Phase           string
 	Split           string
+	HoldoutGate     *eval.HoldoutGateConfig
 }
 
 type CandidateRunResult struct {
 	CandidateID    string
 	EvaluationRun  eval.RunResult
 	Metrics        map[string]float64
+	HoldoutGate    eval.HoldoutGateResult
 	TempNamespaces []TempNamespace
 	CleanupStatus  CleanupStatus
 }

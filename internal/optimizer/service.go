@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"time"
 
+	"github.com/shikanon/orag/internal/dataset"
+	"github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
@@ -42,6 +45,7 @@ type OptimizationRun struct {
 	StatusReason            string
 	BestCandidateID         string
 	HoldoutCandidateID      string
+	HoldoutGate             eval.HoldoutGateResult
 	SamplingStrategy        SearchStrategy
 	SearchSpaceSize         int64
 	SampledCandidateCount   int
@@ -64,6 +68,7 @@ type OptimizationCandidate struct {
 	JudgeRunID        string
 	ObjectiveScore    float64
 	HoldoutScore      *float64
+	HoldoutGate       eval.HoldoutGateResult
 	Confidence        map[string]float64
 	Metrics           map[string]float64
 	TokenUsage        TokenUsage
@@ -108,6 +113,7 @@ type SubmitRequest struct {
 	NamespaceTTL    time.Duration
 	SelectionSplit  string
 	HoldoutSplit    string
+	HoldoutGate     eval.HoldoutGateConfig
 	Runner          map[string]any
 }
 
@@ -332,6 +338,7 @@ func (s *Service) runCandidate(ctx context.Context, run *OptimizationRun, candid
 		NamespaceTTL:    req.NamespaceTTL,
 		Phase:           phase,
 		Split:           split,
+		HoldoutGate:     holdoutGateForPhase(req, phase),
 	})
 	if err != nil {
 		candidate.Error = err.Error()
@@ -340,6 +347,7 @@ func (s *Service) runCandidate(ctx context.Context, run *OptimizationRun, candid
 	}
 	candidate.EvaluationRunID = result.EvaluationRun.ID
 	candidate.Metrics = cloneMetrics(result.Metrics)
+	candidate.HoldoutGate = result.HoldoutGate
 	if candidate.Metrics == nil {
 		candidate.Metrics = map[string]float64{}
 	}
@@ -375,6 +383,9 @@ func (s *Service) runCandidate(ctx context.Context, run *OptimizationRun, candid
 }
 
 func (s *Service) scoreAndPromote(ctx context.Context, run *OptimizationRun, req SubmitRequest) error {
+	if req.HoldoutGate.Enabled && strings.TrimSpace(req.HoldoutSplit) == "" {
+		return apperrors.New(apperrors.CodeValidation, "holdout gate failed: missing_split")
+	}
 	candidates, err := s.repo().ListOptimizationCandidates(ctx, run.TenantID, run.ID)
 	if err != nil {
 		return err
@@ -395,12 +406,17 @@ func (s *Service) scoreAndPromote(ctx context.Context, run *OptimizationRun, req
 	for _, score := range result.Candidates {
 		candidate := byID[score.ID]
 		candidate.ObjectiveScore = score.Score
-		candidate.Confidence = map[string]float64{"pairwise_win_rate": score.PairwiseWinRate}
+		candidate.Confidence = map[string]float64{}
+		if score.HasPairwiseOutcomes {
+			candidate.Confidence["pairwise_win_rate"] = score.PairwiseWinRate
+		}
 		status := CandidateStatusScored
 		if score.ID == result.Best.ID {
-			status = CandidateStatusPromoted
 			run.BestCandidateID = score.ID
 			run.Checkpoint.BestCandidateID = score.ID
+			if req.HoldoutSplit == "" {
+				status = CandidateStatusPromoted
+			}
 		}
 		if err := s.transitionCandidate(ctx, &candidate, status, score.Metrics); err != nil {
 			return err
@@ -422,14 +438,26 @@ func (s *Service) runHoldout(ctx context.Context, run *OptimizationRun, req Subm
 		if err := s.runCandidate(ctx, run, &candidate, req, PhaseHoldout, req.HoldoutSplit); err != nil {
 			return err
 		}
-		score := candidate.Metrics[req.Objective.Maximize]
-		if req.Objective.Maximize == "" {
-			score = candidate.Metrics["pairwise_accuracy"]
+		scoreMetric := strings.TrimSpace(req.Objective.Maximize)
+		if scoreMetric == "" {
+			scoreMetric = defaultObjectiveMetric([]CandidateInput{{ID: candidate.ID, Metrics: candidate.Metrics}})
 		}
+		score := candidate.Metrics[scoreMetric]
 		candidate.HoldoutScore = &score
+		candidate.HoldoutGate = holdoutGateFromCandidate(candidate, req)
+		if !candidate.HoldoutGate.Passed {
+			run.HoldoutGate = candidate.HoldoutGate
+			run.Checkpoint.StatusReason = holdoutGateFailureMessage(candidate.HoldoutGate)
+			_ = s.repo().UpdateOptimizationRun(ctx, *run)
+			return apperrors.New(apperrors.CodeValidation, run.Checkpoint.StatusReason)
+		}
 		run.HoldoutCandidateID = candidate.ID
 		run.Checkpoint.HoldoutCandidateID = candidate.ID
+		run.HoldoutGate = candidate.HoldoutGate
 		if err := s.transitionCandidate(ctx, &candidate, CandidateStatusHoldoutEvaluated, nil); err != nil {
+			return err
+		}
+		if err := s.transitionCandidate(ctx, &candidate, CandidateStatusPromoted, nil); err != nil {
 			return err
 		}
 		if err := s.cleanupCandidate(ctx, &candidate); err != nil {
@@ -578,6 +606,38 @@ func selectionSplit(req SubmitRequest) string {
 	return "eval"
 }
 
+func holdoutGateForPhase(req SubmitRequest, phase string) *eval.HoldoutGateConfig {
+	if phase != PhaseHoldout || !req.HoldoutGate.Enabled {
+		return nil
+	}
+	cfg := req.HoldoutGate
+	return &cfg
+}
+
+func holdoutGateFromCandidate(candidate OptimizationCandidate, req SubmitRequest) eval.HoldoutGateResult {
+	if candidate.HoldoutGate.Enabled {
+		return candidate.HoldoutGate
+	}
+	if !req.HoldoutGate.Enabled {
+		return eval.HoldoutGateResult{Passed: true}
+	}
+	return eval.EvaluateHoldoutGate(eval.RunResult{
+		Total:                 int(candidate.Metrics["unweighted_sample_count"]),
+		Metrics:               candidate.Metrics,
+		Split:                 dataset.DatasetSplit(req.HoldoutSplit),
+		UnweightedSampleCount: int(candidate.Metrics["unweighted_sample_count"]),
+		WeightedSampleCount:   candidate.Metrics["weighted_sample_count"],
+		MissingSplit:          candidate.Metrics["missing_split"] > 0,
+	}, req.HoldoutGate)
+}
+
+func holdoutGateFailureMessage(gate eval.HoldoutGateResult) string {
+	if len(gate.Reasons) == 0 {
+		return "holdout gate failed"
+	}
+	return "holdout gate failed: " + strings.Join(gate.Reasons, ",")
+}
+
 func costBudget(req SubmitRequest) *float64 {
 	if req.Budget.MaxCostUSD > 0 {
 		v := req.Budget.MaxCostUSD
@@ -633,6 +693,9 @@ func changedResumeConfigField(stored, requested RunConfig) string {
 	}
 	if stored.HoldoutSplit != requested.HoldoutSplit {
 		return "holdout_split"
+	}
+	if !reflect.DeepEqual(stored.HoldoutGate, requested.HoldoutGate) {
+		return "holdout_gate"
 	}
 	return ""
 }

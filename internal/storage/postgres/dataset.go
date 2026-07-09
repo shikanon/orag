@@ -98,6 +98,42 @@ func (r *Repository) DatasetItems(ctx context.Context, tenantID, datasetID strin
 	return out, rows.Err()
 }
 
+func (r *Repository) DatasetItemsBySplit(ctx context.Context, tenantID, datasetID string, split dataset.DatasetSplit) ([]dataset.Item, error) {
+	split = dataset.NormalizeSplit(split)
+	if split == "" {
+		return r.DatasetItems(ctx, tenantID, datasetID)
+	}
+	if _, ok, err := r.GetDataset(ctx, tenantID, datasetID); err != nil {
+		return nil, err
+	} else if !ok {
+		return nil, dataset.ErrDatasetNotFound
+	}
+	rows, err := r.datasetDB().Query(ctx, `
+		SELECT i.id, i.dataset_id, i.query, i.ground_truth, i.relevant_doc_ids, i.diversity_annotations, i.split, i.weight, i.expected_evidence, i.human_scores
+		FROM dataset_items i
+		JOIN datasets d ON d.id=i.dataset_id
+		WHERE d.tenant_id=$1 AND i.dataset_id=$2 AND COALESCE(NULLIF(i.split, ''), 'eval')=$3
+		ORDER BY i.id`, tenantID, datasetID, split)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []dataset.Item
+	for rows.Next() {
+		var item dataset.Item
+		var relevant, diversity, expectedEvidence, humanScores []byte
+		if err := rows.Scan(&item.ID, &item.DatasetID, &item.Query, &item.GroundTruth, &relevant, &diversity, &item.Split, &item.Weight, &expectedEvidence, &humanScores); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal(relevant, &item.RelevantDocIDs)
+		_ = json.Unmarshal(diversity, &item.DiversityAnnotations)
+		_ = json.Unmarshal(expectedEvidence, &item.ExpectedEvidence)
+		_ = json.Unmarshal(humanScores, &item.HumanScores)
+		out = append(out, dataset.NormalizeItemMetadata(item))
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) datasetDB() datasetQueryer {
 	if r.datasetRunner != nil {
 		return r.datasetRunner

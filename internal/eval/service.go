@@ -34,24 +34,39 @@ type Repository interface {
 }
 
 type RunRequest struct {
-	TenantID        string       `json:"-"`
-	DatasetID       string       `json:"dataset_id"`
-	KnowledgeBaseID string       `json:"knowledge_base_id"`
-	Profile         rag.Profile  `json:"profile"`
-	TopK            int          `json:"top_k,omitempty"`
-	Judge           *JudgeConfig `json:"judge,omitempty"`
-	QAG             *JudgeConfig `json:"qag,omitempty"`
+	TenantID           string               `json:"-"`
+	DatasetID          string               `json:"dataset_id"`
+	KnowledgeBaseID    string               `json:"knowledge_base_id"`
+	Profile            rag.Profile          `json:"profile"`
+	TopK               int                  `json:"top_k,omitempty"`
+	ScopedShadowItemID string               `json:"scoped_shadow_item_id,omitempty"`
+	Split              dataset.DatasetSplit `json:"split,omitempty"`
+	HoldoutGate        *HoldoutGateConfig   `json:"holdout_gate,omitempty"`
+	Judge              *JudgeConfig         `json:"judge,omitempty"`
+	QAG                *JudgeConfig         `json:"qag,omitempty"`
+	Pairwise           *JudgeConfig         `json:"pairwise,omitempty"`
 }
 
 type RunResult struct {
-	ID        string             `json:"id"`
-	DatasetID string             `json:"dataset_id"`
-	Profile   string             `json:"profile"`
-	Total     int                `json:"total"`
-	HitRate   float64            `json:"hit_rate"`
-	Accuracy  float64            `json:"accuracy"`
-	Metrics   map[string]float64 `json:"metrics,omitempty"`
-	CreatedAt time.Time          `json:"created_at"`
+	ID                    string                  `json:"id"`
+	DatasetID             string                  `json:"dataset_id"`
+	Profile               string                  `json:"profile"`
+	Total                 int                     `json:"total"`
+	HitRate               float64                 `json:"hit_rate"`
+	Accuracy              float64                 `json:"accuracy"`
+	WeightedSampleCount   float64                 `json:"weighted_sample_count,omitempty"`
+	UnweightedSampleCount int                     `json:"unweighted_sample_count,omitempty"`
+	Split                 dataset.DatasetSplit    `json:"split,omitempty"`
+	SplitSummary          map[string]SplitSummary `json:"split_summary,omitempty"`
+	MissingSplit          bool                    `json:"missing_split,omitempty"`
+	HoldoutGate           HoldoutGateResult       `json:"holdout_gate,omitempty"`
+	Metrics               map[string]float64      `json:"metrics,omitempty"`
+	CreatedAt             time.Time               `json:"created_at"`
+}
+
+type SplitSummary struct {
+	UnweightedSampleCount int     `json:"unweighted_sample_count"`
+	WeightedSampleCount   float64 `json:"weighted_sample_count"`
 }
 
 type EvaluationDetailOptions struct {
@@ -140,7 +155,10 @@ type JudgeCalibrationRunRecord struct {
 	CreatedAt         time.Time          `json:"created_at"`
 }
 
-const PrimaryMetricPairwiseAccuracy = "pairwise_accuracy"
+const (
+	PrimaryMetricDeterministicAnswerMatch = "deterministic_answer_match"
+	PrimaryMetricPairwiseAccuracy         = "pairwise_accuracy"
+)
 
 func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if strings.TrimSpace(req.DatasetID) == "" {
@@ -154,21 +172,59 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	} else if !ok {
 		return RunResult{}, apperrors.Wrap(apperrors.CodeNotFound, "dataset not found", dataset.ErrDatasetNotFound)
 	}
-	items, err := r.Datasets.Items(ctx, req.TenantID, req.DatasetID)
+	allItems, err := r.Datasets.Items(ctx, req.TenantID, req.DatasetID)
 	if err != nil {
 		if errors.Is(err, dataset.ErrDatasetNotFound) {
 			return RunResult{}, apperrors.Wrap(apperrors.CodeNotFound, "dataset not found", err)
 		}
 		return RunResult{}, err
 	}
+	splitSummary := summarizeSplits(allItems)
+	items := allItems
+	requestedSplit := dataset.NormalizeSplit(req.Split)
+	if requestedSplit != "" {
+		items, err = r.Datasets.ItemsBySplit(ctx, req.TenantID, req.DatasetID, requestedSplit)
+		if err != nil {
+			if errors.Is(err, dataset.ErrDatasetNotFound) {
+				return RunResult{}, apperrors.Wrap(apperrors.CodeNotFound, "dataset not found", err)
+			}
+			return RunResult{}, err
+		}
+	}
 	if len(items) == 0 {
+		if requestedSplit != "" {
+			if holdoutGateEnabled(req.HoldoutGate) {
+				result := RunResult{
+					ID:           id.New("eval"),
+					DatasetID:    req.DatasetID,
+					Profile:      string(req.Profile),
+					Split:        requestedSplit,
+					SplitSummary: splitSummary,
+					MissingSplit: true,
+					Metrics: map[string]float64{
+						"weighted_sample_count":   0,
+						"unweighted_sample_count": 0,
+						"missing_split":           1,
+					},
+					CreatedAt: time.Now().UTC(),
+				}
+				result.HoldoutGate = EvaluateHoldoutGate(result, *req.HoldoutGate)
+				if r.Repository != nil {
+					if err := r.Repository.StoreEvaluationRun(ctx, req.TenantID, result); err != nil {
+						return RunResult{}, err
+					}
+				}
+				return result, nil
+			}
+			return RunResult{}, apperrors.New(apperrors.CodeValidation, "dataset split "+string(requestedSplit)+" is empty or missing")
+		}
 		return RunResult{}, apperrors.New(apperrors.CodeValidation, "dataset is empty")
 	}
 
 	runID := id.New("eval")
-	var cacheHits int
-	latencies := make([]int64, 0, len(items))
+	latencies := make([]weightedLatency, 0, len(items))
 	metricSums := map[string]float64{}
+	metricCounts := map[string]float64{}
 	type itemResult struct {
 		itemID  string
 		answer  string
@@ -177,9 +233,10 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	var itemResults []itemResult
 	var judgeResults []JudgeResultRecord
 	var qagResults []JudgeResultRecord
+	var pairwiseResults []PairwiseJudgeResultRecord
 	var judgeUsage TokenUsage
 	var judgeCost float64
-	judgeRun, qagRun := JudgeRunRecord{}, JudgeRunRecord{}
+	judgeRun, qagRun, pairwiseRun := JudgeRunRecord{}, JudgeRunRecord{}, JudgeRunRecord{}
 	if req.Judge != nil {
 		if r.Judge == nil {
 			return RunResult{}, apperrors.New(apperrors.CodeValidation, "judge is not configured")
@@ -192,21 +249,26 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		}
 		qagRun = newJudgeRunRecord(runID, "qag", "absolute", *req.QAG)
 	}
+	if req.Pairwise != nil {
+		if r.Pairwise == nil {
+			return RunResult{}, apperrors.New(apperrors.CodeValidation, "pairwise judge is not configured")
+		}
+		pairwiseRun = newJudgeRunRecord(runID, "llm_judge", "pairwise", *req.Pairwise)
+	}
 	for _, item := range items {
 		resp, err := r.RAG.Query(ctx, rag.QueryRequest{
-			TenantID:        req.TenantID,
-			KnowledgeBaseID: req.KnowledgeBaseID,
-			Query:           item.Query,
-			Profile:         req.Profile,
-			TopK:            req.TopK,
+			TenantID:           req.TenantID,
+			KnowledgeBaseID:    req.KnowledgeBaseID,
+			Query:              item.Query,
+			Profile:            req.Profile,
+			TopK:               req.TopK,
+			ScopedShadowItemID: req.ScopedShadowItemID,
 		})
 		if err != nil {
 			return RunResult{}, err
 		}
-		latencies = append(latencies, resp.LatencyMS)
-		if resp.CacheStatus == "hit" {
-			cacheHits++
-		}
+		weight := itemWeight(item)
+		latencies = append(latencies, weightedLatency{value: resp.LatencyMS, weight: weight})
 		itemMetrics := ScoreItemWithOptions(item, resp, ScoreOptions{TopK: req.TopK})
 		if err := ValidateMetricMap(itemMetrics); err != nil {
 			return RunResult{}, err
@@ -251,54 +313,112 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			judgeCost += out.CostUSD
 			qagResults = append(qagResults, judgeResultRecordFromQAG(qagRun.ID, item.ID, out))
 		}
+		if req.Pairwise != nil {
+			out, err := r.Pairwise.Compare(ctx, PairwiseJudgeInput{
+				TenantID:         req.TenantID,
+				DatasetID:        req.DatasetID,
+				DatasetItemID:    item.ID,
+				Query:            item.Query,
+				GroundTruth:      item.GroundTruth,
+				ExpectedEvidence: item.ExpectedEvidence,
+				RelevantDocIDs:   item.RelevantDocIDs,
+				AnswerA: CandidateAnswer{
+					ID:              "candidate",
+					Answer:          resp.Answer,
+					Citations:       resp.Citations,
+					RetrievedChunks: resp.RetrievedChunks,
+				},
+				AnswerB: CandidateAnswer{
+					ID:     "ground_truth",
+					Answer: item.GroundTruth,
+				},
+				Rubric: req.Pairwise.Rubric,
+			})
+			if err != nil {
+				return RunResult{}, err
+			}
+			itemMetrics[PrimaryMetricPairwiseAccuracy] = pairwiseWinScore(out.Winner)
+			addUsageMetrics(itemMetrics, out.TokenUsage, out.CostUSD)
+			judgeUsage = addTokenUsage(judgeUsage, out.TokenUsage)
+			judgeCost += out.CostUSD
+			pairwiseResults = append(pairwiseResults, pairwiseJudgeResultRecordFromOutput(pairwiseRun.ID, item.ID, out))
+		}
 		if err := ValidateMetricMap(itemMetrics); err != nil {
 			return RunResult{}, err
 		}
 		for name, value := range itemMetrics {
 			if shouldAggregateItemMetric(name) {
-				metricSums[name] += value
+				metricSums[name] += value * weight
+				metricCounts[name] += weight
 			}
 		}
+		metricSums["prompt_tokens"] += itemMetrics["prompt_tokens"] * weight
+		metricSums["completion_tokens"] += itemMetrics["completion_tokens"] * weight
+		metricSums["total_tokens"] += itemMetrics["total_tokens"] * weight
+		metricSums["cost_usd"] += itemMetrics["cost_usd"] * weight
 		itemResults = append(itemResults, itemResult{itemID: item.ID, answer: resp.Answer, metrics: itemMetrics})
 	}
 
 	total := len(items)
-	answerScore := average(metricSums["answer_accuracy"], total)
+	weightedSampleCount := splitWeight(items)
+	answerScore := weightedAverage(metricSums["answer_accuracy"], metricCounts["answer_accuracy"])
 	metrics := map[string]float64{
-		"answer_accuracy":             answerScore,
-		"accuracy":                    answerScore,
-		"hit_rate":                    answerScore,
-		PrimaryMetricPairwiseAccuracy: answerScore,
-		"latency_p95_ms":              float64(p95(latencies)),
-		"cache_hit_rate":              average(float64(cacheHits), total),
+		"answer_accuracy":                     answerScore,
+		"accuracy":                            answerScore,
+		"hit_rate":                            answerScore,
+		PrimaryMetricDeterministicAnswerMatch: answerScore,
+		"latency_p95_ms":                      float64(weightedP95(latencies)),
+		"cache_hit_rate":                      weightedAverage(metricSums["cache_hit"], metricCounts["cache_hit"]),
+		"weighted_sample_count":               weightedSampleCount,
+		"unweighted_sample_count":             float64(total),
+		"missing_split":                       0,
 	}
 	for name, sum := range metricSums {
-		metrics[name] = average(sum, total)
+		if shouldAggregateItemMetric(name) {
+			metrics[name] = weightedAverage(sum, metricCounts[name])
+		}
 	}
-	if judgeUsage.PromptTokens > 0 || judgeUsage.CompletionTokens > 0 || judgeUsage.TotalTokens > 0 {
+	if metricSums["prompt_tokens"] > 0 || metricSums["completion_tokens"] > 0 || metricSums["total_tokens"] > 0 {
+		metrics["prompt_tokens"] = metricSums["prompt_tokens"]
+		metrics["completion_tokens"] = metricSums["completion_tokens"]
+		metrics["total_tokens"] = metricSums["total_tokens"]
+	} else if judgeUsage.PromptTokens > 0 || judgeUsage.CompletionTokens > 0 || judgeUsage.TotalTokens > 0 {
 		metrics["prompt_tokens"] = float64(judgeUsage.PromptTokens)
 		metrics["completion_tokens"] = float64(judgeUsage.CompletionTokens)
 		metrics["total_tokens"] = float64(judgeUsage.TotalTokens)
 	}
-	if judgeCost > 0 {
+	if metricSums["cost_usd"] > 0 {
+		metrics["cost_usd"] = metricSums["cost_usd"]
+	} else if judgeCost > 0 {
 		metrics["cost_usd"] = judgeCost
 	}
 	metrics["accuracy"] = answerScore
 	metrics["hit_rate"] = answerScore
-	metrics[PrimaryMetricPairwiseAccuracy] = answerScore
+	metrics[PrimaryMetricDeterministicAnswerMatch] = answerScore
+	if _, ok := metricCounts[PrimaryMetricPairwiseAccuracy]; ok {
+		metrics[PrimaryMetricPairwiseAccuracy] = weightedAverage(metricSums[PrimaryMetricPairwiseAccuracy], metricCounts[PrimaryMetricPairwiseAccuracy])
+	}
 	if err := ValidateMetricMap(metrics); err != nil {
 		return RunResult{}, err
 	}
 
 	result := RunResult{
-		ID:        runID,
-		DatasetID: req.DatasetID,
-		Profile:   string(req.Profile),
-		Total:     total,
-		HitRate:   answerScore,
-		Accuracy:  answerScore,
-		Metrics:   metrics,
-		CreatedAt: time.Now().UTC(),
+		ID:                    runID,
+		DatasetID:             req.DatasetID,
+		Profile:               string(req.Profile),
+		Total:                 total,
+		HitRate:               answerScore,
+		Accuracy:              answerScore,
+		WeightedSampleCount:   weightedSampleCount,
+		UnweightedSampleCount: total,
+		Split:                 requestedSplit,
+		SplitSummary:          splitSummary,
+		MissingSplit:          false,
+		Metrics:               metrics,
+		CreatedAt:             time.Now().UTC(),
+	}
+	if holdoutGateEnabled(req.HoldoutGate) {
+		result.HoldoutGate = EvaluateHoldoutGate(result, *req.HoldoutGate)
 	}
 	if r.Repository != nil {
 		if err := r.Repository.StoreEvaluationRun(ctx, req.TenantID, result); err != nil {
@@ -314,6 +434,11 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 				return RunResult{}, err
 			}
 		}
+		if req.Pairwise != nil {
+			if err := r.Repository.StoreJudgeRun(ctx, req.TenantID, pairwiseRun); err != nil {
+				return RunResult{}, err
+			}
+		}
 		for _, item := range itemResults {
 			if err := r.Repository.StoreEvaluationResult(ctx, runID, item.itemID, item.answer, item.metrics); err != nil {
 				return RunResult{}, err
@@ -321,6 +446,11 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		}
 		for _, result := range append(judgeResults, qagResults...) {
 			if err := r.Repository.StoreJudgeResult(ctx, result); err != nil {
+				return RunResult{}, err
+			}
+		}
+		for _, result := range pairwiseResults {
+			if err := r.Repository.StorePairwiseJudgeResult(ctx, result); err != nil {
 				return RunResult{}, err
 			}
 		}
@@ -400,6 +530,34 @@ func judgeResultRecordFromQAG(judgeRunID, itemID string, out QAGOutput) JudgeRes
 	}
 }
 
+func pairwiseJudgeResultRecordFromOutput(judgeRunID, itemID string, out PairwiseJudgeOutput) PairwiseJudgeResultRecord {
+	return PairwiseJudgeResultRecord{
+		ID:            id.New("pairwise"),
+		JudgeRunID:    judgeRunID,
+		DatasetItemID: itemID,
+		CandidateAID:  "candidate",
+		CandidateBID:  "ground_truth",
+		Winner:        out.Winner,
+		Preference:    out.Preference,
+		Stable:        out.Stable,
+		Reasons:       out.Reasons,
+		RawResponse:   out.RawResponse,
+		ParsedJSON:    out.ParsedJSON,
+		TokenUsage:    out.TokenUsage,
+		CostUSD:       out.CostUSD,
+		CreatedAt:     firstTime(out.CreatedAt, time.Now().UTC()),
+	}
+}
+
+func pairwiseWinScore(winner string) float64 {
+	switch strings.ToLower(strings.TrimSpace(winner)) {
+	case "a", "tie":
+		return 1
+	default:
+		return 0
+	}
+}
+
 func qagFindings(claims []QAGClaim) []JudgeFinding {
 	findings := make([]JudgeFinding, 0, len(claims))
 	for _, claim := range claims {
@@ -424,6 +582,10 @@ func firstTime(values ...time.Time) time.Time {
 
 func shouldAggregateItemMetric(name string) bool {
 	return DefaultMetricRegistry.ShouldAggregate(name)
+}
+
+func holdoutGateEnabled(cfg *HoldoutGateConfig) bool {
+	return cfg != nil && cfg.Enabled
 }
 
 func (r Runner) Get(ctx context.Context, tenantID, id string) (RunResult, bool, error) {

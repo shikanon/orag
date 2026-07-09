@@ -3,6 +3,7 @@ package eval
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/shikanon/orag/internal/dataset"
@@ -182,6 +183,10 @@ func TestRunnerPersistsRunInMemoryRepository(t *testing.T) {
 	}
 	if result.Total != 1 || result.Accuracy == 0 {
 		t.Fatalf("result = %#v", result)
+	}
+	assertMetric(t, result.Metrics, PrimaryMetricDeterministicAnswerMatch, 1)
+	if _, ok := result.Metrics[PrimaryMetricPairwiseAccuracy]; ok {
+		t.Fatalf("rule-only run wrote %s: %#v", PrimaryMetricPairwiseAccuracy, result.Metrics)
 	}
 	for _, key := range []string{"ndcg_at_k", "recall_at_k", "mrr", "map", "coverage", "redundancy_rate", "deduped_top_k_count", "alpha_ndcg", "aspect_coverage"} {
 		if _, ok := result.Metrics[key]; !ok {
@@ -398,7 +403,11 @@ func TestRunnerDoesNotCountCitationOnlyAsAnswerAccuracy(t *testing.T) {
 	assertMetric(t, result.Metrics, "answer_accuracy", 0)
 	assertMetric(t, result.Metrics, "accuracy", 0)
 	assertMetric(t, result.Metrics, "hit_rate", 0)
+	assertMetric(t, result.Metrics, PrimaryMetricDeterministicAnswerMatch, 0)
 	assertMetric(t, result.Metrics, "citation_hit_rate", 1)
+	if _, ok := result.Metrics[PrimaryMetricPairwiseAccuracy]; ok {
+		t.Fatalf("rule-only run wrote %s: %#v", PrimaryMetricPairwiseAccuracy, result.Metrics)
+	}
 
 	evalRepo.mu.RLock()
 	persisted := append([]map[string]float64(nil), evalRepo.results[result.ID]...)
@@ -507,6 +516,251 @@ func TestRunnerPersistsOptionalJudgeAndQAGDetails(t *testing.T) {
 	}
 }
 
+func TestRunnerFiltersSplitAndWeightsRunAggregates(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService()
+	ds, err := dsSvc.Create(ctx, "tenant_default", "weighted", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
+		Query:          "good",
+		GroundTruth:    "qdrant",
+		RelevantDocIDs: []string{"doc_1"},
+		Split:          dataset.DatasetSplitEval,
+		Weight:         1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
+		Query:          "bad",
+		GroundTruth:    "qdrant",
+		RelevantDocIDs: []string{"doc_1"},
+		Split:          dataset.DatasetSplitEval,
+		Weight:         3,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{
+		Query:       "holdout",
+		GroundTruth: "qdrant",
+		Split:       dataset.DatasetSplitHoldout,
+		Weight:      10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ragSvc := &rag.Service{
+		Pipeline: pipelineFunc(func(_ context.Context, req rag.QueryRequest) (rag.QueryResponse, error) {
+			if req.Query == "good" {
+				return rag.QueryResponse{
+					Answer: "qdrant answer",
+					Citations: []rag.Citation{{
+						ChunkID:    "chk_1",
+						DocumentID: "doc_1",
+					}},
+					RetrievedChunks: []kb.SearchResult{{Chunk: kb.Chunk{ID: "chk_1", DocumentID: "doc_1"}}},
+					CacheStatus:     "hit",
+					LatencyMS:       10,
+				}, nil
+			}
+			return rag.QueryResponse{
+				Answer:          "postgres answer",
+				RetrievedChunks: []kb.SearchResult{{Chunk: kb.Chunk{ID: "chk_x", DocumentID: "doc_x"}}},
+				CacheStatus:     "miss",
+				LatencyMS:       30,
+			}, nil
+		}),
+	}
+	evalRepo := NewMemoryRepository()
+	runner := Runner{
+		RAG:        ragSvc,
+		Datasets:   dsSvc,
+		Repository: evalRepo,
+		Judge:      queryJudge{},
+		QAG:        queryQAGJudge{},
+	}
+	result, err := runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Profile:         rag.ProfileRealtime,
+		Split:           dataset.DatasetSplitEval,
+		Judge:           &JudgeConfig{Provider: "test", Model: "judge-model"},
+		QAG:             &JudgeConfig{Provider: "test", Model: "qag-model"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Total != 2 || result.UnweightedSampleCount != 2 || result.WeightedSampleCount != 4 {
+		t.Fatalf("sample counts result = %#v, want total/unweighted 2 weighted 4", result)
+	}
+	if result.Split != dataset.DatasetSplitEval {
+		t.Fatalf("split = %q, want eval", result.Split)
+	}
+	if result.SplitSummary["eval"].UnweightedSampleCount != 2 || result.SplitSummary["eval"].WeightedSampleCount != 4 {
+		t.Fatalf("eval split summary = %#v", result.SplitSummary["eval"])
+	}
+	if result.SplitSummary["holdout"].UnweightedSampleCount != 1 || result.SplitSummary["holdout"].WeightedSampleCount != 10 {
+		t.Fatalf("holdout split summary = %#v", result.SplitSummary["holdout"])
+	}
+	assertMetric(t, result.Metrics, "weighted_sample_count", 4)
+	assertMetric(t, result.Metrics, "unweighted_sample_count", 2)
+	assertMetric(t, result.Metrics, "answer_accuracy", 0.25)
+	assertMetric(t, result.Metrics, "citation_hit_rate", 0.25)
+	assertMetric(t, result.Metrics, "cache_hit_rate", 0.25)
+	assertMetric(t, result.Metrics, "latency_ms", 25)
+	assertMetric(t, result.Metrics, "latency_p95_ms", 30)
+	assertMetric(t, result.Metrics, "faithfulness", 0.8)
+	assertMetric(t, result.Metrics, "qag_score", 0.25)
+	assertMetric(t, result.Metrics, "prompt_tokens", 14)
+	assertMetric(t, result.Metrics, "total_tokens", 28)
+	assertMetric(t, result.Metrics, "cost_usd", 14)
+
+	detail, ok, err := runner.GetDetail(ctx, "tenant_default", result.ID, EvaluationDetailOptions{IncludeItems: true})
+	if err != nil || !ok {
+		t.Fatalf("GetDetail() ok=%v err=%v", ok, err)
+	}
+	if len(detail.Items) != 2 {
+		t.Fatalf("persisted items = %d, want only selected split items", len(detail.Items))
+	}
+	for _, item := range detail.Items {
+		if item.Metrics["answer_accuracy"] == 0 && item.Metrics["latency_ms"] != 30 {
+			t.Fatalf("unexpected persisted item metrics = %#v", item)
+		}
+	}
+}
+
+func TestRunnerRejectsMissingRequestedSplitWithoutPersisting(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService()
+	ds, err := dsSvc.Create(ctx, "tenant_default", "missing-split", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{Query: "q", GroundTruth: "a", Split: dataset.DatasetSplitEval}); err != nil {
+		t.Fatal(err)
+	}
+	evalRepo := NewMemoryRepository()
+	runner := Runner{Datasets: dsSvc, Repository: evalRepo}
+
+	_, err = runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Split:           dataset.DatasetSplitGold,
+	})
+	if !apperrors.IsCode(err, apperrors.CodeValidation) {
+		t.Fatalf("Run() error = %v, want validation", err)
+	}
+	if len(evalRepo.runs) != 0 || len(evalRepo.results) != 0 {
+		t.Fatalf("missing split persisted runs=%d results=%d", len(evalRepo.runs), len(evalRepo.results))
+	}
+}
+
+func TestHoldoutGatePassesWhenQualityAndSamplesMeetThresholds(t *testing.T) {
+	result := RunResult{
+		Total:                 3,
+		Split:                 dataset.DatasetSplitHoldout,
+		UnweightedSampleCount: 3,
+		WeightedSampleCount:   3,
+		Metrics: map[string]float64{
+			PrimaryMetricDeterministicAnswerMatch: 0.9,
+		},
+	}
+
+	gate := EvaluateHoldoutGate(result, HoldoutGateConfig{
+		Enabled:        true,
+		MinSampleCount: 3,
+		QualityMetric:  PrimaryMetricDeterministicAnswerMatch,
+		MinQuality:     0.8,
+	})
+
+	if !gate.Passed || len(gate.Reasons) != 0 {
+		t.Fatalf("gate = %#v, want pass", gate)
+	}
+}
+
+func TestHoldoutGateFailsQualityThreshold(t *testing.T) {
+	result := RunResult{
+		Total:                 2,
+		Split:                 dataset.DatasetSplitHoldout,
+		UnweightedSampleCount: 2,
+		WeightedSampleCount:   2,
+		Metrics: map[string]float64{
+			PrimaryMetricDeterministicAnswerMatch: 0.6,
+		},
+	}
+
+	gate := EvaluateHoldoutGate(result, HoldoutGateConfig{
+		Enabled:        true,
+		MinSampleCount: 2,
+		MinQuality:     0.8,
+	})
+
+	if gate.Passed || !containsString(gate.Reasons, HoldoutGateReasonQualityBelowMin) {
+		t.Fatalf("gate = %#v, want quality failure", gate)
+	}
+}
+
+func TestHoldoutGateFailsInsufficientSample(t *testing.T) {
+	result := RunResult{
+		Total:                 1,
+		Split:                 dataset.DatasetSplitHoldout,
+		UnweightedSampleCount: 1,
+		WeightedSampleCount:   1,
+		Metrics: map[string]float64{
+			PrimaryMetricDeterministicAnswerMatch: 1,
+		},
+	}
+
+	gate := EvaluateHoldoutGate(result, HoldoutGateConfig{
+		Enabled:        true,
+		MinSampleCount: 2,
+		MinQuality:     0.8,
+	})
+
+	if gate.Passed || !containsString(gate.Reasons, HoldoutGateReasonInsufficientSample) {
+		t.Fatalf("gate = %#v, want insufficient sample failure", gate)
+	}
+}
+
+func TestRunnerRecordsHoldoutGateMissingSplit(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService()
+	ds, err := dsSvc.Create(ctx, "tenant_default", "holdout-missing", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dsSvc.AddItem(ctx, "tenant_default", ds.ID, dataset.Item{Query: "q", GroundTruth: "a", Split: dataset.DatasetSplitEval}); err != nil {
+		t.Fatal(err)
+	}
+	evalRepo := NewMemoryRepository()
+	runner := Runner{Datasets: dsSvc, Repository: evalRepo}
+
+	result, err := runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Split:           dataset.DatasetSplitHoldout,
+		HoldoutGate: &HoldoutGateConfig{
+			Enabled:        true,
+			MinSampleCount: 1,
+			MinQuality:     0.8,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !result.MissingSplit || result.HoldoutGate.Passed || !containsString(result.HoldoutGate.Reasons, HoldoutGateReasonMissingSplit) {
+		t.Fatalf("result = %#v, want recorded missing split gate failure", result)
+	}
+	if len(evalRepo.runs) != 1 || len(evalRepo.results) != 0 {
+		t.Fatalf("persisted runs=%d results=%d, want one run and no items", len(evalRepo.runs), len(evalRepo.results))
+	}
+}
+
 func TestRunnerRejectsRequestedJudgeWhenNotConfigured(t *testing.T) {
 	ctx := context.Background()
 	dsSvc := dataset.NewService(dataset.NewMemoryRepository())
@@ -532,6 +786,65 @@ func TestRunnerRejectsRequestedJudgeWhenNotConfigured(t *testing.T) {
 	})
 	if !apperrors.IsCode(err, apperrors.CodeValidation) {
 		t.Fatalf("Run() error = %v, want validation for missing judge", err)
+	}
+}
+
+func TestRunnerRunsPairwiseJudgeAndPersistsWeightedWinRate(t *testing.T) {
+	ctx := context.Background()
+	dsSvc := dataset.NewService(dataset.NewMemoryRepository())
+	ds, err := dsSvc.Create(ctx, "tenant_default", "pairwise-e2e", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []dataset.Item{
+		{Query: "good", GroundTruth: "reference answer", Weight: 2},
+		{Query: "bad", GroundTruth: "reference answer", Weight: 1},
+	} {
+		if _, err := dsSvc.AddItem(ctx, "tenant_default", ds.ID, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	evalRepo := NewMemoryRepository()
+	pairwise := &fakePairwiseJudge{}
+	runner := Runner{
+		RAG: &rag.Service{Pipeline: pipelineFunc(func(_ context.Context, req rag.QueryRequest) (rag.QueryResponse, error) {
+			return rag.QueryResponse{Answer: req.Query + " candidate"}, nil
+		})},
+		Datasets:   dsSvc,
+		Repository: evalRepo,
+		Pairwise:   pairwise,
+	}
+	result, err := runner.Run(ctx, RunRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       ds.ID,
+		KnowledgeBaseID: "kb_default",
+		Profile:         rag.ProfileRealtime,
+		Pairwise:        &JudgeConfig{Provider: "test", Model: "pairwise"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pairwise.calls != 2 {
+		t.Fatalf("pairwise calls = %d, want 2", pairwise.calls)
+	}
+	if got, want := result.Metrics[PrimaryMetricPairwiseAccuracy], 2.0/3.0; math.Abs(got-want) > 1e-9 {
+		t.Fatalf("pairwise_accuracy = %v, want %v; metrics=%#v", got, want, result.Metrics)
+	}
+	assertMetric(t, result.Metrics, PrimaryMetricDeterministicAnswerMatch, 0)
+	detail, ok, err := runner.GetDetail(ctx, "tenant_default", result.ID, EvaluationDetailOptions{IncludePairwise: true, IncludeJudge: true, IncludeItems: true})
+	if err != nil || !ok {
+		t.Fatalf("GetDetail() ok=%v err=%v", ok, err)
+	}
+	if len(detail.PairwiseResults) != 2 {
+		t.Fatalf("pairwise results = %d, want 2; detail=%#v", len(detail.PairwiseResults), detail)
+	}
+	if len(detail.JudgeRuns) != 1 || detail.JudgeRuns[0].ComparisonMode != "pairwise" {
+		t.Fatalf("judge runs = %#v, want one pairwise run", detail.JudgeRuns)
+	}
+	for _, item := range detail.Items {
+		if _, ok := item.Metrics[PrimaryMetricPairwiseAccuracy]; !ok {
+			t.Fatalf("stored item metrics missing pairwise_accuracy: %#v", item.Metrics)
+		}
 	}
 }
 
@@ -757,11 +1070,82 @@ func (fakeQAGJudge) ScoreQAG(_ context.Context, input JudgeInput) (QAGOutput, er
 	}, nil
 }
 
+type fakePairwiseJudge struct {
+	calls int
+}
+
+func (j *fakePairwiseJudge) Compare(_ context.Context, input PairwiseJudgeInput) (PairwiseJudgeOutput, error) {
+	j.calls++
+	if input.AnswerA.ID != "candidate" || input.AnswerB.ID != "ground_truth" || input.AnswerB.Answer != input.GroundTruth {
+		return PairwiseJudgeOutput{}, errors.New("unexpected pairwise input")
+	}
+	winner := "A"
+	if input.Query == "bad" {
+		winner = "B"
+	}
+	return PairwiseJudgeOutput{
+		Winner:      winner,
+		Preference:  winner + "_better",
+		Stable:      true,
+		RawResponse: `{"winner":"` + winner + `"}`,
+		ParsedJSON:  map[string]any{"winner": winner},
+		TokenUsage:  TokenUsage{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2},
+		CostUSD:     0.001,
+	}, nil
+}
+
+type queryJudge struct{}
+
+func (queryJudge) Judge(_ context.Context, input JudgeInput) (JudgeOutput, error) {
+	if input.Query == "good" {
+		return JudgeOutput{
+			Scores:     map[string]float64{"faithfulness": 0.2},
+			Pass:       true,
+			TokenUsage: TokenUsage{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2},
+			CostUSD:    1,
+		}, nil
+	}
+	return JudgeOutput{
+		Scores:     map[string]float64{"faithfulness": 1},
+		Pass:       true,
+		TokenUsage: TokenUsage{PromptTokens: 2, CompletionTokens: 2, TotalTokens: 4},
+		CostUSD:    2,
+	}, nil
+}
+
+type queryQAGJudge struct{}
+
+func (queryQAGJudge) ScoreQAG(_ context.Context, input JudgeInput) (QAGOutput, error) {
+	if input.Query == "good" {
+		return QAGOutput{
+			Score:      1,
+			Metrics:    map[string]float64{"qag_score": 1, "qag_claim_coverage": 1, "qag_question_count": 1, "qag_unverifiable_rate": 0},
+			TokenUsage: TokenUsage{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2},
+			CostUSD:    1,
+		}, nil
+	}
+	return QAGOutput{
+		Score:      0,
+		Metrics:    map[string]float64{"qag_score": 0, "qag_claim_coverage": 0, "qag_question_count": 1, "qag_unverifiable_rate": 1},
+		TokenUsage: TokenUsage{PromptTokens: 2, CompletionTokens: 2, TotalTokens: 4},
+		CostUSD:    2,
+	}, nil
+}
+
 func assertMetric(t *testing.T, metrics map[string]float64, key string, want float64) {
 	t.Helper()
 	if got, ok := metrics[key]; !ok || got != want {
 		t.Fatalf("metrics[%q] = %v (present=%v), want %v; metrics=%#v", key, got, ok, want, metrics)
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRunnerRejectsForeignTenantDatasetWithoutPersistingRun(t *testing.T) {

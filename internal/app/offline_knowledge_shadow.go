@@ -31,12 +31,13 @@ type offlineKnowledgeShadowRetrieverAdapter struct {
 
 func (a offlineKnowledgeShadowRetrieverAdapter) RetrieveShadow(ctx context.Context, req rag.ShadowRetrieveRequest) ([]rag.ShadowMatch, error) {
 	matches, err := a.retriever.Retrieve(ctx, offlineknowledge.ShadowRetrieveRequest{
-		TenantID: req.TenantID,
-		KBID:     req.KBID,
-		Query:    req.Query,
-		TraceID:  req.TraceID,
-		Limit:    req.Limit,
-		Inject:   req.Inject,
+		TenantID:     req.TenantID,
+		KBID:         req.KBID,
+		Query:        req.Query,
+		TraceID:      req.TraceID,
+		Limit:        req.Limit,
+		Inject:       req.Inject,
+		ScopedItemID: req.ScopedItemID,
 	})
 	if err != nil {
 		return nil, err

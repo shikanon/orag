@@ -63,9 +63,11 @@ type ObjectiveResult struct {
 type CandidateScore struct {
 	ID                  string
 	Score               float64
+	ScoreMetric         string
 	Metrics             map[string]float64
 	Normalized          map[string]float64
 	PairwiseWinRate     float64
+	HasPairwiseOutcomes bool
 	ConstraintFailed    bool
 	ConstraintFailures  []string
 	SignificantlyBetter bool
@@ -82,7 +84,7 @@ type compiledConstraint struct {
 func EvaluateObjective(spec ObjectiveSpec, candidates []CandidateInput) (ObjectiveResult, error) {
 	maximize := strings.TrimSpace(spec.Maximize)
 	if maximize == "" {
-		maximize = "pairwise_accuracy"
+		maximize = defaultObjectiveMetric(candidates)
 	}
 	for _, candidate := range candidates {
 		if err := eval.ValidateMetricMap(candidate.Metrics); err != nil {
@@ -110,12 +112,14 @@ func EvaluateObjective(spec ObjectiveSpec, candidates []CandidateInput) (Objecti
 			return ObjectiveResult{}, err
 		}
 		candidateScore := CandidateScore{
-			ID:              candidate.ID,
-			Score:           score,
-			Metrics:         cloneMetrics(candidate.Metrics),
-			Normalized:      normalizedValues(spec, candidate.Metrics),
-			PairwiseWinRate: vars["pairwise_win_rate"],
-			CreatedAt:       candidate.CreatedAt,
+			ID:                  candidate.ID,
+			Score:               score,
+			ScoreMetric:         maximize,
+			Metrics:             cloneMetrics(candidate.Metrics),
+			Normalized:          normalizedValues(spec, candidate.Metrics),
+			PairwiseWinRate:     vars["pairwise_win_rate"],
+			HasPairwiseOutcomes: len(candidate.Pairwise) > 0,
+			CreatedAt:           candidate.CreatedAt,
 		}
 		for _, constraint := range constraints {
 			passed, err := constraint.evaluate(vars)
@@ -140,6 +144,42 @@ func EvaluateObjective(spec ObjectiveSpec, candidates []CandidateInput) (Objecti
 		result.Best = scores[0]
 	}
 	return result, nil
+}
+
+func defaultObjectiveMetric(candidates []CandidateInput) string {
+	if candidatesHavePairwiseOutcomes(candidates) {
+		return "pairwise_win_rate"
+	}
+	for _, candidate := range candidates {
+		if _, ok := candidate.Metrics[eval.PrimaryMetricDeterministicAnswerMatch]; ok {
+			return eval.PrimaryMetricDeterministicAnswerMatch
+		}
+	}
+	for _, candidate := range candidates {
+		if _, ok := candidate.Metrics["answer_accuracy"]; ok {
+			return "answer_accuracy"
+		}
+	}
+	for _, candidate := range candidates {
+		if _, ok := candidate.Metrics["accuracy"]; ok {
+			return "accuracy"
+		}
+	}
+	for _, candidate := range candidates {
+		if _, ok := candidate.Metrics[eval.PrimaryMetricPairwiseAccuracy]; ok {
+			return eval.PrimaryMetricPairwiseAccuracy
+		}
+	}
+	return eval.PrimaryMetricDeterministicAnswerMatch
+}
+
+func candidatesHavePairwiseOutcomes(candidates []CandidateInput) bool {
+	for _, candidate := range candidates {
+		if len(candidate.Pairwise) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func compileConstraints(specs []ConstraintSpec) ([]compiledConstraint, error) {

@@ -1695,9 +1695,20 @@ components:
           $ref: "#/components/schemas/Profile"
         top_k:
           type: integer
+        scoped_shadow_item_id:
+          type: string
+          description: Optional offline regression scoped shadow item id. When set, candidate retrieval may only use the matching offline optimization item.
+        split:
+          type: string
+          enum: [train, eval, holdout, gold]
+          description: Optional dataset split filter. When omitted, all dataset items participate.
+        holdout_gate:
+          $ref: "#/components/schemas/HoldoutGateConfig"
         judge:
           $ref: "#/components/schemas/JudgeConfig"
         qag:
+          $ref: "#/components/schemas/JudgeConfig"
+        pairwise:
           $ref: "#/components/schemas/JudgeConfig"
     RunEvaluationResponse:
       type: object
@@ -1705,9 +1716,10 @@ components:
       description: |
         Evaluation run summary. `accuracy` and `hit_rate` are answer-focused
         compatibility fields equal to `metrics.answer_accuracy` for new runs.
-        `metrics.pairwise_accuracy` is the primary optimization quality metric;
-        current rule-based runs populate it from the same answer-focused signal
-        until pairwise judging is enabled.
+        Rule-only runs write deterministic answer matching as
+        `metrics.deterministic_answer_match`; `metrics.pairwise_accuracy` is only
+        written for real pairwise judge win-rate/accuracy output. Historical
+        stored runs may still contain rule-based `pairwise_accuracy`.
       example:
         id: eval_xxx
         dataset_id: ds_xxx
@@ -1715,11 +1727,27 @@ components:
         total: 1
         hit_rate: 1
         accuracy: 1
+        weighted_sample_count: 1
+        unweighted_sample_count: 1
+        split: holdout
+        split_summary:
+          holdout:
+            unweighted_sample_count: 1
+            weighted_sample_count: 1
+        holdout_gate:
+          enabled: true
+          passed: true
+          split: holdout
+          quality_metric: deterministic_answer_match
+          quality: 1
+          min_quality: 0.8
+          sample_count: 1
+          weighted_sample_count: 1
         metrics:
+          deterministic_answer_match: 1
           answer_accuracy: 1
           accuracy: 1
           hit_rate: 1
-          pairwise_accuracy: 1
           citation_hit_rate: 1
           context_recall: 1
           citation_precision: 1
@@ -1754,22 +1782,109 @@ components:
           type: number
           format: double
           description: Answer-focused compatibility alias for `answer_accuracy`.
+        weighted_sample_count:
+          type: number
+          format: double
+          description: Sum of normalized dataset item weights included in this run.
+        unweighted_sample_count:
+          type: integer
+          description: Number of dataset items included in this run before weighting.
+        split:
+          type: string
+          enum: [train, eval, holdout, gold]
+          description: Requested dataset split used for this run, if any.
+        split_summary:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/SplitSummary"
+          description: Per-split weighted and unweighted sample counts for the source dataset.
+        missing_split:
+          type: boolean
+          description: True when a requested split had no matching dataset items.
+        holdout_gate:
+          $ref: "#/components/schemas/HoldoutGateResult"
         metrics:
           $ref: "#/components/schemas/EvaluationMetrics"
         created_at:
           type: string
           format: date-time
+    SplitSummary:
+      type: object
+      required: [unweighted_sample_count, weighted_sample_count]
+      properties:
+        unweighted_sample_count:
+          type: integer
+        weighted_sample_count:
+          type: number
+          format: double
+    HoldoutGateConfig:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        min_sample_count:
+          type: integer
+        min_weighted_sample_count:
+          type: number
+          format: double
+        quality_metric:
+          type: string
+          description: Quality metric to gate on. Defaults to deterministic_answer_match.
+        min_quality:
+          type: number
+          format: double
+    HoldoutGateResult:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        passed:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
+            enum: [missing_split, insufficient_sample, metric_missing, quality_below_threshold]
+        split:
+          type: string
+          enum: [train, eval, holdout, gold]
+        quality_metric:
+          type: string
+        quality:
+          type: number
+          format: double
+        min_quality:
+          type: number
+          format: double
+        sample_count:
+          type: integer
+        min_sample_count:
+          type: integer
+        weighted_sample_count:
+          type: number
+          format: double
+        min_weighted_sample_count:
+          type: number
+          format: double
+        missing_split:
+          type: boolean
     EvaluationMetrics:
       type: object
       description: |
-        Aggregated evaluation metrics. Retrieval quality metrics are averaged
-        across dataset items; `latency_p95_ms` is the run-level P95 latency.
-        `pairwise_accuracy` is the primary quality metric for optimization
-        ranking semantics.
+        Aggregated evaluation metrics. Item-level metrics are weighted by
+        dataset item `weight` when present; `latency_p95_ms` is the weighted
+        run-level P95 latency. Rule-only answer matching is reported as
+        `deterministic_answer_match`. `pairwise_accuracy` has real pairwise
+        judge win-rate/accuracy semantics and is retained for historical runs
+        plus real pairwise judge output only.
       additionalProperties:
         type: number
         format: double
       properties:
+        deterministic_answer_match:
+          type: number
+          format: double
+          description: Deterministic rule-based answer match against ground truth. This replaces rule-only pairwise_accuracy.
         answer_accuracy:
           type: number
           format: double
@@ -1785,7 +1900,8 @@ components:
         pairwise_accuracy:
           type: number
           format: double
-          description: Primary optimization quality metric; currently populated from answer_accuracy when pairwise judging is unavailable.
+          description: Real pairwise judge win-rate/accuracy metric. Historical stored runs may contain rule-based values for compatibility.
+          deprecated: true
         citation_hit_rate:
           type: number
           format: double
@@ -2282,6 +2398,15 @@ components:
       properties:
         result:
           $ref: "#/components/schemas/RegressionResult"
+        scoped_item_id:
+          type: string
+          description: Offline optimization item id that was scoped into candidate regression retrieval.
+        profile_neutrality:
+          $ref: "#/components/schemas/ProfileNeutrality"
+        profile_experiment:
+          $ref: "#/components/schemas/ProfileExperiment"
+        holdout_gate:
+          $ref: "#/components/schemas/HoldoutGateResult"
         thresholds:
           $ref: "#/components/schemas/RegressionThresholds"
         passed:
@@ -2324,6 +2449,36 @@ components:
           type: boolean
         passed:
           type: boolean
+        scoped_item_id:
+          type: string
+          description: Offline optimization item id used to scope candidate shadow retrieval.
+        profile_neutrality:
+          $ref: "#/components/schemas/ProfileNeutrality"
+        profile_experiment:
+          $ref: "#/components/schemas/ProfileExperiment"
+        holdout_gate:
+          $ref: "#/components/schemas/HoldoutGateResult"
+    ProfileNeutrality:
+      type: object
+      properties:
+        baseline_profile:
+          type: string
+        candidate_profile:
+          type: string
+        same_profile:
+          type: boolean
+        optimization_lift_only:
+          type: boolean
+          description: True when baseline and candidate use the same profile, so lift is attributable to the offline optimization item.
+    ProfileExperiment:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        baseline_profile:
+          type: string
+        candidate_profile:
+          type: string
     RegressionThresholds:
       type: object
       properties:
@@ -2586,6 +2741,8 @@ components:
         holdout_split:
           type: string
           example: holdout
+        holdout_gate:
+          $ref: "#/components/schemas/HoldoutGateConfig"
         runner:
           type: object
           additionalProperties: true
@@ -2733,9 +2890,10 @@ components:
       type: object
       required: [profile, top_k, score, pairwise_accuracy, run_id]
       description: |
-        Optimization candidate summary. `score` is the primary ranking score and
-        has pairwise accuracy semantics; retrieval quality fields are diagnostic
-        metrics copied from the candidate evaluation run.
+        Deprecated optimization candidate summary. `score` is the objective
+        ranking score. Rule-only fallback uses `deterministic_answer_match`;
+        `pairwise_accuracy` is retained for legacy clients and real pairwise
+        judge output.
       properties:
         profile:
           $ref: "#/components/schemas/Profile"
@@ -2744,11 +2902,19 @@ components:
         score:
           type: number
           format: double
-          description: Primary ranking score; equivalent to pairwise_accuracy semantics and currently populated from answer_accuracy.
+          description: Objective ranking score for this candidate.
+        score_metric:
+          type: string
+          description: Metric that supplied `score`, for example deterministic_answer_match or pairwise_accuracy.
+        deterministic_answer_match:
+          type: number
+          format: double
+          description: Deterministic rule-based answer match fallback metric.
         pairwise_accuracy:
           type: number
           format: double
-          description: Primary optimization quality metric.
+          description: Real pairwise judge win-rate/accuracy metric or historical compatibility field.
+          deprecated: true
         ndcg_at_k:
           type: number
           format: double
@@ -2911,6 +3077,8 @@ components:
           type: string
         holdout_candidate_id:
           type: string
+        holdout_gate:
+          $ref: "#/components/schemas/HoldoutGateResult"
         sampling_strategy:
           type: string
         search_space_size:
