@@ -7,23 +7,25 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/rag"
 )
 
 const runConfigRunnerKey = "run_config"
 
 type RunConfig struct {
-	DatasetID       string        `json:"dataset_id,omitempty"`
-	KnowledgeBaseID string        `json:"knowledge_base_id,omitempty"`
-	Objective       ObjectiveSpec `json:"objective,omitempty"`
-	SearchSpace     SearchSpace   `json:"search_space,omitempty"`
-	Search          SearchSpec    `json:"search,omitempty"`
-	Budget          Budget        `json:"budget,omitempty"`
-	Profile         rag.Profile   `json:"profile,omitempty"`
-	TopK            int           `json:"top_k,omitempty"`
-	NamespaceTTL    time.Duration `json:"namespace_ttl,omitempty"`
-	SelectionSplit  string        `json:"selection_split,omitempty"`
-	HoldoutSplit    string        `json:"holdout_split,omitempty"`
+	DatasetID       string                 `json:"dataset_id,omitempty"`
+	KnowledgeBaseID string                 `json:"knowledge_base_id,omitempty"`
+	Objective       ObjectiveSpec          `json:"objective,omitempty"`
+	SearchSpace     SearchSpace            `json:"search_space,omitempty"`
+	Search          SearchSpec             `json:"search,omitempty"`
+	Budget          Budget                 `json:"budget,omitempty"`
+	Profile         rag.Profile            `json:"profile,omitempty"`
+	TopK            int                    `json:"top_k,omitempty"`
+	NamespaceTTL    time.Duration          `json:"namespace_ttl,omitempty"`
+	SelectionSplit  string                 `json:"selection_split,omitempty"`
+	HoldoutSplit    string                 `json:"holdout_split,omitempty"`
+	HoldoutGate     eval.HoldoutGateConfig `json:"holdout_gate,omitempty"`
 }
 
 func RunConfigFromSubmitRequest(req SubmitRequest) RunConfig {
@@ -39,6 +41,7 @@ func RunConfigFromSubmitRequest(req SubmitRequest) RunConfig {
 		NamespaceTTL:    req.NamespaceTTL,
 		SelectionSplit:  req.SelectionSplit,
 		HoldoutSplit:    req.HoldoutSplit,
+		HoldoutGate:     req.HoldoutGate,
 	}
 }
 
@@ -56,6 +59,7 @@ func (cfg RunConfig) SubmitRequest(tenantID string, runner map[string]any) Submi
 		NamespaceTTL:    cfg.NamespaceTTL,
 		SelectionSplit:  cfg.SelectionSplit,
 		HoldoutSplit:    cfg.HoldoutSplit,
+		HoldoutGate:     cfg.HoldoutGate,
 		Runner:          cloneRunner(runner),
 	}
 }

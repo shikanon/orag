@@ -8,6 +8,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/shikanon/orag/internal/eval"
 )
 
 const AllKnowledgeBases = "__all__"
@@ -104,15 +106,32 @@ type RecallReplayResult struct {
 }
 
 type RegressionResult struct {
-	RecallLift           float64       `json:"recall_lift"`
-	AnswerQualityLift    float64       `json:"answer_quality_lift"`
-	CitationCoverageLift float64       `json:"citation_coverage_lift"`
-	LatencyDelta         time.Duration `json:"-"`
-	LatencyDeltaMS       int64         `json:"latency_delta_ms"`
-	TokenCostDelta       float64       `json:"token_cost_delta"`
-	HallucinationRisk    float64       `json:"hallucination_risk"`
-	FullDatasetUsed      bool          `json:"full_dataset_used"`
-	Passed               bool          `json:"passed"`
+	RecallLift           float64                    `json:"recall_lift"`
+	AnswerQualityLift    float64                    `json:"answer_quality_lift"`
+	CitationCoverageLift float64                    `json:"citation_coverage_lift"`
+	LatencyDelta         time.Duration              `json:"-"`
+	LatencyDeltaMS       int64                      `json:"latency_delta_ms"`
+	TokenCostDelta       float64                    `json:"token_cost_delta"`
+	HallucinationRisk    float64                    `json:"hallucination_risk"`
+	FullDatasetUsed      bool                       `json:"full_dataset_used"`
+	Passed               bool                       `json:"passed"`
+	ScopedItemID         string                     `json:"scoped_item_id,omitempty"`
+	ProfileNeutrality    ProfileNeutralityMetadata  `json:"profile_neutrality,omitempty"`
+	ProfileExperiment    *ProfileExperimentMetadata `json:"profile_experiment,omitempty"`
+	HoldoutGate          eval.HoldoutGateResult     `json:"holdout_gate,omitempty"`
+}
+
+type ProfileNeutralityMetadata struct {
+	BaselineProfile      string `json:"baseline_profile,omitempty"`
+	CandidateProfile     string `json:"candidate_profile,omitempty"`
+	SameProfile          bool   `json:"same_profile"`
+	OptimizationLiftOnly bool   `json:"optimization_lift_only"`
+}
+
+type ProfileExperimentMetadata struct {
+	Enabled          bool   `json:"enabled"`
+	BaselineProfile  string `json:"baseline_profile,omitempty"`
+	CandidateProfile string `json:"candidate_profile,omitempty"`
 }
 
 type RegressionThresholds struct {
@@ -125,59 +144,66 @@ type RegressionThresholds struct {
 }
 
 type RegressionRequest struct {
-	TenantID            string               `json:"tenant_id"`
-	ItemID              string               `json:"item_id"`
-	Item                OptimizationItem     `json:"item"`
-	Thresholds          RegressionThresholds `json:"thresholds"`
-	FullDatasetRequired bool                 `json:"full_dataset_required"`
-	RequestedAt         time.Time            `json:"requested_at"`
+	TenantID            string                 `json:"tenant_id"`
+	ItemID              string                 `json:"item_id"`
+	Item                OptimizationItem       `json:"item"`
+	Thresholds          RegressionThresholds   `json:"thresholds"`
+	HoldoutGate         eval.HoldoutGateConfig `json:"holdout_gate,omitempty"`
+	FullDatasetRequired bool                   `json:"full_dataset_required"`
+	RequestedAt         time.Time              `json:"requested_at"`
 }
 
 type EvalReport struct {
-	Result              RegressionResult     `json:"result"`
-	Thresholds          RegressionThresholds `json:"thresholds"`
-	Passed              bool                 `json:"passed"`
-	Reasons             []string             `json:"reasons,omitempty"`
-	FullDatasetRequired bool                 `json:"full_dataset_required"`
-	FullDatasetUsed     bool                 `json:"full_dataset_used"`
-	EvaluatedAt         time.Time            `json:"evaluated_at"`
+	Result              RegressionResult           `json:"result"`
+	ScopedItemID        string                     `json:"scoped_item_id,omitempty"`
+	ProfileNeutrality   ProfileNeutralityMetadata  `json:"profile_neutrality,omitempty"`
+	ProfileExperiment   *ProfileExperimentMetadata `json:"profile_experiment,omitempty"`
+	HoldoutGate         eval.HoldoutGateResult     `json:"holdout_gate,omitempty"`
+	Thresholds          RegressionThresholds       `json:"thresholds"`
+	Passed              bool                       `json:"passed"`
+	Reasons             []string                   `json:"reasons,omitempty"`
+	FullDatasetRequired bool                       `json:"full_dataset_required"`
+	FullDatasetUsed     bool                       `json:"full_dataset_used"`
+	EvaluatedAt         time.Time                  `json:"evaluated_at"`
 }
 
 type ServiceOptions struct {
-	HistorySource     HistorySource
-	QuestionClusterer QuestionClusterer
-	RecallReplayer    RecallReplayer
-	SourceReader      SourceReader
-	CodexAnalyzer     CodexAnalyzer
-	CodexTools        *CodexToolRegistry
-	Validator         ItemValidator
-	RegressionRunner  RegressionRunner
-	ShadowRetriever   *ShadowRetriever
-	RegressionLimits  RegressionThresholds
-	ToolQuota         ToolQuota
-	MaxQuestions      int
-	MaxClusters       int
-	Metrics           MetricsRecorder
-	Now               func() time.Time
+	HistorySource         HistorySource
+	QuestionClusterer     QuestionClusterer
+	RecallReplayer        RecallReplayer
+	SourceReader          SourceReader
+	CodexAnalyzer         CodexAnalyzer
+	CodexTools            *CodexToolRegistry
+	Validator             ItemValidator
+	RegressionRunner      RegressionRunner
+	ShadowRetriever       *ShadowRetriever
+	RegressionLimits      RegressionThresholds
+	RegressionHoldoutGate eval.HoldoutGateConfig
+	ToolQuota             ToolQuota
+	MaxQuestions          int
+	MaxClusters           int
+	Metrics               MetricsRecorder
+	Now                   func() time.Time
 }
 
 type Service struct {
-	repo       Repository
-	history    HistorySource
-	clusterer  QuestionClusterer
-	replayer   RecallReplayer
-	source     SourceReader
-	codex      CodexAnalyzer
-	codexTools *CodexToolRegistry
-	validator  ItemValidator
-	regression RegressionRunner
-	shadow     *ShadowRetriever
-	thresholds RegressionThresholds
-	quota      ToolQuota
-	maxHistory int
-	maxCluster int
-	metrics    MetricsRecorder
-	now        func() time.Time
+	repo        Repository
+	history     HistorySource
+	clusterer   QuestionClusterer
+	replayer    RecallReplayer
+	source      SourceReader
+	codex       CodexAnalyzer
+	codexTools  *CodexToolRegistry
+	validator   ItemValidator
+	regression  RegressionRunner
+	shadow      *ShadowRetriever
+	thresholds  RegressionThresholds
+	holdoutGate eval.HoldoutGateConfig
+	quota       ToolQuota
+	maxHistory  int
+	maxCluster  int
+	metrics     MetricsRecorder
+	now         func() time.Time
 }
 
 type RunRequest struct {
@@ -231,22 +257,23 @@ func NewService(repo Repository, opts ServiceOptions) *Service {
 		now = time.Now
 	}
 	return &Service{
-		repo:       repo,
-		history:    opts.HistorySource,
-		clusterer:  opts.QuestionClusterer,
-		replayer:   opts.RecallReplayer,
-		source:     opts.SourceReader,
-		codex:      opts.CodexAnalyzer,
-		codexTools: opts.CodexTools,
-		validator:  opts.Validator,
-		regression: opts.RegressionRunner,
-		shadow:     opts.ShadowRetriever,
-		thresholds: opts.RegressionLimits,
-		quota:      opts.ToolQuota,
-		maxHistory: opts.MaxQuestions,
-		maxCluster: opts.MaxClusters,
-		metrics:    opts.Metrics,
-		now:        now,
+		repo:        repo,
+		history:     opts.HistorySource,
+		clusterer:   opts.QuestionClusterer,
+		replayer:    opts.RecallReplayer,
+		source:      opts.SourceReader,
+		codex:       opts.CodexAnalyzer,
+		codexTools:  opts.CodexTools,
+		validator:   opts.Validator,
+		regression:  opts.RegressionRunner,
+		shadow:      opts.ShadowRetriever,
+		thresholds:  opts.RegressionLimits,
+		holdoutGate: opts.RegressionHoldoutGate,
+		quota:       opts.ToolQuota,
+		maxHistory:  opts.MaxQuestions,
+		maxCluster:  opts.MaxClusters,
+		metrics:     opts.Metrics,
+		now:         now,
 	}
 }
 
@@ -650,6 +677,7 @@ func (s *Service) RunRegressionForItem(ctx context.Context, tenantID, itemID str
 		ItemID:              itemID,
 		Item:                item,
 		Thresholds:          s.thresholds,
+		HoldoutGate:         s.holdoutGate,
 		FullDatasetRequired: item.ItemType == ItemTypeQueryRewrite,
 		RequestedAt:         s.now(),
 	}
@@ -736,8 +764,21 @@ func (s *Service) BulkRevalidate(ctx context.Context, request BulkRevalidateRequ
 
 func (s *Service) evaluateRegression(result RegressionResult, request RegressionRequest) EvalReport {
 	result = normalizeRegressionResult(result)
+	if result.ScopedItemID == "" {
+		result.ScopedItemID = request.ItemID
+	}
+	if result.ProfileNeutrality == (ProfileNeutralityMetadata{}) {
+		result.ProfileNeutrality = ProfileNeutralityMetadata{
+			SameProfile:          true,
+			OptimizationLiftOnly: true,
+		}
+	}
 	report := EvalReport{
 		Result:              result,
+		ScopedItemID:        result.ScopedItemID,
+		ProfileNeutrality:   result.ProfileNeutrality,
+		ProfileExperiment:   result.ProfileExperiment,
+		HoldoutGate:         result.HoldoutGate,
 		Thresholds:          request.Thresholds,
 		FullDatasetRequired: request.FullDatasetRequired,
 		FullDatasetUsed:     result.FullDatasetUsed,
@@ -768,8 +809,29 @@ func (s *Service) evaluateRegression(result RegressionResult, request Regression
 	if request.FullDatasetRequired && !result.FullDatasetUsed {
 		report.Reasons = append(report.Reasons, "full_dataset_required")
 	}
+	if request.HoldoutGate.Enabled {
+		if !result.HoldoutGate.Enabled {
+			result.HoldoutGate = eval.EvaluateHoldoutGate(eval.RunResult{MissingSplit: true}, request.HoldoutGate)
+			report.Result = result
+			report.HoldoutGate = result.HoldoutGate
+		}
+		if !result.HoldoutGate.Passed {
+			report.Reasons = append(report.Reasons, holdoutGateReportReasons(result.HoldoutGate)...)
+		}
+	}
 	report.Passed = len(report.Reasons) == 0
 	return report
+}
+
+func holdoutGateReportReasons(gate eval.HoldoutGateResult) []string {
+	if len(gate.Reasons) == 0 {
+		return []string{"holdout_gate_failed"}
+	}
+	out := make([]string, 0, len(gate.Reasons))
+	for _, reason := range gate.Reasons {
+		out = append(out, "holdout_gate_"+reason)
+	}
+	return out
 }
 
 func normalizeRegressionResult(result RegressionResult) RegressionResult {
@@ -878,6 +940,11 @@ func (s *Service) appendRegressionEvent(ctx context.Context, item OptimizationIt
 		"reasons":               append([]string(nil), report.Reasons...),
 		"full_dataset_required": report.FullDatasetRequired,
 		"full_dataset_used":     report.FullDatasetUsed,
+		"scoped_item_id":        report.ScopedItemID,
+		"profile_neutrality":    report.ProfileNeutrality,
+	}
+	if report.ProfileExperiment != nil {
+		payload["profile_experiment"] = report.ProfileExperiment
 	}
 	return s.repo.AppendItemEvent(ctx, OptimizationItemEvent{
 		ID:        stableID("event", item.ID, "regression_evaluated", string(item.Status), item.UpdatedAt.UTC().Format(time.RFC3339Nano)),

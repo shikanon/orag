@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	evalpkg "github.com/shikanon/orag/internal/eval"
 )
 
 func TestObjectiveScoresWithConstraintsAndBudgetNormalization(t *testing.T) {
@@ -144,5 +146,65 @@ func TestObjectivePairwiseWinRateAndBootstrapPromotion(t *testing.T) {
 	}
 	if !result.Best.SignificantlyBetter {
 		t.Fatalf("best = %#v, want significant promotion", result.Best)
+	}
+}
+
+func TestObjectiveDefaultPrefersRealPairwiseOutcomes(t *testing.T) {
+	spec := ObjectiveSpec{BaselineID: "baseline"}
+	result, err := EvaluateObjective(spec, []CandidateInput{
+		{
+			ID:      "baseline",
+			Metrics: map[string]float64{evalpkg.PrimaryMetricDeterministicAnswerMatch: 1},
+			Pairwise: []PairwiseOutcome{
+				{ItemID: "q1", WinnerID: "challenger", LoserID: "baseline"},
+			},
+		},
+		{
+			ID:      "challenger",
+			Metrics: map[string]float64{evalpkg.PrimaryMetricDeterministicAnswerMatch: 0.2},
+			Pairwise: []PairwiseOutcome{
+				{ItemID: "q1", WinnerID: "challenger", LoserID: "baseline"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateObjective() error = %v", err)
+	}
+	if result.Best.ID != "challenger" || result.Best.ScoreMetric != "pairwise_win_rate" || !result.Best.HasPairwiseOutcomes {
+		t.Fatalf("best = %#v, want real pairwise win-rate winner", result.Best)
+	}
+}
+
+func TestObjectiveDefaultFallsBackToDeterministicAnswerMatch(t *testing.T) {
+	result, err := EvaluateObjective(ObjectiveSpec{}, []CandidateInput{
+		{ID: "deterministic_high", Metrics: map[string]float64{evalpkg.PrimaryMetricDeterministicAnswerMatch: 0.8}},
+		{
+			ID: "legacy_pairwise_high",
+			Metrics: map[string]float64{
+				evalpkg.PrimaryMetricPairwiseAccuracy:         0.99,
+				evalpkg.PrimaryMetricDeterministicAnswerMatch: 0.1,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateObjective() error = %v", err)
+	}
+	if result.Best.ID != "deterministic_high" ||
+		result.Best.ScoreMetric != evalpkg.PrimaryMetricDeterministicAnswerMatch ||
+		result.Best.HasPairwiseOutcomes {
+		t.Fatalf("best = %#v, want deterministic fallback without pairwise win-rate", result.Best)
+	}
+}
+
+func TestObjectiveCanReadLegacyPairwiseAccuracyWhenNoFallbackExists(t *testing.T) {
+	result, err := EvaluateObjective(ObjectiveSpec{}, []CandidateInput{
+		{ID: "legacy_low", Metrics: map[string]float64{evalpkg.PrimaryMetricPairwiseAccuracy: 0.4}},
+		{ID: "legacy_high", Metrics: map[string]float64{evalpkg.PrimaryMetricPairwiseAccuracy: 0.7}},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateObjective() error = %v", err)
+	}
+	if result.Best.ID != "legacy_high" || result.Best.ScoreMetric != evalpkg.PrimaryMetricPairwiseAccuracy {
+		t.Fatalf("best = %#v, want legacy pairwise compatibility", result.Best)
 	}
 }

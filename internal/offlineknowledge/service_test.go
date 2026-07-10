@@ -329,10 +329,23 @@ func TestServiceRunRegressionForItemPassesAndStoresReportEvent(t *testing.T) {
 	if !report.Passed || len(report.Reasons) != 0 {
 		t.Fatalf("eval report = %#v, want passed without reasons", report)
 	}
+	if report.ScopedItemID != item.ID || report.Result.ScopedItemID != item.ID {
+		t.Fatalf("scoped item metadata report=%q result=%q, want %q", report.ScopedItemID, report.Result.ScopedItemID, item.ID)
+	}
+	if !report.ProfileNeutrality.SameProfile || !report.ProfileNeutrality.OptimizationLiftOnly {
+		t.Fatalf("profile neutrality = %#v, want same profile optimization lift only", report.ProfileNeutrality)
+	}
 	rawReport := decodeEvalReportMap(t, got.EvalReportJSON)
 	result, ok := rawReport["result"].(map[string]any)
 	if !ok {
 		t.Fatalf("eval report result = %#v, want object", rawReport["result"])
+	}
+	if rawReport["scoped_item_id"] != item.ID {
+		t.Fatalf("eval report scoped_item_id = %#v, want %q", rawReport["scoped_item_id"], item.ID)
+	}
+	profileNeutrality, ok := rawReport["profile_neutrality"].(map[string]any)
+	if !ok || profileNeutrality["same_profile"] != true || profileNeutrality["optimization_lift_only"] != true {
+		t.Fatalf("eval report profile_neutrality = %#v, want neutral metadata", rawReport["profile_neutrality"])
 	}
 	if result["recall_lift"] != 0.22 ||
 		result["answer_quality_lift"] != 0.18 ||

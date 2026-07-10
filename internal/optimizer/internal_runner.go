@@ -34,6 +34,8 @@ func (r InternalRAGRunner) RunCandidate(ctx context.Context, req CandidateRunReq
 		KnowledgeBaseID: req.KnowledgeBaseID,
 		Profile:         req.Profile,
 		TopK:            topK,
+		Split:           dataset.DatasetSplit(req.Split),
+		HoldoutGate:     req.HoldoutGate,
 	})
 	if err != nil {
 		return CandidateRunResult{}, err
@@ -47,6 +49,7 @@ func (r InternalRAGRunner) RunCandidate(ctx context.Context, req CandidateRunReq
 		CandidateID:    candidate.ID,
 		EvaluationRun:  run,
 		Metrics:        cloneMetrics(run.Metrics),
+		HoldoutGate:    run.HoldoutGate,
 		TempNamespaces: namespaces,
 		CleanupStatus:  cleanupStatus,
 	}, nil

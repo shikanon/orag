@@ -168,6 +168,9 @@ maintenance:
     shadow_event_sampling_rate: 1.0
     auto_publish_enabled: false
     regression_eval_enabled: true
+    # Regression datasets should use dataset item split/weight metadata.
+    # `eval` drives baseline/candidate comparison; `holdout` is used by holdout gates.
+    # Candidate retrieval is scoped to the current optimization item at runtime.
     regression_dataset_id: ds_offline_regression
     full_regression_for_rewrite_enabled: true
     min_recall_lift: 0.05

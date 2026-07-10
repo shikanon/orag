@@ -3,6 +3,7 @@ package dataset
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,6 +61,10 @@ type Repository interface {
 	DatasetItems(ctx context.Context, tenantID, datasetID string) ([]Item, error)
 }
 
+type SplitRepository interface {
+	DatasetItemsBySplit(ctx context.Context, tenantID, datasetID string, split DatasetSplit) ([]Item, error)
+}
+
 type Service struct {
 	repo Repository
 }
@@ -102,6 +107,26 @@ func (s *Service) Items(ctx context.Context, tenantID, datasetID string) ([]Item
 		return nil, ErrDatasetNotFound
 	}
 	return s.repo.DatasetItems(ctx, tenantID, datasetID)
+}
+
+func (s *Service) ItemsBySplit(ctx context.Context, tenantID, datasetID string, split DatasetSplit) ([]Item, error) {
+	if _, ok, err := s.repo.GetDataset(ctx, tenantID, datasetID); err != nil {
+		return nil, err
+	} else if !ok {
+		return nil, ErrDatasetNotFound
+	}
+	split = NormalizeSplit(split)
+	if split == "" {
+		return s.repo.DatasetItems(ctx, tenantID, datasetID)
+	}
+	if repo, ok := s.repo.(SplitRepository); ok {
+		return repo.DatasetItemsBySplit(ctx, tenantID, datasetID, split)
+	}
+	items, err := s.repo.DatasetItems(ctx, tenantID, datasetID)
+	if err != nil {
+		return nil, err
+	}
+	return FilterItemsBySplit(items, split), nil
 }
 
 func (s *Service) Get(ctx context.Context, tenantID, id string) (Dataset, bool, error) {
@@ -154,6 +179,16 @@ func (r *MemoryRepository) DatasetItems(_ context.Context, tenantID, datasetID s
 	return append([]Item(nil), r.items[datasetID]...), nil
 }
 
+func (r *MemoryRepository) DatasetItemsBySplit(_ context.Context, tenantID, datasetID string, split DatasetSplit) ([]Item, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ds, ok := r.datasets[datasetID]
+	if !ok || ds.TenantID != tenantID {
+		return nil, ErrDatasetNotFound
+	}
+	return FilterItemsBySplit(r.items[datasetID], split), nil
+}
+
 func NormalizeItemMetadata(item Item) Item {
 	if item.Split == "" {
 		item.Split = DatasetSplitEval
@@ -168,4 +203,23 @@ func NormalizeItemMetadata(item Item) Item {
 		item.HumanScores = map[string]float64{}
 	}
 	return item
+}
+
+func NormalizeSplit(split DatasetSplit) DatasetSplit {
+	return DatasetSplit(strings.TrimSpace(string(split)))
+}
+
+func FilterItemsBySplit(items []Item, split DatasetSplit) []Item {
+	split = NormalizeSplit(split)
+	if split == "" {
+		return append([]Item(nil), items...)
+	}
+	out := make([]Item, 0, len(items))
+	for _, item := range items {
+		item = NormalizeItemMetadata(item)
+		if item.Split == split {
+			out = append(out, item)
+		}
+	}
+	return out
 }

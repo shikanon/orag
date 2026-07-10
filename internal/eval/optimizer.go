@@ -20,6 +20,8 @@ type CandidateResult struct {
 	Profile              rag.Profile `json:"profile"`
 	TopK                 int         `json:"top_k"`
 	Score                float64     `json:"score"`
+	ScoreMetric          string      `json:"score_metric"`
+	FallbackMetric       string      `json:"fallback_metric,omitempty"`
 	PairwiseAccuracy     float64     `json:"pairwise_accuracy"`
 	NDCGAtK              float64     `json:"ndcg_at_k"`
 	RecallAtK            float64     `json:"recall_at_k"`
@@ -79,6 +81,11 @@ func (o Optimizer) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeR
 		}
 	}
 	sort.SliceStable(out.Candidates, func(i, j int) bool {
+		leftPriority := candidateScoreMetricPriority(out.Candidates[i])
+		rightPriority := candidateScoreMetricPriority(out.Candidates[j])
+		if leftPriority != rightPriority {
+			return leftPriority > rightPriority
+		}
 		return out.Candidates[i].Score > out.Candidates[j].Score
 	})
 	if len(out.Candidates) > 0 {
@@ -88,14 +95,17 @@ func (o Optimizer) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeR
 }
 
 func candidateFromRun(profile rag.Profile, topK int, run RunResult) CandidateResult {
-	pairwiseAccuracy := run.Metrics[PrimaryMetricPairwiseAccuracy]
-	if _, ok := run.Metrics[PrimaryMetricPairwiseAccuracy]; !ok {
-		pairwiseAccuracy = optimizerScore(run)
+	score, scoreMetric, fallbackMetric := optimizerScore(run)
+	pairwiseAccuracy := 0.0
+	if value, ok := run.Metrics[PrimaryMetricPairwiseAccuracy]; ok {
+		pairwiseAccuracy = value
 	}
 	return CandidateResult{
 		Profile:              profile,
 		TopK:                 topK,
-		Score:                pairwiseAccuracy,
+		Score:                score,
+		ScoreMetric:          scoreMetric,
+		FallbackMetric:       fallbackMetric,
 		PairwiseAccuracy:     pairwiseAccuracy,
 		NDCGAtK:              run.Metrics["ndcg_at_k"],
 		RecallAtK:            run.Metrics["recall_at_k"],
@@ -112,14 +122,30 @@ func candidateFromRun(profile rag.Profile, topK int, run RunResult) CandidateRes
 	}
 }
 
-func optimizerScore(run RunResult) float64 {
+func optimizerScore(run RunResult) (float64, string, string) {
 	if run.Metrics != nil {
+		if score, ok := run.Metrics[PrimaryMetricPairwiseAccuracy]; ok {
+			return score, PrimaryMetricPairwiseAccuracy, ""
+		}
+		if score, ok := run.Metrics[PrimaryMetricDeterministicAnswerMatch]; ok {
+			return score, PrimaryMetricDeterministicAnswerMatch, PrimaryMetricDeterministicAnswerMatch
+		}
 		if score, ok := run.Metrics["answer_accuracy"]; ok {
-			return score
+			return score, "answer_accuracy", "answer_accuracy"
 		}
 		if score, ok := run.Metrics["accuracy"]; ok {
-			return score
+			return score, "accuracy", "accuracy"
 		}
 	}
-	return run.Accuracy
+	return run.Accuracy, "accuracy", "accuracy"
+}
+
+func candidateScoreMetricPriority(candidate CandidateResult) int {
+	if candidate.ScoreMetric == PrimaryMetricPairwiseAccuracy {
+		return 2
+	}
+	if candidate.FallbackMetric != "" {
+		return 1
+	}
+	return 0
 }

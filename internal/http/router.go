@@ -857,6 +857,7 @@ type optimizeRequest struct {
 	NamespaceTTLSeconds int                     `json:"namespace_ttl_seconds,omitempty"`
 	SelectionSplit      string                  `json:"selection_split,omitempty"`
 	HoldoutSplit        string                  `json:"holdout_split,omitempty"`
+	HoldoutGate         eval.HoldoutGateConfig  `json:"holdout_gate,omitempty"`
 	Runner              map[string]any          `json:"runner,omitempty"`
 	Profiles            []rag.Profile           `json:"profiles,omitempty"`
 	TopKs               []int                   `json:"top_ks,omitempty"`
@@ -886,6 +887,7 @@ type optimizationRunResponse struct {
 	StatusReason            string                   `json:"status_reason,omitempty"`
 	BestCandidateID         string                   `json:"best_candidate_id,omitempty"`
 	HoldoutCandidateID      string                   `json:"holdout_candidate_id,omitempty"`
+	HoldoutGate             eval.HoldoutGateResult   `json:"holdout_gate,omitempty"`
 	SamplingStrategy        optimizer.SearchStrategy `json:"sampling_strategy"`
 	SearchSpaceSize         int64                    `json:"search_space_size"`
 	SampledCandidateCount   int                      `json:"sampled_candidate_count"`
@@ -1057,6 +1059,7 @@ func (s *Server) optimizationSubmitRequest(ctx context.Context, c *app.RequestCo
 		NamespaceTTL:    time.Duration(req.NamespaceTTLSeconds) * time.Second,
 		SelectionSplit:  req.SelectionSplit,
 		HoldoutSplit:    req.HoldoutSplit,
+		HoldoutGate:     req.HoldoutGate,
 		Runner:          runner,
 	}, true
 }
@@ -1074,6 +1077,7 @@ func optimizationRequestFromSubmit(req optimizer.SubmitRequest) optimizeRequest 
 		NamespaceTTLSeconds: int(req.NamespaceTTL / time.Second),
 		SelectionSplit:      req.SelectionSplit,
 		HoldoutSplit:        req.HoldoutSplit,
+		HoldoutGate:         req.HoldoutGate,
 		Runner:              req.Runner,
 	})
 }
@@ -1225,6 +1229,7 @@ func optimizationStatus(status optimizer.OptimizationStatus) optimizationStatusR
 			StatusReason:            run.StatusReason,
 			BestCandidateID:         run.BestCandidateID,
 			HoldoutCandidateID:      run.HoldoutCandidateID,
+			HoldoutGate:             run.HoldoutGate,
 			SamplingStrategy:        run.SamplingStrategy,
 			SearchSpaceSize:         run.SearchSpaceSize,
 			SampledCandidateCount:   run.SampledCandidateCount,

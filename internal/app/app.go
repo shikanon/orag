@@ -398,7 +398,7 @@ func buildOfflineKnowledgeRegressionRunner(organizer config.OfflineKnowledgeOrga
 		Datasets:                datasets,
 		DatasetID:               organizer.RegressionDatasetID,
 		BaselineProfile:         rag.ProfileRealtime,
-		WithOptimizationProfile: rag.ProfileHighPrecision,
+		WithOptimizationProfile: rag.ProfileRealtime,
 		TopK:                    cfgTopKForRegression(organizer),
 	})
 }

@@ -7,11 +7,11 @@
 | 能力 | 说明 |
 | --- | --- |
 | 数据集 | 支持创建数据集和写入样本。 |
-| 评估运行 | `POST /v1/evaluations` 对数据集样本逐条调用 RAG 查询。 |
+| 评估运行 | `POST /v1/evaluations` 对数据集样本逐条调用 RAG 查询，支持 split 过滤和样本 weight 加权聚合。 |
 | 结果持久化 | 默认 `qdrant_postgres` 后端会写入 PostgreSQL。 |
-| 指标 | 默认 deterministic rule-based metrics；启用 Judge/QAG 时写入 faithfulness、groundedness、citation_support、qag_score、token/cost 等增强指标。 |
+| 指标 | 默认写入 `deterministic_answer_match` 等 deterministic rule-based metrics；启用 Judge/QAG 时写入 faithfulness、groundedness、citation_support、qag_score、token/cost 等增强指标。 |
 | LLM-as-Judge/QAG | 支持 pairwise judge、A/B 顺序交换、raw/parsed 响应分离、QAG claim verdict、gold-set 校准和成本记录。 |
-| Optimizer | 支持目标驱动异步优化、objective/constraints/tie-breaker、搜索空间、checkpoint、cancel/resume 和 holdout 复评；旧 `profiles/top_ks` 请求仍兼容。 |
+| Optimizer | 支持目标驱动异步优化、objective/constraints/tie-breaker、搜索空间、checkpoint、cancel/resume 和 holdout 复评/门禁；旧 `profiles/top_ks` 请求仍兼容。 |
 
 ## 数据模型
 
@@ -35,7 +35,8 @@
 | --- | --- | --- |
 | `answer_accuracy` | 答案包含 ground truth 关键项时命中。 | 弱规则指标，不把 citation 存在性计入答案正确。 |
 | `accuracy` / `hit_rate` | 新运行中与 `answer_accuracy` 保持一致。 | 兼容别名；历史已存运行可能没有新增指标键。 |
-| `pairwise_accuracy` | 优化器主质量指标；未执行 pairwise judge 时由 `answer_accuracy` 填充，启用成对比较后表示候选在 pairwise 比较中的胜出或不输比例。 | 推荐作为候选排序主指标；判读时区分 deterministic fallback 与真实 pairwise judge 来源。 |
+| `deterministic_answer_match` | 规则型答案匹配指标，替代过去 rule-only 运行写入 `pairwise_accuracy` 的行为。 | 适合作为未启用真实 pairwise judge 时的 fallback 排序信号。 |
+| `pairwise_accuracy` | 真实 pairwise judge 中候选胜出或不输比例。 | 仅真实成对评审或历史兼容结果使用；新 rule-only 运行不再写入。 |
 | `citation_hit_rate` | 响应中存在至少一个 citation 时命中。 | 只说明证据存在性，不证明答案正确。 |
 | `context_recall` | 检查 retrieved chunks 覆盖相关文档 ID 的比例。 | 只看文档 ID，不验证 chunk 内容是否真正支撑答案。 |
 | `citation_precision` | 检查引用文档 ID 是否落在相关文档列表中。 | 不验证引用位置与回答论断的一致性。 |
@@ -79,24 +80,24 @@ score objective + constraints + tie-breakers
 optional holdout re-evaluation, then poll/cancel/resume by run_id
 ```
 
-旧 `profiles/top_ks` 请求会映射为 profile 与 retrieval top-k 搜索空间；当历史运行缺少 `pairwise_accuracy` 时，optimizer 仍会回退到 `answer_accuracy`，再回退到 `run.Accuracy`。
+旧 `profiles/top_ks` 请求会映射为 profile 与 retrieval top-k 搜索空间；当没有真实 pairwise judge 结果时，optimizer 默认回退到 `deterministic_answer_match`，再兼容读取历史 `pairwise_accuracy`、`answer_accuracy` 和 `run.Accuracy`。
 
 当前 optimizer 的边界：
 
 - HTTP internal runner 已支持 retrieval top-k、reranker top-n、graph 开关等 overlay；涉及重分块、embedding 或索引变更的候选会注册临时 namespace，真实重建索引成本仍需离线控制。
 - 搜索策略以 grid、seeded random 和 successive halving 计划为主，不是完整 Bayesian optimization 或 bandit。
 - External harness runner 已实现 argv-array、安全 allowlist、脱敏和指标白名单；HTTP 示例默认使用 internal RAG runner。
-- 候选排序由 `objective.maximize`、constraints 和 tie-breakers 决定；使用 rule-based `pairwise_accuracy` fallback 时，不应等价为完整业务满意度。
+- 候选排序由 `objective.maximize`、constraints 和 tie-breakers 决定；使用 `deterministic_answer_match` 等 rule-based fallback 时，不应等价为完整业务满意度。
 
 ## 延迟权衡
 
-复杂召回策略通常会提升 `pairwise_accuracy`、`ndcg_at_k` 或 `recall_at_k`，但也可能提高 `latency_p95_ms`。推荐用 `pairwise_accuracy` 做主排序，再用 `latency_p95_ms` 作为 SLO 约束：若质量提升明显且 P95 仍达标，可以选择 `high_precision` 或更大的 `top_k`；若质量收益很小但 P95 明显上升，应优先保留更简单的 `realtime` profile 或较小 `top_k`。
+复杂召回策略通常会提升 `deterministic_answer_match`、真实 `pairwise_accuracy`、`ndcg_at_k` 或 `recall_at_k`，但也可能提高 `latency_p95_ms`。推荐明确配置 `objective.maximize`，再用 `latency_p95_ms` 作为 SLO 约束：若质量提升明显且 P95 仍达标，可以选择 `high_precision` 或更大的 `top_k`；若质量收益很小但 P95 明显上升，应优先保留更简单的 `realtime` profile 或较小 `top_k`。
 
 ## 推荐使用方式
 
 | 场景 | 推荐做法 |
 | --- | --- |
-| PR 回归 | 准备小型 deterministic 数据集，观察 `answer_accuracy`、`pairwise_accuracy`、IR 指标、冗余度、多样性和 `latency_p95_ms` 是否退化。 |
+| PR 回归 | 准备小型 deterministic 数据集，观察 `deterministic_answer_match`、IR 指标、冗余度、多样性和 `latency_p95_ms` 是否退化；需要 promotion 时使用 holdout split 和 holdout gate。 |
 | profile 对比 | 使用相同数据集跑 `realtime` 和 `high_precision`。 |
 | top_k 调参 | 用 optimizer 枚举少量候选，优先看 `objective` 得分和 `pairwise_accuracy`，再用 `latency_p95_ms` 和冗余度做约束。 |
 | 真实质量评审 | 在 deterministic 指标之外启用 `judge`/`qag`，结合 `faithfulness`、`groundedness`、`citation_support`、`qag_score`、raw/parsed 明细和人工抽检判断答案质量。 |

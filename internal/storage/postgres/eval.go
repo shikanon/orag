@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/shikanon/orag/internal/dataset"
 	evalpkg "github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/platform/id"
 )
@@ -27,9 +28,21 @@ func encodeEvaluationRunMetrics(result evalpkg.RunResult) ([]byte, error) {
 		return nil, err
 	}
 	metrics := map[string]any{
-		"total":    result.Total,
-		"hit_rate": result.HitRate,
-		"accuracy": result.Accuracy,
+		"total":                   result.Total,
+		"hit_rate":                result.HitRate,
+		"accuracy":                result.Accuracy,
+		"weighted_sample_count":   result.WeightedSampleCount,
+		"unweighted_sample_count": result.UnweightedSampleCount,
+		"missing_split":           result.MissingSplit,
+	}
+	if result.Split != "" {
+		metrics["split"] = result.Split
+	}
+	if len(result.SplitSummary) > 0 {
+		metrics["split_summary"] = result.SplitSummary
+	}
+	if result.HoldoutGate.Enabled {
+		metrics["holdout_gate"] = result.HoldoutGate
 	}
 	for key, value := range result.Metrics {
 		metrics[key] = value
@@ -358,18 +371,44 @@ func (r *Repository) judgeCalibrationRuns(ctx context.Context, tenantID, dataset
 
 func decodeEvaluationRunMetrics(metrics []byte, result *evalpkg.RunResult) {
 	var decoded struct {
-		Total    int     `json:"total"`
-		HitRate  float64 `json:"hit_rate"`
-		Accuracy float64 `json:"accuracy"`
+		Total                 int                             `json:"total"`
+		HitRate               float64                         `json:"hit_rate"`
+		Accuracy              float64                         `json:"accuracy"`
+		WeightedSampleCount   float64                         `json:"weighted_sample_count"`
+		UnweightedSampleCount int                             `json:"unweighted_sample_count"`
+		Split                 string                          `json:"split"`
+		SplitSummary          map[string]evalpkg.SplitSummary `json:"split_summary"`
+		MissingSplit          bool                            `json:"missing_split"`
+		HoldoutGate           evalpkg.HoldoutGateResult       `json:"holdout_gate"`
 	}
 	_ = json.Unmarshal(metrics, &decoded)
-	var metricMap map[string]float64
-	_ = json.Unmarshal(metrics, &metricMap)
-	if metricMap == nil {
-		metricMap = map[string]float64{}
-	}
+	metricMap := numericEvaluationMetrics(metrics)
 	result.Total = decoded.Total
 	result.HitRate = decoded.HitRate
 	result.Accuracy = decoded.Accuracy
+	result.WeightedSampleCount = decoded.WeightedSampleCount
+	result.UnweightedSampleCount = decoded.UnweightedSampleCount
+	result.Split = dataset.DatasetSplit(decoded.Split)
+	result.SplitSummary = decoded.SplitSummary
+	result.MissingSplit = decoded.MissingSplit
+	result.HoldoutGate = decoded.HoldoutGate
+	if result.WeightedSampleCount == 0 && result.Total > 0 {
+		result.WeightedSampleCount = float64(result.Total)
+	}
+	if result.UnweightedSampleCount == 0 {
+		result.UnweightedSampleCount = result.Total
+	}
 	result.Metrics = metricMap
+}
+
+func numericEvaluationMetrics(metrics []byte) map[string]float64 {
+	var raw map[string]any
+	_ = json.Unmarshal(metrics, &raw)
+	out := make(map[string]float64, len(raw))
+	for key, value := range raw {
+		if number, ok := value.(float64); ok {
+			out[key] = number
+		}
+	}
+	return out
 }

@@ -67,11 +67,15 @@ func TestOptimizerUsesAnswerAccuracy(t *testing.T) {
 			highPrecision = candidate
 		}
 	}
-	if realtime.Score != 0 || realtime.PairwiseAccuracy != 0 {
-		t.Fatalf("citation-only candidate = %#v, want score 0", realtime)
+	if realtime.Score != 0 || realtime.PairwiseAccuracy != 0 ||
+		realtime.ScoreMetric != PrimaryMetricDeterministicAnswerMatch ||
+		realtime.FallbackMetric != PrimaryMetricDeterministicAnswerMatch {
+		t.Fatalf("citation-only candidate = %#v, want deterministic fallback score 0", realtime)
 	}
-	if highPrecision.Score != 1 || highPrecision.PairwiseAccuracy != 1 {
-		t.Fatalf("answer-correct candidate = %#v, want score 1", highPrecision)
+	if highPrecision.Score != 1 || highPrecision.PairwiseAccuracy != 0 ||
+		highPrecision.ScoreMetric != PrimaryMetricDeterministicAnswerMatch ||
+		highPrecision.FallbackMetric != PrimaryMetricDeterministicAnswerMatch {
+		t.Fatalf("answer-correct candidate = %#v, want deterministic fallback score 1", highPrecision)
 	}
 }
 
@@ -179,6 +183,48 @@ func TestOptimizerRanksCandidatesByPairwiseAccuracy(t *testing.T) {
 		result.Candidates[0].DuplicateCount != 1 || result.Candidates[0].DedupedTopKCount != 3 ||
 		result.Candidates[0].AlphaNDCG != 0.80 || result.Candidates[0].AspectCoverage != 0.75 {
 		t.Fatalf("diagnostics missing from best candidate = %#v", result.Candidates[0])
+	}
+}
+
+func TestOptimizerPrefersRealPairwiseOverFallbackMetric(t *testing.T) {
+	runner := &fakeOptimizationRunner{
+		runs: []RunResult{
+			{
+				ID:       "run_fallback_high",
+				Accuracy: 1,
+				Metrics: map[string]float64{
+					PrimaryMetricDeterministicAnswerMatch: 1,
+				},
+			},
+			{
+				ID:       "run_pairwise_real",
+				Accuracy: 0.2,
+				Metrics: map[string]float64{
+					PrimaryMetricPairwiseAccuracy: 0.6,
+				},
+			},
+		},
+	}
+
+	result, err := (Optimizer{Runner: runner}).Optimize(context.Background(), OptimizeRequest{
+		TenantID:        "tenant_default",
+		DatasetID:       "dataset_default",
+		KnowledgeBaseID: "kb_default",
+		Profiles:        []rag.Profile{rag.ProfileRealtime},
+		TopKs:           []int{4, 8},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Best.RunID != "run_pairwise_real" || result.Best.ScoreMetric != PrimaryMetricPairwiseAccuracy {
+		t.Fatalf("best = %#v, want real pairwise prioritized", result.Best)
+	}
+	if result.Candidates[1].RunID != "run_fallback_high" ||
+		result.Candidates[1].ScoreMetric != PrimaryMetricDeterministicAnswerMatch ||
+		result.Candidates[1].FallbackMetric != PrimaryMetricDeterministicAnswerMatch ||
+		result.Candidates[1].PairwiseAccuracy != 0 {
+		t.Fatalf("fallback candidate = %#v, want explicit deterministic fallback without pairwise", result.Candidates[1])
 	}
 }
 

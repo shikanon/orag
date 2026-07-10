@@ -272,6 +272,71 @@ func TestShadowRetrieverAllowsLowConfidenceFallbackWhenRequested(t *testing.T) {
 	}
 }
 
+func TestShadowRetrieverScopedItemOnlyUsesCurrentItem(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMemoryRepository()
+	for _, item := range []OptimizationItem{
+		shadowTestItem("current", ItemStatusShadowEnabled, "What is ORAG?"),
+		shadowTestItem("other", ItemStatusShadowEnabled, "What is ORAG?"),
+	} {
+		if err := repo.CreateOptimizationItem(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	retriever := NewShadowRetriever(repo, ShadowRetrieverOptions{Now: fixedShadowNow})
+
+	matches, err := retriever.Retrieve(ctx, ShadowRetrieveRequest{
+		TenantID:     "tenant_1",
+		KBID:         "kb_1",
+		Query:        "What is ORAG?",
+		TraceID:      "trace_scoped",
+		ScopedItemID: "current",
+	})
+	if err != nil {
+		t.Fatalf("Retrieve() error = %v", err)
+	}
+	if len(matches) != 1 || matches[0].ItemID != "current" {
+		t.Fatalf("Retrieve() matches = %#v, want only current item", matches)
+	}
+}
+
+func TestShadowRetrieverScopedItemReturnsExplicitErrors(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMemoryRepository()
+	disabled := shadowTestItem("disabled", ItemStatusCandidate, "What is ORAG?")
+	stale := shadowTestItem("stale", ItemStatusStale, "What is ORAG?")
+	for _, item := range []OptimizationItem{disabled, stale} {
+		if err := repo.CreateOptimizationItem(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	retriever := NewShadowRetriever(repo, ShadowRetrieverOptions{Now: fixedShadowNow})
+
+	tests := []struct {
+		name         string
+		scopedItemID string
+		wantErr      error
+	}{
+		{name: "missing", scopedItemID: "missing", wantErr: ErrScopedShadowItemMissing},
+		{name: "disabled", scopedItemID: "disabled", wantErr: ErrScopedShadowItemDisabled},
+		{name: "stale", scopedItemID: "stale", wantErr: ErrScopedShadowItemStale},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := retriever.Retrieve(ctx, ShadowRetrieveRequest{
+				TenantID:     "tenant_1",
+				KBID:         "kb_1",
+				Query:        "What is ORAG?",
+				TraceID:      "trace_" + tt.name,
+				ScopedItemID: tt.scopedItemID,
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Retrieve() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func shadowTestItem(id string, status ItemStatus, question string) OptimizationItem {
 	now := fixedShadowNow()
 	return OptimizationItem{

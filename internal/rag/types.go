@@ -17,6 +17,7 @@ type QueryRequest struct {
 	TenantID               string  `json:"-"`
 	TraceID                string  `json:"-"`
 	SemanticCacheNamespace string  `json:"-"`
+	ScopedShadowItemID     string  `json:"-"`
 	KnowledgeBaseID        string  `json:"knowledge_base_id"`
 	Query                  string  `json:"query"`
 	Profile                Profile `json:"profile,omitempty"`

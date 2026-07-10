@@ -124,6 +124,33 @@ func TestRepositoryDatasetItemsEnforcesTenant(t *testing.T) {
 	}
 }
 
+func TestRepositoryDatasetItemsBySplitFiltersInSQL(t *testing.T) {
+	ctx := context.Background()
+	db := &fakeDatasetQueryer{
+		row: fakeDatasetRow{values: []any{"ds_a", "tenant_a", "regression", "golden", "v1", time.Now().UTC()}},
+		rows: &fakePgxRows{rows: [][]any{
+			{"dsi_1", "ds_a", "q", "a", []byte(`["doc_1"]`), []byte(`[]`), "holdout", 2.5, []byte(`[]`), []byte(`{}`)},
+		}},
+	}
+	repo := &Repository{datasetRunner: db}
+
+	items, err := repo.DatasetItemsBySplit(ctx, "tenant_a", "ds_a", dataset.DatasetSplitHoldout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Split != dataset.DatasetSplitHoldout || items[0].Weight != 2.5 {
+		t.Fatalf("DatasetItemsBySplit() = %#v", items)
+	}
+	for _, want := range []string{"COALESCE(NULLIF(i.split, ''), 'eval')=$3", "d.tenant_id=$1", "i.dataset_id=$2"} {
+		if !strings.Contains(db.querySQL, want) {
+			t.Fatalf("DatasetItemsBySplit() SQL missing %q: %s", want, db.querySQL)
+		}
+	}
+	if got := db.queryArgs[2]; got != dataset.DatasetSplitHoldout {
+		t.Fatalf("split arg = %v, want holdout", got)
+	}
+}
+
 type fakeDatasetQueryer struct {
 	execSQL  string
 	execArgs []any

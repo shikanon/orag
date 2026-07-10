@@ -682,6 +682,70 @@ func TestRunEvaluationRejectsMissingKnowledgeBaseBeforeRAG(t *testing.T) {
 	}
 }
 
+func TestRunEvaluationExposesSplitWeightsHoldoutAndMetricMigration(t *testing.T) {
+	ctx := context.Background()
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	pipeline := &recordingPipeline{answer: "holdout answer"}
+	app.RAG.Pipeline = pipeline
+
+	token := loginToken(t, h)
+	ds, err := app.Datasets.Create(ctx, "tenant_default", "weighted-holdout-http", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []dataset.Item{
+		{Query: "eval question", GroundTruth: "holdout answer", Split: dataset.DatasetSplitEval, Weight: 3},
+		{Query: "holdout question", GroundTruth: "holdout answer", Split: dataset.DatasetSplitHoldout, Weight: 2},
+	} {
+		if _, err := app.Datasets.AddItem(ctx, "tenant_default", ds.ID, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := `{
+		"dataset_id":"` + ds.ID + `",
+		"knowledge_base_id":"kb_default",
+		"profile":"realtime",
+		"top_k":3,
+		"split":"holdout",
+		"scoped_shadow_item_id":"opt_scoped",
+		"holdout_gate":{
+			"enabled":true,
+			"min_sample_count":1,
+			"min_weighted_sample_count":2,
+			"quality_metric":"deterministic_answer_match",
+			"min_quality":1
+		}
+	}`
+	resp := performJSON(h, "POST", "/v1/evaluations", body, token)
+	if resp.Code != 202 {
+		t.Fatalf("evaluation status = %d body=%s", resp.Code, resp.Body)
+	}
+	var result evalpkg.RunResult
+	if err := json.Unmarshal([]byte(resp.Body), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Split != dataset.DatasetSplitHoldout || result.Total != 1 || result.UnweightedSampleCount != 1 || result.WeightedSampleCount != 2 {
+		t.Fatalf("weighted split response = %#v", result)
+	}
+	if result.SplitSummary["eval"].WeightedSampleCount != 3 || result.SplitSummary["holdout"].WeightedSampleCount != 2 {
+		t.Fatalf("split summary = %#v", result.SplitSummary)
+	}
+	if !result.HoldoutGate.Enabled || !result.HoldoutGate.Passed || result.HoldoutGate.QualityMetric != evalpkg.PrimaryMetricDeterministicAnswerMatch {
+		t.Fatalf("holdout gate = %#v", result.HoldoutGate)
+	}
+	if result.Metrics[evalpkg.PrimaryMetricDeterministicAnswerMatch] != 1 {
+		t.Fatalf("metrics missing deterministic answer match: %#v", result.Metrics)
+	}
+	if _, ok := result.Metrics[evalpkg.PrimaryMetricPairwiseAccuracy]; ok {
+		t.Fatalf("rule-only HTTP evaluation wrote pairwise accuracy: %#v", result.Metrics)
+	}
+	if len(pipeline.requests) != 1 || pipeline.requests[0].ScopedShadowItemID != "opt_scoped" || pipeline.requests[0].TopK != 3 {
+		t.Fatalf("pipeline requests = %#v", pipeline.requests)
+	}
+}
+
 func TestGetEvaluationIncludesItemsJudgeAndPairwiseDetails(t *testing.T) {
 	ctx := context.Background()
 	h, app, closeApp := newTestHertzWithApp(t)
@@ -779,6 +843,16 @@ func TestGetEvaluationDefaultReturnsSummaryOnly(t *testing.T) {
 	if strings.Contains(resp.Body, `"items"`) || strings.Contains(resp.Body, `"judge_results"`) {
 		t.Fatalf("default evaluation response leaked details: %s", resp.Body)
 	}
+	var summary evalpkg.RunResult
+	if err := json.Unmarshal([]byte(resp.Body), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := summary.Metrics[evalpkg.PrimaryMetricDeterministicAnswerMatch]; !ok {
+		t.Fatalf("summary metrics = %#v, want deterministic answer match metric", summary.Metrics)
+	}
+	if _, ok := summary.Metrics[evalpkg.PrimaryMetricPairwiseAccuracy]; ok {
+		t.Fatalf("rule-only summary wrote pairwise accuracy: %s", resp.Body)
+	}
 }
 
 func TestOptimizationAsyncHTTPLifecycle(t *testing.T) {
@@ -806,7 +880,14 @@ func TestOptimizationAsyncHTTPLifecycle(t *testing.T) {
 		"search":{"strategy":"grid","max_candidates":2},
 		"budget":{"max_judge_calls":3},
 		"selection_split":"eval",
-		"holdout_split":"holdout"
+		"holdout_split":"holdout",
+		"holdout_gate":{
+			"enabled":true,
+			"min_sample_count":1,
+			"min_weighted_sample_count":1,
+			"quality_metric":"deterministic_answer_match",
+			"min_quality":0.8
+		}
 	}`
 	resp := performJSON(h, "POST", "/v1/optimizations", body, token)
 	if resp.Code != 202 {
@@ -824,6 +905,18 @@ func TestOptimizationAsyncHTTPLifecycle(t *testing.T) {
 	}
 	if accepted.RunID == "" || accepted.Status != "queued" || accepted.PollURL == "" || accepted.CancelURL == "" || accepted.ResumeURL == "" {
 		t.Fatalf("unexpected accepted response: %#v body=%s", accepted, resp.Body)
+	}
+	storedStatus, ok, err := app.Optimizer.Get(ctx, "tenant_default", accepted.RunID)
+	if err != nil || !ok {
+		t.Fatalf("optimizer Get() ok=%v err=%v", ok, err)
+	}
+	storedReq := storedStatus.Run.StoredSubmitRequest()
+	if !storedReq.HoldoutGate.Enabled ||
+		storedReq.HoldoutGate.MinSampleCount != 1 ||
+		storedReq.HoldoutGate.MinWeightedSampleCount != 1 ||
+		storedReq.HoldoutGate.QualityMetric != evalpkg.PrimaryMetricDeterministicAnswerMatch ||
+		storedReq.HoldoutGate.MinQuality != 0.8 {
+		t.Fatalf("stored holdout gate = %#v, want request config", storedReq.HoldoutGate)
 	}
 
 	resp = performJSON(h, "GET", accepted.PollURL, "", token)
@@ -2016,12 +2109,17 @@ func (p *countingPipeline) Invoke(context.Context, rag.QueryRequest) (rag.QueryR
 
 type recordingPipeline struct {
 	requests []rag.QueryRequest
+	answer   string
 }
 
 func (p *recordingPipeline) Invoke(_ context.Context, req rag.QueryRequest) (rag.QueryResponse, error) {
 	p.requests = append(p.requests, req)
+	answer := p.answer
+	if answer == "" {
+		answer = "ok"
+	}
 	return rag.QueryResponse{
-		Answer:      "ok",
+		Answer:      answer,
 		TraceID:     req.TraceID,
 		CacheStatus: "miss",
 		Profile:     rag.ProfileRealtime,

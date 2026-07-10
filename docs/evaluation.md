@@ -9,7 +9,7 @@
 ### 数据集
 
 - `datasets`：数据集元信息，包含 `kind` 和 `version`。
-- `dataset_items`：样本，包含 `query`、`ground_truth`、`relevant_doc_ids` 和可选 `diversity_annotations`。
+- `dataset_items`：样本，包含 `query`、`ground_truth`、`relevant_doc_ids`，以及可选 `split`、`weight`、`diversity_annotations`、`expected_evidence` 和 `human_scores`。
 
 `datasets` 由租户隔离，主要字段包括 `id`、`tenant_id`、`name`、`kind`、`version` 和 `created_at`。`version` 当前由创建时间生成，适合区分同名数据集的不同批次。
 
@@ -27,20 +27,20 @@
 - `judge_runs` / `judge_results`：可选 Judge/QAG 运行与逐样本结果，保存 provider/model、prompt/rubric/config hash、raw response、parsed JSON、token usage 和 cost。
 - `optimization_runs` / `optimization_candidates`：目标驱动 optimizer 的异步 run、candidate、checkpoint、预算、状态、临时 namespace 和 holdout 复评结果。
 
-`evaluation_runs.metrics` 是 JSON 指标快照，当前会保存 `answer_accuracy`、`accuracy`、`hit_rate`、主指标 `pairwise_accuracy`、`citation_hit_rate`，以及聚合后的 `context_recall`、`citation_precision`、`ndcg_at_k`、`recall_at_k`、`mrr`、`map`、`coverage`、`retrieval_failure_rate`、`redundancy_rate`、`duplicate_count`、`deduped_top_k_count`、`alpha_ndcg`、`aspect_coverage`、`latency_p95_ms`、`cache_hit_rate`。启用 Judge/QAG 时还会聚合 `faithfulness`、`groundedness`、`citation_support`、`qag_score`、`qag_claim_coverage`、`prompt_tokens`、`completion_tokens`、`total_tokens`、`cost_usd` 等指标。`total` 是 evaluation run 的顶层字段。`GET /v1/evaluations/{id}` 默认查询运行级汇总；传 `include_items/include_judge/include_pairwise` 可返回明细。历史已存运行可能没有新增的指标键。
+`evaluation_runs.metrics` 是 JSON 指标快照，当前会保存 `deterministic_answer_match`、`answer_accuracy`、`accuracy`、`hit_rate`、`citation_hit_rate`，以及聚合后的 `context_recall`、`citation_precision`、`ndcg_at_k`、`recall_at_k`、`mrr`、`map`、`coverage`、`retrieval_failure_rate`、`redundancy_rate`、`duplicate_count`、`deduped_top_k_count`、`alpha_ndcg`、`aspect_coverage`、`latency_p95_ms`、`cache_hit_rate`、`weighted_sample_count`、`unweighted_sample_count`、`missing_split`。启用 Judge/QAG 时还会聚合 `faithfulness`、`groundedness`、`citation_support`、`qag_score`、`qag_claim_coverage`、`prompt_tokens`、`completion_tokens`、`total_tokens`、`cost_usd` 等指标。`split`、`split_summary` 和 `holdout_gate` 作为结构化字段随运行结果返回并持久化在 JSONB 中；`pairwise_accuracy` 只由真实 pairwise judge 写入，历史已存运行可能仍包含规则型兼容值。`GET /v1/evaluations/{id}` 默认查询运行级汇总；传 `include_items/include_judge/include_pairwise` 可返回明细。历史已存运行可能没有新增的指标键。
 
-`evaluation_results.metrics` 保存逐样本指标，包括 `answer_accuracy`、`accuracy`、`citation_hit_rate`、`context_recall`、`citation_precision`、`latency_ms`、`cache_hit` 以及检索质量、冗余度和多样性指标。运行级指标会对可聚合的逐样本指标取平均；`latency_p95_ms` 使用本次运行所有样本的查询延迟计算 P95。
+`evaluation_results.metrics` 保存逐样本指标，包括 `answer_accuracy`、`accuracy`、`citation_hit_rate`、`context_recall`、`citation_precision`、`latency_ms`、`cache_hit` 以及检索质量、冗余度和多样性指标。运行级指标会按样本 `weight` 对可聚合的逐样本指标取加权平均；`latency_p95_ms` 使用本次运行所有样本的查询延迟计算加权 P95。未设置或非法的 `weight` 会被归一化为 `1`。
 
 ## 运行流程
 
 `POST /v1/evaluations` 会按以下路径执行：
 
-1. 根据当前 tenant 和 `dataset_id` 校验数据集归属并读取样本。
-2. 对每个样本调用同一套 `rag.Service.Query`，传入 `tenant_id`、`knowledge_base_id`、`query`、`profile` 和可选 `top_k`。
+1. 根据当前 tenant 和 `dataset_id` 校验数据集归属并读取样本，按可选 `split` 过滤 `train` / `eval` / `holdout` / `gold`。
+2. 对每个样本调用同一套 `rag.Service.Query`，传入 `tenant_id`、`knowledge_base_id`、`query`、`profile`、可选 `top_k` 和 offline regression 使用的 `scoped_shadow_item_id`。
 3. 基于 RAG 响应中的答案、引用、检索 chunk、延迟和 cache 状态计算逐样本规则指标。
 4. 如果请求包含 `judge`，执行 LLM-as-Judge 并记录分数、标签、理由、raw/parsed response、token 和 cost。
 5. 如果请求包含 `qag`，执行 QAG claim verification，记录 claim verdict、coverage、unverifiable rate、token 和 cost。
-6. 聚合生成一次 `evaluation_run`，并在配置了 Repository 时写入运行汇总、逐样本结果和可选 Judge/QAG 明细。
+6. 按样本权重聚合生成一次 `evaluation_run`，记录 `split_summary`、`weighted_sample_count`、`unweighted_sample_count` 和可选 `holdout_gate`，并在配置了 Repository 时写入运行汇总、逐样本结果和可选 Judge/QAG 明细。
 
 因此评估结果反映的是当前线上查询链路在指定知识库、profile 和 `top_k` 下的行为，而不是离线 mock 检索器或独立评测流水线。
 
@@ -53,7 +53,8 @@
 - `answer_accuracy`：逐样本答案包含 `ground_truth` 中长度大于 3 的关键项时为 1，否则为 0；响应中存在 citation 不会提升该指标。运行级 `answer_accuracy` 是答案命中样本数除以样本总数。
 - `accuracy`：新运行中与 `answer_accuracy` 保持一致，是面向答案正确性的兼容别名。
 - `hit_rate`：新运行中与 `answer_accuracy` 保持一致，是面向答案命中的兼容别名。
-- `pairwise_accuracy`：当前优化器主质量指标。未执行 pairwise judge 时由 `answer_accuracy` 填充；启用 A/B pairwise judge 后表示候选回答在成对比较中胜出或不输基线的比例。
+- `deterministic_answer_match`：规则型答案匹配指标，新 rule-only 运行使用该字段表示确定性答案命中。
+- `pairwise_accuracy`：仅表示真实 pairwise judge 中候选回答胜出或不输基线的比例；历史已存运行可能仍包含规则型兼容值。
 - `citation_hit_rate`：逐样本响应中存在至少一个 citation 时为 1，否则为 0；运行级指标是有 citation 样本数除以样本总数。
 - `context_recall`：当 `relevant_doc_ids` 非空时，统计 retrieved chunks 覆盖了多少不同的相关文档 ID；当 `relevant_doc_ids` 为空时，有任意 retrieved chunk 记为 1，否则为 0。
 - `citation_precision`：当响应有引用且 `relevant_doc_ids` 非空时，统计引用文档 ID 落在相关文档列表中的比例；没有引用时为 0，样本未标注 `relevant_doc_ids` 且存在引用时为 1。
@@ -68,13 +69,15 @@
 - `deduped_top_k_count`：去重后的召回结果数量。
 - `alpha_ndcg`：多样性敏感的 NDCG，对重复覆盖同一 aspect/subquestion 的增益做衰减。
 - `aspect_coverage`：已召回证据覆盖的 aspect/subquestion 数占全部标注 aspect/subquestion 数的比例。
-- `latency_p95_ms`：本次评估内所有样本查询延迟的 P95，来自 RAG 响应的 `LatencyMS`。
+- `weighted_sample_count` / `unweighted_sample_count`：参与本次评估的样本权重总和和样本条数；`split_summary` 会按 split 汇总全量数据集样本统计。
+- `holdout_gate`：启用时记录 `passed`、失败原因、质量指标、样本数和阈值；缺失 split、样本不足、指标缺失或质量低于阈值都会失败。
+- `latency_p95_ms`：本次评估内所有样本查询延迟的加权 P95，来自 RAG 响应的 `LatencyMS`。
 - `cache_hit_rate`：本次评估中 `CacheStatus == "hit"` 的样本比例。
 
 适用边界：
 
 - 适合做基础回归门禁、不同 profile / `top_k` 的粗粒度对比，以及检索排序、覆盖率、冗余度、多样性、引用、延迟和 cache 行为的冒烟检查。
-- `pairwise_accuracy` 是当前优化器主指标；未执行 pairwise judge 时它由 answer-focused 规则命中率填充，只代表 deterministic fallback 信号。启用 pairwise judge 后应结合 raw/parsed 明细、稳定性标记和校准结果判读。
+- `deterministic_answer_match` 是未执行 pairwise judge 时的默认 fallback 信号；`pairwise_accuracy` 不再由规则命中率填充。启用 pairwise judge 后应结合 raw/parsed 明细、稳定性标记和校准结果判读。
 - `answer_accuracy` / `accuracy` 仍是弱规则指标，只基于 `ground_truth` 文本包含关系；它不再把任意引用计为答案正确，但仍对同义改写、复杂推理、多语种细粒度表达不敏感。
 - `citation_hit_rate` 只说明响应带有引用，不能单独证明答案正确或引用相关。
 - `context_recall` 和 `citation_precision` 只检查文档 ID，不验证 chunk 内容是否真的支撑答案，也不验证引用位置与回答论断的一致性。
@@ -83,9 +86,9 @@
 
 ## 延迟与复杂召回策略权衡
 
-复杂召回策略通常会提升覆盖率或排序质量，但也可能抬高 `latency_p95_ms`。评估调参时建议把 `pairwise_accuracy` 作为主排序信号，同时用 `latency_p95_ms` 设置可接受的尾延迟上限：
+复杂召回策略通常会提升覆盖率或排序质量，但也可能抬高 `latency_p95_ms`。评估调参时建议明确配置 `objective.maximize`，未启用真实 pairwise judge 时使用 `deterministic_answer_match`，启用成对评审后才使用 `pairwise_accuracy`，同时用 `latency_p95_ms` 设置可接受的尾延迟上限：
 
-- 当 `high_precision`、更大的 `top_k`、dense+sparse 融合、rerank 或多样性召回带来更高 `pairwise_accuracy`、`ndcg_at_k`、`recall_at_k`，且 `latency_p95_ms` 仍在业务 SLO 内时，可以接受额外复杂度。
+- 当 `high_precision`、更大的 `top_k`、dense+sparse 融合、rerank 或多样性召回带来更高 `deterministic_answer_match`、`pairwise_accuracy`、`ndcg_at_k`、`recall_at_k`，且 `latency_p95_ms` 仍在业务 SLO 内时，可以接受额外复杂度。
 - 当质量指标只小幅提升但 `latency_p95_ms` 明显上升时，应优先保留更简单的 `realtime` profile 或较小 `top_k`，避免把长尾延迟转嫁给线上查询。
 - 当 `retrieval_failure_rate` 下降明显但冗余度升高时，需要同时观察 `redundancy_rate` 和 `deduped_top_k_count`，避免通过堆叠重复 chunk 虚假提升召回。
 - 小样本评估的 P95 波动较大，建议使用固定数据集、相同缓存状态和多次运行结果比较复杂策略收益。
@@ -112,7 +115,7 @@
   "knowledge_base_id": "kb_xxx",
   "profile": "realtime",
   "objective": {
-    "maximize": "pairwise_accuracy",
+    "maximize": "deterministic_answer_match",
     "constraints": [
       {"expression": "latency_p95_ms <= 1000"}
     ]
@@ -139,5 +142,14 @@
 
 - HTTP internal RAG runner 已支持 retrieval top-k、reranker top-n、graph 开关等 overlay；涉及重分块、embedding 或索引变更的候选会注册临时 namespace，但真实重建索引成本仍需离线控制。
 - 当前搜索策略以 grid/seeded random/successive halving 计划为主，不是完整 Bayesian optimization 或 bandit。
-- 分数依赖 `objective.maximize` 指标；当仍使用 rule-based `pairwise_accuracy` 填充时，不能等价为真实业务满意度或完整答案质量。
+- 分数依赖 `objective.maximize` 指标；使用 `deterministic_answer_match` 等 rule-based fallback 时，不能等价为真实业务满意度或完整答案质量。只有真实 pairwise judge 输出才应命名为 `pairwise_accuracy`。
+
+## Offline Regression 元数据
+
+Offline Knowledge regression 默认让 baseline 和 candidate 使用同一 RAG profile，只通过 `scoped_item_id` 限定当前 optimization item 对候选路径生效，避免同 tenant/kb 下其它 shadow item 污染回归结果。回归报告会在 `eval_report_json` 中暴露：
+
+- `scoped_item_id`：当前被评估的 optimization item。
+- `profile_neutrality`：记录 baseline/candidate profile 是否一致，以及 lift 是否只归因于 offline optimization。
+- `profile_experiment`：只有显式 profile comparison 时出现，不混入默认 offline optimization lift。
+- `holdout_gate`：记录 holdout split 的样本数、质量阈值、通过状态和失败原因；失败会阻断 promotion。
 - External harness runner 在底层模块中已实现 argv-array、安全 allowlist、脱敏和指标白名单；HTTP 示例默认使用 internal RAG runner。

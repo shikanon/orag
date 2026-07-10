@@ -461,6 +461,89 @@ func TestExecuteShadowInjectUsesSourceChunkWithoutFinalAnswer(t *testing.T) {
 	}
 }
 
+func TestExecuteShadowRetrievalPassesScopedItemID(t *testing.T) {
+	ctx := context.Background()
+	shadow := &recordingShadowRetriever{matches: []ShadowMatch{shadowTestMatch("shadow_chunk")}}
+	service := Service{
+		Retriever:       &recordingServiceRetriever{},
+		Model:           &scriptedServiceModel{},
+		Packer:          ContextPacker{MaxTokens: 512, TopN: 4},
+		PromptStrategy:  prompt.NewStrategy("auto"),
+		DefaultProfile:  ProfileRealtime,
+		NoContextAnswer: "no context",
+		TopK:            4,
+		Shadow:          ShadowOptions{Enabled: true, Inject: false, Limit: 3},
+		ShadowRetriever: shadow,
+	}
+
+	if _, err := service.Execute(ctx, QueryRequest{
+		TenantID:           "tenant_default",
+		KnowledgeBaseID:    "kb_default",
+		Query:              "qdrant vector search",
+		ScopedShadowItemID: "opt_scoped",
+	}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(shadow.requests) != 1 || shadow.requests[0].ScopedItemID != "opt_scoped" {
+		t.Fatalf("shadow requests = %#v, want scoped item opt_scoped", shadow.requests)
+	}
+}
+
+func TestExecuteScopedShadowSourceMismatchFailsExplicitly(t *testing.T) {
+	ctx := context.Background()
+	service := Service{
+		Retriever:       &recordingServiceRetriever{},
+		Model:           &scriptedServiceModel{},
+		Packer:          ContextPacker{MaxTokens: 512, TopN: 4},
+		PromptStrategy:  prompt.NewStrategy("auto"),
+		DefaultProfile:  ProfileRealtime,
+		NoContextAnswer: "no context",
+		TopK:            4,
+		Shadow:          ShadowOptions{Enabled: true, Inject: true, Limit: 3},
+		ShadowRetriever: &recordingShadowRetriever{
+			matches: []ShadowMatch{{
+				ItemID:   "opt_scoped",
+				ItemType: "answer_item",
+				Source:   "optimization_library",
+				Score:    1,
+				Rank:     1,
+				AnswerItem: &ShadowAnswerItem{
+					SourceFingerprints: []ShadowSourceFingerprint{{
+						DocID:            "shadow_doc",
+						DocVersion:       "v1",
+						ChunkID:          "shadow_chunk",
+						ChunkContentHash: "sha256:expected",
+					}},
+					Evidence: []ShadowEvidence{{ChunkID: "shadow_chunk", DocID: "shadow_doc", Quote: "real source"}},
+				},
+			}},
+		},
+		ShadowSourceReader: staticShadowSourceReader{
+			chunks: map[string]ShadowSourceChunk{
+				"shadow_chunk": {
+					TenantID:         "tenant_default",
+					KBID:             "kb_default",
+					DocID:            "shadow_doc",
+					DocVersion:       "v1",
+					ChunkID:          "shadow_chunk",
+					ChunkContentHash: "sha256:stale",
+					Text:             "real shadow source chunk",
+				},
+			},
+		},
+	}
+
+	_, err := service.Execute(ctx, QueryRequest{
+		TenantID:           "tenant_default",
+		KnowledgeBaseID:    "kb_default",
+		Query:              "qdrant vector search",
+		ScopedShadowItemID: "opt_scoped",
+	})
+	if !errors.Is(err, ErrScopedShadowSourceMismatch) {
+		t.Fatalf("Execute() error = %v, want %v", err, ErrScopedShadowSourceMismatch)
+	}
+}
+
 type semanticCacheStub struct {
 	lookupReq  SemanticCacheLookupRequest
 	storeEntry SemanticCacheEntry

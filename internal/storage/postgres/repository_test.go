@@ -574,10 +574,29 @@ func TestTask1MetadataAndPersistenceMigrationsAreReversible(t *testing.T) {
 
 func TestEvaluationRunMetricsJSONBRoundTrip(t *testing.T) {
 	body, err := encodeEvaluationRunMetrics(evalpkg.RunResult{
-		Total:    2,
-		HitRate:  0.5,
-		Accuracy: 0.5,
+		Total:                 2,
+		HitRate:               0.5,
+		Accuracy:              0.5,
+		WeightedSampleCount:   4,
+		UnweightedSampleCount: 2,
+		Split:                 dataset.DatasetSplitEval,
+		SplitSummary: map[string]evalpkg.SplitSummary{
+			"eval":    {UnweightedSampleCount: 2, WeightedSampleCount: 4},
+			"holdout": {UnweightedSampleCount: 1, WeightedSampleCount: 1},
+		},
+		HoldoutGate: evalpkg.HoldoutGateResult{
+			Enabled:             true,
+			Passed:              false,
+			Reasons:             []string{evalpkg.HoldoutGateReasonQualityBelowMin},
+			Split:               dataset.DatasetSplitHoldout,
+			QualityMetric:       evalpkg.PrimaryMetricDeterministicAnswerMatch,
+			Quality:             0.6,
+			MinQuality:          0.8,
+			SampleCount:         1,
+			WeightedSampleCount: 1,
+		},
 		Metrics: map[string]float64{
+			evalpkg.PrimaryMetricDeterministicAnswerMatch: 0.6,
 			"ndcg_at_k":              0.75,
 			"recall_at_k":            0.5,
 			"redundancy_rate":        0.25,
@@ -588,11 +607,11 @@ func TestEvaluationRunMetricsJSONBRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var raw map[string]float64
+	var raw map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"total", "hit_rate", "accuracy", "ndcg_at_k", "recall_at_k", "redundancy_rate", "alpha_ndcg", "retrieval_failure_rate"} {
+	for _, key := range []string{"total", "hit_rate", "accuracy", "weighted_sample_count", "unweighted_sample_count", "split", "split_summary", "holdout_gate", "deterministic_answer_match", "ndcg_at_k", "recall_at_k", "redundancy_rate", "alpha_ndcg", "retrieval_failure_rate"} {
 		if _, ok := raw[key]; !ok {
 			t.Fatalf("encoded metric %q missing from %s", key, string(body))
 		}
@@ -603,8 +622,22 @@ func TestEvaluationRunMetricsJSONBRoundTrip(t *testing.T) {
 	if decoded.Total != 2 || decoded.HitRate != 0.5 || decoded.Accuracy != 0.5 {
 		t.Fatalf("decoded summary = %#v", decoded)
 	}
+	if decoded.Split != dataset.DatasetSplitEval || decoded.WeightedSampleCount != 4 || decoded.UnweightedSampleCount != 2 {
+		t.Fatalf("decoded weighted split fields = %#v", decoded)
+	}
+	if decoded.SplitSummary["eval"].WeightedSampleCount != 4 || decoded.SplitSummary["holdout"].UnweightedSampleCount != 1 {
+		t.Fatalf("decoded split summary = %#v", decoded.SplitSummary)
+	}
+	if !decoded.HoldoutGate.Enabled || decoded.HoldoutGate.Passed || decoded.HoldoutGate.QualityMetric != evalpkg.PrimaryMetricDeterministicAnswerMatch {
+		t.Fatalf("decoded holdout gate = %#v", decoded.HoldoutGate)
+	}
 	if decoded.Metrics["ndcg_at_k"] != 0.75 || decoded.Metrics["alpha_ndcg"] != 0.8 {
 		t.Fatalf("decoded metrics = %#v", decoded.Metrics)
+	}
+	for _, structured := range []string{"split_summary", "holdout_gate"} {
+		if _, ok := decoded.Metrics[structured]; ok {
+			t.Fatalf("structured %s leaked into numeric metrics: %#v", structured, decoded.Metrics)
+		}
 	}
 }
 

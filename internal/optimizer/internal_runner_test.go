@@ -48,7 +48,7 @@ func TestInternalRAGRunnerAppliesCandidateToClonedService(t *testing.T) {
 			return fakeEvaluationRunner{
 				run: eval.RunResult{
 					ID:      "eval_candidate",
-					Metrics: map[string]float64{"accuracy": 0.8, "pairwise_accuracy": 0.8},
+					Metrics: map[string]float64{"accuracy": 0.8, eval.PrimaryMetricDeterministicAnswerMatch: 0.8},
 				},
 				req: &capturedRequest,
 			}

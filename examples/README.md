@@ -165,7 +165,7 @@ Or run the example package test:
 GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./examples/go/memory -v
 ```
 
-Expected output includes `document_id=doc_`, `trace_id=trace_example_memory`, `cache_status=disabled`, trace summary fields, and citation counts. Role-based Go demos additionally print `usage_dimensions`, `expected_signals`, and `recommended_next_steps`.
+Expected output includes `document_id=doc_`, `trace_id=trace_example_memory`, `cache_status=disabled`, trace summary fields, and citation counts. Role-based Go demos additionally print `usage_dimensions`, `expected_signals`, and `recommended_next_steps`. The multimodal assets demo prints `asset_count=7`, each remote asset URL, and `large_file_only=true` for `TestLongVideo.mp4`.
 
 ## Covered Modules
 

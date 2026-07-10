@@ -14,6 +14,11 @@ type ScoreOptions struct {
 	TopK int
 }
 
+type weightedLatency struct {
+	value  int64
+	weight float64
+}
+
 func ScoreItem(item dataset.Item, resp rag.QueryResponse) map[string]float64 {
 	return ScoreItemWithOptions(item, resp, ScoreOptions{})
 }
@@ -165,6 +170,13 @@ func average(sum float64, total int) float64 {
 	return sum / float64(total)
 }
 
+func weightedAverage(sum, weight float64) float64 {
+	if weight <= 0 {
+		return 0
+	}
+	return sum / weight
+}
+
 func p95(values []int64) int64 {
 	if len(values) == 0 {
 		return 0
@@ -173,6 +185,35 @@ func p95(values []int64) int64 {
 	sort.Slice(cp, func(i, j int) bool { return cp[i] < cp[j] })
 	idx := int(float64(len(cp)-1) * 0.95)
 	return cp[idx]
+}
+
+func weightedP95(values []weightedLatency) int64 {
+	if len(values) == 0 {
+		return 0
+	}
+	cp := append([]weightedLatency(nil), values...)
+	sort.Slice(cp, func(i, j int) bool { return cp[i].value < cp[j].value })
+	var total float64
+	for _, value := range cp {
+		if value.weight > 0 {
+			total += value.weight
+		}
+	}
+	if total <= 0 {
+		return 0
+	}
+	threshold := total * 0.95
+	var seen float64
+	for _, value := range cp {
+		if value.weight <= 0 {
+			continue
+		}
+		seen += value.weight
+		if seen >= threshold {
+			return value.value
+		}
+	}
+	return cp[len(cp)-1].value
 }
 
 func boolScore(ok bool) float64 {
@@ -188,4 +229,33 @@ func stringSet(values []string) map[string]struct{} {
 		out[value] = struct{}{}
 	}
 	return out
+}
+
+func itemWeight(item dataset.Item) float64 {
+	item = dataset.NormalizeItemMetadata(item)
+	return item.Weight
+}
+
+func splitWeight(items []dataset.Item) float64 {
+	var total float64
+	for _, item := range items {
+		total += itemWeight(item)
+	}
+	return total
+}
+
+func summarizeSplits(items []dataset.Item) map[string]SplitSummary {
+	if len(items) == 0 {
+		return nil
+	}
+	summary := map[string]SplitSummary{}
+	for _, item := range items {
+		item = dataset.NormalizeItemMetadata(item)
+		key := string(item.Split)
+		entry := summary[key]
+		entry.UnweightedSampleCount++
+		entry.WeightedSampleCount += item.Weight
+		summary[key] = entry
+	}
+	return summary
 }

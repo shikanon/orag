@@ -85,6 +85,9 @@ func TestOpenAPI(t *testing.T) {
 		"RunEvaluationRequest",
 		"RunEvaluationResponse",
 		"EvaluationMetrics",
+		"SplitSummary",
+		"HoldoutGateConfig",
+		"HoldoutGateResult",
 		"OptimizeRequest",
 		"OptimizeResult",
 		"OptimizationAcceptedResponse",
@@ -102,6 +105,9 @@ func TestOpenAPI(t *testing.T) {
 		"OptimizationItem",
 		"SourceFingerprint",
 		"EvalReport",
+		"RegressionResult",
+		"ProfileNeutrality",
+		"ProfileExperiment",
 	} {
 		if doc.Components.Schemas[schema] == nil {
 			t.Fatalf("missing schema %s", schema)
@@ -159,7 +165,12 @@ func TestOptimizationAndJudgeSchemasExposeAsyncContract(t *testing.T) {
 	}
 
 	evalReq := requireSchema(t, doc, "RunEvaluationRequest")
-	for _, name := range []string{"judge", "qag"} {
+	for _, name := range []string{"split", "scoped_shadow_item_id", "holdout_gate"} {
+		if _, ok := evalReq.Properties[name]; !ok {
+			t.Fatalf("RunEvaluationRequest missing %s", name)
+		}
+	}
+	for _, name := range []string{"judge", "qag", "pairwise"} {
 		ref, ok := evalReq.Properties[name]
 		if !ok {
 			t.Fatalf("RunEvaluationRequest missing %s", name)
@@ -170,10 +181,13 @@ func TestOptimizationAndJudgeSchemasExposeAsyncContract(t *testing.T) {
 	}
 
 	optReq := requireSchema(t, doc, "OptimizeRequest")
-	for _, name := range []string{"objective", "search_space", "search", "budget", "profiles", "top_ks"} {
+	for _, name := range []string{"objective", "search_space", "search", "budget", "profiles", "top_ks", "holdout_gate"} {
 		if _, ok := optReq.Properties[name]; !ok {
 			t.Fatalf("OptimizeRequest missing %s", name)
 		}
+	}
+	if optReq.Properties["holdout_gate"].Ref != "#/components/schemas/HoldoutGateConfig" {
+		t.Fatalf("OptimizeRequest.holdout_gate ref = %q, want HoldoutGateConfig", optReq.Properties["holdout_gate"].Ref)
 	}
 
 	postOp := doc.Paths.Find("/v1/optimizations").Post
@@ -189,6 +203,10 @@ func TestOptimizationAndJudgeSchemasExposeAsyncContract(t *testing.T) {
 	status := requireSchema(t, doc, "OptimizationStatusResponse")
 	if status.Properties["run"].Ref != "#/components/schemas/OptimizationRun" {
 		t.Fatalf("OptimizationStatusResponse.run ref = %q", status.Properties["run"].Ref)
+	}
+	optRun := requireSchema(t, doc, "OptimizationRun")
+	if optRun.Properties["holdout_gate"].Ref != "#/components/schemas/HoldoutGateResult" {
+		t.Fatalf("OptimizationRun.holdout_gate ref = %q, want HoldoutGateResult", optRun.Properties["holdout_gate"].Ref)
 	}
 }
 
@@ -241,9 +259,25 @@ func TestEvaluationSchemasExposeQualityMetrics(t *testing.T) {
 	if evalResp.Description == "" {
 		t.Fatal("RunEvaluationResponse missing pairwise accuracy semantics description")
 	}
+	for _, name := range []string{
+		"weighted_sample_count",
+		"unweighted_sample_count",
+		"split",
+		"split_summary",
+		"missing_split",
+		"holdout_gate",
+	} {
+		if _, ok := evalResp.Properties[name]; !ok {
+			t.Fatalf("RunEvaluationResponse missing %s", name)
+		}
+	}
+	if evalResp.Properties["holdout_gate"].Ref != "#/components/schemas/HoldoutGateResult" {
+		t.Fatalf("holdout_gate ref = %q, want HoldoutGateResult", evalResp.Properties["holdout_gate"].Ref)
+	}
 
 	evalMetrics := requireSchema(t, doc, "EvaluationMetrics")
 	for _, name := range []string{
+		"deterministic_answer_match",
 		"pairwise_accuracy",
 		"ndcg_at_k",
 		"recall_at_k",
@@ -264,13 +298,19 @@ func TestEvaluationSchemasExposeQualityMetrics(t *testing.T) {
 		}
 	}
 	pairwise := evalMetrics.Properties["pairwise_accuracy"]
-	if pairwise.Value == nil || pairwise.Value.Description == "" {
-		t.Fatal("pairwise_accuracy missing primary metric description")
+	if pairwise.Value == nil || pairwise.Value.Description == "" || !pairwise.Value.Deprecated {
+		t.Fatal("pairwise_accuracy missing migration compatibility description/deprecation")
+	}
+	deterministic := evalMetrics.Properties["deterministic_answer_match"]
+	if deterministic.Value == nil || deterministic.Value.Description == "" {
+		t.Fatal("deterministic_answer_match missing metric description")
 	}
 
 	candidate := requireSchema(t, doc, "CandidateResult")
 	for _, name := range []string{
 		"score",
+		"score_metric",
+		"deterministic_answer_match",
 		"pairwise_accuracy",
 		"ndcg_at_k",
 		"recall_at_k",
@@ -291,6 +331,19 @@ func TestEvaluationSchemasExposeQualityMetrics(t *testing.T) {
 	score := candidate.Properties["score"]
 	if score.Value == nil || score.Value.Description == "" {
 		t.Fatal("CandidateResult.score missing primary metric description")
+	}
+
+	evalReport := requireSchema(t, doc, "EvalReport")
+	for _, name := range []string{"scoped_item_id", "profile_neutrality", "profile_experiment", "holdout_gate"} {
+		if _, ok := evalReport.Properties[name]; !ok {
+			t.Fatalf("EvalReport missing %s", name)
+		}
+	}
+	regression := requireSchema(t, doc, "RegressionResult")
+	for _, name := range []string{"scoped_item_id", "profile_neutrality", "profile_experiment", "holdout_gate"} {
+		if _, ok := regression.Properties[name]; !ok {
+			t.Fatalf("RegressionResult missing %s", name)
+		}
 	}
 }
 
