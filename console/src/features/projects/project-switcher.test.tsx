@@ -14,4 +14,22 @@ describe('ProjectSwitcher', () => {
     expect(queryClient.getQueryData(['projects', 'prj_a'])).toBeDefined()
     expect(queryClient.getQueryData(['projects', 'prj_b'])).toBeDefined()
   })
+
+  it('selects projects from the keyboard and closes with Escape', async () => {
+    const user = userEvent.setup()
+    const { router } = renderApp('/projects/prj_a/overview')
+    const trigger = await screen.findByRole('button', { name: /Support/ })
+
+    await user.click(trigger)
+    await user.keyboard('{End}{Escape}')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+
+    await user.keyboard('{Enter}{End}')
+    expect(screen.getByRole('option', { name: /Search/ })).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(screen.getByRole('option', { name: /Support/ })).toHaveFocus()
+    await user.keyboard('{ArrowUp}[Space]')
+    expect(router.state.location.pathname).toBe('/projects/prj_b/overview')
+  })
 })
