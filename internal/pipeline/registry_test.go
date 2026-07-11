@@ -25,15 +25,22 @@ func TestBuiltinRegistryDescribesCurrentGraphStages(t *testing.T) {
 	if definition, _ := registry.Lookup("init"); !definition.Singleton || !definition.Entry {
 		t.Fatalf("init constraints = %#v, want singleton entry", definition)
 	}
-	if definition, _ := registry.Lookup("ark_generate"); !definition.Terminal {
-		t.Fatalf("ark_generate constraints = %#v, want terminal", definition)
+	if definition, _ := registry.Lookup("ark_generate"); !definition.ProducesAnswer {
+		t.Fatalf("ark_generate constraints = %#v, want answer producer", definition)
 	}
 }
 
 func TestRegistryDefinitionsAreSortedByStableTypeID(t *testing.T) {
-	registry := NewRegistry(NodeDefinition{Type: "zeta"}, NodeDefinition{Type: "alpha"})
+	registry := MustRegistry(NodeDefinition{Type: "zeta"}, NodeDefinition{Type: "alpha"})
 	definitions := registry.Definitions()
 	if len(definitions) != 2 || definitions[0].Type != "alpha" || definitions[1].Type != "zeta" {
 		t.Fatalf("Definitions() = %#v, want alpha then zeta", definitions)
+	}
+}
+
+func TestNewRegistryRejectsDuplicateTypeIDs(t *testing.T) {
+	_, err := NewRegistry(NodeDefinition{Type: "duplicate"}, NodeDefinition{Type: "duplicate"})
+	if err == nil {
+		t.Fatal("NewRegistry() error = nil, want duplicate type error")
 	}
 }

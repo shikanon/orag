@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 )
 
@@ -9,10 +10,22 @@ type Registry struct {
 	definitions map[string]NodeDefinition
 }
 
-func NewRegistry(definitions ...NodeDefinition) Registry {
+func NewRegistry(definitions ...NodeDefinition) (Registry, error) {
 	registry := Registry{definitions: make(map[string]NodeDefinition, len(definitions))}
 	for _, definition := range definitions {
+		if _, exists := registry.definitions[definition.Type]; exists {
+			return Registry{}, fmt.Errorf("duplicate pipeline node type %q", definition.Type)
+		}
 		registry.definitions[definition.Type] = definition
+	}
+	return registry, nil
+}
+
+// MustRegistry constructs a registry or panics. It is intended for static definitions.
+func MustRegistry(definitions ...NodeDefinition) Registry {
+	registry, err := NewRegistry(definitions...)
+	if err != nil {
+		panic(err)
 	}
 	return registry
 }
@@ -37,9 +50,9 @@ var emptyObject = json.RawMessage(`{}`)
 // BuiltinRegistry returns the stable public node type IDs backed by internal/graph.
 func BuiltinRegistry() Registry {
 	type stage struct {
-		id, name, category string
-		entry, terminal    bool
-		singleton          bool
+		id, name, category    string
+		entry, producesAnswer bool
+		singleton             bool
 	}
 	stages := []stage{
 		{id: "init", name: "Query Input", category: "input", entry: true, singleton: true},
@@ -51,7 +64,7 @@ func BuiltinRegistry() Registry {
 		{id: "ark_rerank", name: "Ark Rerank", category: "retrieval"},
 		{id: "context_pack", name: "Context Pack", category: "context"},
 		{id: "prompt_prefix_cache", name: "Prompt Prefix Cache", category: "prompt"},
-		{id: "ark_generate", name: "Ark Generate", category: "generation", terminal: true},
+		{id: "ark_generate", name: "Ark Generate", category: "generation", producesAnswer: true},
 		{id: "semantic_cache_write", name: "Semantic Cache Write", category: "cache"},
 	}
 	definitions := make([]NodeDefinition, 0, len(stages))
@@ -60,7 +73,7 @@ func BuiltinRegistry() Registry {
 			Type: item.id, DisplayName: item.name, Category: item.category,
 			SchemaVersion: 1, ConfigSchema: append(json.RawMessage(nil), emptyObjectSchema...),
 			DefaultConfig: append(json.RawMessage(nil), emptyObject...), Singleton: item.singleton,
-			Entry: item.entry, Terminal: item.terminal,
+			Entry: item.entry, ProducesAnswer: item.producesAnswer,
 		}
 		if i > 0 {
 			definition.Inputs = []PortDefinition{{Name: "in", Type: "rag_state", MaxConnections: 1}}
@@ -71,5 +84,5 @@ func BuiltinRegistry() Registry {
 		}
 		definitions = append(definitions, definition)
 	}
-	return NewRegistry(definitions...)
+	return MustRegistry(definitions...)
 }

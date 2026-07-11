@@ -23,7 +23,7 @@ type NodeDefinition struct {
 	Outputs        []PortDefinition `json:"outputs,omitempty"`
 	Singleton      bool             `json:"singleton,omitempty"`
 	Entry          bool             `json:"entry,omitempty"`
-	Terminal       bool             `json:"terminal,omitempty"`
+	ProducesAnswer bool             `json:"produces_answer,omitempty"`
 	AllowsCycles   bool             `json:"allows_cycles,omitempty"`
 	AllowedTargets []string         `json:"allowed_targets,omitempty"`
 }

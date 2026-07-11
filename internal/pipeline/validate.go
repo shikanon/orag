@@ -1,6 +1,8 @@
 package pipeline
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"sort"
 )
@@ -16,7 +18,7 @@ func Validate(pipeline Definition, registry Registry) []ValidationError {
 	definitions := make(map[string]NodeDefinition, len(pipeline.Nodes))
 	singletons := make(map[string]string)
 	entries := make([]string, 0, 1)
-	answerTerminals := 0
+	answerProducers := 0
 
 	for _, node := range pipeline.Nodes {
 		nodes[node.ID] = node
@@ -26,6 +28,9 @@ func Validate(pipeline Definition, registry Registry) []ValidationError {
 			continue
 		}
 		definitions[node.ID] = definition
+		if !emptyNodeConfig(node.Config) {
+			errors = append(errors, validationError("invalid_node_config", node.ID, "", "", "node configuration must be an empty object"))
+		}
 		if node.SchemaVersion != 0 && node.SchemaVersion != definition.SchemaVersion {
 			errors = append(errors, validationError("unsupported_schema_version", node.ID, "", "", "node schema version %d is not supported", node.SchemaVersion))
 		}
@@ -39,15 +44,15 @@ func Validate(pipeline Definition, registry Registry) []ValidationError {
 		if definition.Entry {
 			entries = append(entries, node.ID)
 		}
-		if definition.Terminal {
-			answerTerminals++
+		if definition.ProducesAnswer {
+			answerProducers++
 		}
 	}
 	if len(entries) != 1 {
 		errors = append(errors, validationError("invalid_query_entry_count", "", "", "", "pipeline must contain exactly one query entry; found %d", len(entries)))
 	}
-	if answerTerminals == 0 {
-		errors = append(errors, validationError("missing_answer_terminal", "", "", "", "pipeline must contain at least one answer terminal"))
+	if answerProducers == 0 {
+		errors = append(errors, validationError("missing_answer_producer", "", "", "", "pipeline must contain at least one answer-producing node"))
 	}
 
 	outgoing := make(map[string][]string)
@@ -85,7 +90,9 @@ func Validate(pipeline Definition, registry Registry) []ValidationError {
 		portCounts[portKey(target.ID, "in", targetPort.Name)]++
 	}
 
-	for nodeID, definition := range definitions {
+	nodeIDs := sortedDefinitionIDs(definitions)
+	for _, nodeID := range nodeIDs {
+		definition := definitions[nodeID]
 		for _, port := range definition.Inputs {
 			count := portCounts[portKey(nodeID, "in", port.Name)]
 			if port.Required && count == 0 {
@@ -116,6 +123,23 @@ func Validate(pipeline Definition, registry Registry) []ValidationError {
 	}
 	errors = append(errors, validateCycles(graphEdges, definitions)...)
 	return errors
+}
+
+func emptyNodeConfig(config json.RawMessage) bool {
+	if len(bytes.TrimSpace(config)) == 0 {
+		return true
+	}
+	var object map[string]json.RawMessage
+	return json.Unmarshal(config, &object) == nil && object != nil && len(object) == 0
+}
+
+func sortedDefinitionIDs(definitions map[string]NodeDefinition) []string {
+	nodeIDs := make([]string, 0, len(definitions))
+	for nodeID := range definitions {
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+	sort.Strings(nodeIDs)
+	return nodeIDs
 }
 
 func findPort(ports []PortDefinition, name string) (PortDefinition, bool) {
@@ -203,11 +227,7 @@ func validateCycles(edges map[string][]graphEdge, definitions map[string]NodeDef
 		delete(stackIndex, nodeID)
 		state[nodeID] = visited
 	}
-	nodeIDs := make([]string, 0, len(definitions))
-	for nodeID := range definitions {
-		nodeIDs = append(nodeIDs, nodeID)
-	}
-	sort.Strings(nodeIDs)
+	nodeIDs := sortedDefinitionIDs(definitions)
 	for _, nodeID := range nodeIDs {
 		if state[nodeID] == unvisited {
 			visit(nodeID)
