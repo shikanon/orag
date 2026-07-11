@@ -28,6 +28,30 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{Pool: pool, kbQueryer: pool, traceReader: pgxTraceQueryer{pool: pool}, datasetRunner: pgxDatasetQueryer{pool: pool}, evalQueryer: pgxEvalQueryer{pool: pool}}
 }
 
+func NewProjectRepository(pool *pgxpool.Pool) *ProjectRepository {
+	return &ProjectRepository{db: pgxProjectDB{pool: pool}}
+}
+
+type pgxProjectDB struct {
+	pool *pgxpool.Pool
+}
+
+func (d pgxProjectDB) BeginProjectTx(ctx context.Context) (projectTx, error) {
+	return d.pool.BeginTx(ctx, pgx.TxOptions{})
+}
+
+func (d pgxProjectDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	return d.pool.Exec(ctx, sql, args...)
+}
+
+func (d pgxProjectDB) Query(ctx context.Context, sql string, args ...any) (projectRows, error) {
+	return d.pool.Query(ctx, sql, args...)
+}
+
+func (d pgxProjectDB) QueryRow(ctx context.Context, sql string, args ...any) projectRow {
+	return d.pool.QueryRow(ctx, sql, args...)
+}
+
 type knowledgeBaseQueryer interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
