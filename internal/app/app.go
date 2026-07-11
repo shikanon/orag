@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,6 +25,7 @@ import (
 	"github.com/shikanon/orag/internal/optimizer"
 	"github.com/shikanon/orag/internal/platform/httpclient"
 	"github.com/shikanon/orag/internal/platform/id"
+	"github.com/shikanon/orag/internal/project"
 	"github.com/shikanon/orag/internal/prompt"
 	"github.com/shikanon/orag/internal/rag"
 	"github.com/shikanon/orag/internal/storage/postgres"
@@ -38,6 +40,7 @@ type App struct {
 	Ingest           *ingest.Service
 	RAG              *rag.Service
 	Datasets         *dataset.Service
+	Projects         *project.Service
 	Eval             eval.Runner
 	Optimizer        *optimizer.Service
 	OfflineKnowledge *offlineknowledge.Service
@@ -119,6 +122,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		MaxDocumentBytes: cfg.Ingestion.MaxDocumentBytes,
 	}
 	datasets := dataset.NewService(backend.datasetRepo)
+	projects := project.NewService(backend.projectRepo, func() time.Time { return time.Now().UTC() })
 	evalRunner := eval.Runner{RAG: ragSvc, Datasets: datasets, Repository: backend.evalRepo}
 	optimizerRunner := optimizer.InternalRAGRunner{
 		BaseRAG:    ragSvc,
@@ -150,6 +154,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Ingest:   ingestSvc,
 		RAG:      ragSvc,
 		Datasets: datasets,
+		Projects: projects,
 		Eval:     evalRunner,
 		Optimizer: &optimizer.Service{
 			Repository: backend.optimizerRepo,
@@ -560,6 +565,7 @@ type knowledgeBackend struct {
 	traceStore           raggraph.TraceStore
 	traceRepo            TraceRepository
 	datasetRepo          dataset.Repository
+	projectRepo          project.Repository
 	evalRepo             eval.Repository
 	optimizerRepo        optimizer.Repository
 	offlineKnowledgeRepo offlineknowledge.Repository
@@ -651,6 +657,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			traceStore:           traceRepo,
 			traceRepo:            traceRepo,
 			datasetRepo:          dataset.NewMemoryRepository(),
+			projectRepo:          newMemoryProjectRepository(),
 			evalRepo:             eval.NewMemoryRepository(),
 			optimizerRepo:        optimizer.NewMemoryRepository(),
 			offlineKnowledgeRepo: offlineknowledge.NewMemoryRepository(),
@@ -706,6 +713,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 		traceStore:           repo,
 		traceRepo:            repo,
 		datasetRepo:          repo,
+		projectRepo:          postgres.NewProjectRepository(pool),
 		evalRepo:             repo,
 		optimizerRepo:        repo,
 		offlineKnowledgeRepo: repo,
@@ -733,6 +741,44 @@ func bootstrapMemory(ctx context.Context, store *kb.MemoryStore, tenantID string
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	})
+}
+
+type memoryProjectRepository struct {
+	mu    sync.RWMutex
+	items map[string]project.Project
+}
+
+func newMemoryProjectRepository() *memoryProjectRepository {
+	return &memoryProjectRepository{items: make(map[string]project.Project)}
+}
+func (r *memoryProjectRepository) CreateWithEnvironments(_ context.Context, item project.Project, _ []project.Environment) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.items[item.ID] = item
+	return nil
+}
+func (r *memoryProjectRepository) List(_ context.Context, tenantID string) ([]project.Project, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := make([]project.Project, 0)
+	for _, item := range r.items {
+		if item.TenantID == tenantID {
+			items = append(items, item)
+		}
+	}
+	return items, nil
+}
+func (r *memoryProjectRepository) Get(_ context.Context, tenantID, projectID string) (project.Project, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	item, ok := r.items[projectID]
+	return item, ok && item.TenantID == tenantID, nil
+}
+func (r *memoryProjectRepository) Update(_ context.Context, item project.Project) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.items[item.ID] = item
+	return nil
 }
 
 func (a *App) BootstrapToken() string {

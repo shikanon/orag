@@ -23,9 +23,53 @@ import (
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/offlineknowledge"
 	"github.com/shikanon/orag/internal/platform/logger"
+	"github.com/shikanon/orag/internal/project"
 	"github.com/shikanon/orag/internal/rag"
 	"time"
 )
+
+func TestProjectsAreTenantScoped(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	app.Projects = project.NewService(newHTTPProjectRepository(), time.Now)
+	tenantA := issueToken(t, app, "tenant_a")
+	tenantB := issueToken(t, app, "tenant_b")
+	created := performJSON(h, "POST", "/v1/projects", `{"name":"Support","description":"Customer support"}`, tenantA)
+	if created.Code != 201 {
+		t.Fatalf("create status = %d body=%s", created.Code, created.Body)
+	}
+	var item project.Project
+	if err := json.Unmarshal([]byte(created.Body), &item); err != nil {
+		t.Fatal(err)
+	}
+	foreign := performJSON(h, "GET", "/v1/projects/"+item.ID, "", tenantB)
+	if foreign.Code != 404 || !strings.Contains(foreign.Body, `"code":"project_not_found"`) {
+		t.Fatalf("foreign get status = %d body=%s", foreign.Code, foreign.Body)
+	}
+	listed := performJSON(h, "GET", "/v1/projects", "", tenantA)
+	if listed.Code != 200 || !strings.Contains(listed.Body, `"projects"`) {
+		t.Fatalf("list status = %d body=%s", listed.Code, listed.Body)
+	}
+	updated := performJSON(h, "PATCH", "/v1/projects/"+item.ID, `{"name":"Support Ops"}`, tenantA)
+	if updated.Code != 200 || !strings.Contains(updated.Body, `"name":"Support Ops"`) {
+		t.Fatalf("update status = %d body=%s", updated.Code, updated.Body)
+	}
+}
+
+func TestProjectHandlersReturnStableErrors(t *testing.T) {
+	h, app, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	repo := newHTTPProjectRepository()
+	app.Projects = project.NewService(repo, time.Now)
+	token := issueToken(t, app, "tenant_a")
+	invalid := performJSONWithTrace(h, "POST", "/v1/projects", `{"name":" "}`, token, "trace_project_invalid")
+	assertErrorResponse(t, invalid, 400, "invalid_request", "trace_project_invalid")
+	missing := performJSONWithTrace(h, "GET", "/v1/projects/prj_missing", "", token, "trace_project_missing")
+	assertErrorResponse(t, missing, 404, "project_not_found", "trace_project_missing")
+	repo.createErr = errors.New("duplicate project")
+	conflict := performJSONWithTrace(h, "POST", "/v1/projects", `{"name":"Support"}`, token, "trace_project_conflict")
+	assertErrorResponse(t, conflict, 409, "project_conflict", "trace_project_conflict")
+}
 
 func TestLoginValidatesPassword(t *testing.T) {
 	h, closeApp := newTestHertz(t)
@@ -1939,6 +1983,48 @@ func loginToken(t *testing.T, h *route.Engine) string {
 		t.Fatal(err)
 	}
 	return body.AccessToken
+}
+
+func issueToken(t *testing.T, app *core.App, tenant string) string {
+	t.Helper()
+	token, err := app.Auth.IssueToken(tenant, "user_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
+}
+
+type httpProjectRepository struct {
+	items     map[string]project.Project
+	createErr error
+}
+
+func newHTTPProjectRepository() *httpProjectRepository {
+	return &httpProjectRepository{items: map[string]project.Project{}}
+}
+func (r *httpProjectRepository) CreateWithEnvironments(_ context.Context, p project.Project, _ []project.Environment) error {
+	if r.createErr != nil {
+		return r.createErr
+	}
+	r.items[p.ID] = p
+	return nil
+}
+func (r *httpProjectRepository) List(_ context.Context, tenant string) ([]project.Project, error) {
+	items := []project.Project{}
+	for _, p := range r.items {
+		if p.TenantID == tenant {
+			items = append(items, p)
+		}
+	}
+	return items, nil
+}
+func (r *httpProjectRepository) Get(_ context.Context, tenant, id string) (project.Project, bool, error) {
+	p, ok := r.items[id]
+	return p, ok && p.TenantID == tenant, nil
+}
+func (r *httpProjectRepository) Update(_ context.Context, p project.Project) error {
+	r.items[p.ID] = p
+	return nil
 }
 
 func performJSON(h *route.Engine, method, path, body, token string) testResponse {

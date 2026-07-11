@@ -56,6 +56,10 @@ func (s *Server) Hertz() *server.Hertz {
 	h.POST("/v1/auth/login", s.login)
 
 	v1 := h.Group("/v1", s.authMiddleware)
+	v1.POST("/projects", s.createProject)
+	v1.GET("/projects", s.listProjects)
+	v1.GET("/projects/:project_id", s.getProject)
+	v1.PATCH("/projects/:project_id", s.updateProject)
 	v1.POST("/knowledge-bases", s.createKnowledgeBase)
 	v1.GET("/knowledge-bases", s.listKnowledgeBases)
 	v1.GET("/knowledge-bases/:id", s.getKnowledgeBase)

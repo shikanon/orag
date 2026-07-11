@@ -3,12 +3,39 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/shikanon/orag/internal/config"
 	"github.com/shikanon/orag/internal/kb"
+	"github.com/shikanon/orag/internal/project"
 )
+
+func TestNewWiresProjectServiceForMemoryBackend(t *testing.T) {
+	t.Setenv("STORAGE_BACKEND", "memory")
+	t.Setenv("ALLOW_DETERMINISTIC_MOCK", "true")
+	t.Setenv("LLM_CHAT_PROVIDER", "mock")
+	t.Setenv("LLM_EMBEDDING_PROVIDER", "mock")
+	t.Setenv("LLM_RERANK_PROVIDER", "mock")
+	t.Setenv("LLM_MULTIMODAL_PROVIDER", "mock")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := New(context.Background(), cfg, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	if app.Projects == nil {
+		t.Fatal("Projects service is nil")
+	}
+	if _, err := app.Projects.Create(context.Background(), "tenant_a", project.CreateInput{Name: "Console"}); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestKnowledgeBaseStoreDeleteKnowledgeBaseDeletesMetadataBeforeCleanup(t *testing.T) {
 	calls := []string{}
