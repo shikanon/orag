@@ -13,6 +13,7 @@ var (
 	ErrNotFound       = errors.New("project not found")
 	ErrTenantRequired = errors.New("project tenant is required")
 	ErrNameRequired   = errors.New("project name is required")
+	ErrConflict       = errors.New("project conflict")
 )
 
 type Service struct {

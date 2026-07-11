@@ -144,10 +144,25 @@ func TestOpenAPI(t *testing.T) {
 		{http.MethodPost, "/v1/offline-knowledge/scheduler:trigger", http.StatusServiceUnavailable},
 		{http.MethodPost, "/v1/optimization-items/{id}/{action}", http.StatusConflict},
 		{http.MethodPost, "/v1/optimization-items/{id}/{action}", http.StatusServiceUnavailable},
+		{http.MethodGet, "/v1/projects", http.StatusInternalServerError},
+		{http.MethodPost, "/v1/projects", http.StatusConflict},
+		{http.MethodPost, "/v1/projects", http.StatusInternalServerError},
+		{http.MethodGet, "/v1/projects/{project_id}", http.StatusInternalServerError},
+		{http.MethodPatch, "/v1/projects/{project_id}", http.StatusConflict},
+		{http.MethodPatch, "/v1/projects/{project_id}", http.StatusInternalServerError},
 	} {
 		op := doc.Paths.Find(route.path).GetOperation(route.method)
 		if op.Responses.Get(route.status) == nil {
 			t.Fatalf("%s %s missing %d response", route.method, route.path, route.status)
+		}
+	}
+
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/v1/projects"},
+		{http.MethodGet, "/v1/projects/{project_id}"},
+	} {
+		if doc.Paths.Find(route.path).GetOperation(route.method).Responses.Get(http.StatusConflict) != nil {
+			t.Fatalf("%s %s must not advertise 409", route.method, route.path)
 		}
 	}
 

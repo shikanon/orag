@@ -66,9 +66,26 @@ func TestProjectHandlersReturnStableErrors(t *testing.T) {
 	assertErrorResponse(t, invalid, 400, "invalid_request", "trace_project_invalid")
 	missing := performJSONWithTrace(h, "GET", "/v1/projects/prj_missing", "", token, "trace_project_missing")
 	assertErrorResponse(t, missing, 404, "project_not_found", "trace_project_missing")
-	repo.createErr = errors.New("duplicate project")
+	repo.createErr = project.ErrConflict
 	conflict := performJSONWithTrace(h, "POST", "/v1/projects", `{"name":"Support"}`, token, "trace_project_conflict")
 	assertErrorResponse(t, conflict, 409, "project_conflict", "trace_project_conflict")
+
+	repo.createErr = errors.New("database unavailable")
+	failed := performJSONWithTrace(h, "POST", "/v1/projects", `{"name":"Support"}`, token, "trace_project_create_failed")
+	assertErrorResponse(t, failed, 500, "project_create_failed", "trace_project_create_failed")
+	repo.createErr = nil
+	repo.listErr = errors.New("database unavailable")
+	failed = performJSONWithTrace(h, "GET", "/v1/projects", "", token, "trace_project_list_failed")
+	assertErrorResponse(t, failed, 500, "project_list_failed", "trace_project_list_failed")
+	repo.listErr = nil
+	repo.getErr = errors.New("database unavailable")
+	failed = performJSONWithTrace(h, "GET", "/v1/projects/prj_1", "", token, "trace_project_lookup_failed")
+	assertErrorResponse(t, failed, 500, "project_lookup_failed", "trace_project_lookup_failed")
+	repo.getErr = nil
+	repo.items["prj_1"] = project.Project{ID: "prj_1", TenantID: "tenant_a", Name: "Support"}
+	repo.updateErr = errors.New("database unavailable")
+	failed = performJSONWithTrace(h, "PATCH", "/v1/projects/prj_1", `{"name":"Support Ops"}`, token, "trace_project_update_failed")
+	assertErrorResponse(t, failed, 500, "project_update_failed", "trace_project_update_failed")
 }
 
 func TestLoginValidatesPassword(t *testing.T) {
@@ -1997,6 +2014,9 @@ func issueToken(t *testing.T, app *core.App, tenant string) string {
 type httpProjectRepository struct {
 	items     map[string]project.Project
 	createErr error
+	listErr   error
+	getErr    error
+	updateErr error
 }
 
 func newHTTPProjectRepository() *httpProjectRepository {
@@ -2010,6 +2030,9 @@ func (r *httpProjectRepository) CreateWithEnvironments(_ context.Context, p proj
 	return nil
 }
 func (r *httpProjectRepository) List(_ context.Context, tenant string) ([]project.Project, error) {
+	if r.listErr != nil {
+		return nil, r.listErr
+	}
 	items := []project.Project{}
 	for _, p := range r.items {
 		if p.TenantID == tenant {
@@ -2019,10 +2042,16 @@ func (r *httpProjectRepository) List(_ context.Context, tenant string) ([]projec
 	return items, nil
 }
 func (r *httpProjectRepository) Get(_ context.Context, tenant, id string) (project.Project, bool, error) {
+	if r.getErr != nil {
+		return project.Project{}, false, r.getErr
+	}
 	p, ok := r.items[id]
 	return p, ok && p.TenantID == tenant, nil
 }
 func (r *httpProjectRepository) Update(_ context.Context, p project.Project) error {
+	if r.updateErr != nil {
+		return r.updateErr
+	}
 	r.items[p.ID] = p
 	return nil
 }

@@ -56,6 +56,33 @@ func TestProjectCreateWithEnvironmentsRollsBackOnEnvironmentFailure(t *testing.T
 	require.Equal(t, 1, tx.rollbacks)
 }
 
+func TestProjectRepositoryMapsConstraintViolationsToConflict(t *testing.T) {
+	for _, code := range []string{"23505", "23503", "23514", "23P01"} {
+		t.Run(code, func(t *testing.T) {
+			tx := &fakeProjectTx{failAt: 1, execErr: &pgconn.PgError{Code: code}}
+			repo := &ProjectRepository{db: &fakeProjectDB{tx: tx}}
+			err := repo.CreateWithEnvironments(context.Background(), project.Project{ID: "project-1"}, nil)
+			require.True(t, errors.Is(err, project.ErrConflict))
+		})
+	}
+
+	repo := &ProjectRepository{db: &fakeProjectDB{execErr: &pgconn.PgError{Code: "23505"}}}
+	err := repo.Update(context.Background(), project.Project{ID: "project-1"})
+	require.True(t, errors.Is(err, project.ErrConflict))
+
+	tx := &fakeProjectTx{commitErr: &pgconn.PgError{Code: "23505"}}
+	err = (&ProjectRepository{db: &fakeProjectDB{tx: tx}}).CreateWithEnvironments(context.Background(), project.Project{ID: "project-1"}, nil)
+	require.True(t, errors.Is(err, project.ErrConflict))
+}
+
+func TestProjectRepositoryPreservesUnknownErrors(t *testing.T) {
+	want := errors.New("database unavailable")
+	tx := &fakeProjectTx{failAt: 1, execErr: want}
+	err := (&ProjectRepository{db: &fakeProjectDB{tx: tx}}).CreateWithEnvironments(context.Background(), project.Project{ID: "project-1"}, nil)
+	require.True(t, errors.Is(err, want))
+	require.False(t, errors.Is(err, project.ErrConflict))
+}
+
 func TestProjectQueriesAreTenantScoped(t *testing.T) {
 	now := time.Date(2026, 7, 11, 9, 0, 0, 0, time.UTC)
 	db := &fakeProjectDB{
@@ -105,6 +132,7 @@ type fakeProjectTx struct {
 	execs              []projectExecCall
 	failAt             int
 	execErr            error
+	commitErr          error
 	commits, rollbacks int
 }
 
@@ -115,7 +143,7 @@ func (t *fakeProjectTx) Exec(_ context.Context, sql string, args ...any) (pgconn
 	}
 	return pgconn.NewCommandTag("INSERT 0 1"), nil
 }
-func (t *fakeProjectTx) Commit(context.Context) error   { t.commits++; return nil }
+func (t *fakeProjectTx) Commit(context.Context) error   { t.commits++; return t.commitErr }
 func (t *fakeProjectTx) Rollback(context.Context) error { t.rollbacks++; return nil }
 
 type fakeProjectDB struct {

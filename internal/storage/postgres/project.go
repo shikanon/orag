@@ -49,16 +49,16 @@ func (r *ProjectRepository) CreateWithEnvironments(ctx context.Context, item pro
 	if _, err = tx.Exec(ctx, `
 		INSERT INTO projects(id, tenant_id, name, description, created_at, updated_at)
 		VALUES($1,$2,$3,$4,$5,$6)`, item.ID, item.TenantID, item.Name, item.Description, item.CreatedAt, item.UpdatedAt); err != nil {
-		return err
+		return projectPersistenceError(err)
 	}
 	for _, environment := range environments {
 		if _, err = tx.Exec(ctx, `
 			INSERT INTO project_environments(id, project_id, kind, created_at, updated_at)
 			VALUES($1,$2,$3,$4,$5)`, environment.ID, environment.ProjectID, environment.Kind, environment.CreatedAt, environment.UpdatedAt); err != nil {
-			return err
+			return projectPersistenceError(err)
 		}
 	}
-	return tx.Commit(ctx)
+	return projectPersistenceError(tx.Commit(ctx))
 }
 
 func (r *ProjectRepository) List(ctx context.Context, tenantID string) ([]project.Project, error) {
@@ -105,6 +105,20 @@ func (r *ProjectRepository) Update(ctx context.Context, item project.Project) er
 		UPDATE projects
 		SET name=$3, description=$4, updated_at=$5
 		WHERE tenant_id=$1 AND id=$2`, item.TenantID, item.ID, item.Name, item.Description, item.UpdatedAt)
+	return projectPersistenceError(err)
+}
+
+func projectPersistenceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23503", "23505", "23514", "23P01":
+			return errors.Join(project.ErrConflict, err)
+		}
+	}
 	return err
 }
 

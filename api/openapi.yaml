@@ -639,7 +639,7 @@ paths:
                 $ref: "#/components/schemas/ProjectListResponse"
         "401":
           $ref: "#/components/responses/Error"
-        "409":
+        "500":
           $ref: "#/components/responses/Error"
     post:
       tags: [Projects]
@@ -665,6 +665,8 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /v1/projects/{project_id}:
     parameters:
       - name: project_id
@@ -689,7 +691,7 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
-        "409":
+        "500":
           $ref: "#/components/responses/Error"
     patch:
       tags: [Projects]
@@ -717,6 +719,8 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
         "409":
+          $ref: "#/components/responses/Error"
+        "500":
           $ref: "#/components/responses/Error"
   /v1/datasets:
     post:

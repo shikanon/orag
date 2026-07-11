@@ -16,7 +16,7 @@ func (s *Server) createProject(ctx context.Context, c *app.RequestContext) {
 	}
 	item, err := s.App.Projects.Create(ctx, tenantID(c), req)
 	if err != nil {
-		writeProjectError(c, err)
+		writeProjectError(c, err, "project_create_failed")
 		return
 	}
 	c.JSON(consts.StatusCreated, item)
@@ -25,7 +25,7 @@ func (s *Server) createProject(ctx context.Context, c *app.RequestContext) {
 func (s *Server) listProjects(ctx context.Context, c *app.RequestContext) {
 	items, err := s.App.Projects.List(ctx, tenantID(c))
 	if err != nil {
-		writeProjectError(c, err)
+		writeProjectError(c, err, "project_list_failed")
 		return
 	}
 	c.JSON(consts.StatusOK, map[string]any{"projects": items})
@@ -34,7 +34,7 @@ func (s *Server) listProjects(ctx context.Context, c *app.RequestContext) {
 func (s *Server) getProject(ctx context.Context, c *app.RequestContext) {
 	item, err := s.App.Projects.Get(ctx, tenantID(c), c.Param("project_id"))
 	if err != nil {
-		writeProjectError(c, err)
+		writeProjectError(c, err, "project_lookup_failed")
 		return
 	}
 	c.JSON(consts.StatusOK, item)
@@ -47,19 +47,21 @@ func (s *Server) updateProject(ctx context.Context, c *app.RequestContext) {
 	}
 	item, err := s.App.Projects.Update(ctx, tenantID(c), c.Param("project_id"), req)
 	if err != nil {
-		writeProjectError(c, err)
+		writeProjectError(c, err, "project_update_failed")
 		return
 	}
 	c.JSON(consts.StatusOK, item)
 }
 
-func writeProjectError(c *app.RequestContext, err error) {
+func writeProjectError(c *app.RequestContext, err error, internalCode string) {
 	switch {
 	case errors.Is(err, project.ErrTenantRequired), errors.Is(err, project.ErrNameRequired):
 		writeError(c, consts.StatusBadRequest, "invalid_request", err.Error())
 	case errors.Is(err, project.ErrNotFound):
 		writeError(c, consts.StatusNotFound, "project_not_found", "project not found")
-	default:
+	case errors.Is(err, project.ErrConflict):
 		writeError(c, consts.StatusConflict, "project_conflict", "project operation conflicts with current state")
+	default:
+		writeError(c, consts.StatusInternalServerError, internalCode, "project operation failed")
 	}
 }
