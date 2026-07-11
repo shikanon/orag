@@ -11,7 +11,11 @@ function projectLoader({ params }: { params: { projectId?: string } }) {
 }
 
 function Shell() {
-  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects">项目</NavLink><span className="nav-heading">工作区</span><span className="nav-disabled">RAG Studio</span><span className="nav-disabled">评测中心</span><span className="nav-disabled">发布中心</span></nav><footer><span className="status-dot" /> API connected</footer></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><span className="environment">Development</span></div><Suspense fallback={<div className="route-loading">正在加载…</div>}><Outlet /></Suspense></section></div>
+  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects">项目</NavLink><span className="nav-heading">工作区</span><span className="nav-disabled">RAG Studio</span><span className="nav-disabled">评测中心</span><span className="nav-disabled">发布中心</span></nav><footer><span className="status-dot" /> API connected</footer></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><span className="environment">Development</span></div><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></section></div>
+}
+
+function RouteSkeleton() {
+  return <main className="content" aria-label="正在加载页面" aria-busy="true"><div className="skeleton-line short" style={{ width: 220, height: 28 }} /><div className="skeleton-line" style={{ width: 380, marginTop: 14 }} /><div className="table-skeleton" style={{ marginTop: 48 }}><div className="skeleton-row"><span className="skeleton-line" /><span className="skeleton-line" /><span className="skeleton-line" /></div><div className="skeleton-row"><span className="skeleton-line" /><span className="skeleton-line" /><span className="skeleton-line" /></div></div></main>
 }
 
 function Overview() {

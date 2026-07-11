@@ -36,7 +36,7 @@ export function ProjectSwitcher() {
   const selectProject = (index: number) => {
     const project = projectItems[index]
     if (!project) return
-    setOpen(false)
+    closeMenu()
     navigate(`/projects/${project.id}/overview`)
   }
   const handleTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -58,11 +58,13 @@ export function ProjectSwitcher() {
     <button ref={trigger} className="project-trigger" type="button" aria-haspopup="listbox" aria-expanded={open} onKeyDown={handleTriggerKeyDown} onClick={() => open ? closeMenu() : openMenu()}>
       <span className="project-mark">{activeQuery.data || projectId ? activeName.slice(0, 1).toUpperCase() : 'O'}</span><span>{activeName}</span><span className="chevron">⌄</span>
     </button>
-    {open ? <div className="project-menu" role="listbox" aria-label="项目">
-      {projectItems.map((project, index) => <button ref={(element) => { options.current[index] = element }} role="option" tabIndex={index === activeIndex ? 0 : -1} aria-selected={project.id === projectId} key={project.id} onKeyDown={(event) => handleOptionKeyDown(event, index)} onClick={() => selectProject(index)}>
-        <span className="project-mark small">{project.name.slice(0, 1).toUpperCase()}</span><span><strong>{project.name}</strong><small>{project.description || '暂无描述'}</small></span>
-      </button>)}
-      <button className="new-project-option" onClick={() => { setOpen(false); navigate('/projects/new') }}>＋ 新建项目</button>
+    {open ? <div className="project-popover">
+      <div className="project-menu" role="listbox" aria-label="项目">
+        {projectItems.map((project, index) => <button ref={(element) => { options.current[index] = element }} role="option" tabIndex={index === activeIndex ? 0 : -1} aria-selected={project.id === projectId} key={project.id} onKeyDown={(event) => handleOptionKeyDown(event, index)} onClick={() => selectProject(index)}>
+          <span className="project-mark small">{project.name.slice(0, 1).toUpperCase()}</span><span><strong>{project.name}</strong><small>{project.description || '暂无描述'}</small></span>
+        </button>)}
+      </div>
+      <button className="new-project-option" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeMenu() } }} onClick={() => { setOpen(false); navigate('/projects/new') }}>＋ 新建项目</button>
     </div> : null}
   </div>
 }

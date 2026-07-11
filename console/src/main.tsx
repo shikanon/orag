@@ -4,5 +4,6 @@ import { RouterProvider } from 'react-router-dom'
 import { createAppRouter } from './app/router'
 import { AppProviders, createQueryClient } from './app/providers'
 import './styles.css'
+import './review-fixes.css'
 
 createRoot(document.getElementById('root')!).render(<StrictMode><AppProviders queryClient={createQueryClient()}><RouterProvider router={createAppRouter()} future={{ v7_startTransition: true }} /></AppProviders></StrictMode>)

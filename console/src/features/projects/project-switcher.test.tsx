@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { renderApp } from '../../test/render-app'
@@ -31,5 +31,20 @@ describe('ProjectSwitcher', () => {
     expect(screen.getByRole('option', { name: /Support/ })).toHaveFocus()
     await user.keyboard('{ArrowUp}[Space]')
     expect(router.state.location.pathname).toBe('/projects/prj_b/overview')
+    await waitFor(() => expect(screen.getByRole('button', { name: /Search/ })).toHaveFocus())
+  })
+
+  it('tabs to the new project action and restores trigger focus on Escape', async () => {
+    const user = userEvent.setup()
+    renderApp('/projects/prj_a/overview')
+    const trigger = await screen.findByRole('button', { name: /Support/ })
+
+    await user.click(trigger)
+    await user.keyboard('{End}{Tab}')
+    expect(screen.getByRole('button', { name: /新建项目/ })).toHaveFocus()
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
   })
 })
