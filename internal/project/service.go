@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	ErrNotFound     = errors.New("project not found")
-	ErrNameRequired = errors.New("project name is required")
+	ErrNotFound       = errors.New("project not found")
+	ErrTenantRequired = errors.New("project tenant is required")
+	ErrNameRequired   = errors.New("project name is required")
 )
 
 type Service struct {
@@ -24,6 +25,10 @@ func NewService(repo Repository, now func() time.Time) *Service {
 }
 
 func (s *Service) Create(ctx context.Context, tenantID string, input CreateInput) (Project, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return Project{}, ErrTenantRequired
+	}
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return Project{}, ErrNameRequired
