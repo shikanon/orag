@@ -24,6 +24,7 @@ type Config struct {
 	ObjectStorage ObjectStorageConfig
 	Observability ObservabilityConfig
 	Maintenance   MaintenanceConfig
+	Tutorial      TutorialConfig
 }
 
 type StorageConfig struct {
@@ -172,6 +173,10 @@ type ObjectStorageConfig struct {
 	AccessKeySecret string
 	CDNDomain       string
 	MockUpload      bool
+}
+
+type TutorialConfig struct {
+	CatalogBaseURL string
 }
 
 type ObservabilityConfig struct {
@@ -349,6 +354,9 @@ func Load() (Config, error) {
 			AccessKeySecret: getenv("OBJECT_STORAGE_ACCESS_KEY_SECRET", ""),
 			CDNDomain:       getenv("OBJECT_STORAGE_CDN_DOMAIN", ""),
 			MockUpload:      getenvBool("OBJECT_STORAGE_MOCK_UPLOAD", true),
+		},
+		Tutorial: TutorialConfig{
+			CatalogBaseURL: getenv("TUTORIAL_CATALOG_BASE_URL", "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs"),
 		},
 		Observability: ObservabilityConfig{
 			OTLPEndpoint:      getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),

@@ -7,6 +7,30 @@ import (
 	"testing"
 )
 
+func TestLoadTutorialCatalogBaseURL(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "test-key")
+	t.Setenv("TUTORIAL_CATALOG_BASE_URL", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Tutorial.CatalogBaseURL; got != "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs" {
+		t.Fatalf("tutorial catalog base URL = %q", got)
+	}
+}
+
+func TestLoadTutorialCatalogBaseURLOverride(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "test-key")
+	t.Setenv("TUTORIAL_CATALOG_BASE_URL", "https://example.test/packs")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Tutorial.CatalogBaseURL != "https://example.test/packs" {
+		t.Fatalf("tutorial catalog base URL = %q", cfg.Tutorial.CatalogBaseURL)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("PORT", "")
 	t.Setenv("ARK_BASE_URL", "")
