@@ -68,7 +68,7 @@
 - Produces: `tutorial.Modality`, `tutorial.PackRef`, `tutorial.Template`, `tutorial.Catalog`, `tutorial.NewCatalog()`, `(*Catalog).List()`, and `(*Catalog).Get(id, version string)`.
 - Consumes: no application services or storage; catalog construction is deterministic and side-effect free.
 
-- [ ] **Step 1: Write failing catalog tests**
+- [x] **Step 1: Write failing catalog tests**
 
 Create table-driven tests that require exactly one latest template for each approved modality, reject duplicate `(id, version)` pairs, and distinguish missing template from missing version:
 
@@ -96,7 +96,7 @@ func TestCatalogGetVersion(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -106,7 +106,7 @@ GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./interna
 
 Expected: FAIL because `internal/tutorial` and its exported types do not exist.
 
-- [ ] **Step 3: Implement domain types and validation**
+- [x] **Step 3: Implement domain types and validation**
 
 Define immutable value types and sentinel errors:
 
@@ -154,7 +154,7 @@ var (
 
 Use `//go:embed catalog.json`, decode with `DisallowUnknownFields`, validate non-empty IDs, semantic version strings, approved modalities, HTTPS source URLs, `quick` and `benchmark` pack tiers, relative manifest paths, and uniqueness. Copy slices before returning values so callers cannot mutate catalog state.
 
-- [ ] **Step 4: Author the three version `1.0.0` templates**
+- [x] **Step 4: Author the three version `1.0.0` templates**
 
 Create JSON entries with stable IDs `text-rag`, `visual-document-rag`, and `video-rag`. Their source benchmarks must be `CRUD-RAG`, `ViDoSeek`, and `Video-MME`; their scenario dimensions must include the approved negative or insufficient-evidence slice; pack manifests must resolve under:
 
@@ -164,13 +164,13 @@ visual-document-rag/1.0.0/{quick|benchmark}/manifest.json
 video-rag/1.0.0/{quick|benchmark}/manifest.json
 ```
 
-- [ ] **Step 5: Run tests and verify GREEN**
+- [x] **Step 5: Run tests and verify GREEN**
 
 Run the focused Go test from Step 2.
 
 Expected: PASS with all catalog tests successful.
 
-- [ ] **Step 6: Commit the domain slice**
+- [x] **Step 6: Commit the domain slice**
 
 ```bash
 git add internal/tutorial
@@ -193,7 +193,7 @@ git commit -m "feat: add versioned tutorial catalog"
 - Consumes: `tutorial.NewCatalog() (*tutorial.Catalog, error)` from Task 1.
 - Produces: `config.Config.Tutorial.CatalogBaseURL string` and `app.App.Tutorials *tutorial.Catalog`.
 
-- [ ] **Step 1: Write failing configuration and app tests**
+- [x] **Step 1: Write failing configuration and app tests**
 
 Add assertions:
 
@@ -209,7 +209,7 @@ if cfg.Tutorial.CatalogBaseURL != "https://example.test/packs" { t.Fatal("overri
 
 In the app test, construct the normal mock-provider application and assert `app.Tutorials.List()` contains three items.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 ```bash
 GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./internal/config ./internal/app -run 'Test.*Tutorial' -v
@@ -217,7 +217,7 @@ GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./interna
 
 Expected: FAIL because `Config.Tutorial` and `App.Tutorials` do not exist.
 
-- [ ] **Step 3: Add exact configuration fields**
+- [x] **Step 3: Add exact configuration fields**
 
 ```go
 type TutorialConfig struct {
@@ -243,11 +243,11 @@ type Config struct {
 
 Load `TUTORIAL_CATALOG_BASE_URL` with the exact public default. Do not add official OSS AccessKey fields to tutorial configuration.
 
-- [ ] **Step 4: Construct the catalog during app startup**
+- [x] **Step 4: Construct the catalog during app startup**
 
 Call `tutorial.NewCatalog()` before returning `App`. Propagate validation errors so invalid embedded authoring data fails startup, then assign the result to `App.Tutorials`.
 
-- [ ] **Step 5: Document non-secret configuration**
+- [x] **Step 5: Document non-secret configuration**
 
 Add the exact environment value to `.env.example` and:
 
@@ -258,13 +258,13 @@ tutorial:
 
 to `configs/config.example.yaml`.
 
-- [ ] **Step 6: Run focused tests and verify GREEN**
+- [x] **Step 6: Run focused tests and verify GREEN**
 
 Run the command from Step 2.
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit the application wiring**
+- [x] **Step 7: Commit the application wiring**
 
 ```bash
 git add internal/config internal/app .env.example configs/config.example.yaml
@@ -286,7 +286,7 @@ git commit -m "feat: wire tutorial catalog configuration"
 - Consumes: `App.Tutorials.List()` and `App.Tutorials.Get(templateID, version)`.
 - Produces: `GET /v1/tutorials`, `GET /v1/tutorials/{template_id}`, and `GET /v1/tutorials/{template_id}/versions/{version}` with generated `TutorialTemplate` and `TutorialPackRef` schemas.
 
-- [ ] **Step 1: Write failing router tests**
+- [x] **Step 1: Write failing router tests**
 
 Use the existing authenticated test helper and assert:
 
@@ -300,7 +300,7 @@ if len(body.Tutorials) != 3 { t.Fatalf("tutorials = %d", len(body.Tutorials)) }
 
 Add tests for current detail, explicit `1.0.0`, unknown template `tutorial_not_found`, unknown version `tutorial_version_not_found`, and unauthenticated `401`.
 
-- [ ] **Step 2: Run the focused router tests and verify RED**
+- [x] **Step 2: Run the focused router tests and verify RED**
 
 ```bash
 GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./internal/http -run 'TestTutorial' -v
@@ -308,7 +308,7 @@ GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./interna
 
 Expected: FAIL because the routes return 404.
 
-- [ ] **Step 3: Implement handlers and routes**
+- [x] **Step 3: Implement handlers and routes**
 
 Register:
 
@@ -320,15 +320,15 @@ v1.GET("/tutorials/:template_id/versions/:version", s.getTutorialVersion)
 
 Return `{ "tutorials": [...] }` for the list. Map `ErrTemplateNotFound` to `404 tutorial_not_found` and `ErrVersionNotFound` to `404 tutorial_version_not_found`; unexpected errors use `500 tutorial_catalog_failed` without leaking internal catalog data.
 
-- [ ] **Step 4: Add exact OpenAPI paths and schemas**
+- [x] **Step 4: Add exact OpenAPI paths and schemas**
 
 Define `TutorialModality`, `TutorialPackRef`, `TutorialTemplate`, and `TutorialListResponse`; document authentication, 200 responses, both 404 codes, and examples for all three templates. `manifest_url` in API responses must be the resolved URL produced from `Config.Tutorial.CatalogBaseURL` plus the relative manifest path; retain `manifest_path` only inside the embedded authoring file.
 
-- [ ] **Step 5: Resolve manifest URLs at the HTTP boundary**
+- [x] **Step 5: Resolve manifest URLs at the HTTP boundary**
 
 Add a response mapper in `internal/http/tutorials.go` that joins the configured base URL and the catalog's relative manifest path with `net/url`, rejecting path traversal and non-HTTPS results. Domain values remain storage-agnostic.
 
-- [ ] **Step 6: Regenerate TypeScript contracts**
+- [x] **Step 6: Regenerate TypeScript contracts**
 
 ```bash
 npm --prefix console run api:generate
@@ -336,7 +336,7 @@ npm --prefix console run api:generate
 
 Expected: `console/src/api/schema.d.ts` includes the new schemas and operations.
 
-- [ ] **Step 7: Validate API and run tests**
+- [x] **Step 7: Validate API and run tests**
 
 ```bash
 make openapi-validate
@@ -345,7 +345,7 @@ GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./interna
 
 Expected: both commands PASS.
 
-- [ ] **Step 8: Commit the API slice**
+- [x] **Step 8: Commit the API slice**
 
 ```bash
 git add internal/http api/openapi.yaml console/src/api/schema.d.ts
@@ -370,7 +370,7 @@ git commit -m "feat: expose tutorial catalog api"
 - Consumes: generated `components['schemas']['TutorialTemplate']`, list response, and the three HTTP routes from Task 3.
 - Produces: global `/tutorials` library, `/tutorials/:templateId` detail page, a global “教程实验室” navigation entry, loading/error/empty states, and visible Replay/Live availability.
 
-- [ ] **Step 1: Add failing MSW-backed component tests**
+- [x] **Step 1: Add failing MSW-backed component tests**
 
 Cover:
 
@@ -394,7 +394,7 @@ it('shows scenario dimensions and pack requirements', async () => {
 
 Also cover API failure with a retry button and unknown detail with a return-to-library link.
 
-- [ ] **Step 2: Run component tests and verify RED**
+- [x] **Step 2: Run component tests and verify RED**
 
 ```bash
 npm --prefix console test -- --run src/features/tutorials/tutorials.test.tsx
@@ -402,7 +402,7 @@ npm --prefix console test -- --run src/features/tutorials/tutorials.test.tsx
 
 Expected: FAIL because routes and components do not exist.
 
-- [ ] **Step 3: Add typed tutorial client methods**
+- [x] **Step 3: Add typed tutorial client methods**
 
 ```ts
 export type TutorialTemplate = components['schemas']['TutorialTemplate']
@@ -416,25 +416,25 @@ export const tutorialApi = {
 }
 ```
 
-- [ ] **Step 4: Implement lazy routes and global navigation**
+- [x] **Step 4: Implement lazy routes and global navigation**
 
 Add route-level lazy imports for list/detail and a visible `/tutorials` `NavLink` labelled `教程实验室`. Keep project-specific RAG Studio, Evaluation, and Release entries disabled as they are today.
 
-- [ ] **Step 5: Implement list and detail states**
+- [x] **Step 5: Implement list and detail states**
 
 The list groups nothing by individual modules; it renders exactly three end-to-end tutorial cards. Cards show modality, benchmark source, scenario dimensions, P0-P8 stage count, Quick/Benchmark estimates, and Replay availability. The detail page shows the dataset-first experiment matrix, pack requirements, source link, and disabled “克隆教程” action labelled `即将开放` until the clone phase lands.
 
-- [ ] **Step 6: Add scoped styles**
+- [x] **Step 6: Add scoped styles**
 
 Reuse `--ink`, `--muted`, `--line`, and `--accent`. Add `.tutorial-grid`, `.tutorial-card`, `.tutorial-tags`, `.tutorial-pack-grid`, and `.tutorial-detail` without changing existing project layouts or responsive breakpoints.
 
-- [ ] **Step 7: Make component tests GREEN**
+- [x] **Step 7: Make component tests GREEN**
 
 Run the command from Step 2.
 
 Expected: PASS.
 
-- [ ] **Step 8: Add and run Playwright coverage**
+- [x] **Step 8: Add and run Playwright coverage**
 
 The E2E test must navigate from the global rail to `/tutorials`, open `video-rag`, assert the public benchmark source and both Pack tiers, and confirm the disabled clone action.
 
@@ -444,7 +444,7 @@ npm --prefix console run test:e2e -- tutorials.spec.ts
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit the console slice**
+- [x] **Step 9: Commit the console slice**
 
 ```bash
 git add console/src console/e2e/tutorials.spec.ts
@@ -466,7 +466,7 @@ git commit -m "feat: add tutorial catalog console"
 - Consumes: the final API routes, environment variable, and console routes.
 - Produces: user-facing entry points and a checked implementation record for the catalog phase.
 
-- [ ] **Step 1: Document the catalog without overstating later phases**
+- [x] **Step 1: Document the catalog without overstating later phases**
 
 Add:
 
@@ -476,7 +476,7 @@ Add:
 - A clear statement that cloning, Pack installation, Live experiments, dataset generation, and video ingestion are later phases.
 - `tutorial_not_found`, `tutorial_version_not_found`, and `tutorial_catalog_failed` error codes.
 
-- [ ] **Step 2: Run the complete phase verification**
+- [x] **Step 2: Run the complete phase verification**
 
 ```bash
 GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./internal/tutorial ./internal/config ./internal/app ./internal/http
@@ -491,7 +491,7 @@ git diff --check
 
 Expected: every command exits 0; Vitest and Playwright report zero failed tests.
 
-- [ ] **Step 3: Review scope and generated files**
+- [x] **Step 3: Review scope and generated files**
 
 ```bash
 git status --short
@@ -501,14 +501,14 @@ git diff --name-only origin/main...HEAD
 
 Expected: only the design/plan documents and files named by this plan are present; `.superpowers/` is not staged or committed.
 
-- [ ] **Step 4: Mark completed plan checkboxes and commit documentation**
+- [x] **Step 4: Mark completed plan checkboxes and commit documentation**
 
 ```bash
 git add README.md docs/README.md docs/api/README.md docs/api/auth-and-errors.md docs/superpowers/plans/2026-07-13-orag-tutorial-catalog-foundation.md
 git commit -m "docs: document tutorial catalog foundation"
 ```
 
-- [ ] **Step 5: Run final clean-state proof**
+- [x] **Step 5: Run final clean-state proof**
 
 ```bash
 git status --short --branch

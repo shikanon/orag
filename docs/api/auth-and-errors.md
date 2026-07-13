@@ -103,8 +103,11 @@ oragctl trace --trace-id trace_xxx
 | `404` | `dataset_not_found` | 写入样本、运行评估或优化时，数据集不存在或不属于当前 tenant。 |
 | `404` | `ingestion_job_not_found` | 查询不存在的入库 job。 |
 | `404` | `evaluation_not_found` | 查询不存在的评估结果。 |
+| `404` | `tutorial_not_found` | 教程模板 ID 不存在。 |
+| `404` | `tutorial_version_not_found` | 教程存在，但请求的不可变版本不存在。 |
 | `413` | `payload_too_large` | 入库内容超过 `INGEST_MAX_DOCUMENT_BYTES`。 |
 | `500` | `knowledge_base_create_failed`、`knowledge_base_list_failed`、`knowledge_base_lookup_failed`、`knowledge_base_delete_failed`、`ingest_failed`、`query_failed`、`evaluation_failed`、`optimization_failed` | 知识库创建/列表/详情/删除后端失败，或后端入库、查询、评估、优化链路失败。 |
+| `500` | `tutorial_catalog_failed` | 教程目录配置无效，或无法安全解析公开 Manifest URL。 |
 
 ## 安全建议
 
