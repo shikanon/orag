@@ -1,0 +1,46 @@
+import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { HttpResponse, http } from 'msw'
+import { describe, expect, it } from 'vitest'
+import { server, tutorials } from '../../test/handlers'
+import { renderApp } from '../../test/render-app'
+
+describe('Tutorial catalog', () => {
+  it('renders three end-to-end tutorials', async () => {
+    renderApp('/tutorials')
+    expect(await screen.findByRole('heading', { name: '教程与实验室' })).toBeVisible()
+    expect(await screen.findByText('中文文本 RAG')).toBeVisible()
+    expect(screen.getByText('视觉文档 RAG')).toBeVisible()
+    expect(screen.getByText('视频 RAG')).toBeVisible()
+  })
+
+  it('shows scenario dimensions and pack requirements', async () => {
+    renderApp('/tutorials/video-rag')
+    expect(await screen.findByRole('heading', { name: '视频 RAG' })).toBeVisible()
+    expect(screen.getByText('Replay 可用')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Quick Pack' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Benchmark Pack' })).toBeVisible()
+    expect(screen.getByText('时间否定')).toBeVisible()
+    expect(screen.getByRole('button', { name: '克隆教程，即将开放' })).toBeDisabled()
+  })
+
+  it('retries after the catalog API fails', async () => {
+    let attempts = 0
+    server.use(http.get('/v1/tutorials', () => {
+      attempts += 1
+      return attempts === 1 ? new HttpResponse(null, { status: 503 }) : HttpResponse.json({ tutorials })
+    }))
+    renderApp('/tutorials')
+    const retry = await screen.findByRole('button', { name: '重新加载' })
+    await userEvent.click(retry)
+    expect(await screen.findByText('中文文本 RAG')).toBeVisible()
+    expect(attempts).toBe(2)
+  })
+
+  it('links back to the library when a tutorial is unknown', async () => {
+    server.use(http.get('/v1/tutorials/missing', () => new HttpResponse(null, { status: 404 })))
+    renderApp('/tutorials/missing')
+    expect(await screen.findByRole('alert')).toHaveTextContent('教程不存在')
+    expect(screen.getByRole('link', { name: '返回教程库' })).toHaveAttribute('href', '/tutorials')
+  })
+})

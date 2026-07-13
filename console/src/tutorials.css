@@ -1,0 +1,324 @@
+.eyebrow {
+  margin: 0 0 10px !important;
+  color: var(--accent-dark) !important;
+  font-size: 10px !important;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+.tutorial-library-header > div {
+  max-width: 720px;
+}
+.catalog-version {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #f9faf7;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.tutorial-grid {
+  border-top: 2px solid var(--ink);
+  background: #f9faf7;
+}
+.tutorial-card {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) 176px;
+  gap: 28px;
+  align-items: start;
+  padding: 30px 24px;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  transition: background-color 0.18s ease-out;
+}
+.tutorial-card:hover,
+.tutorial-card:focus-visible {
+  background: #fffdf8;
+  outline: 2px solid var(--accent-dark);
+  outline-offset: -2px;
+}
+.tutorial-index {
+  font-family: Georgia, serif;
+  color: #a5a79f;
+  font-size: 18px;
+}
+.tutorial-card-main h2 {
+  margin: 8px 0 9px;
+  font-family: Georgia, serif;
+  font-size: 25px;
+  font-weight: 500;
+}
+.tutorial-card-main > p {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.tutorial-meta,
+.tutorial-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: #777a72;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.tutorial-meta span + span:before {
+  content: "·";
+  margin-right: 7px;
+}
+.tutorial-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 18px;
+}
+.tutorial-tags span {
+  padding: 5px 8px;
+  border: 1px solid #dedfd9;
+  border-radius: 3px;
+  background: #fff;
+  color: #656860;
+  font-size: 11px;
+}
+.tutorial-tags.large span {
+  font-size: 12px;
+  padding: 7px 10px;
+}
+.tutorial-card-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.tutorial-card-facts strong {
+  font-size: 16px;
+  color: var(--ink);
+}
+.tutorial-open {
+  margin-top: 14px;
+  color: var(--accent-dark);
+  font-weight: 650;
+}
+.tutorial-open b {
+  margin-left: 5px;
+}
+.tutorial-state {
+  padding: 60px;
+  border-top: 2px solid var(--ink);
+  background: #fff;
+  text-align: center;
+}
+.tutorial-state h1,
+.tutorial-state h2 {
+  font-family: Georgia, serif;
+  font-weight: 500;
+}
+.tutorial-state p {
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+.tutorial-card-skeleton {
+  min-height: 160px;
+}
+.tutorial-card-skeleton > div {
+  display: grid;
+  gap: 18px;
+}
+.tutorial-detail {
+  max-width: 1160px;
+}
+.tutorial-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 44px;
+  padding-bottom: 48px;
+}
+.tutorial-detail-header > div {
+  max-width: 760px;
+}
+.tutorial-detail-header h1 {
+  margin: 0 0 14px;
+  font-family: Georgia, serif;
+  font-size: 42px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+.tutorial-detail-header > div > p:not(.eyebrow) {
+  color: var(--muted);
+  line-height: 1.7;
+}
+.tutorial-detail-header .primary-button:disabled {
+  cursor: not-allowed;
+  flex: none;
+  min-width: 132px;
+  opacity: 0.48;
+  white-space: nowrap;
+}
+.tutorial-detail-header .primary-button small {
+  display: block;
+  margin-top: 3px;
+  font-size: 9px;
+  font-weight: 500;
+}
+.tutorial-statuses {
+  margin-top: 22px;
+}
+.tutorial-statuses span {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #fff;
+}
+.tutorial-detail-section {
+  padding: 42px 0;
+  border-top: 1px solid var(--line);
+}
+.section-heading {
+  max-width: 680px;
+  margin-bottom: 28px;
+}
+.section-heading h2 {
+  margin: 0 0 8px;
+  font-family: Georgia, serif;
+  font-size: 27px;
+  font-weight: 500;
+}
+.section-heading > p:not(.eyebrow),
+.source-copy {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.pipeline-sequence {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(72px, 1fr));
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  border-top: 1px solid #d6d8d1;
+  border-bottom: 1px solid #d6d8d1;
+}
+.pipeline-sequence li {
+  min-height: 98px;
+  padding: 16px 10px;
+  border-right: 1px solid var(--line);
+}
+.pipeline-sequence li:last-child {
+  border: 0;
+}
+.pipeline-sequence span,
+.pipeline-sequence strong {
+  display: block;
+}
+.pipeline-sequence span {
+  color: var(--accent-dark);
+  font-family: Georgia, serif;
+  font-size: 18px;
+}
+.pipeline-sequence strong {
+  margin-top: 13px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.split-section {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 80px;
+}
+.text-link {
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 650;
+  text-underline-offset: 3px;
+}
+.tutorial-pack-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.tutorial-pack {
+  padding: 27px;
+  border: 1px solid #d9dbd4;
+  background: #fff;
+}
+.pack-tier {
+  margin: 0;
+  color: var(--accent-dark);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.tutorial-pack h3 {
+  margin: 7px 0 24px;
+  font-family: Georgia, serif;
+  font-size: 24px;
+  font-weight: 500;
+}
+.tutorial-pack dl {
+  margin: 0 0 24px;
+}
+.tutorial-pack dl > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #eff0ec;
+  font-size: 12px;
+}
+.tutorial-pack dt {
+  color: var(--muted);
+}
+.tutorial-pack dd {
+  margin: 0;
+  font-weight: 650;
+}
+@media (max-width: 980px) {
+  .tutorial-card {
+    grid-template-columns: 40px 1fr;
+  }
+  .tutorial-card-facts {
+    grid-column: 2;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .pipeline-sequence {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .split-section {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+}
+@media (max-width: 760px) {
+  .tutorial-card {
+    grid-template-columns: 1fr;
+    padding: 24px 18px;
+  }
+  .tutorial-index {
+    display: none;
+  }
+  .tutorial-card-facts {
+    grid-column: 1;
+  }
+  .tutorial-detail-header {
+    flex-direction: column;
+  }
+  .tutorial-detail-header h1 {
+    font-size: 34px;
+  }
+  .pipeline-sequence {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .tutorial-pack-grid {
+    grid-template-columns: 1fr;
+  }
+  .split-section {
+    gap: 24px;
+  }
+}
