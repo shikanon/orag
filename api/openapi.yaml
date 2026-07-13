@@ -9,6 +9,7 @@ tags:
   - name: System
   - name: Auth
   - name: Projects
+  - name: Tutorials
   - name: KnowledgeBases
   - name: Ingestion
   - name: Query
@@ -722,6 +723,84 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /v1/tutorials:
+    get:
+      tags: [Tutorials]
+      operationId: listTutorials
+      description: Lists the latest immutable version of each system tutorial template.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The three end-to-end tutorial templates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorialListResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/tutorials/{template_id}:
+    parameters:
+      - name: template_id
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [text-rag, visual-document-rag, video-rag]
+    get:
+      tags: [Tutorials]
+      operationId: getTutorial
+      description: Returns the latest immutable version, or `404 tutorial_not_found`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current tutorial template.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorialTemplate"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/tutorials/{template_id}/versions/{version}:
+    parameters:
+      - name: template_id
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [text-rag, visual-document-rag, video-rag]
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+    get:
+      tags: [Tutorials]
+      operationId: getTutorialVersion
+      description: Returns an immutable template version. Missing versions return `404 tutorial_version_not_found`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Requested tutorial template version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorialTemplate"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /v1/datasets:
     post:
       tags: [Evaluation]
@@ -1378,6 +1457,119 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Project"
+    TutorialModality:
+      type: string
+      enum: [text, visual_document, video]
+    TutorialPackRef:
+      type: object
+      required: [tier, manifest_url, estimated_bytes, estimated_minutes, requires_license_check]
+      properties:
+        tier:
+          type: string
+          enum: [quick, benchmark]
+        manifest_url:
+          type: string
+          format: uri
+          description: Anonymous-read HTTPS URL for the public package manifest.
+        estimated_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        estimated_minutes:
+          type: integer
+          minimum: 0
+        requires_license_check:
+          type: boolean
+    TutorialTemplate:
+      type: object
+      required: [id, slug, title, summary, version, status, modality, difficulty, estimated_duration_minutes, source_benchmark, source_url, scenario_dimensions, pipeline_stages, required_capabilities, packs, replay_available]
+      properties:
+        id:
+          type: string
+          example: text-rag
+        slug:
+          type: string
+          example: text-rag
+        title:
+          type: string
+          example: 中文文本 RAG
+        summary:
+          type: string
+        version:
+          type: string
+          example: 1.0.0
+        status:
+          type: string
+          enum: [published]
+        modality:
+          $ref: "#/components/schemas/TutorialModality"
+        difficulty:
+          type: string
+          enum: [intermediate, advanced]
+        estimated_duration_minutes:
+          type: integer
+          minimum: 1
+        source_benchmark:
+          type: string
+          enum: [CRUD-RAG, ViDoSeek, Video-MME]
+        source_url:
+          type: string
+          format: uri
+        scenario_dimensions:
+          type: array
+          items:
+            type: string
+        pipeline_stages:
+          type: array
+          items:
+            type: string
+        required_capabilities:
+          type: array
+          items:
+            type: string
+        packs:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/TutorialPackRef"
+        replay_available:
+          type: boolean
+      example:
+        id: video-rag
+        slug: video-rag
+        title: 视频 RAG
+        summary: 对比视频理解、时间片段索引、多路召回和重排效果。
+        version: 1.0.0
+        status: published
+        modality: video
+        difficulty: advanced
+        estimated_duration_minutes: 75
+        source_benchmark: Video-MME
+        source_url: https://video-mme.github.io/home_page.html
+        scenario_dimensions: [短视频, 长视频, 时间否定, 信息不足]
+        pipeline_stages: [P0 基线, P1 视频理解与打标, P8 组合策略]
+        required_capabilities: [doubao_seed_video_understanding, temporal_index, embedding, rerank]
+        packs:
+          - tier: quick
+            manifest_url: https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs/video-rag/1.0.0/quick/manifest.json
+            estimated_bytes: 2147483648
+            estimated_minutes: 30
+            requires_license_check: true
+          - tier: benchmark
+            manifest_url: https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs/video-rag/1.0.0/benchmark/manifest.json
+            estimated_bytes: 21474836480
+            estimated_minutes: 180
+            requires_license_check: true
+        replay_available: true
+    TutorialListResponse:
+      type: object
+      required: [tutorials]
+      properties:
+        tutorials:
+          type: array
+          items:
+            $ref: "#/components/schemas/TutorialTemplate"
     ReadinessResponse:
       type: object
       required: [status, checks]
