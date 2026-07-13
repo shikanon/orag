@@ -37,6 +37,30 @@ func TestNewWiresProjectServiceForMemoryBackend(t *testing.T) {
 	}
 }
 
+func TestNewWiresTutorialCatalogForMemoryBackend(t *testing.T) {
+	t.Setenv("STORAGE_BACKEND", "memory")
+	t.Setenv("ALLOW_DETERMINISTIC_MOCK", "true")
+	t.Setenv("LLM_CHAT_PROVIDER", "mock")
+	t.Setenv("LLM_EMBEDDING_PROVIDER", "mock")
+	t.Setenv("LLM_RERANK_PROVIDER", "mock")
+	t.Setenv("LLM_MULTIMODAL_PROVIDER", "mock")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := New(context.Background(), cfg, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer application.Close()
+	if application.Tutorials == nil {
+		t.Fatal("Tutorials catalog is nil")
+	}
+	if got := len(application.Tutorials.List()); got != 3 {
+		t.Fatalf("Tutorials.List() len = %d, want 3", got)
+	}
+}
+
 func TestKnowledgeBaseStoreDeleteKnowledgeBaseDeletesMetadataBeforeCleanup(t *testing.T) {
 	calls := []string{}
 	repo := newFakeKnowledgeBaseRepo(&calls, kb.KnowledgeBase{

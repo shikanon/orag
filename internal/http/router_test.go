@@ -25,8 +25,75 @@ import (
 	"github.com/shikanon/orag/internal/platform/logger"
 	"github.com/shikanon/orag/internal/project"
 	"github.com/shikanon/orag/internal/rag"
+	"github.com/shikanon/orag/internal/tutorial"
 	"time"
 )
+
+func TestTutorialCatalogRoutes(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	token := issueToken(t, application, "tenant_a")
+
+	listed := performJSON(h, "GET", "/v1/tutorials", "", token)
+	if listed.Code != 200 {
+		t.Fatalf("list status = %d body=%s", listed.Code, listed.Body)
+	}
+	var body struct {
+		Tutorials []tutorialResponse `json:"tutorials"`
+	}
+	if err := json.Unmarshal([]byte(listed.Body), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Tutorials) != 3 {
+		t.Fatalf("tutorials = %d, want 3", len(body.Tutorials))
+	}
+	if got := body.Tutorials[0].Packs[0].ManifestURL; !strings.HasPrefix(got, "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs/") {
+		t.Fatalf("manifest URL = %q", got)
+	}
+
+	current := performJSON(h, "GET", "/v1/tutorials/text-rag", "", token)
+	if current.Code != 200 {
+		t.Fatalf("current status = %d body=%s", current.Code, current.Body)
+	}
+	var currentBody tutorialResponse
+	if err := json.Unmarshal([]byte(current.Body), &currentBody); err != nil {
+		t.Fatal(err)
+	}
+	if currentBody.ID != "text-rag" || currentBody.Version != "1.0.0" || currentBody.Modality != tutorial.ModalityText {
+		t.Fatalf("current tutorial = %#v", currentBody)
+	}
+
+	versioned := performJSON(h, "GET", "/v1/tutorials/text-rag/versions/1.0.0", "", token)
+	if versioned.Code != 200 || versioned.Body != current.Body {
+		t.Fatalf("versioned status = %d body=%s, current=%s", versioned.Code, versioned.Body, current.Body)
+	}
+}
+
+func TestTutorialCatalogRouteErrorsAndAuthentication(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	token := issueToken(t, application, "tenant_a")
+
+	unauthenticated := performJSON(h, "GET", "/v1/tutorials", "", "")
+	if unauthenticated.Code != 401 {
+		t.Fatalf("unauthenticated status = %d body=%s", unauthenticated.Code, unauthenticated.Body)
+	}
+	missingTemplate := performJSONWithTrace(h, "GET", "/v1/tutorials/missing", "", token, "trace_tutorial_missing")
+	assertErrorResponse(t, missingTemplate, 404, "tutorial_not_found", "trace_tutorial_missing")
+	missingVersion := performJSONWithTrace(h, "GET", "/v1/tutorials/text-rag/versions/9.9.9", "", token, "trace_tutorial_version_missing")
+	assertErrorResponse(t, missingVersion, 404, "tutorial_version_not_found", "trace_tutorial_version_missing")
+
+	application.Config.Tutorial.CatalogBaseURL = "http://insecure.example.test/packs"
+	invalidCatalog := performJSONWithTrace(h, "GET", "/v1/tutorials", "", token, "trace_tutorial_catalog_failed")
+	assertErrorResponse(t, invalidCatalog, 500, "tutorial_catalog_failed", "trace_tutorial_catalog_failed")
+}
+
+func TestResolveTutorialManifestURLRejectsEncodedTraversal(t *testing.T) {
+	_, err := resolveTutorialManifestURL("https://example.test/packs", "%2e%2e/private/manifest.json")
+	if err == nil {
+		t.Fatal("resolveTutorialManifestURL() error = nil, want encoded traversal error")
+	}
+}
 
 func TestProjectsAreTenantScoped(t *testing.T) {
 	h, app, closeApp := newTestHertzWithApp(t)

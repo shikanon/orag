@@ -30,6 +30,7 @@ import (
 	"github.com/shikanon/orag/internal/rag"
 	"github.com/shikanon/orag/internal/storage/postgres"
 	qdrantstore "github.com/shikanon/orag/internal/storage/qdrant"
+	"github.com/shikanon/orag/internal/tutorial"
 )
 
 type App struct {
@@ -41,6 +42,7 @@ type App struct {
 	RAG              *rag.Service
 	Datasets         *dataset.Service
 	Projects         *project.Service
+	Tutorials        *tutorial.Catalog
 	Eval             eval.Runner
 	Optimizer        *optimizer.Service
 	OfflineKnowledge *offlineknowledge.Service
@@ -62,6 +64,10 @@ type TraceRepository interface {
 
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, error) {
 	_ = ctx
+	tutorials, err := tutorial.NewCatalog()
+	if err != nil {
+		return nil, err
+	}
 	model, err := buildModelClient(cfg)
 	if err != nil {
 		return nil, err
@@ -147,15 +153,16 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		closers = append(closers, offlineScheduler.Stop)
 	}
 	return &App{
-		Config:   cfg,
-		Logger:   logger,
-		Auth:     authSvc,
-		KBStore:  backend.store,
-		Ingest:   ingestSvc,
-		RAG:      ragSvc,
-		Datasets: datasets,
-		Projects: projects,
-		Eval:     evalRunner,
+		Config:    cfg,
+		Logger:    logger,
+		Auth:      authSvc,
+		KBStore:   backend.store,
+		Ingest:    ingestSvc,
+		RAG:       ragSvc,
+		Datasets:  datasets,
+		Projects:  projects,
+		Tutorials: tutorials,
+		Eval:      evalRunner,
 		Optimizer: &optimizer.Service{
 			Repository: backend.optimizerRepo,
 			Runner:     optimizerRunner,

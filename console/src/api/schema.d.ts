@@ -342,6 +342,62 @@ export interface paths {
         patch: operations["updateProject"];
         trace?: never;
     };
+    "/v1/tutorials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Lists the latest immutable version of each system tutorial template. */
+        get: operations["listTutorials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tutorials/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: "text-rag" | "visual-document-rag" | "video-rag";
+            };
+            cookie?: never;
+        };
+        /** @description Returns the latest immutable version, or `404 tutorial_not_found`. */
+        get: operations["getTutorial"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tutorials/{template_id}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: "text-rag" | "visual-document-rag" | "video-rag";
+                version: string;
+            };
+            cookie?: never;
+        };
+        /** @description Returns an immutable template version. Missing versions return `404 tutorial_version_not_found`. */
+        get: operations["getTutorialVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/datasets": {
         parameters: {
             query?: never;
@@ -688,6 +744,97 @@ export interface components {
         };
         ProjectListResponse: {
             projects: components["schemas"]["Project"][];
+        };
+        /** @enum {string} */
+        TutorialModality: "text" | "visual_document" | "video";
+        TutorialPackRef: {
+            /** @enum {string} */
+            tier: "quick" | "benchmark";
+            /**
+             * Format: uri
+             * @description Anonymous-read HTTPS URL for the public package manifest.
+             */
+            manifest_url: string;
+            /** Format: int64 */
+            estimated_bytes: number;
+            estimated_minutes: number;
+            requires_license_check: boolean;
+        };
+        /** @example {
+         *       "id": "video-rag",
+         *       "slug": "video-rag",
+         *       "title": "视频 RAG",
+         *       "summary": "对比视频理解、时间片段索引、多路召回和重排效果。",
+         *       "version": "1.0.0",
+         *       "status": "published",
+         *       "modality": "video",
+         *       "difficulty": "advanced",
+         *       "estimated_duration_minutes": 75,
+         *       "source_benchmark": "Video-MME",
+         *       "source_url": "https://video-mme.github.io/home_page.html",
+         *       "scenario_dimensions": [
+         *         "短视频",
+         *         "长视频",
+         *         "时间否定",
+         *         "信息不足"
+         *       ],
+         *       "pipeline_stages": [
+         *         "P0 基线",
+         *         "P1 视频理解与打标",
+         *         "P8 组合策略"
+         *       ],
+         *       "required_capabilities": [
+         *         "doubao_seed_video_understanding",
+         *         "temporal_index",
+         *         "embedding",
+         *         "rerank"
+         *       ],
+         *       "packs": [
+         *         {
+         *           "tier": "quick",
+         *           "manifest_url": "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs/video-rag/1.0.0/quick/manifest.json",
+         *           "estimated_bytes": 2147483648,
+         *           "estimated_minutes": 30,
+         *           "requires_license_check": true
+         *         },
+         *         {
+         *           "tier": "benchmark",
+         *           "manifest_url": "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs/video-rag/1.0.0/benchmark/manifest.json",
+         *           "estimated_bytes": 21474836480,
+         *           "estimated_minutes": 180,
+         *           "requires_license_check": true
+         *         }
+         *       ],
+         *       "replay_available": true
+         *     } */
+        TutorialTemplate: {
+            /** @example text-rag */
+            id: string;
+            /** @example text-rag */
+            slug: string;
+            /** @example 中文文本 RAG */
+            title: string;
+            summary: string;
+            /** @example 1.0.0 */
+            version: string;
+            /** @enum {string} */
+            status: "published";
+            modality: components["schemas"]["TutorialModality"];
+            /** @enum {string} */
+            difficulty: "intermediate" | "advanced";
+            estimated_duration_minutes: number;
+            /** @enum {string} */
+            source_benchmark: "CRUD-RAG" | "ViDoSeek" | "Video-MME";
+            /** Format: uri */
+            source_url: string;
+            scenario_dimensions: string[];
+            pipeline_stages: string[];
+            required_capabilities: string[];
+            packs: components["schemas"]["TutorialPackRef"][];
+            replay_available: boolean;
+        };
+        TutorialListResponse: {
+            tutorials: components["schemas"]["TutorialTemplate"][];
         };
         ReadinessResponse: {
             /** @enum {string} */
@@ -2646,6 +2793,79 @@ export interface operations {
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    listTutorials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The three end-to-end tutorial templates. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    getTutorial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: "text-rag" | "visual-document-rag" | "video-rag";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current tutorial template. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialTemplate"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    getTutorialVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: "text-rag" | "visual-document-rag" | "video-rag";
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Requested tutorial template version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialTemplate"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };
     };

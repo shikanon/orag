@@ -10,6 +10,7 @@
 | 接入 API、MCP 或编写 SDK | [`api/README.md`](./api/README.md) -> [`api/auth-and-errors.md`](./api/auth-and-errors.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) -> [`api/agent-integrations.md`](./api/agent-integrations.md) -> [`../api/openapi.yaml`](../api/openapi.yaml) | 对齐认证、请求体、响应体、错误码、主业务 API、Ralph Loop MCP 和 Skill 集成。 |
 | 理解 RAG 内部链路 | [`architecture/README.md`](./architecture/README.md) -> [`architecture/rag-pipeline.md`](./architecture/rag-pipeline.md) -> [`Go-RAG-框架技术方案.md`](./Go-RAG-框架技术方案.md) | 理解 HTTP、检索、重排、生成、引用、缓存和存储边界。 |
 | 做 RAG 质量回归 | [`evaluation/README.md`](./evaluation/README.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) | 理解数据集、评估运行、deterministic/Judge/QAG 指标和 optimizer 行为。 |
+| 学习工程模块效果 | 控制台 `/tutorials` -> [`superpowers/specs/2026-07-13-orag-tutorial-experiment-space-design.md`](./superpowers/specs/2026-07-13-orag-tutorial-experiment-space-design.md) | 使用中文文本、视觉文档和视频端到端模板理解解析、Chunking、多路召回、Rewrite 与 Rerank 的分场景效果。 |
 | 部署或排障 | [`operations/README.md`](./operations/README.md) -> [`operations/troubleshooting.md`](./operations/troubleshooting.md) -> [`development.md`](./development.md) | 明确依赖、配置、健康检查、metrics 和常见故障处理。 |
 
 ## 分层文档地图
@@ -43,6 +44,7 @@
 | 就绪检查 | `curl -fsS http://localhost:8080/readyz` |
 | OpenAPI 源文件 | [`../api/openapi.yaml`](../api/openapi.yaml) |
 | 内置文档页 | `GET /docs` |
+| 教程实验室 | 控制台 `/tutorials`，只读目录 API 为 `GET /v1/tutorials` |
 | curl smoke | [`../examples/curl/05_health_ready.sh`](../examples/curl/05_health_ready.sh) -> [`../examples/curl/50_optimize.sh`](../examples/curl/50_optimize.sh) |
 | Ralph Loop MCP/Skill | [`api/agent-integrations.md`](./api/agent-integrations.md) -> [`../examples/mcp/README.md`](../examples/mcp/README.md) -> [`../examples/skills/README.md`](../examples/skills/README.md) |
 | 契约测试 | `make openapi-validate` |

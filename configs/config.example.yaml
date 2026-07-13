@@ -128,6 +128,10 @@ object_storage:
   provider: local
   mock_upload: true
 
+tutorial:
+  # Public read-only package catalog; cloned user data uses user-provided private storage.
+  catalog_base_url: https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs
+
 observability:
   record_prompts: false
   tracing:

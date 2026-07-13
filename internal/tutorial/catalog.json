@@ -1,0 +1,65 @@
+[
+  {
+    "id": "text-rag",
+    "slug": "text-rag",
+    "title": "中文文本 RAG",
+    "summary": "在同一中文知识场景中逐步启用解析、分块、上下文检索、多路召回、Rewrite 与 Rerank，观察端到端质量、成本和时延变化。",
+    "version": "1.0.0",
+    "status": "published",
+    "modality": "text",
+    "difficulty": "intermediate",
+    "estimated_duration_minutes": 45,
+    "source_benchmark": "CRUD-RAG",
+    "source_url": "https://github.com/IAAR-Shanghai/CRUD_RAG",
+    "scenario_dimensions": ["事实查询", "多跳问题", "长尾实体", "显式否定", "错误前提", "信息不足"],
+    "pipeline_stages": ["P0 基线", "P1 文档解析", "P2 Chunking", "P3 Contextual Retrieval", "P4 稀疏召回", "P5 多路召回", "P6 Rewrite", "P7 Rerank", "P8 组合策略"],
+    "required_capabilities": ["embedding", "sparse_retrieval", "rewrite", "rerank"],
+    "packs": [
+      {"tier": "quick", "manifest_path": "text-rag/1.0.0/quick/manifest.json", "estimated_bytes": 157286400, "estimated_minutes": 10, "requires_license_check": true},
+      {"tier": "benchmark", "manifest_path": "text-rag/1.0.0/benchmark/manifest.json", "estimated_bytes": 1073741824, "estimated_minutes": 45, "requires_license_check": true}
+    ],
+    "replay_available": true
+  },
+  {
+    "id": "visual-document-rag",
+    "slug": "visual-document-rag",
+    "title": "视觉文档 RAG",
+    "summary": "使用图文混排、表格、图表和版面丰富的文档，对比纯文本抽取、视觉解析、分块和多模态检索策略。",
+    "version": "1.0.0",
+    "status": "published",
+    "modality": "visual_document",
+    "difficulty": "advanced",
+    "estimated_duration_minutes": 60,
+    "source_benchmark": "ViDoSeek",
+    "source_url": "https://modelscope.cn/datasets/iic/ViDoSeek",
+    "scenario_dimensions": ["文本", "表格", "图表", "二维版面", "单跳", "多跳", "视觉否定", "信息不足"],
+    "pipeline_stages": ["P0 基线", "P1 文档解析", "P2 Chunking", "P3 Contextual Retrieval", "P4 稀疏召回", "P5 多路召回", "P6 Rewrite", "P7 Rerank", "P8 组合策略"],
+    "required_capabilities": ["visual_parser", "embedding", "multimodal_retrieval", "rerank"],
+    "packs": [
+      {"tier": "quick", "manifest_path": "visual-document-rag/1.0.0/quick/manifest.json", "estimated_bytes": 536870912, "estimated_minutes": 20, "requires_license_check": true},
+      {"tier": "benchmark", "manifest_path": "visual-document-rag/1.0.0/benchmark/manifest.json", "estimated_bytes": 4294967296, "estimated_minutes": 90, "requires_license_check": true}
+    ],
+    "replay_available": true
+  },
+  {
+    "id": "video-rag",
+    "slug": "video-rag",
+    "title": "视频 RAG",
+    "summary": "将视频理解、时间片段证据、字幕和音频信息纳入同一检索链路，对比事件级索引、多路召回和重排效果。",
+    "version": "1.0.0",
+    "status": "published",
+    "modality": "video",
+    "difficulty": "advanced",
+    "estimated_duration_minutes": 75,
+    "source_benchmark": "Video-MME",
+    "source_url": "https://video-mme.github.io/home_page.html",
+    "scenario_dimensions": ["短视频", "中视频", "长视频", "视觉信息", "字幕", "音频", "时间否定", "错误前提", "信息不足"],
+    "pipeline_stages": ["P0 基线", "P1 视频理解与打标", "P2 时间分段", "P3 Contextual Retrieval", "P4 字幕召回", "P5 多路召回", "P6 Rewrite", "P7 Rerank", "P8 组合策略"],
+    "required_capabilities": ["doubao_seed_video_understanding", "temporal_index", "embedding", "rerank"],
+    "packs": [
+      {"tier": "quick", "manifest_path": "video-rag/1.0.0/quick/manifest.json", "estimated_bytes": 2147483648, "estimated_minutes": 30, "requires_license_check": true},
+      {"tier": "benchmark", "manifest_path": "video-rag/1.0.0/benchmark/manifest.json", "estimated_bytes": 21474836480, "estimated_minutes": 180, "requires_license_check": true}
+    ],
+    "replay_available": true
+  }
+]
