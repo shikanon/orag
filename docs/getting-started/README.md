@@ -14,30 +14,29 @@
 
 当前项目的 Go 命令建议带上 `CGO_ENABLED=0` 和 `GOFLAGS=-tags=stdjson,gjson`。[`Makefile`](../../Makefile) 已默认注入这些参数，用于规避 Mac amd64 + Go 1.26 下 Hertz/Sonic native 与本地 cgo 链接产物的问题。
 
-## 5 分钟启动路径
+## 5 分钟无 Key 启动路径
 
 从仓库根目录执行：
 
 ```bash
-cp .env.example .env
-make dev-up
-make migrate
-make run
+make demo
 ```
 
-`make run` 会以前台方式启动 API 服务，默认监听 `http://localhost:8080`。保持该终端运行，在另一个终端检查：
+命令会启动 PostgreSQL、Qdrant、迁移、API、Console 和一次性 demo initializer。无需真实模型 Key；mock 必须通过 Compose 中的 `ALLOW_DETERMINISTIC_MOCK=true` 显式授权。完成后：
+
+- Console：`http://localhost:3000`
+- API：`http://localhost:8080`
+- walkthrough 结果：`.orag-demo/walkthrough.json`
+
+结果包含知识库、文档、trace、数据集和评测 ID，以及引用数量和指标。重复执行 `make demo` 会复用已完成 summary，不重复创建演示资源。
+
+停止完整栈：
 
 ```bash
-curl -fsS http://localhost:8080/healthz
-curl -fsS http://localhost:8080/readyz
+make demo-down
 ```
 
-期望结果：
-
-| 接口 | 成功含义 |
-| --- | --- |
-| `GET /healthz` | API 进程可响应。 |
-| `GET /readyz` | PostgreSQL、Qdrant collection 和 Ark 配置状态可被服务识别。 |
+使用真实 provider 进行开发时，复制 `.env.example`、配置 Key，再依次运行 `make dev-up`、`make migrate` 和 `make run`。
 
 ## 本地依赖
 

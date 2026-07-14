@@ -2,7 +2,7 @@ APP_NAME := orag-api
 GOFLAGS ?= -tags=stdjson,gjson
 CGO_ENABLED ?= 0
 
-.PHONY: run test vet fmt tidy sdk-check console-dev console-build console-test console-api-generate dev-up dev-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-claude install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down
+.PHONY: run test vet fmt tidy sdk-check console-dev console-build console-test console-api-generate dev-up dev-down demo demo-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-claude install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down
 
 run:
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-api
@@ -41,6 +41,12 @@ dev-up:
 
 dev-down:
 	docker compose -f deployments/docker-compose.yml down
+
+demo:
+	./scripts/mock-walkthrough.sh
+
+demo-down:
+	docker compose -f deployments/docker-compose.yml --profile demo down
 
 migrate:
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/oragctl migrate

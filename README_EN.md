@@ -98,7 +98,7 @@ Answer + Citations + Trace + Metrics
 | Semantic cache | Qdrant | Default collection: `orag_semantic_cache`, isolated by tenant, profile, query identity, and related dimensions. |
 | Metadata & sparse retrieval | PostgreSQL | Stores knowledge bases, documents, chunk metadata, FTS, datasets, evaluation results, and traces. |
 | Model providers | Ark / Doubao by default | The provider registry connects chat, embedding, rerank, and multimodal parsing capabilities. |
-| Local runtime | Docker Compose | `make dev-up` starts PostgreSQL and Qdrant. ES/Neo4j are not part of the default runtime. |
+| Local runtime | Docker Compose | `make demo` starts migration, API, Console, and the no-key walkthrough; `make dev-up` starts only PostgreSQL and Qdrant. |
 
 The default `STORAGE_BACKEND=qdrant_postgres` requires PostgreSQL and Qdrant. `STORAGE_BACKEND=memory` is only intended for local debugging, unit tests, or HTTP-layer troubleshooting, not production usage.
 
@@ -106,12 +106,26 @@ The default `STORAGE_BACKEND=qdrant_postgres` requires PostgreSQL and Qdrant. `S
 
 ### Prerequisites
 
-- Go `1.26+`
 - Docker Desktop
 - `docker compose`
-- A real model provider API key, recommended: `ARK_API_KEY` or `VOLCENGINE_API_KEY`
 
-### Run locally
+### Five-minute no-key walkthrough
+
+```bash
+make demo
+```
+
+This explicitly enables deterministic mocks, builds and starts PostgreSQL, Qdrant, migration, API, and Console, then completes ingestion, a cited query, trace lookup, and evaluation. The machine-readable result is written to `.orag-demo/walkthrough.json`. Open the Console at `http://localhost:3000` and API docs at `http://localhost:8080/docs`.
+
+This path is for local exploration and regression checks, not a production credential template. Stop it with:
+
+```bash
+make demo-down
+```
+
+### Run locally with a real provider
+
+This path requires Go `1.26+` and a real model provider API key, recommended: `ARK_API_KEY` or `VOLCENGINE_API_KEY`.
 
 ```bash
 cp .env.example .env
@@ -127,7 +141,7 @@ curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
 ```
 
-### Local mock mode
+### Run only the in-memory mock API
 
 For local HTTP checks or unit-test-style runs, explicitly enable deterministic mock providers:
 

@@ -99,7 +99,7 @@ Answer + Citations + Trace + Metrics
 | Semantic cache | Qdrant | 默认 collection 为 `orag_semantic_cache`，按 tenant/profile/query 等维度隔离。 |
 | Metadata & sparse retrieval | PostgreSQL | 存储知识库、文档、chunk 元数据、FTS、数据集、评估结果和 trace。 |
 | Model providers | Ark / Doubao by default | 通过 provider registry 接入 Chat、Embedding、Rerank 和多模态解析。 |
-| Local runtime | Docker Compose | `make dev-up` 启动 PostgreSQL 和 Qdrant，不启动 ES/Neo4j。 |
+| Local runtime | Docker Compose | `make demo` 一键启动迁移、API、Console 和无 Key walkthrough；`make dev-up` 只启动 PostgreSQL 与 Qdrant。 |
 
 默认 `STORAGE_BACKEND=qdrant_postgres` 依赖 PostgreSQL 和 Qdrant。`STORAGE_BACKEND=memory` 仅适合本地无依赖调试、单测或排查 HTTP 层问题，不作为生产配置。
 
@@ -107,12 +107,26 @@ Answer + Citations + Trace + Metrics
 
 ### 环境要求
 
-- Go `1.26+`
 - Docker Desktop
 - `docker compose`
-- 一个真实模型 provider API key，推荐 `ARK_API_KEY` 或 `VOLCENGINE_API_KEY`
 
-### 本地启动
+### 5 分钟无 Key walkthrough
+
+```bash
+make demo
+```
+
+该命令显式启用 deterministic mock，构建并启动 PostgreSQL、Qdrant、迁移、API 和 Console，然后完成入库、带引用查询、trace 查询和评测。结果写入 `.orag-demo/walkthrough.json`。打开 Console：`http://localhost:3000`；API 文档：`http://localhost:8080/docs`。
+
+这条路径只用于本地体验和回归验证，不是生产凭据模板。停止栈：
+
+```bash
+make demo-down
+```
+
+### 使用真实 provider 本地启动
+
+需要 Go `1.26+` 和一个真实模型 provider API key，推荐 `ARK_API_KEY` 或 `VOLCENGINE_API_KEY`。
 
 ```bash
 cp .env.example .env
@@ -128,7 +142,7 @@ curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
 ```
 
-### 本地 mock 模式
+### 仅启动内存 mock API
 
 如只做本地 HTTP/单元测试，可显式启用 deterministic mock：
 
