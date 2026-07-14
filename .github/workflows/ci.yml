@@ -20,6 +20,7 @@ jobs:
       - run: make agent-sync-check
       - run: make agent-artifact-tests
       - run: make mcp-self-check-smoke
+      - run: make sdk-check
       - run: go test ./...
       - run: go vet ./...
       - run: go test ./tests/contract -run TestOpenAPI -v
