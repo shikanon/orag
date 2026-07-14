@@ -69,6 +69,37 @@ func TestTutorialCatalogRoutes(t *testing.T) {
 	}
 }
 
+func TestVersionRoute(t *testing.T) {
+	h, _, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	response := performJSON(h, "GET", "/version", "", "")
+	if response.Code != 200 || !strings.Contains(response.Body, `"version"`) || !strings.Contains(response.Body, `"commit"`) {
+		t.Fatalf("version status=%d body=%s", response.Code, response.Body)
+	}
+}
+
+func TestInteractiveDocumentationRoutes(t *testing.T) {
+	h, _, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+
+	docs := performJSON(h, "GET", "/docs", "", "")
+	if docs.Code != 200 || !strings.Contains(docs.Body, "SwaggerUIBundle") || !strings.Contains(docs.Body, "/openapi.yaml") {
+		t.Fatalf("docs status=%d body=%s", docs.Code, docs.Body)
+	}
+
+	spec := performJSON(h, "GET", "/openapi.yaml", "", "")
+	if spec.Code != 200 || !strings.Contains(spec.Body, "openapi: 3.") || !strings.Contains(spec.Body, "/v1/query:") {
+		t.Fatalf("openapi status=%d body=%s", spec.Code, spec.Body)
+	}
+
+	for _, path := range []string{"/docs/assets/swagger-ui.css", "/docs/assets/swagger-ui-bundle.js"} {
+		asset := performJSON(h, "GET", path, "", "")
+		if asset.Code != 200 || len(asset.Body) < 1_000 {
+			t.Fatalf("asset %s status=%d size=%d", path, asset.Code, len(asset.Body))
+		}
+	}
+}
+
 func TestTutorialCatalogRouteErrorsAndAuthentication(t *testing.T) {
 	h, application, closeApp := newTestHertzWithApp(t)
 	defer closeApp()

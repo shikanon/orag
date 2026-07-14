@@ -168,11 +168,13 @@ make migrate
 make run
 ```
 
-启动完整 Compose 栈：
+启动本地无 Key 完整 Compose 栈并执行可重复 walkthrough：
 
 ```bash
-docker compose -f deployments/docker-compose.yml up --build
+make demo
 ```
+
+该开发栈明确启用 deterministic mock，并启动迁移、API、Console 与一次性 demo。结果保存在 `.orag-demo/walkthrough.json`；生产部署必须替换默认管理员凭据、关闭 mock，并提供真实 provider 与密钥。
 
 Compose 默认会覆盖为容器网络地址；如需显式覆盖，使用：
 

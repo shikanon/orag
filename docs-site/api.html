@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive ORAG OpenAPI reference with Try it out support">
+  <title>ORAG API Reference</title>
+  <link rel="stylesheet" href="./swagger-ui/swagger-ui.css">
+  <style>
+    body { margin: 0; background: #f7f8fa; }
+    .docs-bar { min-height: 56px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 24px; color: #fff; background: #111827; font: 600 14px/1.4 ui-sans-serif, system-ui, sans-serif; }
+    .docs-bar a { color: #bfdbfe; text-decoration: none; }
+    .docs-bar strong { font-size: 17px; }
+    .swagger-ui .topbar { display: none; }
+    .swagger-ui .info { margin: 34px 0 28px; }
+  </style>
+</head>
+<body>
+  <header class="docs-bar"><strong>ORAG / API Reference</strong><span>Authorize once, then use <b>Try it out</b> · <a href="./index.html">Documentation home</a> · <a href="./openapi.yaml">OpenAPI YAML</a></span></header>
+  <div id="swagger-ui"></div>
+  <script src="./swagger-ui/swagger-ui-bundle.js"></script>
+  <script>
+    window.ui = SwaggerUIBundle({
+      url: './openapi.yaml',
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      displayRequestDuration: true,
+      filter: true,
+      persistAuthorization: true,
+      tryItOutEnabled: true,
+      defaultModelsExpandDepth: 1
+    });
+  </script>
+</body>
+</html>

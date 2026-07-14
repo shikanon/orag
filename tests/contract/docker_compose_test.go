@@ -27,3 +27,57 @@ func TestDockerComposeAPIUsesContainerNetworkDefaults(t *testing.T) {
 		}
 	}
 }
+
+func TestDockerComposeIncludesReleaseWalkthroughTopology(t *testing.T) {
+	compose := readRepoFile(t, "deployments/docker-compose.yml")
+	for _, want := range []string{
+		"  migrate:",
+		"condition: service_completed_successfully",
+		"  orag-console:",
+		"  demo:",
+		"profiles: [\"demo\"]",
+		"ALLOW_DETERMINISTIC_MOCK: \"true\"",
+		"ORAG_DEMO_SUMMARY: /demo/walkthrough.json",
+	} {
+		if !strings.Contains(compose, want) {
+			t.Errorf("docker-compose.yml missing %q", want)
+		}
+	}
+}
+
+func TestReleaseContainerDefinitionsExist(t *testing.T) {
+	api := readRepoFile(t, "deployments/Dockerfile")
+	for _, want := range []string{"AS api", "oragctl", "orag-demo", "pkg/buildinfo.Version"} {
+		if !strings.Contains(api, want) {
+			t.Errorf("API Dockerfile missing %q", want)
+		}
+	}
+	console := readRepoFile(t, "deployments/console.Dockerfile")
+	for _, want := range []string{"--platform=$BUILDPLATFORM", "npm ci", "npm run build", "nginx"} {
+		if !strings.Contains(console, want) {
+			t.Errorf("Console Dockerfile missing %q", want)
+		}
+	}
+}
+
+func TestReleaseWorkflowPublishesBothImagesWithoutLatest(t *testing.T) {
+	workflow := readRepoFile(t, ".github/workflows/release.yml")
+	for _, want := range []string{
+		"linux/amd64,linux/arm64",
+		"ghcr.io/shikanon/orag-api",
+		"ghcr.io/shikanon/orag-console",
+		"docker/build-push-action@v6",
+		"sbom: true",
+		"provenance: mode=max",
+		"cosign sign --yes",
+		"gh release create",
+		"--prerelease",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Errorf("release workflow missing %q", want)
+		}
+	}
+	if strings.Contains(workflow, ":latest") || strings.Contains(workflow, "type=raw,value=latest") {
+		t.Error("prerelease workflow must not publish latest")
+	}
+}

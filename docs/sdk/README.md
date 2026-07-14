@@ -1,0 +1,126 @@
+# Public Go SDK (Beta)
+
+ORAG provides an embedded Go SDK at `github.com/shikanon/orag`. It runs the same ingestion, RAG, dataset, evaluation, readiness, and trace services used by the HTTP API, but exposes only public DTOs. No `internal/*` package appears in the caller contract.
+
+The SDK is currently **beta**. Its core workflow is tested from a standalone downstream Go module, but pre-1.0 compatibility rules still apply. The HTTP API remains the appropriate boundary when clients are not Go programs or need process isolation and centralized authentication.
+
+## Install
+
+```bash
+go get github.com/shikanon/orag@v0.1.0-beta.1
+```
+
+The SDK currently follows the repository Go toolchain declared in `go.mod`.
+
+## No-key walkthrough
+
+`MockConfig` explicitly enables deterministic mock models and in-memory storage. It needs no PostgreSQL, Qdrant, network access, or real provider API key:
+
+```go
+ctx := context.Background()
+client, err := orag.New(ctx, orag.MockConfig())
+if err != nil {
+    return err
+}
+defer client.Close()
+
+_, err = client.IngestText(ctx, orag.IngestTextRequest{
+    KnowledgeBaseID: "kb_default",
+    Name: "hello.txt",
+    Text: "ORAG is a Go-native RAG service.",
+})
+if err != nil {
+    return err
+}
+
+response, err := client.Query(ctx, orag.QueryRequest{
+    KnowledgeBaseID: "kb_default",
+    Query: "What is ORAG?",
+})
+```
+
+Run the complete ingestion, query, trace, dataset, and evaluation example:
+
+```bash
+go run ./examples/go/sdk
+```
+
+Mock output is deterministic test data. Do not present it as a real model result or enable deterministic mocks in production.
+
+## Configuration
+
+Choose one constructor:
+
+- `New(ctx, config)` accepts an explicit `Config` and does not read ambient environment variables. Start with `DefaultConfig`, then set storage endpoints and provider credentials.
+- `NewFromEnv(ctx)` uses the same environment loader as `cmd/orag-api`; it is useful when an embedded process intentionally shares the service deployment convention.
+- `New(ctx, MockConfig())` is the dependency-free local/test path.
+
+Example explicit production-oriented configuration:
+
+```go
+cfg := orag.DefaultConfig()
+cfg.TenantID = "tenant_acme"
+cfg.Storage.DatabaseURL = os.Getenv("DATABASE_URL")
+cfg.Storage.QdrantHost = os.Getenv("QDRANT_HOST")
+cfg.Storage.QdrantAPIKey = os.Getenv("QDRANT_API_KEY")
+cfg.Models.APIKeys["volcengine"] = os.Getenv("ARK_API_KEY")
+
+client, err := orag.New(ctx, cfg)
+```
+
+Credentials belong in a secret manager or process environment, never in source control. `DefaultConfig` opens PostgreSQL and Qdrant resources and validates selected real model providers; call `Close` during shutdown.
+
+## Core workflow
+
+The beta surface covers:
+
+- knowledge bases: `CreateKnowledgeBase`, `ListKnowledgeBases`, `GetKnowledgeBase`, `DeleteKnowledgeBase`;
+- ingestion: `IngestText`, `IngestFile`, `GetIngestionJob`;
+- retrieval and generation: `Query`, `StreamQuery`;
+- evaluation: `CreateDataset`, `AddDatasetItem`, `RunEvaluation`, `GetEvaluation`;
+- operations: `Readiness`, `GetTrace`, `ListTraces`.
+
+Requests use the client tenant unless `TenantID` is explicitly set on the request. Treat a client as tenant-scoped and avoid sharing it across unrelated trust boundaries.
+
+## Typed stream semantics
+
+`StreamQuery` returns `<-chan QueryEvent` and emits:
+
+1. `QueryEventResponse` with one complete `QueryResponse`;
+2. `QueryEventDone` and channel closure; or
+3. one terminal `QueryEventError` and channel closure.
+
+The beta SDK computes a full answer before emitting the response. It does **not** claim token-level generation streaming. Cancel the context to stop the operation.
+
+## Errors and concurrency
+
+Operations return `*orag.Error` with a stable `Code`, operation/resource metadata, retry guidance, and the preserved cause. Use `errors.Is` for categories and `errors.As` for details:
+
+```go
+if errors.Is(err, orag.ErrNotFound) {
+    // Handle a missing resource.
+}
+var sdkErr *orag.Error
+if errors.As(err, &sdkErr) && sdkErr.Retryable {
+    // Apply a bounded retry policy.
+}
+```
+
+`Client` methods are safe for concurrent use. `Close` is nil-safe and idempotent; callers must not begin new operations after shutdown.
+
+## Compatibility and checks
+
+The SDK is beta in `v0.1.0-beta.1`. Breaking pre-1.0 changes are recorded in `CHANGELOG.md` with migration guidance when practical. Verify an upgrade with:
+
+```bash
+make sdk-check
+```
+
+That gate compiles external-package tests, scans exported documentation for `internal/*` type leaks, and runs tests plus `go vet` in a standalone consumer module.
+
+## Known beta limitations
+
+- Model-judge, QAG, pairwise judge, holdout-gate, optimizer, and advanced ingestion controls remain HTTP/control-plane-first APIs.
+- `StreamQuery` is event streaming, not token streaming.
+- Embedded mode owns database/vector clients in the current process; the application must call `Close` and manage process-level resource limits.
+- In-memory mock storage is ephemeral and not a production persistence option.
