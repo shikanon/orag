@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: ORAG API
-  version: 0.1.0
+  version: 0.1.0-beta.1
   description: Go RAG framework API backed by Hertz, Eino Graph, Ark/Doubao, Qdrant, and PostgreSQL.
 servers:
   - url: http://localhost:8080
