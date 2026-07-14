@@ -220,7 +220,10 @@ func (c *Client) tenant(value string) string {
 
 func (c *Client) requireOpen(operation string) error {
 	if c == nil || c.app == nil {
-		return newError(CodeInternal, operation, "", "", false, errClientClosed)
+		return newError(CodeUnavailable, operation, "", "", false, errClientClosed)
+	}
+	if c.closed.Load() {
+		return newError(CodeUnavailable, operation, "", "", false, errClientClosed)
 	}
 	return nil
 }

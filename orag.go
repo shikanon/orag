@@ -8,8 +8,8 @@ package orag
 
 import (
 	"context"
-	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	core "github.com/shikanon/orag/internal/app"
 	internalconfig "github.com/shikanon/orag/internal/config"
@@ -27,6 +27,7 @@ type Client struct {
 
 	closeOnce sync.Once
 	closeErr  error
+	closed    atomic.Bool
 }
 
 // New creates an embedded ORAG client from explicit configuration. It does not
@@ -72,6 +73,7 @@ func (c *Client) Close() error {
 		return nil
 	}
 	c.closeOnce.Do(func() {
+		c.closed.Store(true)
 		if c.app != nil {
 			c.closeErr = c.app.Close()
 		}
@@ -93,8 +95,8 @@ type Readiness struct {
 
 // Readiness checks configured storage and model dependencies.
 func (c *Client) Readiness(ctx context.Context) (Readiness, error) {
-	if c == nil || c.app == nil {
-		return Readiness{}, wrapError("readiness", "", "", errClientClosed)
+	if err := c.requireOpen("readiness"); err != nil {
+		return Readiness{}, err
 	}
 	checks, ready := c.app.Readiness(ctx)
 	result := Readiness{Ready: ready, Checks: make(map[string]ReadinessCheck, len(checks))}
@@ -102,11 +104,4 @@ func (c *Client) Readiness(ctx context.Context) (Readiness, error) {
 		result.Checks[name] = ReadinessCheck{Status: check.Status, Error: check.Error}
 	}
 	return result, nil
-}
-
-func sdkLogger(value *slog.Logger) *slog.Logger {
-	if value != nil {
-		return value
-	}
-	return slog.Default()
 }

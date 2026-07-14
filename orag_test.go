@@ -2,6 +2,7 @@ package orag_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	orag "github.com/shikanon/orag"
@@ -34,6 +35,20 @@ func TestMockClientLifecycleDoesNotReadEnvironment(t *testing.T) {
 	}
 	if err := client.Close(); err != nil {
 		t.Fatalf("second Close() error = %v", err)
+	}
+}
+
+func TestClosedClientRejectsNewOperations(t *testing.T) {
+	client, err := orag.New(context.Background(), orag.MockConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Readiness(context.Background())
+	if !errors.Is(err, orag.ErrUnavailable) {
+		t.Fatalf("Readiness() error = %v, want ErrUnavailable", err)
 	}
 }
 
