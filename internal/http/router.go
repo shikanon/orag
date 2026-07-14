@@ -13,6 +13,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	oragapi "github.com/shikanon/orag/api"
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/dataset"
 	"github.com/shikanon/orag/internal/eval"
@@ -25,6 +26,7 @@ import (
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
 	"github.com/shikanon/orag/internal/storage/postgres"
+	"github.com/shikanon/orag/pkg/buildinfo"
 )
 
 type Server struct {
@@ -52,7 +54,11 @@ func (s *Server) Hertz() *server.Hertz {
 	h.GET("/healthz", s.health)
 	h.GET("/readyz", s.ready)
 	h.GET("/metrics", s.metrics)
+	h.GET("/version", s.version)
 	h.GET("/docs", s.docs)
+	h.GET("/openapi.yaml", s.openAPISpec)
+	h.GET("/docs/assets/swagger-ui.css", s.swaggerUIStyles)
+	h.GET("/docs/assets/swagger-ui-bundle.js", s.swaggerUIBundle)
 	h.POST("/v1/auth/login", s.login)
 
 	v1 := h.Group("/v1", s.authMiddleware)
@@ -120,10 +126,65 @@ func (s *Server) metrics(_ context.Context, c *app.RequestContext) {
 	c.String(consts.StatusOK, s.App.Metrics.Render())
 }
 
-func (s *Server) docs(_ context.Context, c *app.RequestContext) {
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.String(consts.StatusOK, `<html><body><h1>ORAG API</h1><p>OpenAPI source: <code>api/openapi.yaml</code></p></body></html>`)
+func (s *Server) version(_ context.Context, c *app.RequestContext) {
+	c.JSON(consts.StatusOK, buildinfo.Current())
 }
+
+func (s *Server) docs(_ context.Context, c *app.RequestContext) {
+	c.Data(consts.StatusOK, "text/html; charset=utf-8", []byte(interactiveDocsHTML))
+}
+
+func (s *Server) openAPISpec(_ context.Context, c *app.RequestContext) {
+	c.Data(consts.StatusOK, "application/yaml; charset=utf-8", oragapi.OpenAPISpec)
+}
+
+func (s *Server) swaggerUIStyles(_ context.Context, c *app.RequestContext) {
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.Data(consts.StatusOK, "text/css; charset=utf-8", oragapi.SwaggerUIStyles)
+}
+
+func (s *Server) swaggerUIBundle(_ context.Context, c *app.RequestContext) {
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.Data(consts.StatusOK, "application/javascript; charset=utf-8", oragapi.SwaggerUIBundle)
+}
+
+const interactiveDocsHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive ORAG OpenAPI reference">
+  <title>ORAG API Reference</title>
+  <link rel="stylesheet" href="/docs/assets/swagger-ui.css">
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 0; background: #f7f8fa; }
+    .orag-bar { align-items: center; background: #111827; color: #fff; display: flex; font: 600 14px/1.4 ui-sans-serif, system-ui, sans-serif; gap: 18px; justify-content: space-between; padding: 12px 24px; }
+    .orag-bar a { color: #bfdbfe; text-decoration: none; }
+    .orag-brand { font-size: 17px; letter-spacing: -.02em; }
+    .swagger-ui .topbar { display: none; }
+    .swagger-ui .info { margin: 34px 0 28px; }
+    .swagger-ui .scheme-container { box-shadow: 0 1px 0 rgba(17,24,39,.12); }
+  </style>
+</head>
+<body>
+  <header class="orag-bar"><span class="orag-brand">ORAG / API Reference</span><span>Evaluation-first Go-native RAG control plane · <a href="https://github.com/shikanon/orag">GitHub</a></span></header>
+  <div id="swagger-ui"></div>
+  <script src="/docs/assets/swagger-ui-bundle.js"></script>
+  <script>
+    window.ui = SwaggerUIBundle({
+      url: "/openapi.yaml",
+      dom_id: "#swagger-ui",
+      deepLinking: true,
+      displayRequestDuration: true,
+      filter: true,
+      persistAuthorization: true,
+      tryItOutEnabled: true,
+      defaultModelsExpandDepth: 1
+    });
+  </script>
+</body>
+</html>`
 
 func (s *Server) login(_ context.Context, c *app.RequestContext) {
 	var req struct {

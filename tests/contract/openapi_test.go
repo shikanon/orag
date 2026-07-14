@@ -2,12 +2,53 @@ package contract
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
+
+func TestPublishedVersionMetadataIsAligned(t *testing.T) {
+	doc, err := openapi3.NewLoader().LoadFromFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	packageJSON, err := os.ReadFile("../../console/package.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var console struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(packageJSON, &console); err != nil {
+		t.Fatal(err)
+	}
+	if console.Version != doc.Info.Version {
+		t.Fatalf("console version %q != OpenAPI version %q", console.Version, doc.Info.Version)
+	}
+
+	changelog, err := os.ReadFile("../../CHANGELOG.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(changelog), "## ["+doc.Info.Version+"]") {
+		t.Fatalf("CHANGELOG.md has no release entry for %s", doc.Info.Version)
+	}
+	for _, path := range []string{"../../README.md", "../../README_EN.md"} {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(content), "v"+doc.Info.Version) {
+			t.Errorf("%s does not reference v%s", path, doc.Info.Version)
+		}
+	}
+}
 
 func TestOpenAPI(t *testing.T) {
 	doc, err := openapi3.NewLoader().LoadFromFile("../../api/openapi.yaml")
@@ -26,6 +67,7 @@ func TestOpenAPI(t *testing.T) {
 		{http.MethodGet, "/readyz"},
 		{http.MethodGet, "/metrics"},
 		{http.MethodGet, "/docs"},
+		{http.MethodGet, "/openapi.yaml"},
 		{http.MethodPost, "/v1/auth/login"},
 		{http.MethodGet, "/v1/projects"},
 		{http.MethodPost, "/v1/projects"},

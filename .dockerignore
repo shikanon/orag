@@ -1,0 +1,13 @@
+.git
+.github
+.superpowers
+.worktrees
+.orag-demo
+.env
+console/node_modules
+console/dist
+docs
+tests
+tmp
+*.log
+.DS_Store

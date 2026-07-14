@@ -1,0 +1,146 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -tags=stdjson,gjson
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify tag commit is on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.4"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - run: go mod download
+      - run: npm --prefix console ci
+      - run: make test vet openapi-validate agent-gate sdk-check
+      - run: npm --prefix console test -- --run
+      - run: npm --prefix console run build
+      - name: Run deterministic Compose walkthrough
+        run: make demo
+      - name: Repeat walkthrough against the same volumes
+        run: docker compose -f deployments/docker-compose.yml --profile demo run --rm --no-deps demo
+      - name: Stop Compose stack
+        if: always()
+        run: make demo-down
+
+  images:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            image: ghcr.io/shikanon/orag-api
+            file: deployments/Dockerfile
+            target: api
+          - name: console
+            image: ghcr.io/shikanon/orag-console
+            file: deployments/console.Dockerfile
+            target: console
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v3
+      - name: Resolve reproducible build timestamp
+        id: buildvars
+        run: echo "build_time=$(git show -s --format=%cI "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
+      - name: Build and publish ${{ matrix.name }} image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          provenance: mode=max
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.buildvars.outputs.build_time }}
+          tags: |
+            ${{ matrix.image }}:${{ github.ref_name }}
+            ${{ matrix.image }}:sha-${{ github.sha }}
+      - name: Sign immutable image digest
+        env:
+          IMAGE: ${{ matrix.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
+      - name: Record image digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p digests
+          echo "$DIGEST" > "digests/${{ matrix.name }}.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.name }}
+          path: digests/${{ matrix.name }}.txt
+
+  github-release:
+    needs: images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: digests
+      - name: Create prerelease notes
+        run: |
+          {
+            echo "## Container images"
+            echo
+            echo "- ghcr.io/shikanon/orag-api:${GITHUB_REF_NAME} @ $(cat digests/api.txt)"
+            echo "- ghcr.io/shikanon/orag-console:${GITHUB_REF_NAME} @ $(cat digests/console.txt)"
+            echo
+            echo "Both images support linux/amd64 and linux/arm64 and include registry SBOM/provenance attestations plus keyless signatures."
+            echo
+            echo "## Quick verification"
+            echo
+            echo "Run make demo from this tag for the no-key migration, API, Console, ingestion, cited-query, trace, and evaluation walkthrough."
+            echo
+            echo "Hosted documentation: https://shikanon.github.io/orag/"
+            echo
+            echo "See CHANGELOG.md and docs/compatibility.md for Beta limitations and migration policy."
+          } > release-notes.md
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --prerelease --generate-notes --notes-file release-notes.md

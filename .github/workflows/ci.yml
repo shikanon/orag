@@ -11,7 +11,7 @@ jobs:
       CGO_ENABLED: "0"
       GOFLAGS: -tags=stdjson,gjson
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.4"
@@ -25,3 +25,5 @@ jobs:
       - run: go vet ./...
       - run: go test ./tests/contract -run TestOpenAPI -v
       - run: docker build -f deployments/Dockerfile -t orag-api:ci .
+      - run: docker build -f deployments/console.Dockerfile --target console -t orag-console:ci .
+      - run: docker compose -f deployments/docker-compose.yml --profile demo config >/dev/null

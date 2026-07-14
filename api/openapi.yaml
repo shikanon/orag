@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: ORAG API
-  version: 0.1.0
+  version: 0.1.0-beta.1
   description: Go RAG framework API backed by Hertz, Eino Graph, Ark/Doubao, Qdrant, and PostgreSQL.
 servers:
   - url: http://localhost:8080
@@ -121,16 +121,40 @@ paths:
             text/plain:
               schema:
                 type: string
+  /version:
+    get:
+      tags: [System]
+      operationId: version
+      x-orag-maturity: beta
+      responses:
+        "200":
+          description: Immutable build and release identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildInfo"
   /docs:
     get:
       tags: [System]
       operationId: docs
-      x-orag-maturity: experimental
+      x-orag-maturity: beta
       responses:
         "200":
-          description: Minimal API documentation landing page.
+          description: Interactive API documentation powered by the canonical OpenAPI specification.
           content:
             text/html:
+              schema:
+                type: string
+  /openapi.yaml:
+    get:
+      tags: [System]
+      operationId: getOpenAPISpec
+      x-orag-maturity: beta
+      responses:
+        "200":
+          description: Canonical OpenAPI 3 specification.
+          content:
+            application/yaml:
               schema:
                 type: string
   /v1/auth/login:
@@ -1420,6 +1444,19 @@ components:
       schema:
         type: string
   schemas:
+    BuildInfo:
+      type: object
+      required: [version, commit, build_time]
+      properties:
+        version:
+          type: string
+          example: v0.1.0-beta.1
+        commit:
+          type: string
+          example: 0123456789abcdef
+        build_time:
+          type: string
+          example: 2026-07-14T00:00:00Z
     Profile:
       type: string
       enum: [realtime, high_precision]

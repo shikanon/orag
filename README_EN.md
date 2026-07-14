@@ -9,6 +9,7 @@
   <a href="./README_EN.md"><img alt="README in English" src="https://img.shields.io/badge/English-DBEDFA"></a>
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/shikanon/orag?color=4e6b99"></a>
   <a href="https://github.com/shikanon/orag/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/shikanon/orag/ci.yml?branch=main&label=CI"></a>
+  <a href="https://shikanon.github.io/orag/"><img alt="Documentation" src="https://img.shields.io/badge/docs-GitHub%20Pages-0B51E5"></a>
   <a href="./go.mod"><img alt="Go Version" src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white"></a>
   <a href="./api/openapi.yaml"><img alt="OpenAPI" src="https://img.shields.io/badge/OpenAPI-3.x-6BA539?logo=openapiinitiative&logoColor=white"></a>
 </p>
@@ -17,6 +18,7 @@
   <a href="#quick-start">Quick Start</a> ·
   <a href="#core-features">Core Features</a> ·
   <a href="#architecture">Architecture</a> ·
+  <a href="https://shikanon.github.io/orag/">Hosted Docs</a> ·
   <a href="./docs/README.md">Docs</a> ·
   <a href="./ROADMAP_EN.md">Roadmap</a> ·
   <a href="./api/openapi.yaml">OpenAPI</a>
@@ -38,7 +40,7 @@ ORAG is a Go-native RAG service framework for building an end-to-end workflow ac
 
 ## Capability Maturity
 
-ORAG labels each public capability as `experimental`, `beta`, or `stable` to describe its compatibility commitment. Every current capability is `experimental` and requires independent validation and an explicit fallback before real-world use. The planned `v0.1.0-beta.1` is the first Beta **distribution**; it does not imply that every included capability has reached `beta`. ORAG will not mark any capability `stable` before `v1.0.0`.
+ORAG labels each public capability as `experimental`, `beta`, or `stable` to describe its compatibility commitment. Every HTTP operation carries its own OpenAPI `x-orag-maturity` label; the `v0.1.0-beta.1` distribution being Beta does not imply that every included capability has reached `beta`. Experimental capabilities require independent validation and an explicit fallback before real-world use.
 
 See the [compatibility and capability maturity policy](./docs/compatibility.md) for the full definitions, deprecation rules, and migration expectations. HTTP operations expose the same maturity through OpenAPI `x-orag-maturity`.
 
@@ -98,7 +100,7 @@ Answer + Citations + Trace + Metrics
 | Semantic cache | Qdrant | Default collection: `orag_semantic_cache`, isolated by tenant, profile, query identity, and related dimensions. |
 | Metadata & sparse retrieval | PostgreSQL | Stores knowledge bases, documents, chunk metadata, FTS, datasets, evaluation results, and traces. |
 | Model providers | Ark / Doubao by default | The provider registry connects chat, embedding, rerank, and multimodal parsing capabilities. |
-| Local runtime | Docker Compose | `make dev-up` starts PostgreSQL and Qdrant. ES/Neo4j are not part of the default runtime. |
+| Local runtime | Docker Compose | `make demo` starts migration, API, Console, and the no-key walkthrough; `make dev-up` starts only PostgreSQL and Qdrant. |
 
 The default `STORAGE_BACKEND=qdrant_postgres` requires PostgreSQL and Qdrant. `STORAGE_BACKEND=memory` is only intended for local debugging, unit tests, or HTTP-layer troubleshooting, not production usage.
 
@@ -106,12 +108,26 @@ The default `STORAGE_BACKEND=qdrant_postgres` requires PostgreSQL and Qdrant. `S
 
 ### Prerequisites
 
-- Go `1.26+`
 - Docker Desktop
 - `docker compose`
-- A real model provider API key, recommended: `ARK_API_KEY` or `VOLCENGINE_API_KEY`
 
-### Run locally
+### Five-minute no-key walkthrough
+
+```bash
+make demo
+```
+
+This explicitly enables deterministic mocks, builds and starts PostgreSQL, Qdrant, migration, API, and Console, then completes ingestion, a cited query, trace lookup, and evaluation. The machine-readable result is written to `.orag-demo/walkthrough.json`. Open the Console at `http://localhost:3000` and the interactive API docs at `http://localhost:8080/docs`. Without a local service, browse the [hosted documentation](https://shikanon.github.io/orag/) and [hosted API reference](https://shikanon.github.io/orag/api.html).
+
+This path is for local exploration and regression checks, not a production credential template. Stop it with:
+
+```bash
+make demo-down
+```
+
+### Run locally with a real provider
+
+This path requires Go `1.26+` and a real model provider API key, recommended: `ARK_API_KEY` or `VOLCENGINE_API_KEY`.
 
 ```bash
 cp .env.example .env
@@ -127,7 +143,7 @@ curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
 ```
 
-### Local mock mode
+### Run only the in-memory mock API
 
 For local HTTP checks or unit-test-style runs, explicitly enable deterministic mock providers:
 
