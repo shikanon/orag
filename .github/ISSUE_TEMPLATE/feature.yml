@@ -1,0 +1,63 @@
+name: Feature request
+description: Propose a focused capability or product improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: Broad cross-module contracts may be redirected to the RFC template and Discussions.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Explain the user or operator problem without prescribing an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior and who benefits.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include workarounds and why they are insufficient.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - Ingestion
+        - Retrieval and generation
+        - Evaluation and optimization
+        - Go SDK
+        - HTTP API
+        - Console
+        - Operations and deployment
+        - Agent integrations
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List testable outcomes, including evaluation evidence when quality changes.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing Issues and Discussions.
+          required: true
+        - label: I described the problem independently of a specific implementation.
+          required: true
+    validations:
+      required: true

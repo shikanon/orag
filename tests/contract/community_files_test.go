@@ -3,6 +3,7 @@ package contract_test
 import (
 	"bytes"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -51,5 +52,52 @@ func TestCommunityFilesContainRequiredPolicy(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGitHubTemplatesContainRequiredIntake(t *testing.T) {
+	t.Parallel()
+
+	forms := []string{
+		"../../.github/ISSUE_TEMPLATE/bug.yml",
+		"../../.github/ISSUE_TEMPLATE/feature.yml",
+		"../../.github/ISSUE_TEMPLATE/documentation.yml",
+		"../../.github/ISSUE_TEMPLATE/rfc.yml",
+	}
+	for _, path := range forms {
+		path := path
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			body, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+			content := string(body)
+			for _, field := range []string{"name:", "description:", "body:", "validations:", "required: true"} {
+				if !strings.Contains(content, field) {
+					t.Errorf("%s missing %q", path, field)
+				}
+			}
+		})
+	}
+
+	config, err := os.ReadFile("../../.github/ISSUE_TEMPLATE/config.yml")
+	if err != nil {
+		t.Fatalf("read issue config: %v", err)
+	}
+	for _, phrase := range []string{"blank_issues_enabled: false", "security/advisories/new"} {
+		if !bytes.Contains(config, []byte(phrase)) {
+			t.Errorf("issue config missing %q", phrase)
+		}
+	}
+
+	pullRequest, err := os.ReadFile("../../.github/pull_request_template.md")
+	if err != nil {
+		t.Fatalf("read pull request template: %v", err)
+	}
+	for _, heading := range []string{"Testing", "Documentation", "Security", "Compatibility", "Maturity"} {
+		if !bytes.Contains(pullRequest, []byte(heading)) {
+			t.Errorf("pull request template missing %q", heading)
+		}
 	}
 }
