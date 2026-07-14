@@ -1,0 +1,231 @@
+# ORAG Open Source Roadmap
+
+English | [简体中文](./ROADMAP.md)
+
+Last updated: 2026-07-14
+
+## Positioning
+
+ORAG is a Go-native RAG service and control plane for Go and backend platform teams. It is evaluation-first: ingestion, hybrid retrieval, generation, observability, offline evaluation, optimization, and controlled promotion share one reproducible path.
+
+ORAG does not aim to win by supporting the largest number of providers or UI pages. It focuses on three outcomes:
+
+1. Go teams can adopt RAG through a deployable service or a real public Go SDK.
+2. Retrieval, generation, and configuration changes can be evaluated, traced, and reproduced.
+3. Only evaluated versions can reach staging and production, with an auditable rollback path.
+
+## Roadmap principles
+
+- **Reliability before breadth:** data consistency, tenant isolation, idempotency, and recovery take priority over new providers, pages, or retrieval strategies.
+- **Evaluation uses the production path:** evaluation, optimization, and release gates reuse real query execution.
+- **One core for API and SDK:** the HTTP service and public Go SDK share the application layer rather than duplicating business rules.
+- **Verifiable onboarding:** users without a real model key can complete an explicit mock walkthrough; production configuration must never enable mock behavior implicitly.
+- **Honest maturity labels:** experimental features are not marketed as stable, and promotion requires public exit criteria.
+- **Community participation is a product feature:** open decisions, reproducible issues, reviewable changes, and clear contribution paths matter as much as code.
+
+## Capability maturity
+
+User-facing capabilities will use the same status in the README, documentation, OpenAPI extensions, and capability manifest:
+
+| Status | Meaning | Compatibility commitment |
+| --- | --- | --- |
+| `experimental` | The problem and interface are still being validated | May change or be removed in a minor release, with release-note disclosure |
+| `beta` | The primary journey is complete and ready for real trials or controlled production pilots | Avoid breaking changes without a migration path; document all breaking changes |
+| `stable` | Stable contracts, upgrade paths, operations documentation, and production adoption evidence exist | Follow SemVer; breaking changes require a major release |
+| `planned` | Publicly scheduled but not yet a usable contract | Must not be presented by docs or UI as available |
+
+Current baseline:
+
+| Capability area | Current status | Promotion requirement |
+| --- | --- | --- |
+| HTTP API, knowledge bases, ingestion, JSON/SSE query | `beta` | Close consistency gaps and validate versioned contracts in production pilots |
+| PostgreSQL + Qdrant hybrid retrieval, RRF, rerank, semantic cache | `beta` | Complete load, recovery, and compatibility validation |
+| Datasets, evaluations, LLM-as-Judge, optimizer | `beta` | Publish reproducible benchmarks and enforce budget/concurrency limits |
+| Application traces, Prometheus metrics, readiness and health | `beta` | Add standard exporters, dashboards, alerts, and retention guidance |
+| Contextual Retrieval, RAPTOR, Query Router, Graph Retrieval | `experimental` | Publish ablations, cost, fallback behavior, and recommended use cases |
+| Offline Knowledge and MCP self-check/diagnose/ops | `experimental` | Remove fixture dependencies and validate approval and audit boundaries |
+| ORAG Console | `experimental` | Complete orchestration, API debugging, evaluation gates, promotion, and rollback |
+| Tutorial Lab | `experimental` | Support clone, Quick Run, Replay, and result comparison |
+| Public Go SDK | `planned` | Ship as `beta` in `v0.1.0-beta.1` |
+| GHCR images, full-stack Compose, hosted docs | `planned` | Ship as `beta` in `v0.1.0-beta.1` |
+
+ORAG will not label any capability `stable` before `v1.0.0`.
+
+## Milestones
+
+Dates are target windows, not substitutes for quality gates. A milestone moves when its exit criteria are not met.
+
+| Milestone | Target | Outcome |
+| --- | --- | --- |
+| M0: Trusted open-source baseline | July 2026 | Community governance, security intake, maturity labels, and a protected default branch |
+| M1: `v0.1.0-beta.1` | August 2026 | A downloadable, runnable, embeddable Beta with a no-key walkthrough |
+| M2: Production pilot baseline | September–October 2026 | Consistency, security, observability, and CI/CD hardening for reference deployments |
+| M3: Evaluation-first control plane | November 2026–January 2027 | Orchestration, evaluation gates, promotion/rollback, and tutorial experimentation |
+| M4: Ecosystem and `v1.0` readiness | February–July 2027 | Stable extension points, governance, compatibility policy, and adoption evidence |
+
+## M0: Trusted open-source baseline
+
+### Community and governance
+
+- Add `CONTRIBUTING.md` covering setup, test matrices, commits, pull requests, documentation synchronization, and a first-contribution path.
+- Add `SECURITY.md` with supported versions, private reporting, response targets, disclosure policy, and GitHub Private Vulnerability Reporting.
+- Adopt Contributor Covenant 2.1 in `CODE_OF_CONDUCT.md` with clear enforcement ownership.
+- Add Bug, Feature, Documentation, and RFC issue forms plus a pull-request template covering tests, docs, security, compatibility, and maturity changes.
+- Establish `good first issue`, `help wanted`, `area/*`, `maturity/*`, and `priority/*` labels with public triage rules.
+- Enable GitHub Discussions with Announcements, Q&A, Ideas, and Show and tell categories.
+- Configure repository topics: `rag`, `retrieval-augmented-generation`, `golang`, `llm-evaluation`, `qdrant`, `postgresql`, `openapi`, `mcp`, `eino`, and `hertz`.
+- Protect `main`: prevent force pushes and deletion, require up-to-date branches, required checks, and resolved review conversations. Do not require an external approving reviewer until a second maintainer exists.
+- Enable weekly Dependabot updates for Go modules, npm, GitHub Actions, and Docker; handle security updates immediately.
+
+### Maturity and release discipline
+
+- Add a shared `x-orag-maturity` OpenAPI extension accepting only `experimental`, `beta`, or `stable`.
+- Reuse the same maturity enum in the capability manifest and add contract tests that prevent drift across README, OpenAPI, and generated artifacts.
+- Define SemVer, deprecation, migration, and release-note policy; experimental changes still appear in the changelog.
+- Add `CHANGELOG.md` and a public roadmap update process. Refresh the capability matrix at every minor release and review this file quarterly.
+
+### M0 exit criteria
+
+- GitHub community profile reaches at least 90%.
+- `main` protection and required checks are active, and Dependabot can create verified pull requests.
+- Every current consistency or concurrency issue is fixed, or has an owner, priority, target release, and verified mitigation.
+- README, OpenAPI, and capability manifest maturity labels agree and are checked in CI.
+
+## M1: Release `v0.1.0-beta.1`
+
+### Reproducible artifacts
+
+- Add a tag-driven release workflow. Only `v*` tags create GitHub Releases and GHCR images; normal `main` pushes run CI only.
+- Publish `linux/amd64` and `linux/arm64` images for at least `orag-api` and `orag-console`.
+- Generate SBOMs, provenance, checksums, and keyless signatures. Release notes include image digests, migrations, changes, and known limitations.
+- Make `orag-api --version`, `oragctl version`, and the runtime version endpoint return the same version, commit, and build time.
+
+### One-command full-stack experience
+
+- The full Compose stack includes PostgreSQL, Qdrant, a one-shot migration service, API, Console, and demo/walkthrough.
+- `docker compose --profile demo up --wait` uses explicit deterministic mock configuration, requires no real model key, and seeds a queryable knowledge base and evaluation dataset.
+- The production profile must not inherit mock providers or weak credentials. Demo data, volumes, credentials, and port policies are explicitly isolated.
+- The walkthrough covers login, ingestion, cited query, trace, evaluation, and one parameter comparison, with results visible in the Console.
+- Validate the journey on clean macOS, Linux amd64, and Linux arm64 environments.
+
+### Interactive and hosted documentation
+
+- Replace `/docs` with an interactive UI backed by the repository OpenAPI contract, including authentication, request examples, and SSE guidance.
+- Publish a hosted documentation site, initially through GitHub Pages. README, hosted docs, and `/docs` must generate from or validate against the same OpenAPI and examples.
+- Add an architecture overview, real Console screenshots, a five-minute walkthrough GIF, deployment guidance, SDK documentation, and a maturity page.
+- Gate documentation builds, internal links, code snippets, and OpenAPI coverage in CI.
+
+### A real public Go SDK
+
+- Provide a public `github.com/shikanon/orag` facade at the module root; public signatures must not expose `internal/*` types.
+- Share application assembly, ingestion, query, evaluation, and trace services between the SDK and HTTP service. The HTTP layer remains a protocol adapter.
+- The first Beta covers client lifecycle, knowledge-base management, text/file ingestion, synchronous and streaming query, evaluation submission/status, and trace lookup.
+- Support explicit memory/mock and PostgreSQL + Qdrant configurations. Test models must be clearly identified and must not impersonate production providers.
+- Prove external usability with external test packages and a standalone consumer module. Publish pkg.go.dev documentation, runnable examples, and compatibility guidance.
+- Provide stable error categories compatible with `errors.Is`/`errors.As`, preserving trace ID, retryability, and the underlying cause.
+
+### M1 exit criteria
+
+- The `v0.1.0-beta.1` tag, GitHub Release, dual-architecture GHCR images, SBOMs, and signatures are publicly verifiable.
+- Median clone-to-first-cited-answer time is below 10 minutes, with at least 10 non-maintainer testers and a 90% completion rate.
+- A standalone Go module imports the public SDK; examples, race tests, API documentation, and upgrade checks pass.
+- Console, interactive `/docs`, hosted docs, and mock walkthrough use one versioned contract.
+
+## M2: Production pilot baseline
+
+### Consistency and execution safety
+
+- Use staged/active visibility or an equivalent transaction protocol so failed documents and vectors never become searchable early.
+- Make knowledge-base deletion, upload recovery, and optimizer resume idempotent, concurrency-safe, compensatable, and retryable.
+- Add migration completeness checks, Qdrant collection compatibility checks, backup/restore exercises, and disaster-recovery documentation.
+- Define and test timeout, retry, cancellation, and backpressure behavior for ingestion, query, evaluation, and release.
+
+### Security and tenant boundaries
+
+- Add machine API keys, minimal RBAC, and project-scoped authorization; default administrator credentials are bootstrap-only.
+- Threat-model and test secret injection/rotation, log redaction, prompt/document recording, and cross-tenant queries.
+- Add CodeQL, `govulncheck`, npm audit, secret scanning, container scanning, and OpenSSF Scorecard to CI.
+
+### Observability and quality gates
+
+- Add OpenTelemetry trace and metrics exporters with importable Prometheus/Grafana resources and baseline alerts.
+- Gate Go unit/vet/race, OpenAPI, Console typecheck/unit/build/E2E, PostgreSQL + Qdrant integration, and dual-architecture image smoke tests.
+- Publish performance baselines for ingestion throughput, query p50/p95, cache hit rate, evaluation duration, model calls, and cost accounting.
+
+### M2 exit criteria
+
+- A production pilot runs for 30 days without an unmitigated P0; known P1 issues have owners and target releases.
+- At least two independent reference deployments complete upgrade, backup/restore, and rollback exercises.
+- Security, integration, Console, and release checks are required on `main`.
+
+## M3: Evaluation-first control plane
+
+### Project-to-release golden path
+
+- Complete the project-scoped RAG Studio, constrained DAG, API Debugger, and immutable pipeline versions.
+- Complete project-scoped datasets, frozen evaluation runs, hard metric gates, and candidate comparison.
+- Complete ordered development-to-staging-to-production promotion, non-bypassable gates, optimistic concurrency, append-only audit, and atomic rollback.
+- Resolve production queries to an explicit active version. Traces record pipeline, model, retrieval parameters, dataset, and release lineage.
+
+### Tutorial experimentation loop
+
+- Support clone, Pack installation, Quick Run, Benchmark Run, Replay, and result comparison for official tutorials.
+- Keep text, visual-document, and video tutorials focused on engineering and evaluation; model training is out of scope.
+- Document per-strategy ablations, cost, latency, failure fallback, and recommended scenarios.
+
+### M3 exit criteria
+
+- The create-project-to-release-and-rollback browser E2E passes against real PostgreSQL and Qdrant.
+- At least two public benchmarks are fully reproducible from tagged images, configuration, and datasets.
+- At least five external teams use ORAG continuously, three external pull requests merge, and two production cases are publicly referenceable.
+
+## M4: Ecosystem and `v1.0` readiness
+
+### Stable extension points
+
+- Define minimal stable interfaces and conformance tests for parsers, chunkers, embeddings, retrievers, rerankers, model providers, and storage adapters.
+- Expand integrations only in response to real users. Separate certified, community, and experimental integrations in the support matrix.
+- Publish SDK/API compatibility policy, deprecation windows, upgrade tooling, and long-term support scope.
+
+### Community governance and awareness
+
+- Establish RFCs, maintainer/committer roles, decision records, and a security response rotation.
+- Maintain predictable monthly releases, quarterly roadmap reviews, and a public changelog.
+- Grow through reproducible benchmarks, architecture articles, tutorials, public cases, conference talks, and community demos rather than feature lists or star campaigns.
+- Publish Helm charts and cloud reference architectures only after sustained Kubernetes demand; Docker/Compose remains the primary path until then.
+
+### `v1.0` exit criteria
+
+- At least 10 confirmed production deployments with upgrade and recovery evidence, including two public cases.
+- At least 20 external contributors and three maintainers capable of independent review and release.
+- Core API and Go SDK pass compatibility audits, with two consecutive minor releases containing no breaking change without a migration path.
+- Security response, dependency updates, releases, backup/restore, capacity, and incident procedures have exercise records.
+
+## Project metrics
+
+Adoption and trust are primary. Stars are a lagging awareness signal.
+
+| Dimension | Metrics |
+| --- | --- |
+| Activation | Time to first success, walkthrough completion, documentation-to-runtime drop-off |
+| Reliability | P0/P1 count, ingestion recovery, release failure rate, rollback time, SLO attainment |
+| Adoption | Active external deployments, 30/90-day retention, production upgrades, public cases |
+| Community | External contributors, first response time, pull-request lead time, independent maintainers |
+| Quality | Benchmark reproducibility, contract compatibility, coverage, vulnerability remediation time |
+| Awareness | Documentation MAU, organic search/citations, technical content adoption, stars and forks |
+
+## Explicit non-goals
+
+- ORAG is not a model training platform.
+- ORAG will not copy a broad general-purpose AI application platform before reliability, release, and evaluation loops are complete.
+- Provider count is not a primary success metric. Providers without conformance tests and maintainers do not enter the certified list.
+- ORAG does not promise long-term stable interfaces before `v1.0`.
+- Automated remediation and agent operations never bypass approval, audit, or rollback boundaries.
+
+## Participating in the roadmap
+
+- Use GitHub Issues for bugs and well-scoped requests.
+- Use an RFC Issue and Discussions before implementing cross-module interfaces, compatibility changes, or governance changes.
+- Split each milestone into independently testable and reviewable implementation plans. This roadmap does not replace engineering design.
+- Maintainers update milestone status monthly and revisit priorities quarterly based on production feedback, community demand, and maintenance capacity.
+- Change this roadmap through pull requests that explain the reason, affected milestones, and metric impact.
