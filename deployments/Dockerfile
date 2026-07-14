@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOFLAGS="${GOFLAGS}" go build \
     -ldflags "-s -w -X github.com/shikanon/orag/pkg/buildinfo.Version=${VERSION} -X github.com/shikanon/orag/pkg/buildinfo.Commit=${COMMIT} -X github.com/shikanon/orag/pkg/buildinfo.BuildTime=${BUILD_TIME}" \
     -o /out/orag-demo ./cmd/orag-demo
 
-FROM alpine:3.22 AS api
+FROM alpine:3.24 AS api
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
