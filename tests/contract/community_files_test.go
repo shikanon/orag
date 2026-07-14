@@ -124,3 +124,25 @@ func TestDependabotCoversCurrentDependencyEcosystems(t *testing.T) {
 		}
 	}
 }
+
+func TestReadmesPublishCapabilityMaturityPolicy(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{"../../README.md", "../../README_EN.md"} {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for _, phrase := range []string{
+			"docs/compatibility.md",
+			"experimental",
+			"beta",
+			"stable",
+			"v0.1.0-beta.1",
+		} {
+			if !bytes.Contains(body, []byte(phrase)) {
+				t.Errorf("%s missing %q", path, phrase)
+			}
+		}
+	}
+}

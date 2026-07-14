@@ -11,6 +11,7 @@
 | 理解 RAG 内部链路 | [`architecture/README.md`](./architecture/README.md) -> [`architecture/rag-pipeline.md`](./architecture/rag-pipeline.md) -> [`Go-RAG-框架技术方案.md`](./Go-RAG-框架技术方案.md) | 理解 HTTP、检索、重排、生成、引用、缓存和存储边界。 |
 | 做 RAG 质量回归 | [`evaluation/README.md`](./evaluation/README.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) | 理解数据集、评估运行、deterministic/Judge/QAG 指标和 optimizer 行为。 |
 | 学习工程模块效果 | 控制台 `/tutorials` -> [`superpowers/specs/2026-07-13-orag-tutorial-experiment-space-design.md`](./superpowers/specs/2026-07-13-orag-tutorial-experiment-space-design.md) | 使用中文文本、视觉文档和视频端到端模板理解解析、Chunking、多路召回、Rewrite 与 Rerank 的分场景效果。 |
+| 判断能力兼容性 | [`compatibility.md`](./compatibility.md) -> [`../ROADMAP.md`](../ROADMAP.md) | 区分 `experimental`、`beta`、`stable`，理解 pre-1.0 弃用和迁移规则。 |
 | 部署或排障 | [`operations/README.md`](./operations/README.md) -> [`operations/troubleshooting.md`](./operations/troubleshooting.md) -> [`development.md`](./development.md) | 明确依赖、配置、健康检查、metrics 和常见故障处理。 |
 
 ## 分层文档地图
@@ -32,6 +33,7 @@
 | [`evaluation.md`](./evaluation.md) | 评估完整长文 | 保留数据集结构、指标和 optimizer 说明。 |
 | [`operations.md`](./operations.md) | 运维完整长文 | 保留部署依赖、配置安全、metrics 和故障排查全集。 |
 | [`Go-RAG-框架技术方案.md`](./Go-RAG-框架技术方案.md) | 技术方案 | 保留整体 Go RAG 框架设计背景。 |
+| [`compatibility.md`](./compatibility.md) | 兼容性与成熟度 | 定义公共能力的成熟度、弃用和 pre-1.0 迁移规则。 |
 
 ## 常用入口
 
