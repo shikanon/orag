@@ -24,7 +24,7 @@ Use when an agent needs to run bounded ORAG Ralph Loop verification from a spec/
 - Ralph Loop verification is separate from self-check, diagnosis, and self-ops Skills.
 
 ## Capabilities
-- `ralph_loop_run`: `ralph-loop` via `POST /v1/ralph-loop`, input `#/components/schemas/RalphLoopRequest`, output `#/components/schemas/RalphLoopResponse`, risk `low`, side effect `read_only`
+- `ralph_loop_run`: `ralph-loop` via `POST /v1/ralph-loop`, input `#/components/schemas/RalphLoopRequest`, output `#/components/schemas/RalphLoopResponse`, maturity `experimental`, risk `low`, side effect `read_only`
 
 ## Environment
 - `ORAG_API_BASE_URL`

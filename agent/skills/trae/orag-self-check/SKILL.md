@@ -24,7 +24,7 @@ Use for read-only ORAG health, contract, agent-sync, smoke, storage, config, and
 - Only for checking state; diagnosis and writes belong to separate Skills.
 
 ## Capabilities
-- `orag_check`: `self-check` via `POST /v1/self-check`, input `#/components/schemas/SelfCheckRequest`, output `#/components/schemas/SelfCheckResult`, risk `low`, side effect `read_only`
+- `orag_check`: `self-check` via `POST /v1/self-check`, input `#/components/schemas/SelfCheckRequest`, output `#/components/schemas/SelfCheckResult`, maturity `experimental`, risk `low`, side effect `read_only`
 
 ## Environment
 - `ORAG_API_BASE_URL`

@@ -200,6 +200,7 @@ func annotationsForCapability(capability capabilities.Capability) map[string]any
 		"env":      []string{"ORAG_API_BASE_URL", "ORAG_API_TOKEN", "ORAG_TENANT_ID"},
 	}
 	annotations["risk_level"] = capability.RiskLevel
+	annotations["maturity"] = capability.Maturity
 	annotations["operations"] = capability.Operations
 	annotations["skill_manifest_name"] = capability.Skill.ManifestName
 	annotations["runtime_gate_warning"] = "Runtime probes do not replace static make agent-sync-check."
@@ -307,6 +308,7 @@ type openAPIFacetDocument struct {
 type openAPIFacet struct {
 	ID              string   `json:"id"`
 	Status          string   `json:"status"`
+	Maturity        string   `json:"maturity"`
 	Method          string   `json:"method"`
 	Path            string   `json:"path"`
 	OperationID     string   `json:"operation_id"`
@@ -329,6 +331,7 @@ func renderOpenAPIFacet(manifest capabilities.Manifest) (string, error) {
 		doc.Capabilities = append(doc.Capabilities, openAPIFacet{
 			ID:              capability.ID,
 			Status:          capability.Status,
+			Maturity:        capability.Maturity,
 			Method:          capability.HTTP.Method,
 			Path:            capability.HTTP.Path,
 			OperationID:     capability.HTTP.OperationID,

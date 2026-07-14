@@ -42,6 +42,7 @@ func TestGenerateFromManifestProducesMCPAndSkillArtifacts(t *testing.T) {
 	for _, want := range []string{
 		`"schema_version": "orag.capabilities.v1"`,
 		`"protocol_version": "2024-11-05"`,
+		`"maturity": "experimental"`,
 		`"name": "orag_diagnose"`,
 		`"name": "orag_trace_lookup"`,
 		`"name": "orag_runbook_suggest"`,
@@ -55,6 +56,7 @@ func TestGenerateFromManifestProducesMCPAndSkillArtifacts(t *testing.T) {
 	facet := byPath["agent/mcp/openapi-facet.json"].Content
 	for _, want := range []string{
 		`"id": "self-check"`,
+		`"maturity": "experimental"`,
 		`"path": "/v1/self-check"`,
 		`"request_schema": "#/components/schemas/SelfCheckRequest"`,
 	} {

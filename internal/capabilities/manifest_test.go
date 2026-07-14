@@ -77,6 +77,30 @@ func TestValidateRejectsInvalidRiskLevel(t *testing.T) {
 	requireValidationError(t, err, "capabilities[0].risk_level: must be one of low, medium, high")
 }
 
+func TestValidateRejectsMissingMaturity(t *testing.T) {
+	manifest := cloneManifest(t, BuiltinManifest())
+	manifest.Capabilities[0].Maturity = ""
+
+	err := Validate(manifest)
+	requireValidationError(t, err, "capabilities[0].maturity: is required")
+}
+
+func TestValidateRejectsInvalidMaturity(t *testing.T) {
+	manifest := cloneManifest(t, BuiltinManifest())
+	manifest.Capabilities[0].Maturity = "preview"
+
+	err := Validate(manifest)
+	requireValidationError(t, err, "capabilities[0].maturity: must be one of experimental, beta, stable")
+}
+
+func TestBuiltinManifestUsesPublishedMaturityValues(t *testing.T) {
+	for _, capability := range BuiltinManifest().Capabilities {
+		if capability.Maturity != MaturityExperimental {
+			t.Errorf("%s maturity = %q, want %q", capability.ID, capability.Maturity, MaturityExperimental)
+		}
+	}
+}
+
 func TestValidateRejectsInvalidOperationsSemantics(t *testing.T) {
 	manifest := cloneManifest(t, BuiltinManifest())
 	manifest.Capabilities[1].Operations.ReadOnly = false

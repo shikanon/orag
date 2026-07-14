@@ -1,0 +1,68 @@
+name: Request for comments
+description: Propose a cross-module contract, compatibility, architecture, or governance change.
+title: "[RFC]: "
+labels:
+  - rfc
+body:
+  - type: markdown
+    attributes:
+      value: Open a Discussion first when the problem or desired outcome is still exploratory.
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation and scope
+      description: Define the problem, users, constraints, and explicit non-goals.
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Proposed contract
+      description: Specify API, SDK, storage, configuration, lifecycle, and ownership boundaries as applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and trade-offs
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and migration
+      description: State maturity changes, deprecations, data migration, rollout, and rollback behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and privacy
+      description: Cover authorization, secrets, tenant boundaries, sensitive logs, and abuse cases.
+    validations:
+      required: true
+  - type: textarea
+    id: observability
+    attributes:
+      label: Observability and failure handling
+      description: Define metrics, traces, error behavior, retries, cancellation, and recovery.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Include tests, evaluation evidence, documentation, and release gates.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing RFCs and Discussions.
+          required: true
+        - label: I identified owners for affected modules and public contracts.
+          required: true
+    validations:
+      required: true

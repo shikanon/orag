@@ -178,6 +178,59 @@ func TestOpenAPI(t *testing.T) {
 	}
 }
 
+func TestOpenAPIOperationsDeclareMaturity(t *testing.T) {
+	doc, err := openapi3.NewLoader().LoadFromFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := map[string]bool{
+		"experimental": true,
+		"beta":         true,
+		"stable":       true,
+	}
+	for path, item := range doc.Paths {
+		for method, operation := range item.Operations() {
+			raw, ok := operation.Extensions["x-orag-maturity"]
+			if !ok {
+				t.Errorf("%s %s missing x-orag-maturity", method, path)
+				continue
+			}
+			maturity, ok := raw.(string)
+			if !ok || !allowed[maturity] {
+				t.Errorf("%s %s x-orag-maturity = %#v, want experimental, beta, or stable", method, path, raw)
+			}
+		}
+	}
+}
+
+func TestOpenAPIAgentCapabilitiesDeclareMaturity(t *testing.T) {
+	doc, err := openapi3.NewLoader().LoadFromFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := doc.Extensions["x-orag-agent-capabilities"]
+	if !ok {
+		t.Fatal("missing x-orag-agent-capabilities")
+	}
+	root, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("x-orag-agent-capabilities has type %T", raw)
+	}
+	items, ok := root["capabilities"].([]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("x-orag-agent-capabilities.capabilities = %#v", root["capabilities"])
+	}
+	for _, rawItem := range items {
+		item, ok := rawItem.(map[string]any)
+		if !ok {
+			t.Fatalf("capability has type %T", rawItem)
+		}
+		if item["maturity"] != "experimental" {
+			t.Errorf("capability %v maturity = %#v, want experimental", item["id"], item["maturity"])
+		}
+	}
+}
+
 func TestOptimizationAndJudgeSchemasExposeAsyncContract(t *testing.T) {
 	doc, err := openapi3.NewLoader().LoadFromFile("../../api/openapi.yaml")
 	if err != nil {

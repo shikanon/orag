@@ -1,0 +1,74 @@
+name: Bug report
+description: Report a reproducible ORAG defect.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Search existing issues first. Do not include API keys, credentials, private documents, personal data, or unredacted production traces.
+  - type: input
+    id: version
+    attributes:
+      label: ORAG version or commit
+      description: Use a Git tag, image digest, or full commit SHA.
+      placeholder: v0.1.0-beta.1 or sha256:...
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment mode
+      options:
+        - Go SDK
+        - Docker Compose
+        - Container or service
+        - Local Go process
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide deterministic steps, a small code sample, or sanitized requests.
+      placeholder: |
+        1. Start ORAG with ...
+        2. Call ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Include relevant logs, trace IDs, or screenshots after removing secrets and private data.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing Issues and Discussions.
+          required: true
+        - label: I removed credentials, personal data, proprietary documents, and private traces.
+          required: true
+        - label: This is not an undisclosed security vulnerability.
+          required: true
+    validations:
+      required: true

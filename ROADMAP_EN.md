@@ -51,19 +51,19 @@ Current baseline:
 
 ORAG will not label any capability `stable` before `v1.0.0`.
 
-## Milestones
+## Delivery phases
 
-Dates are target windows, not substitutes for quality gates. A milestone moves when its exit criteria are not met.
+Phases advance according to quality gates and available capacity, without target dates. Phases may overlap, and the project can move forward as soon as the relevant exit criteria are met.
 
-| Milestone | Target | Outcome |
-| --- | --- | --- |
-| M0: Trusted open-source baseline | July 2026 | Community governance, security intake, maturity labels, and a protected default branch |
-| M1: `v0.1.0-beta.1` | August 2026 | A downloadable, runnable, embeddable Beta with a no-key walkthrough |
-| M2: Production pilot baseline | September–October 2026 | Consistency, security, observability, and CI/CD hardening for reference deployments |
-| M3: Evaluation-first control plane | November 2026–January 2027 | Orchestration, evaluation gates, promotion/rollback, and tutorial experimentation |
-| M4: Ecosystem and `v1.0` readiness | February–July 2027 | Stable extension points, governance, compatibility policy, and adoption evidence |
+| Phase | Outcome |
+| --- | --- |
+| Phase 1: Trusted open-source baseline | Community governance, security intake, maturity labels, and a protected default branch |
+| Phase 2: Release `v0.1.0-beta.1` | A downloadable, runnable, embeddable Beta with a no-key walkthrough |
+| Phase 3: Production pilot baseline | Consistency, security, observability, and CI/CD hardening for reference deployments |
+| Phase 4: Evaluation-first control plane | Orchestration, evaluation gates, promotion/rollback, and tutorial experimentation |
+| Phase 5: Ecosystem and `v1.0` readiness | Stable extension points, governance, compatibility policy, and adoption evidence |
 
-## M0: Trusted open-source baseline
+## Phase 1: Trusted open-source baseline
 
 ### Community and governance
 
@@ -82,16 +82,16 @@ Dates are target windows, not substitutes for quality gates. A milestone moves w
 - Add a shared `x-orag-maturity` OpenAPI extension accepting only `experimental`, `beta`, or `stable`.
 - Reuse the same maturity enum in the capability manifest and add contract tests that prevent drift across README, OpenAPI, and generated artifacts.
 - Define SemVer, deprecation, migration, and release-note policy; experimental changes still appear in the changelog.
-- Add `CHANGELOG.md` and a public roadmap update process. Refresh the capability matrix at every minor release and review this file quarterly.
+- Add `CHANGELOG.md` and a public roadmap update process. Refresh the capability matrix at every minor release and review this file when priorities or project status change.
 
-### M0 exit criteria
+### Phase exit criteria
 
 - GitHub community profile reaches at least 90%.
 - `main` protection and required checks are active, and Dependabot can create verified pull requests.
 - Every current consistency or concurrency issue is fixed, or has an owner, priority, target release, and verified mitigation.
 - README, OpenAPI, and capability manifest maturity labels agree and are checked in CI.
 
-## M1: Release `v0.1.0-beta.1`
+## Phase 2: Release `v0.1.0-beta.1`
 
 ### Reproducible artifacts
 
@@ -124,14 +124,14 @@ Dates are target windows, not substitutes for quality gates. A milestone moves w
 - Prove external usability with external test packages and a standalone consumer module. Publish pkg.go.dev documentation, runnable examples, and compatibility guidance.
 - Provide stable error categories compatible with `errors.Is`/`errors.As`, preserving trace ID, retryability, and the underlying cause.
 
-### M1 exit criteria
+### Phase exit criteria
 
 - The `v0.1.0-beta.1` tag, GitHub Release, dual-architecture GHCR images, SBOMs, and signatures are publicly verifiable.
 - Median clone-to-first-cited-answer time is below 10 minutes, with at least 10 non-maintainer testers and a 90% completion rate.
 - A standalone Go module imports the public SDK; examples, race tests, API documentation, and upgrade checks pass.
 - Console, interactive `/docs`, hosted docs, and mock walkthrough use one versioned contract.
 
-## M2: Production pilot baseline
+## Phase 3: Production pilot baseline
 
 ### Consistency and execution safety
 
@@ -152,13 +152,13 @@ Dates are target windows, not substitutes for quality gates. A milestone moves w
 - Gate Go unit/vet/race, OpenAPI, Console typecheck/unit/build/E2E, PostgreSQL + Qdrant integration, and dual-architecture image smoke tests.
 - Publish performance baselines for ingestion throughput, query p50/p95, cache hit rate, evaluation duration, model calls, and cost accounting.
 
-### M2 exit criteria
+### Phase exit criteria
 
 - A production pilot runs for 30 days without an unmitigated P0; known P1 issues have owners and target releases.
 - At least two independent reference deployments complete upgrade, backup/restore, and rollback exercises.
 - Security, integration, Console, and release checks are required on `main`.
 
-## M3: Evaluation-first control plane
+## Phase 4: Evaluation-first control plane
 
 ### Project-to-release golden path
 
@@ -173,13 +173,13 @@ Dates are target windows, not substitutes for quality gates. A milestone moves w
 - Keep text, visual-document, and video tutorials focused on engineering and evaluation; model training is out of scope.
 - Document per-strategy ablations, cost, latency, failure fallback, and recommended scenarios.
 
-### M3 exit criteria
+### Phase exit criteria
 
 - The create-project-to-release-and-rollback browser E2E passes against real PostgreSQL and Qdrant.
 - At least two public benchmarks are fully reproducible from tagged images, configuration, and datasets.
 - At least five external teams use ORAG continuously, three external pull requests merge, and two production cases are publicly referenceable.
 
-## M4: Ecosystem and `v1.0` readiness
+## Phase 5: Ecosystem and `v1.0` readiness
 
 ### Stable extension points
 
@@ -190,7 +190,7 @@ Dates are target windows, not substitutes for quality gates. A milestone moves w
 ### Community governance and awareness
 
 - Establish RFCs, maintainer/committer roles, decision records, and a security response rotation.
-- Maintain predictable monthly releases, quarterly roadmap reviews, and a public changelog.
+- Maintain a predictable, quality-gated release process and public changelog, and review the roadmap whenever project status changes.
 - Grow through reproducible benchmarks, architecture articles, tutorials, public cases, conference talks, and community demos rather than feature lists or star campaigns.
 - Publish Helm charts and cloud reference architectures only after sustained Kubernetes demand; Docker/Compose remains the primary path until then.
 
@@ -226,6 +226,6 @@ Adoption and trust are primary. Stars are a lagging awareness signal.
 
 - Use GitHub Issues for bugs and well-scoped requests.
 - Use an RFC Issue and Discussions before implementing cross-module interfaces, compatibility changes, or governance changes.
-- Split each milestone into independently testable and reviewable implementation plans. This roadmap does not replace engineering design.
-- Maintainers update milestone status monthly and revisit priorities quarterly based on production feedback, community demand, and maintenance capacity.
-- Change this roadmap through pull requests that explain the reason, affected milestones, and metric impact.
+- Split each phase into independently testable and reviewable implementation plans. This roadmap does not replace engineering design.
+- Maintainers update phase status and priorities as production feedback, community demand, project status, and maintenance capacity change.
+- Change this roadmap through pull requests that explain the reason, affected phases, and metric impact.

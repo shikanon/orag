@@ -16,6 +16,10 @@ const (
 	RiskMedium = "medium"
 	RiskHigh   = "high"
 
+	MaturityExperimental = "experimental"
+	MaturityBeta         = "beta"
+	MaturityStable       = "stable"
+
 	EffectReadOnly = "read_only"
 	EffectDryRun   = "dry_run"
 	EffectWrite    = "write"
@@ -26,6 +30,11 @@ var (
 		RiskLow:    {},
 		RiskMedium: {},
 		RiskHigh:   {},
+	}
+	allowedMaturityLevels = map[string]struct{}{
+		MaturityExperimental: {},
+		MaturityBeta:         {},
+		MaturityStable:       {},
 	}
 	allowedSideEffects = map[string]struct{}{
 		EffectReadOnly: {},
@@ -62,6 +71,7 @@ type Capability struct {
 	DisplayName string             `json:"display_name"`
 	Description string             `json:"description"`
 	Status      string             `json:"status"`
+	Maturity    string             `json:"maturity"`
 	RiskLevel   string             `json:"risk_level"`
 	HTTP        HTTPFacet          `json:"http"`
 	MCP         MCPFacet           `json:"mcp"`
@@ -206,6 +216,7 @@ func validateCapability(path string, capability Capability, seenTools map[string
 		"display_name": capability.DisplayName,
 		"description":  capability.Description,
 		"status":       capability.Status,
+		"maturity":     capability.Maturity,
 		"risk_level":   capability.RiskLevel,
 	}
 	for field, value := range required {
@@ -215,6 +226,9 @@ func validateCapability(path string, capability Capability, seenTools map[string
 	}
 	if _, ok := allowedRiskLevels[capability.RiskLevel]; capability.RiskLevel != "" && !ok {
 		add(path+".risk_level", "must be one of low, medium, high")
+	}
+	if _, ok := allowedMaturityLevels[capability.Maturity]; capability.Maturity != "" && !ok {
+		add(path+".maturity", "must be one of experimental, beta, stable")
 	}
 
 	validateHTTPFacet(path+".http", capability.HTTP, add)

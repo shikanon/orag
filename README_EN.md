@@ -36,9 +36,16 @@ ORAG is a Go-native RAG service framework for building an end-to-end workflow ac
 - **Evaluation-first workflow**: Datasets, evaluation runs, and profile/top-k optimization reuse the same online RAG query path to reduce offline/online drift.
 - **Explicit provider boundary**: The provider registry selects vendors by capability, including chat, embedding, rerank, and multimodal parsing. Real providers require API key validation by default.
 
+## Capability Maturity
+
+ORAG labels each public capability as `experimental`, `beta`, or `stable` to describe its compatibility commitment. Every current capability is `experimental` and requires independent validation and an explicit fallback before real-world use. The planned `v0.1.0-beta.1` is the first Beta **distribution**; it does not imply that every included capability has reached `beta`. ORAG will not mark any capability `stable` before `v1.0.0`.
+
+See the [compatibility and capability maturity policy](./docs/compatibility.md) for the full definitions, deprecation rules, and migration expectations. HTTP operations expose the same maturity through OpenAPI `x-orag-maturity`.
+
 ## Table Of Contents
 
 - [Core Features](#core-features)
+- [Capability Maturity](#capability-maturity)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
 - [Examples](#examples)

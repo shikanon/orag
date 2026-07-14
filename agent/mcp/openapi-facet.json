@@ -8,6 +8,7 @@
     {
       "id": "apply-low-risk-action",
       "status": "planned",
+      "maturity": "experimental",
       "method": "POST",
       "path": "/v1/self-ops/apply-low-risk-action",
       "operation_id": "applyLowRiskAction",
@@ -23,6 +24,7 @@
     {
       "id": "create-remediation-issue",
       "status": "planned",
+      "maturity": "experimental",
       "method": "POST",
       "path": "/v1/self-ops/remediation-issues",
       "operation_id": "createRemediationIssue",
@@ -38,6 +40,7 @@
     {
       "id": "diagnose",
       "status": "planned",
+      "maturity": "experimental",
       "method": "POST",
       "path": "/v1/diagnostics/diagnose",
       "operation_id": "diagnoseSymptom",
@@ -53,6 +56,7 @@
     {
       "id": "maintenance-plan",
       "status": "planned",
+      "maturity": "experimental",
       "method": "POST",
       "path": "/v1/self-ops/maintenance-plan",
       "operation_id": "createMaintenancePlan",
@@ -68,6 +72,7 @@
     {
       "id": "ralph-loop",
       "status": "planned",
+      "maturity": "experimental",
       "method": "POST",
       "path": "/v1/ralph-loop",
       "operation_id": "runRalphLoop",
@@ -84,6 +89,7 @@
     {
       "id": "runbook-suggest",
       "status": "planned",
+      "maturity": "experimental",
       "method": "POST",
       "path": "/v1/diagnostics/runbooks/suggest",
       "operation_id": "suggestRunbook",
@@ -99,6 +105,7 @@
     {
       "id": "self-check",
       "status": "planned",
+      "maturity": "experimental",
       "method": "POST",
       "path": "/v1/self-check",
       "operation_id": "runSelfCheck",
@@ -114,6 +121,7 @@
     {
       "id": "trace-lookup",
       "status": "planned",
+      "maturity": "experimental",
       "method": "GET",
       "path": "/v1/traces/{trace_id}",
       "operation_id": "getTrace",
