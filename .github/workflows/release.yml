@@ -136,6 +136,8 @@ jobs:
             echo
             echo "Run make demo from this tag for the no-key migration, API, Console, ingestion, cited-query, trace, and evaluation walkthrough."
             echo
+            echo "Hosted documentation: https://shikanon.github.io/orag/"
+            echo
             echo "See CHANGELOG.md and docs/compatibility.md for Beta limitations and migration policy."
           } > release-notes.md
       - name: Create GitHub prerelease
