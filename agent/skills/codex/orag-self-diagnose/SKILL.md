@@ -18,9 +18,9 @@ Use persisted trace evidence as read-only input for diagnosis; missing or unavai
 - Diagnosis interprets evidence; self-check only gathers status, and self-ops handles authorized write plans.
 
 ## Capabilities
-- `orag_diagnose`: `diagnose` via `POST /v1/diagnostics/diagnose`, input `#/components/schemas/DiagnoseRequest`, output `#/components/schemas/DiagnoseResult`, risk `low`, side effect `read_only`
-- `orag_runbook_suggest`: `runbook-suggest` via `POST /v1/diagnostics/runbooks/suggest`, input `#/components/schemas/RunbookSuggestRequest`, output `#/components/schemas/RunbookSuggestResponse`, risk `low`, side effect `read_only`
-- `orag_trace_lookup`: `trace-lookup` via `GET /v1/traces/{trace_id}`, input `#/components/schemas/TraceLookupRequest`, output `#/components/schemas/TraceLookupResponse`, risk `low`, side effect `read_only`
+- `orag_diagnose`: `diagnose` via `POST /v1/diagnostics/diagnose`, input `#/components/schemas/DiagnoseRequest`, output `#/components/schemas/DiagnoseResult`, maturity `experimental`, risk `low`, side effect `read_only`
+- `orag_runbook_suggest`: `runbook-suggest` via `POST /v1/diagnostics/runbooks/suggest`, input `#/components/schemas/RunbookSuggestRequest`, output `#/components/schemas/RunbookSuggestResponse`, maturity `experimental`, risk `low`, side effect `read_only`
+- `orag_trace_lookup`: `trace-lookup` via `GET /v1/traces/{trace_id}`, input `#/components/schemas/TraceLookupRequest`, output `#/components/schemas/TraceLookupResponse`, maturity `experimental`, risk `low`, side effect `read_only`
 
 ## Environment
 - `ORAG_API_BASE_URL`

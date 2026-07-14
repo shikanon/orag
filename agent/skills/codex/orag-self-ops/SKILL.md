@@ -18,9 +18,9 @@ Generate a dry-run plan before any operational write.
 - Self-ops is the only Skill allowed to enter authorized write workflows.
 
 ## Capabilities
-- `orag_apply_low_risk_action`: `apply-low-risk-action` via `POST /v1/self-ops/apply-low-risk-action`, input `#/components/schemas/ApplyLowRiskActionRequest`, output `#/components/schemas/ApplyLowRiskActionResult`, risk `high`, side effect `write`
-- `orag_create_remediation_issue`: `create-remediation-issue` via `POST /v1/self-ops/remediation-issues`, input `#/components/schemas/CreateRemediationIssueRequest`, output `#/components/schemas/CreateRemediationIssueResult`, risk `medium`, side effect `write`
-- `orag_maintenance_plan`: `maintenance-plan` via `POST /v1/self-ops/maintenance-plan`, input `#/components/schemas/MaintenancePlanRequest`, output `#/components/schemas/MaintenancePlan`, risk `medium`, side effect `dry_run`
+- `orag_apply_low_risk_action`: `apply-low-risk-action` via `POST /v1/self-ops/apply-low-risk-action`, input `#/components/schemas/ApplyLowRiskActionRequest`, output `#/components/schemas/ApplyLowRiskActionResult`, maturity `experimental`, risk `high`, side effect `write`
+- `orag_create_remediation_issue`: `create-remediation-issue` via `POST /v1/self-ops/remediation-issues`, input `#/components/schemas/CreateRemediationIssueRequest`, output `#/components/schemas/CreateRemediationIssueResult`, maturity `experimental`, risk `medium`, side effect `write`
+- `orag_maintenance_plan`: `maintenance-plan` via `POST /v1/self-ops/maintenance-plan`, input `#/components/schemas/MaintenancePlanRequest`, output `#/components/schemas/MaintenancePlan`, maturity `experimental`, risk `medium`, side effect `dry_run`
 
 ## Environment
 - `ORAG_API_BASE_URL`

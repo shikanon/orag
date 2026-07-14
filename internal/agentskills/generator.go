@@ -188,13 +188,14 @@ func writeSharedSections(b *strings.Builder, manifest capabilities.Manifest, bun
 	}
 	fmt.Fprintf(b, "\n## Capabilities\n")
 	for _, capability := range bundle.Capabilities {
-		fmt.Fprintf(b, "- `%s`: `%s` via `%s %s`, input `%s`, output `%s`, risk `%s`, side effect `%s`\n",
+		fmt.Fprintf(b, "- `%s`: `%s` via `%s %s`, input `%s`, output `%s`, maturity `%s`, risk `%s`, side effect `%s`\n",
 			capability.MCP.ToolName,
 			capability.ID,
 			capability.HTTP.Method,
 			capability.HTTP.Path,
 			capability.HTTP.RequestSchema,
 			capability.HTTP.ResponseSchema,
+			capability.Maturity,
 			capability.RiskLevel,
 			capability.Operations.SideEffect,
 		)

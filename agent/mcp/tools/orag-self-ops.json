@@ -59,6 +59,7 @@
             }
           }
         ],
+        "maturity": "experimental",
         "operations": {
           "side_effect": "write",
           "read_only": false,
@@ -135,6 +136,7 @@
             }
           }
         ],
+        "maturity": "experimental",
         "operations": {
           "side_effect": "write",
           "read_only": false,
@@ -211,6 +213,7 @@
             }
           }
         ],
+        "maturity": "experimental",
         "operations": {
           "side_effect": "dry_run",
           "read_only": true,

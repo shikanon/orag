@@ -91,6 +91,7 @@
             }
           }
         ],
+        "maturity": "experimental",
         "operations": {
           "side_effect": "read_only",
           "read_only": true,

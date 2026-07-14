@@ -35,6 +35,7 @@ func TestGenerateFromManifestProducesAgentSkillTargets(t *testing.T) {
 	ralph := byPath["agent/skills/trae/ralph-loop/SKILL.md"].Content
 	for _, want := range []string{
 		"Generated from `orag.capabilities.v1` version `2026-07-05`",
+		"maturity `experimental`",
 		"ORAG_API_BASE_URL",
 		"ORAG_API_TOKEN",
 		"ORAG_TENANT_ID",
