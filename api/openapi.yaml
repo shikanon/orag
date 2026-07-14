@@ -137,12 +137,24 @@ paths:
     get:
       tags: [System]
       operationId: docs
-      x-orag-maturity: experimental
+      x-orag-maturity: beta
       responses:
         "200":
-          description: Minimal API documentation landing page.
+          description: Interactive API documentation powered by the canonical OpenAPI specification.
           content:
             text/html:
+              schema:
+                type: string
+  /openapi.yaml:
+    get:
+      tags: [System]
+      operationId: getOpenAPISpec
+      x-orag-maturity: beta
+      responses:
+        "200":
+          description: Canonical OpenAPI 3 specification.
+          content:
+            application/yaml:
               schema:
                 type: string
   /v1/auth/login:

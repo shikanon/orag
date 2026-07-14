@@ -2,6 +2,8 @@
 
 这里是 ORAG 的文档导航页。仓库根 README 负责快速理解项目定位和启动路径，本目录按“快速上手、API、架构、评估、运维”拆分为子目录，顶层长文继续保留为兼容入口和完整参考。
 
+对外托管入口为 [`https://shikanon.github.io/orag/`](https://shikanon.github.io/orag/)，其中 API Reference 直接使用仓库 `api/openapi.yaml` 构建，并支持授权、筛选与 Try it out。本地启动 API 后，等价入口为 [`http://localhost:8080/docs`](http://localhost:8080/docs)，原始规范位于 [`http://localhost:8080/openapi.yaml`](http://localhost:8080/openapi.yaml)。
+
 ## 推荐阅读路径
 
 | 场景 | 推荐顺序 | 目标 |
@@ -47,7 +49,9 @@
 | 健康检查 | `curl -fsS http://localhost:8080/healthz` |
 | 就绪检查 | `curl -fsS http://localhost:8080/readyz` |
 | OpenAPI 源文件 | [`../api/openapi.yaml`](../api/openapi.yaml) |
-| 内置文档页 | `GET /docs` |
+| 托管文档站 | [`https://shikanon.github.io/orag/`](https://shikanon.github.io/orag/) |
+| 交互式 API Reference | `GET /docs`（本地）或 [`https://shikanon.github.io/orag/api.html`](https://shikanon.github.io/orag/api.html)（托管） |
+| 运行时 OpenAPI | `GET /openapi.yaml` |
 | 教程实验室 | 控制台 `/tutorials`，只读目录 API 为 `GET /v1/tutorials` |
 | curl smoke | [`../examples/curl/05_health_ready.sh`](../examples/curl/05_health_ready.sh) -> [`../examples/curl/50_optimize.sh`](../examples/curl/50_optimize.sh) |
 | Ralph Loop MCP/Skill | [`api/agent-integrations.md`](./api/agent-integrations.md) -> [`../examples/mcp/README.md`](../examples/mcp/README.md) -> [`../examples/skills/README.md`](../examples/skills/README.md) |
