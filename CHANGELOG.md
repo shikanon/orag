@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Open-source roadmap for an evaluation-first, Go-native RAG service and control plane.
+- Public embedded Go SDK for knowledge bases, ingestion, query events, traces, datasets, and deterministic evaluation.
+- Standalone downstream-module compatibility gate and no-key SDK walkthrough.
 
 ### Changed
 

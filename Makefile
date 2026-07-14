@@ -2,7 +2,7 @@ APP_NAME := orag-api
 GOFLAGS ?= -tags=stdjson,gjson
 CGO_ENABLED ?= 0
 
-.PHONY: run test vet fmt tidy console-dev console-build console-test console-api-generate dev-up dev-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-claude install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down
+.PHONY: run test vet fmt tidy sdk-check console-dev console-build console-test console-api-generate dev-up dev-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-claude install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down
 
 run:
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-api
@@ -12,6 +12,11 @@ test:
 
 vet:
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go vet ./...
+
+sdk-check:
+	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go test . ./tests/contract -run 'Test(PublicSDK|SDK)' -v
+	cd tests/consumer && GOWORK=off CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go test ./...
+	cd tests/consumer && GOWORK=off CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go vet ./...
 
 fmt:
 	gofmt -w $$(find . -name '*.go' -not -path './vendor/*')
@@ -86,7 +91,7 @@ install-skills: install-skills-codex install-skills-claude install-skills-trae
 install-agent: install-mcp install-skills
 	@echo "installed all agent artifacts to hidden deployment directories"
 
-agent-gate: agent-sync-check agent-artifact-tests mcp-self-check-smoke openapi-validate test vet
+agent-gate: agent-sync-check agent-artifact-tests mcp-self-check-smoke openapi-validate sdk-check test vet
 
 test-integration:
 	ORAG_INTEGRATION_TESTS=1 DATABASE_URL="postgres://orag:orag@localhost:55432/orag_test?sslmode=disable" QDRANT_HOST="localhost" QDRANT_GRPC_PORT="6634" QDRANT_COLLECTION="orag_chunks_test" QDRANT_SEMANTIC_CACHE_COLLECTION="orag_semantic_cache_test" CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go test ./tests/integration -v

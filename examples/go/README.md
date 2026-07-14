@@ -1,12 +1,23 @@
 # Go 调用示例
 
-本目录演示其他 Go 项目如何通过 ORAG 的公开 HTTP/OpenAPI 接口完成调用。示例只使用 Go 标准库，不依赖仓库内的 `internal/` 包，因此可以直接复制到外部项目中改造成自己的 SDK 封装。
+本目录同时演示 ORAG 公共嵌入式 Go SDK 和 HTTP/OpenAPI 调用。两种方式都不导入仓库内的 `internal/` 包。
 
 ## 示例列表
 
 | 示例 | 覆盖能力 |
 | --- | --- |
+| `sdk/` | 公共 `github.com/shikanon/orag` SDK；无需真实 Key 完成入库、查询和评测。 |
 | `basic/` | 登录、创建知识库、导入文本、轮询 ingestion job、发起 RAG 查询。 |
+
+## 运行公共 SDK 示例
+
+无需启动 API、数据库或向量库：
+
+```bash
+go run ./examples/go/sdk
+```
+
+生产配置、错误和 Beta 边界见 [`../../docs/sdk/README.md`](../../docs/sdk/README.md)。
 
 ## 运行前置
 
@@ -44,7 +55,7 @@ go run ./examples/go/basic
 ORAG_QUERY="ORAG 如何做混合检索？" go run ./examples/go/basic
 ```
 
-## 封装建议
+## HTTP 封装建议
 
 - 将 `Client`、请求/响应结构体和 `doJSON` 复制到业务项目的 SDK 包中。
 - 生产环境不要硬编码账号密码，建议从安全配置系统读取 token 或凭据。
