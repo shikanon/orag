@@ -151,6 +151,12 @@ Scripts fail fast with actionable messages when `curl` is missing, the service i
 
 ## Go Examples
 
+The public root-module SDK example at `examples/go/sdk/main.go` runs ingestion, query, trace, dataset, and deterministic evaluation without a real model key or external storage:
+
+```sh
+GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/sdk
+```
+
 The Go memory example at `examples/go/memory/main.go` demonstrates dependency-free library-style usage through the public `pkg/memory` facade. It creates an in-memory ORAG client, ingests sample content, runs a query, and prints trace/response metadata without PostgreSQL, Qdrant, or Ark.
 
 Run it directly:

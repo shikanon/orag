@@ -168,15 +168,15 @@ examples/curl/50_optimize.sh
 
 The scripts use `BASE_URL=http://localhost:8080` by default. Override it with `BASE_URL` if needed. Runtime state is stored in `.orag-demo/`, including the token, knowledge base ID, document ID, ingestion job ID, trace ID, dataset ID, evaluation ID, and optimization ID. Do not commit that directory.
 
-### Go client example
+### Public Go SDK (no key required)
 
-If the caller is another Go service or library, use `examples/go/basic` as a starting point for an SDK-style wrapper around the ORAG API. The example uses only the Go standard library HTTP client and does not import repository `internal/` packages:
+Go services can import `github.com/shikanon/orag` and use the same RAG and evaluation core as the HTTP service. This example explicitly uses in-memory storage and deterministic mocks, so it needs no real key or external dependency:
 
 ```bash
-go run ./examples/go/basic
+go run ./examples/go/sdk
 ```
 
-The OpenAPI source is `api/openapi.yaml`. The service also exposes a built-in documentation page at `GET /docs`.
+See the [public Go SDK guide](./docs/sdk/README.md) for configuration, errors, concurrency, and stream semantics. Keep using the HTTP/OpenAPI path demonstrated by `examples/go/basic` when you need process isolation or a non-Go client. The OpenAPI source is `api/openapi.yaml`, and the service exposes documentation at `GET /docs`.
 
 ## Configuration
 

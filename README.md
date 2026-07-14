@@ -169,15 +169,15 @@ examples/curl/50_optimize.sh
 
 脚本默认请求 `BASE_URL=http://localhost:8080`，可通过 `BASE_URL` 覆盖。运行状态保存在 `.orag-demo/`，包括 token、知识库 ID、文档 ID、入库 job ID、trace ID、数据集 ID、评估 ID 和优化 ID；该目录不应提交。
 
-### Go client 示例
+### 公共 Go SDK（无需 Key）
 
-如果调用方是其他 Go 服务或 Go 库，可参考 `examples/go/basic` 以 SDK 风格封装 ORAG API。示例只使用标准库 HTTP client，不依赖仓库内的 `internal/` 包：
+Go 服务可以直接导入 `github.com/shikanon/orag`，使用与 HTTP 服务相同的 RAG 与评测核心。以下示例显式使用内存存储和 deterministic mock，无需真实 Key 或外部依赖：
 
 ```bash
-go run ./examples/go/basic
+go run ./examples/go/sdk
 ```
 
-OpenAPI 源文件为 `api/openapi.yaml`，服务内置文档入口为 `GET /docs`。
+完整配置、错误、并发和流式语义见[公共 Go SDK 指南](./docs/sdk/README.md)。如果需要进程隔离或非 Go 客户端，继续使用 `examples/go/basic` 展示的 HTTP/OpenAPI 接入；OpenAPI 源文件为 `api/openapi.yaml`，服务内置文档入口为 `GET /docs`。
 
 ## 配置
 

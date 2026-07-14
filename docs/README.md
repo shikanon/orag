@@ -7,7 +7,8 @@
 | 场景 | 推荐顺序 | 目标 |
 | --- | --- | --- |
 | 第一次运行项目 | [`../README.md`](../README.md) -> [`getting-started/README.md`](./getting-started/README.md) -> [`getting-started/api-smoke.md`](./getting-started/api-smoke.md) | 完成本地启动、健康检查、登录、建库、入库、查询、trace、评估和优化 smoke。 |
-| 接入 API、MCP 或编写 SDK | [`api/README.md`](./api/README.md) -> [`api/auth-and-errors.md`](./api/auth-and-errors.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) -> [`api/agent-integrations.md`](./api/agent-integrations.md) -> [`../api/openapi.yaml`](../api/openapi.yaml) | 对齐认证、请求体、响应体、错误码、主业务 API、Ralph Loop MCP 和 Skill 集成。 |
+| 嵌入公共 Go SDK | [`sdk/README.md`](./sdk/README.md) -> [`../examples/go/sdk`](../examples/go/sdk) -> [`compatibility.md`](./compatibility.md) | 使用无需 Key 的 mock 流程，理解显式配置、错误、并发、流式语义和 Beta 边界。 |
+| 接入 HTTP API 或 MCP | [`api/README.md`](./api/README.md) -> [`api/auth-and-errors.md`](./api/auth-and-errors.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) -> [`api/agent-integrations.md`](./api/agent-integrations.md) -> [`../api/openapi.yaml`](../api/openapi.yaml) | 对齐认证、请求体、响应体、错误码、主业务 API、Ralph Loop MCP 和 Skill 集成。 |
 | 理解 RAG 内部链路 | [`architecture/README.md`](./architecture/README.md) -> [`architecture/rag-pipeline.md`](./architecture/rag-pipeline.md) -> [`Go-RAG-框架技术方案.md`](./Go-RAG-框架技术方案.md) | 理解 HTTP、检索、重排、生成、引用、缓存和存储边界。 |
 | 做 RAG 质量回归 | [`evaluation/README.md`](./evaluation/README.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) | 理解数据集、评估运行、deterministic/Judge/QAG 指标和 optimizer 行为。 |
 | 学习工程模块效果 | 控制台 `/tutorials` -> [`superpowers/specs/2026-07-13-orag-tutorial-experiment-space-design.md`](./superpowers/specs/2026-07-13-orag-tutorial-experiment-space-design.md) | 使用中文文本、视觉文档和视频端到端模板理解解析、Chunking、多路召回、Rewrite 与 Rerank 的分场景效果。 |
@@ -20,6 +21,7 @@
 | --- | --- | --- |
 | [`getting-started/`](./getting-started) | 快速上手 | 本地启动、依赖说明、API smoke、状态目录和常见 smoke 失败。 |
 | [`api/`](./api) | API 集成 | 认证、错误模型、知识库、入库任务、JSON/SSE 查询、trace 查询、Ralph Loop MCP 和 Skill 集成。 |
+| [`sdk/`](./sdk) | Go SDK | 嵌入式客户端、无 Key 示例、生产配置、类型化错误与事件流。 |
 | [`architecture/`](./architecture) | 架构设计 | 模块地图、运行时依赖、RAG pipeline 和排查切入点。 |
 | [`evaluation/`](./evaluation) | 评估与优化 | 数据集、评估运行、rule-based metrics、LLM-as-Judge/QAG 和目标驱动 optimizer。 |
 | [`operations/`](./operations) | 运维排障 | 健康检查、metrics、部署检查清单、Docker 配置和故障排查。 |
