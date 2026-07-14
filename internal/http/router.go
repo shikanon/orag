@@ -25,6 +25,7 @@ import (
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
 	"github.com/shikanon/orag/internal/storage/postgres"
+	"github.com/shikanon/orag/pkg/buildinfo"
 )
 
 type Server struct {
@@ -52,6 +53,7 @@ func (s *Server) Hertz() *server.Hertz {
 	h.GET("/healthz", s.health)
 	h.GET("/readyz", s.ready)
 	h.GET("/metrics", s.metrics)
+	h.GET("/version", s.version)
 	h.GET("/docs", s.docs)
 	h.POST("/v1/auth/login", s.login)
 
@@ -118,6 +120,10 @@ func (s *Server) ready(ctx context.Context, c *app.RequestContext) {
 func (s *Server) metrics(_ context.Context, c *app.RequestContext) {
 	c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	c.String(consts.StatusOK, s.App.Metrics.Render())
+}
+
+func (s *Server) version(_ context.Context, c *app.RequestContext) {
+	c.JSON(consts.StatusOK, buildinfo.Current())
 }
 
 func (s *Server) docs(_ context.Context, c *app.RequestContext) {

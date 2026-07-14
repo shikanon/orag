@@ -69,6 +69,15 @@ func TestTutorialCatalogRoutes(t *testing.T) {
 	}
 }
 
+func TestVersionRoute(t *testing.T) {
+	h, _, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	response := performJSON(h, "GET", "/version", "", "")
+	if response.Code != 200 || !strings.Contains(response.Body, `"version"`) || !strings.Contains(response.Body, `"commit"`) {
+		t.Fatalf("version status=%d body=%s", response.Code, response.Body)
+	}
+}
+
 func TestTutorialCatalogRouteErrorsAndAuthentication(t *testing.T) {
 	h, application, closeApp := newTestHertzWithApp(t)
 	defer closeApp()

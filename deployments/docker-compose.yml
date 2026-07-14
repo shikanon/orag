@@ -1,3 +1,23 @@
+x-orag-environment: &orag-environment
+  HOST: 0.0.0.0
+  PORT: 8080
+  PUBLIC_BASE_URL: http://localhost:8080
+  STORAGE_BACKEND: qdrant_postgres
+  DATABASE_URL: ${DOCKER_DATABASE_URL:-postgres://orag:orag@postgres:5432/orag?sslmode=disable}
+  QDRANT_HOST: ${DOCKER_QDRANT_HOST:-qdrant}
+  QDRANT_GRPC_PORT: ${DOCKER_QDRANT_GRPC_PORT:-6334}
+  QDRANT_AUTO_CREATE_COLLECTIONS: "true"
+  JWT_SECRET: ${JWT_SECRET:-orag-compose-demo-secret}
+  ADMIN_DEFAULT_USERNAME: ${ADMIN_DEFAULT_USERNAME:-admin}
+  ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-admin}
+  LLM_CHAT_PROVIDER: ${LLM_CHAT_PROVIDER:-mock}
+  LLM_EMBEDDING_PROVIDER: ${LLM_EMBEDDING_PROVIDER:-mock}
+  LLM_RERANK_PROVIDER: ${LLM_RERANK_PROVIDER:-mock}
+  LLM_MULTIMODAL_PROVIDER: ${LLM_MULTIMODAL_PROVIDER:-mock}
+  ALLOW_DETERMINISTIC_MOCK: "true"
+  OBJECT_STORAGE_PROVIDER: local
+  OBJECT_STORAGE_MOCK_UPLOAD: "true"
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -6,7 +26,7 @@ services:
       POSTGRES_PASSWORD: orag
       POSTGRES_DB: orag
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,40 +38,103 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.11.5
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:6333/readyz >/dev/null"]
+      test: ["CMD-SHELL", "bash -c ': </dev/tcp/127.0.0.1/6333'"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  orag-api:
+  migrate:
+    image: ${ORAG_API_IMAGE:-ghcr.io/shikanon/orag-api:dev}
     build:
       context: ..
       dockerfile: deployments/Dockerfile
-    env_file:
-      - path: ../.env
-        required: false
-    environment:
-      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgres://orag:orag@postgres:5432/orag?sslmode=disable}
-      QDRANT_HOST: ${DOCKER_QDRANT_HOST:-qdrant}
-      QDRANT_GRPC_PORT: ${DOCKER_QDRANT_GRPC_PORT:-6334}
-    ports:
-      - "8080:8080"
+      target: api
+      args:
+        VERSION: ${ORAG_VERSION:-dev}
+        COMMIT: ${ORAG_COMMIT:-unknown}
+        BUILD_TIME: ${ORAG_BUILD_TIME:-unknown}
+    entrypoint: ["oragctl", "migrate"]
+    environment: *orag-environment
     depends_on:
       postgres:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+    restart: "no"
+
+  orag-api:
+    image: ${ORAG_API_IMAGE:-ghcr.io/shikanon/orag-api:dev}
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+      target: api
+      args:
+        VERSION: ${ORAG_VERSION:-dev}
+        COMMIT: ${ORAG_COMMIT:-unknown}
+        BUILD_TIME: ${ORAG_BUILD_TIME:-unknown}
+    environment: *orag-environment
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/healthz >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/readyz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 18
+
+  orag-console:
+    image: ${ORAG_CONSOLE_IMAGE:-ghcr.io/shikanon/orag-console:dev}
+    build:
+      context: ..
+      dockerfile: deployments/console.Dockerfile
+      target: console
+      args:
+        VERSION: ${ORAG_VERSION:-dev}
+        COMMIT: ${ORAG_COMMIT:-unknown}
+        BUILD_TIME: ${ORAG_BUILD_TIME:-unknown}
+    ports:
+      - "3000:8080"
+    depends_on:
+      orag-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/console-healthz"]
       interval: 10s
       timeout: 3s
       retries: 12
 
+  demo:
+    profiles: ["demo"]
+    image: ${ORAG_API_IMAGE:-ghcr.io/shikanon/orag-api:dev}
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+      target: api
+      args:
+        VERSION: ${ORAG_VERSION:-dev}
+        COMMIT: ${ORAG_COMMIT:-unknown}
+        BUILD_TIME: ${ORAG_BUILD_TIME:-unknown}
+    entrypoint: ["orag-demo"]
+    environment:
+      ORAG_DEMO_BASE_URL: http://orag-api:8080
+      ORAG_DEMO_USERNAME: ${ADMIN_DEFAULT_USERNAME:-admin}
+      ORAG_DEMO_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-admin}
+      ORAG_DEMO_SUMMARY: /demo/walkthrough.json
+    volumes:
+      - demo_data:/demo
+    depends_on:
+      orag-api:
+        condition: service_healthy
+    restart: "no"
+
 volumes:
   postgres_data:
   qdrant_data:
+  demo_data:
