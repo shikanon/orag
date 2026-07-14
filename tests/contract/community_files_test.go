@@ -101,3 +101,26 @@ func TestGitHubTemplatesContainRequiredIntake(t *testing.T) {
 		}
 	}
 }
+
+func TestDependabotCoversCurrentDependencyEcosystems(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile("../../.github/dependabot.yml")
+	if err != nil {
+		t.Fatalf("read dependabot config: %v", err)
+	}
+	content := string(body)
+	for _, phrase := range []string{
+		`package-ecosystem: "gomod"`,
+		`package-ecosystem: "npm"`,
+		`package-ecosystem: "github-actions"`,
+		`package-ecosystem: "docker"`,
+		`directory: "/console"`,
+		`directory: "/deployments"`,
+		`interval: "weekly"`,
+	} {
+		if !strings.Contains(content, phrase) {
+			t.Errorf("dependabot config missing %q", phrase)
+		}
+	}
+}
