@@ -18,6 +18,7 @@
   <a href="#core-features">Core Features</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="./docs/README.md">Docs</a> ·
+  <a href="./ROADMAP_EN.md">Roadmap</a> ·
   <a href="./api/openapi.yaml">OpenAPI</a>
 </p>
 
@@ -44,6 +45,7 @@ ORAG is a Go-native RAG service framework for building an end-to-end workflow ac
 - [Configuration](#configuration)
 - [Testing](#testing)
 - [Documentation](#documentation)
+- [Roadmap](./ROADMAP_EN.md)
 - [Project Scope](#project-scope)
 - [License](#license)
 
