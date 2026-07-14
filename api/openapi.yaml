@@ -121,6 +121,18 @@ paths:
             text/plain:
               schema:
                 type: string
+  /version:
+    get:
+      tags: [System]
+      operationId: version
+      x-orag-maturity: beta
+      responses:
+        "200":
+          description: Immutable build and release identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildInfo"
   /docs:
     get:
       tags: [System]
@@ -1420,6 +1432,19 @@ components:
       schema:
         type: string
   schemas:
+    BuildInfo:
+      type: object
+      required: [version, commit, build_time]
+      properties:
+        version:
+          type: string
+          example: v0.1.0-beta.1
+        commit:
+          type: string
+          example: 0123456789abcdef
+        build_time:
+          type: string
+          example: 2026-07-14T00:00:00Z
     Profile:
       type: string
       enum: [realtime, high_precision]
