@@ -29,6 +29,7 @@ x-orag-agent-capabilities:
       name: Ralph Loop
       description: Run or resume a bounded Ralph Loop verification workflow for an ORAG task/spec and return the verdict, artifacts, and trace identifier.
       status: planned
+      maturity: experimental
       source:
         kind: planned_http
         method: POST
@@ -77,6 +78,7 @@ paths:
     get:
       tags: [System]
       operationId: healthz
+      x-orag-maturity: experimental
       responses:
         "200":
           description: Process is alive.
@@ -93,6 +95,7 @@ paths:
     get:
       tags: [System]
       operationId: readyz
+      x-orag-maturity: experimental
       responses:
         "200":
           description: Service dependencies are ready.
@@ -110,6 +113,7 @@ paths:
     get:
       tags: [System]
       operationId: metrics
+      x-orag-maturity: experimental
       responses:
         "200":
           description: Prometheus text metrics.
@@ -121,6 +125,7 @@ paths:
     get:
       tags: [System]
       operationId: docs
+      x-orag-maturity: experimental
       responses:
         "200":
           description: Minimal API documentation landing page.
@@ -132,6 +137,7 @@ paths:
     post:
       tags: [Auth]
       operationId: login
+      x-orag-maturity: experimental
       requestBody:
         required: true
         content:
@@ -153,6 +159,7 @@ paths:
     get:
       tags: [KnowledgeBases]
       operationId: listKnowledgeBases
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       responses:
@@ -169,6 +176,7 @@ paths:
     post:
       tags: [KnowledgeBases]
       operationId: createKnowledgeBase
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       requestBody:
@@ -194,6 +202,7 @@ paths:
     get:
       tags: [KnowledgeBases]
       operationId: getKnowledgeBase
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -216,6 +225,7 @@ paths:
     delete:
       tags: [KnowledgeBases]
       operationId: deleteKnowledgeBase
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -233,6 +243,7 @@ paths:
     post:
       tags: [Ingestion]
       operationId: uploadDocument
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -267,6 +278,7 @@ paths:
     post:
       tags: [Ingestion]
       operationId: createUploadSession
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -296,6 +308,7 @@ paths:
     get:
       tags: [Ingestion]
       operationId: getUploadSession
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -314,6 +327,7 @@ paths:
     put:
       tags: [Ingestion]
       operationId: appendUploadChunk
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -352,6 +366,7 @@ paths:
     delete:
       tags: [Ingestion]
       operationId: cancelUploadSession
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -367,6 +382,7 @@ paths:
     post:
       tags: [Ingestion]
       operationId: completeUploadSession
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -388,6 +404,7 @@ paths:
     post:
       tags: [Ingestion]
       operationId: importDocument
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -417,6 +434,7 @@ paths:
     get:
       tags: [Ingestion]
       operationId: getIngestionJob
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -436,6 +454,7 @@ paths:
     post:
       tags: [Query]
       operationId: query
+      x-orag-maturity: experimental
       description: |
         Executes a RAG query. The response includes `trace_id`, which is the
         same request trace propagated through logs and persisted PostgreSQL
@@ -469,6 +488,7 @@ paths:
     post:
       tags: [Query]
       operationId: queryStream
+      x-orag-maturity: experimental
       description: |
         Server-Sent Events stream. Events are emitted as `trace`, `chunk`,
         `citations`, `done`, or `error`. The first `trace` event carries the
@@ -505,6 +525,7 @@ paths:
     get:
       tags: [Trace]
       operationId: listTraces
+      x-orag-maturity: experimental
       description: Lists persisted RAG traces for the current tenant.
       security:
         - bearerAuth: []
@@ -556,6 +577,7 @@ paths:
     get:
       tags: [Trace]
       operationId: traceStats
+      x-orag-maturity: experimental
       description: Returns node-level latency and error statistics for persisted RAG traces in the current tenant.
       security:
         - bearerAuth: []
@@ -607,6 +629,7 @@ paths:
     get:
       tags: [Trace]
       operationId: getTrace
+      x-orag-maturity: experimental
       description: Returns a persisted RAG trace and its node spans for the current tenant.
       security:
         - bearerAuth: []
@@ -629,6 +652,7 @@ paths:
     get:
       tags: [Projects]
       operationId: listProjects
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       responses:
@@ -645,6 +669,7 @@ paths:
     post:
       tags: [Projects]
       operationId: createProject
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       requestBody:
@@ -678,6 +703,7 @@ paths:
     get:
       tags: [Projects]
       operationId: getProject
+      x-orag-maturity: experimental
       description: Returns `404 project_not_found` when the project does not exist or belongs to another tenant.
       security:
         - bearerAuth: []
@@ -697,6 +723,7 @@ paths:
     patch:
       tags: [Projects]
       operationId: updateProject
+      x-orag-maturity: experimental
       description: Returns `404 project_not_found` when the project does not exist or belongs to another tenant.
       security:
         - bearerAuth: []
@@ -727,6 +754,7 @@ paths:
     get:
       tags: [Tutorials]
       operationId: listTutorials
+      x-orag-maturity: experimental
       description: Lists the latest immutable version of each system tutorial template.
       security:
         - bearerAuth: []
@@ -752,6 +780,7 @@ paths:
     get:
       tags: [Tutorials]
       operationId: getTutorial
+      x-orag-maturity: experimental
       description: Returns the latest immutable version, or `404 tutorial_not_found`.
       security:
         - bearerAuth: []
@@ -785,6 +814,7 @@ paths:
     get:
       tags: [Tutorials]
       operationId: getTutorialVersion
+      x-orag-maturity: experimental
       description: Returns an immutable template version. Missing versions return `404 tutorial_version_not_found`.
       security:
         - bearerAuth: []
@@ -805,6 +835,7 @@ paths:
     post:
       tags: [Evaluation]
       operationId: createDataset
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       requestBody:
@@ -828,6 +859,7 @@ paths:
     post:
       tags: [Evaluation]
       operationId: addDatasetItem
+      x-orag-maturity: experimental
       description: Returns `404 dataset_not_found` when the dataset does not exist or belongs to another tenant.
       security:
         - bearerAuth: []
@@ -856,6 +888,7 @@ paths:
     post:
       tags: [Evaluation]
       operationId: runEvaluation
+      x-orag-maturity: experimental
       description: Returns `404 dataset_not_found` when `dataset_id` does not exist or belongs to another tenant.
       security:
         - bearerAuth: []
@@ -884,6 +917,7 @@ paths:
     get:
       tags: [Evaluation]
       operationId: getEvaluation
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -920,6 +954,7 @@ paths:
     post:
       tags: [Evaluation]
       operationId: optimize
+      x-orag-maturity: experimental
       description: Returns `404 dataset_not_found` when `dataset_id` does not exist or belongs to another tenant.
       security:
         - bearerAuth: []
@@ -948,6 +983,7 @@ paths:
     get:
       tags: [Evaluation]
       operationId: getOptimization
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -969,6 +1005,7 @@ paths:
     post:
       tags: [Evaluation]
       operationId: cancelOptimization
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -1000,6 +1037,7 @@ paths:
     post:
       tags: [Evaluation]
       operationId: resumeOptimization
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -1029,6 +1067,7 @@ paths:
     get:
       tags: [OfflineKnowledge]
       operationId: listOfflineKnowledgeRuns
+      x-orag-maturity: experimental
       description: Lists offline knowledge mining runs for the current tenant.
       security:
         - bearerAuth: []
@@ -1063,6 +1102,7 @@ paths:
     post:
       tags: [OfflineKnowledge]
       operationId: createOfflineKnowledgeRun
+      x-orag-maturity: experimental
       description: Creates a tenant-scoped offline knowledge mining run for a historical query window.
       security:
         - bearerAuth: []
@@ -1099,6 +1139,7 @@ paths:
     post:
       tags: [OfflineKnowledge]
       operationId: triggerOfflineKnowledgeScheduler
+      x-orag-maturity: experimental
       description: |
         Manually triggers the real offline knowledge scheduler for its configured
         tenant/kb targets. Returns `503` when the scheduler is disabled,
@@ -1128,6 +1169,7 @@ paths:
     get:
       tags: [OfflineKnowledge]
       operationId: getOfflineKnowledgeRun
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -1151,6 +1193,7 @@ paths:
     post:
       tags: [OfflineKnowledge]
       operationId: executeOfflineKnowledgeRun
+      x-orag-maturity: experimental
       description: |
         Executes an existing `pending` or `failed` offline knowledge run with
         real history extraction, question clustering, recall replay, Codex
@@ -1182,6 +1225,7 @@ paths:
     get:
       tags: [OfflineKnowledge]
       operationId: listOfflineKnowledgeQuestions
+      x-orag-maturity: experimental
       description: Lists question clusters produced by an offline knowledge run.
       security:
         - bearerAuth: []
@@ -1214,6 +1258,7 @@ paths:
     get:
       tags: [OfflineKnowledge]
       operationId: listOptimizationItems
+      x-orag-maturity: experimental
       description: Lists offline knowledge optimization items for review, shadow enablement, publishing, or revalidation.
       security:
         - bearerAuth: []
@@ -1257,6 +1302,7 @@ paths:
     get:
       tags: [OfflineKnowledge]
       operationId: getOptimizationItem
+      x-orag-maturity: experimental
       security:
         - bearerAuth: []
       parameters:
@@ -1278,6 +1324,7 @@ paths:
     post:
       tags: [OfflineKnowledge]
       operationId: actOnOptimizationItem
+      x-orag-maturity: experimental
       description: |
         Applies a workflow action to an optimization item. Supported actions are
         `verify`, `reject`, `enable-shadow`, `publish`, `disable`,
@@ -1318,6 +1365,7 @@ paths:
     post:
       tags: [OfflineKnowledge]
       operationId: bulkRevalidateOptimizationItems
+      x-orag-maturity: experimental
       description: Revalidates stale optimization items that match optional source filters.
       security:
         - bearerAuth: []
