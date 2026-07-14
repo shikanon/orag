@@ -88,6 +88,10 @@ func wrapError(operation, resource, traceID string, err error) error {
 	return &Error{Code: code, Operation: operation, Resource: resource, TraceID: traceID, Retryable: retryable, Err: err}
 }
 
+func newError(code Code, operation, resource, traceID string, retryable bool, err error) error {
+	return &Error{Code: code, Operation: operation, Resource: resource, TraceID: traceID, Retryable: retryable, Err: err}
+}
+
 func sentinelForCode(code Code) error {
 	switch code {
 	case CodeInvalidArgument:
