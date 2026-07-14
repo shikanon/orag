@@ -26,6 +26,7 @@ func TestOpenAPI(t *testing.T) {
 		{http.MethodGet, "/readyz"},
 		{http.MethodGet, "/metrics"},
 		{http.MethodGet, "/docs"},
+		{http.MethodGet, "/openapi.yaml"},
 		{http.MethodPost, "/v1/auth/login"},
 		{http.MethodGet, "/v1/projects"},
 		{http.MethodPost, "/v1/projects"},
