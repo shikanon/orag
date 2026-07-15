@@ -4,6 +4,7 @@
 
 - [Project 资源归属迁移](project-ownership-migration.md)：说明 `000018` 的默认 Project 回填、验证与安全回滚边界。
 - [Reference server deployment](server-deployment.md)：在 `orag.tensorbytes.com` 上使用 GHCR 发布镜像部署 API、Console、迁移和依赖。
+- [Backup, restore, and disaster recovery](disaster-recovery.md)：PostgreSQL 与 Qdrant 的一致性备份、隔离恢复演练、校验和回滚流程。
 
 ## 运行依赖
 
