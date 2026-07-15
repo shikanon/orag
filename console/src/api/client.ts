@@ -18,6 +18,11 @@ export type CreateDatasetInput = components['schemas']['CreateDatasetRequest']
 export type CreateDatasetItemInput = components['schemas']['CreateDatasetItemRequest']
 export type RunEvaluationInput = components['schemas']['RunEvaluationRequest']
 export type EvaluationResult = components['schemas']['RunEvaluationResponse']
+export type Environment = components['schemas']['Environment']
+export type EnvironmentKind = Environment['kind']
+export type Release = components['schemas']['Release']
+export type PromoteReleaseInput = components['schemas']['PromoteReleaseRequest']
+export type RollbackReleaseInput = components['schemas']['RollbackReleaseRequest']
 
 export class ApiError extends Error {
   constructor(public readonly status: number) {
@@ -82,4 +87,11 @@ export const evaluationApi = {
   addDatasetItem: (datasetId: string, input: CreateDatasetItemInput) => request<components['schemas']['DatasetItem']>(`/v1/datasets/${encodeURIComponent(datasetId)}/items`, { method: 'POST', body: JSON.stringify(input) }),
   run: (input: RunEvaluationInput) => request<EvaluationResult>('/v1/evaluations', { method: 'POST', body: JSON.stringify(input) }),
   get: (evaluationId: string) => request<EvaluationResult>(`/v1/evaluations/${encodeURIComponent(evaluationId)}`),
+}
+
+export const releaseApi = {
+  environments: (projectId: string) => request<{ items: Environment[] }>(`/v1/projects/${encodeURIComponent(projectId)}/environments`),
+  list: (projectId: string) => request<{ items: Release[] }>(`/v1/projects/${encodeURIComponent(projectId)}/releases`),
+  promote: (projectId: string, input: PromoteReleaseInput) => request<Release>(`/v1/projects/${encodeURIComponent(projectId)}/releases:promote`, { method: 'POST', body: JSON.stringify(input) }),
+  rollback: (projectId: string, environment: string, input: RollbackReleaseInput) => request<Release>(`/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environment)}/rollback`, { method: 'POST', body: JSON.stringify(input) }),
 }

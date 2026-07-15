@@ -60,25 +60,27 @@ type Release struct {
 }
 
 type PromoteRequest struct {
-	ProjectID               string
-	SourceEnvironment       EnvironmentKind
-	TargetEnvironment       EnvironmentKind
-	TargetVersionID         string
-	ExpectedActiveVersionID string
-	Actor                   string
+	ProjectID               string          `json:"project_id,omitempty"`
+	SourceEnvironment       EnvironmentKind `json:"source_environment"`
+	TargetEnvironment       EnvironmentKind `json:"target_environment"`
+	TargetVersionID         string          `json:"target_version_id"`
+	ExpectedActiveVersionID string          `json:"expected_active_version_id,omitempty"`
+	Actor                   string          `json:"actor,omitempty"`
 }
 
 type RollbackRequest struct {
-	ProjectID               string
-	Environment             EnvironmentKind
-	TargetVersionID         string
-	ExpectedActiveVersionID string
-	Actor                   string
-	Reason                  string
+	ProjectID               string          `json:"project_id,omitempty"`
+	Environment             EnvironmentKind `json:"environment,omitempty"`
+	TargetVersionID         string          `json:"target_version_id"`
+	ExpectedActiveVersionID string          `json:"expected_active_version_id,omitempty"`
+	Actor                   string          `json:"actor,omitempty"`
+	Reason                  string          `json:"reason"`
 }
 
 type Repository interface {
+	Environments(ctx context.Context, projectID string) ([]Environment, error)
 	Environment(ctx context.Context, projectID string, kind EnvironmentKind) (Environment, error)
+	Releases(ctx context.Context, projectID string) ([]Release, error)
 	Version(ctx context.Context, projectID, versionID string) (Version, error)
 	Evidence(ctx context.Context, projectID, versionID string, environment EnvironmentKind) (Evidence, error)
 	PreviouslyValidated(ctx context.Context, projectID, versionID string, environment EnvironmentKind) (bool, error)

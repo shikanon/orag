@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shikanon/orag/internal/ingest/chunker"
@@ -51,6 +52,7 @@ type Service struct {
 	Jobs             JobStore
 	Uploads          UploadStore
 	MaxDocumentBytes int64
+	sourceLocks      sync.Map
 }
 
 type Request struct {
@@ -75,6 +77,11 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 			return Result{}, fmt.Errorf("%w: %s/%s", ErrKnowledgeBaseNotFound, req.TenantID, req.KnowledgeBaseID)
 		}
 	}
+	lockKey := req.TenantID + "\x00" + req.KnowledgeBaseID + "\x00" + req.SourceURI
+	lockValue, _ := s.sourceLocks.LoadOrStore(lockKey, &sync.Mutex{})
+	sourceLock := lockValue.(*sync.Mutex)
+	sourceLock.Lock()
+	defer sourceLock.Unlock()
 
 	now := time.Now().UTC()
 	job := Job{
