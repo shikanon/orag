@@ -30,6 +30,7 @@ export const server = setupServer(
   }),
   http.get('/v1/projects', () => HttpResponse.json({ projects })),
   http.get('/v1/projects/:projectId', ({ params }) => HttpResponse.json(projects.find((project) => project.id === params.projectId))),
+  http.get('/v1/projects/:projectId/pipelines', () => HttpResponse.json({ items: [] })),
   http.get('/v1/knowledge-bases', () => HttpResponse.json({ items: [] })),
   http.post('/v1/query', () => HttpResponse.json({ answer: 'Mock answer', citations: [], retrieved_chunks: [], trace_id: 'trace_mock', cache_status: 'bypass', profile: 'realtime', latency_ms: 1, created_at: '2026-07-11T00:00:00Z' })),
   http.get('/v1/traces/:traceId', ({ params }) => HttpResponse.json({ trace_id: params.traceId, tenant_id: 'tenant_a', profile: 'realtime', latency_ms: 1, created_at: '2026-07-11T00:00:00Z', has_error: false, error_count: 0, node_spans: [] })),
