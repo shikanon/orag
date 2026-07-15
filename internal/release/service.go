@@ -27,6 +27,9 @@ func (s *Service) Releases(ctx context.Context, projectID string) ([]Release, er
 func (s *Service) Versions(ctx context.Context, projectID string) ([]Version, error) {
 	return s.repo.Versions(ctx, projectID)
 }
+func (s *Service) Version(ctx context.Context, projectID, versionID string) (Version, error) {
+	return s.repo.Version(ctx, projectID, versionID)
+}
 func (s *Service) CreateVersion(ctx context.Context, version Version) error {
 	if version.ProjectID == "" || version.ID == "" || version.ContentHash == "" {
 		return fmt.Errorf("%w: project, id, and content hash are required", ErrInvalidTransition)

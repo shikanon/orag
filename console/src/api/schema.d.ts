@@ -579,6 +579,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/versions/{version_id}/evaluation-evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Derives append-only gate evidence for a pipeline version from a completed server-side evaluation run and immutable policy revision. */
+        post: operations["recordProjectEvaluationEvidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/versions": {
         parameters: {
             query?: never;
@@ -1265,6 +1285,49 @@ export interface components {
         };
         EvaluationPolicyListResponse: {
             items: components["schemas"]["EvaluationPolicy"][];
+        };
+        RecordEvaluationEvidenceRequest: {
+            policy_id: string;
+            evaluation_run_id: string;
+        };
+        EvaluationGateResult: {
+            metric: string;
+            /** @enum {string} */
+            comparator: "gte" | "lte";
+            /** Format: double */
+            threshold: number;
+            /** Format: double */
+            actual?: number;
+            present: boolean;
+            passed: boolean;
+        };
+        EvaluationFrozenInput: {
+            policy_id: string;
+            policy_version: number;
+            project_id: string;
+            dataset_id: string;
+            evaluation_run_id: string;
+            pipeline_version_id: string;
+            content_hash: string;
+            gates: components["schemas"]["EvaluationGate"][];
+            metrics: {
+                [key: string]: number;
+            };
+        };
+        EvaluationEvidence: {
+            id: string;
+            tenant_id: string;
+            project_id: string;
+            policy_id: string;
+            policy_version: number;
+            evaluation_run_id: string;
+            pipeline_version_id: string;
+            content_hash: string;
+            frozen_input: components["schemas"]["EvaluationFrozenInput"];
+            gate_results: components["schemas"]["EvaluationGateResult"][];
+            passed: boolean;
+            /** Format: date-time */
+            created_at: string;
         };
         Release: {
             id: string;
@@ -3804,6 +3867,37 @@ export interface operations {
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
+        };
+    };
+    recordProjectEvaluationEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordEvaluationEvidenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Server-derived immutable evaluation evidence. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationEvidence"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     listProjectPipelineVersions: {

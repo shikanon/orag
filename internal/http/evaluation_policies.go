@@ -3,12 +3,19 @@ package http
 import (
 	"context"
 	"errors"
+	"strings"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/evaluationpolicy"
 )
+
+type recordProjectEvaluationEvidenceRequest struct {
+	PolicyID        string `json:"policy_id"`
+	EvaluationRunID string `json:"evaluation_run_id"`
+}
 
 func (s *Server) listProjectEvaluationPolicies(ctx context.Context, c *app.RequestContext) {
 	projectID, principal, ok := releaseProjectRequest(c)
@@ -38,6 +45,49 @@ func (s *Server) createProjectEvaluationPolicy(ctx context.Context, c *app.Reque
 		return
 	}
 	c.JSON(consts.StatusCreated, item)
+}
+
+// recordProjectEvaluationEvidence derives immutable gate evidence from a
+// stored evaluation run. The client supplies only resource IDs; metric values
+// and pass/fail results always come from the server-side run and policy.
+func (s *Server) recordProjectEvaluationEvidence(ctx context.Context, c *app.RequestContext) {
+	projectID, principal, ok := releaseProjectRequest(c)
+	if !ok || !authorizeRequest(c, auth.ActionResourceWrite, principal.TenantID, projectID) {
+		return
+	}
+	var req recordProjectEvaluationEvidenceRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	policy, err := s.App.EvaluationPolicy.Get(ctx, principal.TenantID, projectID, strings.TrimSpace(req.PolicyID))
+	if err != nil {
+		writeEvaluationPolicyError(c, err)
+		return
+	}
+	run, found, err := s.App.Eval.GetInProject(ctx, principal.TenantID, projectID, strings.TrimSpace(req.EvaluationRunID))
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "evaluation_lookup_failed", "evaluation lookup failed")
+		return
+	}
+	if !found {
+		writeError(c, consts.StatusNotFound, "evaluation_not_found", "evaluation not found")
+		return
+	}
+	version, err := s.App.Release.Version(ctx, projectID, c.Param("version_id"))
+	if err != nil {
+		writeReleaseError(c, err)
+		return
+	}
+	evidence, err := evaluationpolicy.Freeze(policy, run, version.ID, version.ContentHash, time.Now().UTC())
+	if err != nil {
+		writeEvaluationPolicyError(c, err)
+		return
+	}
+	if err := s.App.EvaluationPolicy.RecordEvidence(ctx, evidence); err != nil {
+		writeEvaluationPolicyError(c, err)
+		return
+	}
+	c.JSON(consts.StatusCreated, evidence)
 }
 
 func writeEvaluationPolicyError(c *app.RequestContext, err error) {
