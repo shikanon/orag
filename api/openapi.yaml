@@ -891,6 +891,31 @@ paths:
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/environments/{environment}/binding:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: environment
+        in: path
+        required: true
+        schema: {type: string, enum: [development, staging, production]}
+    put:
+      tags: [Releases]
+      operationId: bindProjectEnvironment
+      x-orag-maturity: experimental
+      description: Stores an opaque server-side environment resource reference. The reference is write-only and never returned by this API.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/BindEnvironmentRequest"}}}
+      responses:
+        "200": {description: Environment binding state without the stored reference., content: {application/json: {schema: {$ref: "#/components/schemas/Environment"}}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
   /v1/pipeline-node-definitions:
     get:
       tags: [Pipelines]
@@ -2091,8 +2116,18 @@ components:
         project_id: {type: string}
         kind: {type: string, enum: [development, staging, production]}
         active_version_id: {type: string}
+        active_release_id: {type: string}
         revision: {type: integer, format: int64}
         bound: {type: boolean}
+    BindEnvironmentRequest:
+      type: object
+      required: [binding_ref]
+      properties:
+        binding_ref:
+          type: string
+          minLength: 1
+          writeOnly: true
+          description: Opaque server-side reference to the environment's resources or credentials. This value is never returned.
     EnvironmentListResponse:
       type: object
       required: [items]

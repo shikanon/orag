@@ -27,6 +27,29 @@ func TestServicePromoteRequiresEvidenceAndCAS(t *testing.T) {
 	}
 }
 
+func TestServiceBindRequiresReferenceAndMarksOnlySelectedEnvironment(t *testing.T) {
+	repo := newMemoryRepository()
+	for kind, environment := range repo.env {
+		environment.Bound = false
+		repo.env[kind] = environment
+	}
+	svc := NewService(repo)
+
+	if _, err := svc.Bind(context.Background(), "p1", Staging, " "); !errors.Is(err, ErrBindingInvalid) {
+		t.Fatalf("Bind() empty reference error = %v, want ErrBindingInvalid", err)
+	}
+	bound, err := svc.Bind(context.Background(), "p1", Staging, "deployment://staging")
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	if !bound.Bound || bound.Kind != Staging {
+		t.Fatalf("Bind() environment = %#v", bound)
+	}
+	if repo.env["development"].Bound || repo.env["production"].Bound {
+		t.Fatalf("Bind() changed unrelated environments: %#v", repo.env)
+	}
+}
+
 func TestServiceActivateDevelopmentRequiresEvidenceAndCAS(t *testing.T) {
 	repo := newMemoryRepository()
 	development := repo.env["development"]
@@ -172,6 +195,15 @@ func (r *memoryRepository) SaveEvidence(_ context.Context, evidence Evidence) er
 }
 func (r *memoryRepository) PreviouslyValidated(_ context.Context, _ string, id string, env EnvironmentKind) (bool, error) {
 	return r.validated[id+"/"+string(env)], nil
+}
+func (r *memoryRepository) Bind(_ context.Context, _ string, environment EnvironmentKind, _ string) error {
+	item, ok := r.env[string(environment)]
+	if !ok {
+		return ErrNotFound
+	}
+	item.Bound = true
+	r.env[string(environment)] = item
+	return nil
 }
 func (r *memoryRepository) Commit(_ context.Context, env Environment, rel Release) error {
 	r.env[string(env.Kind)] = env

@@ -27,6 +27,7 @@ var (
 	ErrRollbackTarget    = errors.New("invalid rollback target")
 	ErrNotFound          = errors.New("release resource not found")
 	ErrBindingMissing    = errors.New("release environment binding missing")
+	ErrBindingInvalid    = errors.New("invalid release environment binding")
 )
 
 type Environment struct {
@@ -111,5 +112,6 @@ type Repository interface {
 	Evidence(ctx context.Context, projectID, versionID string, environment EnvironmentKind) (Evidence, error)
 	SaveEvidence(ctx context.Context, evidence Evidence) error
 	PreviouslyValidated(ctx context.Context, projectID, versionID string, environment EnvironmentKind) (bool, error)
+	Bind(ctx context.Context, projectID string, environment EnvironmentKind, bindingRef string) error
 	Commit(ctx context.Context, environment Environment, release Release) error
 }

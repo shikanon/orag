@@ -36,6 +36,21 @@ func (s *Service) Version(ctx context.Context, projectID, versionID string) (Ver
 func (s *Service) Evidence(ctx context.Context, projectID, versionID string, environment EnvironmentKind) (Evidence, error) {
 	return s.repo.Evidence(ctx, projectID, versionID, environment)
 }
+
+// Bind stores an opaque, server-side resource reference for one project
+// environment. The reference is intentionally never included in Environment
+// responses or release records.
+func (s *Service) Bind(ctx context.Context, projectID string, environment EnvironmentKind, bindingRef string) (Environment, error) {
+	projectID = strings.TrimSpace(projectID)
+	bindingRef = strings.TrimSpace(bindingRef)
+	if projectID == "" || bindingRef == "" || (environment != Development && environment != Staging && environment != Production) {
+		return Environment{}, ErrBindingInvalid
+	}
+	if err := s.repo.Bind(ctx, projectID, environment, bindingRef); err != nil {
+		return Environment{}, err
+	}
+	return s.repo.Environment(ctx, projectID, environment)
+}
 func (s *Service) CreateVersion(ctx context.Context, version Version) error {
 	if version.ProjectID == "" || version.ID == "" || version.ContentHash == "" {
 		return fmt.Errorf("%w: project, id, and content hash are required", ErrInvalidTransition)

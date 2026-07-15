@@ -106,6 +106,19 @@ func (r *MemoryRepository) PreviouslyValidated(_ context.Context, projectID, id 
 	defer r.mu.RUnlock()
 	return r.validated[evidenceKey(r.projectID(projectID), id, env)], nil
 }
+func (r *MemoryRepository) Bind(_ context.Context, projectID string, environment EnvironmentKind, _ string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	projectID = r.ensureProjectLocked(projectID)
+	key := environmentKey(projectID, environment)
+	item, ok := r.envs[key]
+	if !ok {
+		return ErrNotFound
+	}
+	item.Bound = true
+	r.envs[key] = item
+	return nil
+}
 func (r *MemoryRepository) Commit(_ context.Context, environment Environment, record Release) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

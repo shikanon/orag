@@ -135,6 +135,25 @@ func (s *Server) promoteRelease(ctx context.Context, c *app.RequestContext) {
 	c.JSON(consts.StatusCreated, item)
 }
 
+func (s *Server) bindReleaseEnvironment(ctx context.Context, c *app.RequestContext) {
+	projectID, principal, ok := releaseProjectRequest(c)
+	if !ok || !authorizeRequest(c, auth.ActionResourceWrite, principal.TenantID, projectID) {
+		return
+	}
+	var req struct {
+		BindingRef string `json:"binding_ref"`
+	}
+	if !bindJSON(c, &req) {
+		return
+	}
+	item, err := s.App.Release.Bind(ctx, projectID, release.EnvironmentKind(c.Param("environment")), req.BindingRef)
+	if err != nil {
+		writeReleaseError(c, err)
+		return
+	}
+	c.JSON(consts.StatusOK, item)
+}
+
 func (s *Server) activateDevelopmentRelease(ctx context.Context, c *app.RequestContext) {
 	projectID, principal, ok := releaseProjectRequest(c)
 	if !ok || !authorizeRequest(c, auth.ActionResourceWrite, principal.TenantID, projectID) {
@@ -194,7 +213,7 @@ func writeReleaseError(c *app.RequestContext, err error) {
 		writeError(c, consts.StatusUnprocessableEntity, "release_gate_failed", err.Error())
 	case errors.Is(err, release.ErrBindingMissing):
 		writeError(c, consts.StatusUnprocessableEntity, "release_binding_missing", err.Error())
-	case errors.Is(err, release.ErrInvalidTransition), errors.Is(err, release.ErrRollbackTarget):
+	case errors.Is(err, release.ErrBindingInvalid), errors.Is(err, release.ErrInvalidTransition), errors.Is(err, release.ErrRollbackTarget):
 		writeError(c, consts.StatusBadRequest, "invalid_release_request", err.Error())
 	case errors.Is(err, release.ErrNotFound):
 		writeError(c, consts.StatusNotFound, "release_resource_not_found", err.Error())
