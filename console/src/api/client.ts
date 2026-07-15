@@ -31,6 +31,8 @@ export type Pipeline = components['schemas']['Pipeline']
 export type PipelineDraft = components['schemas']['PipelineDraft']
 export type PipelineDebugRequest = components['schemas']['PipelineDebugRequest']
 export type PipelineDebugResponse = components['schemas']['PipelineDebugResponse']
+export type CreatePipelineInput = components['schemas']['CreatePipelineRequest']
+export type SavePipelineDraftInput = components['schemas']['SavePipelineDraftRequest']
 
 export class ApiError extends Error {
   constructor(public readonly status: number) {
@@ -110,6 +112,8 @@ export const releaseApi = {
 export const pipelineApi = {
   nodeDefinitions: () => request<{ items: PipelineNodeDefinition[] }>('/v1/pipeline-node-definitions'),
   list: (projectId: string) => request<{ items: Pipeline[] }>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines`),
+  create: (projectId: string, input: CreatePipelineInput) => request<Pipeline>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines`, { method: 'POST', body: JSON.stringify(input) }),
   draft: (projectId: string, pipelineId: string) => request<PipelineDraft>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines/${encodeURIComponent(pipelineId)}/draft`),
+  saveDraft: (projectId: string, pipelineId: string, input: SavePipelineDraftInput) => request<PipelineDraft>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines/${encodeURIComponent(pipelineId)}/draft`, { method: 'PUT', body: JSON.stringify(input) }),
   debug: (projectId: string, input: PipelineDebugRequest) => request<PipelineDebugResponse>(`/v1/projects/${encodeURIComponent(projectId)}/query:debug`, { method: 'POST', body: JSON.stringify(input) }),
 }
