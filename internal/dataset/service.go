@@ -15,6 +15,7 @@ var ErrDatasetNotFound = errors.New("dataset not found")
 type Dataset struct {
 	ID        string    `json:"id"`
 	TenantID  string    `json:"tenant_id"`
+	ProjectID string    `json:"project_id,omitempty"`
 	Name      string    `json:"name"`
 	Kind      string    `json:"kind"`
 	Version   string    `json:"version"`
@@ -77,9 +78,14 @@ func NewService(repo ...Repository) *Service {
 }
 
 func (s *Service) Create(ctx context.Context, tenantID, name, kind string) (Dataset, error) {
+	return s.CreateInProject(ctx, tenantID, "", name, kind)
+}
+
+func (s *Service) CreateInProject(ctx context.Context, tenantID, projectID, name, kind string) (Dataset, error) {
 	ds := Dataset{
 		ID:        id.New("ds"),
 		TenantID:  tenantID,
+		ProjectID: projectID,
 		Name:      name,
 		Kind:      kind,
 		Version:   time.Now().UTC().Format("20060102150405"),

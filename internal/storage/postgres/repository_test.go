@@ -493,17 +493,32 @@ func TestRepositoryAbortActivationRollsBackOnError(t *testing.T) {
 	}
 }
 
-func TestRepositoryBootstrapDefaultsReturnsKnowledgeBaseWriteError(t *testing.T) {
-	want := errors.New("knowledge base insert failed")
-	queryer := &fakeKnowledgeBaseQueryer{execErrs: []error{nil, want}}
+func TestRepositoryBootstrapDefaultsReturnsEnvironmentWriteError(t *testing.T) {
+	want := errors.New("environment insert failed")
+	queryer := &fakeKnowledgeBaseQueryer{execErrs: []error{nil, nil, want}}
 	repo := &Repository{kbQueryer: queryer}
 
 	err := repo.BootstrapDefaults(context.Background(), "tenant_1", "kb_default")
 	if !errors.Is(err, want) {
 		t.Fatalf("BootstrapDefaults() error = %v, want %v", err, want)
 	}
-	if queryer.execCalls != 2 {
-		t.Fatalf("Exec calls = %d, want 2", queryer.execCalls)
+	if queryer.execCalls != 3 {
+		t.Fatalf("Exec calls = %d, want 3", queryer.execCalls)
+	}
+}
+
+func TestRepositoryBootstrapDefaultsCreatesProjectEnvironmentsBeforeKnowledgeBase(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{}
+	repo := &Repository{kbQueryer: queryer}
+
+	if err := repo.BootstrapDefaults(context.Background(), "tenant_1", "kb_default"); err != nil {
+		t.Fatal(err)
+	}
+	if queryer.execCalls != 6 {
+		t.Fatalf("Exec calls = %d, want tenant, project, three environments, and knowledge base", queryer.execCalls)
+	}
+	if !strings.Contains(queryer.execSQL, "INSERT INTO knowledge_bases") {
+		t.Fatalf("last bootstrap statement = %s, want knowledge base insert", queryer.execSQL)
 	}
 }
 
@@ -1786,6 +1801,7 @@ func knowledgeBaseRow(id string, createdAt time.Time) []any {
 	return []any{
 		id,
 		"tenant_1",
+		"prj_1",
 		"Docs",
 		"Description",
 		[]byte(`{"source":"test"}`),
@@ -1798,6 +1814,7 @@ func datasetRow(id string, createdAt time.Time) []any {
 	return []any{
 		id,
 		"tenant_1",
+		"prj_1",
 		"Golden",
 		"golden",
 		"20260629100000",

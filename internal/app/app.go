@@ -663,7 +663,16 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 	if cfg.Storage.Backend == "memory" {
 		store := kb.NewMemoryStore()
 		traceRepo := newMemoryTraceRepository()
+		projectRepo := newMemoryProjectRepository()
 		if err := bootstrapMemory(ctx, store, defaultTenant); err != nil {
+			return knowledgeBackend{}, err
+		}
+		now := time.Now().UTC()
+		if err := projectRepo.CreateWithEnvironments(ctx, project.Project{
+			ID: project.LegacyDefaultID(defaultTenant), TenantID: defaultTenant,
+			Name: "Legacy Default", Description: "Compatibility project for pre-project resources.",
+			CreatedAt: now, UpdatedAt: now,
+		}, project.LegacyDefaultEnvironments(defaultTenant, now)); err != nil {
 			return knowledgeBackend{}, err
 		}
 		return knowledgeBackend{
@@ -676,7 +685,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			traceStore:           traceRepo,
 			traceRepo:            traceRepo,
 			datasetRepo:          dataset.NewMemoryRepository(),
-			projectRepo:          newMemoryProjectRepository(),
+			projectRepo:          projectRepo,
 			apiKeyRepo:           auth.NewMemoryAPIKeyRepository(),
 			evalRepo:             eval.NewMemoryRepository(),
 			optimizerRepo:        optimizer.NewMemoryRepository(),
@@ -764,6 +773,7 @@ func bootstrapMemory(ctx context.Context, store *kb.MemoryStore, tenantID string
 	return store.PutKnowledgeBase(ctx, kb.KnowledgeBase{
 		ID:          "kb_default",
 		TenantID:    tenantID,
+		ProjectID:   project.LegacyDefaultID(tenantID),
 		Name:        "Default Knowledge Base",
 		Description: "默认知识库",
 		Metadata:    map[string]string{"created_by": "bootstrap"},

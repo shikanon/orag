@@ -350,6 +350,40 @@ func TestCreateKnowledgeBaseMemoryBackendReturnsCreated(t *testing.T) {
 	}
 }
 
+func TestKnowledgeBaseAndDatasetAcceptOwnedProject(t *testing.T) {
+	h, closeApp := newTestHertz(t)
+	defer closeApp()
+	token := loginToken(t, h)
+	projectID := project.LegacyDefaultID("tenant_default")
+
+	kbResponse := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"Project docs","project_id":"`+projectID+`"}`, token)
+	if kbResponse.Code != 201 {
+		t.Fatalf("knowledge base status=%d body=%s", kbResponse.Code, kbResponse.Body)
+	}
+	var knowledgeBase kb.KnowledgeBase
+	if err := json.Unmarshal([]byte(kbResponse.Body), &knowledgeBase); err != nil {
+		t.Fatal(err)
+	}
+	if knowledgeBase.ProjectID != projectID {
+		t.Fatalf("knowledge base project = %q, want %q", knowledgeBase.ProjectID, projectID)
+	}
+
+	datasetResponse := performJSON(h, "POST", "/v1/datasets", `{"name":"Project evaluation","kind":"golden","project_id":"`+projectID+`"}`, token)
+	if datasetResponse.Code != 201 {
+		t.Fatalf("dataset status=%d body=%s", datasetResponse.Code, datasetResponse.Body)
+	}
+	var createdDataset dataset.Dataset
+	if err := json.Unmarshal([]byte(datasetResponse.Body), &createdDataset); err != nil {
+		t.Fatal(err)
+	}
+	if createdDataset.ProjectID != projectID {
+		t.Fatalf("dataset project = %q, want %q", createdDataset.ProjectID, projectID)
+	}
+
+	missing := performJSONWithTrace(h, "POST", "/v1/knowledge-bases", `{"name":"Missing","project_id":"prj_missing"}`, token, "trace_kb_project_missing")
+	assertErrorResponse(t, missing, 404, "project_not_found", "trace_kb_project_missing")
+}
+
 func TestCreateKnowledgeBaseStorageError(t *testing.T) {
 	h, app, closeApp := newTestHertzWithApp(t)
 	defer closeApp()

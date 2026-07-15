@@ -218,6 +218,7 @@ func (s *Server) createKnowledgeBase(ctx context.Context, c *app.RequestContext)
 		Name        string            `json:"name"`
 		Description string            `json:"description"`
 		Metadata    map[string]string `json:"metadata"`
+		ProjectID   string            `json:"project_id,omitempty"`
 	}
 	if !bindJSON(c, &req) {
 		return
@@ -226,10 +227,17 @@ func (s *Server) createKnowledgeBase(ctx context.Context, c *app.RequestContext)
 		writeError(c, consts.StatusBadRequest, "invalid_request", "name is required")
 		return
 	}
+	if req.ProjectID != "" {
+		if _, err := s.App.Projects.Get(ctx, tenantID(c), req.ProjectID); err != nil {
+			writeAPIKeyProjectError(c, err)
+			return
+		}
+	}
 	now := time.Now().UTC()
 	item := kb.KnowledgeBase{
 		ID:          id.New("kb"),
 		TenantID:    tenantID(c),
+		ProjectID:   req.ProjectID,
 		Name:        req.Name,
 		Description: req.Description,
 		Metadata:    req.Metadata,
@@ -806,8 +814,9 @@ func parseTraceListFilter(c *app.RequestContext) (postgres.TraceListFilter, bool
 
 func (s *Server) createDataset(ctx context.Context, c *app.RequestContext) {
 	var req struct {
-		Name string `json:"name"`
-		Kind string `json:"kind"`
+		Name      string `json:"name"`
+		Kind      string `json:"kind"`
+		ProjectID string `json:"project_id,omitempty"`
 	}
 	if !bindJSON(c, &req) {
 		return
@@ -815,7 +824,13 @@ func (s *Server) createDataset(ctx context.Context, c *app.RequestContext) {
 	if req.Kind == "" {
 		req.Kind = "golden"
 	}
-	ds, err := s.App.Datasets.Create(ctx, tenantID(c), req.Name, req.Kind)
+	if req.ProjectID != "" {
+		if _, err := s.App.Projects.Get(ctx, tenantID(c), req.ProjectID); err != nil {
+			writeAPIKeyProjectError(c, err)
+			return
+		}
+	}
+	ds, err := s.App.Datasets.CreateInProject(ctx, tenantID(c), req.ProjectID, req.Name, req.Kind)
 	if err != nil {
 		writeError(c, consts.StatusInternalServerError, "dataset_create_failed", err.Error())
 		return

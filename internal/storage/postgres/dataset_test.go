@@ -94,7 +94,7 @@ func TestRepositoryDatasetItemsEnforcesTenant(t *testing.T) {
 		t.Fatal("DatasetItems() queried items after dataset tenant check failed")
 	}
 
-	db.row = fakeDatasetRow{values: []any{"ds_a", "tenant_a", "regression", "golden", "v1", time.Now().UTC()}}
+	db.row = fakeDatasetRow{values: []any{"ds_a", "tenant_a", "prj_a", "regression", "golden", "v1", time.Now().UTC()}}
 	db.rows = &fakePgxRows{rows: [][]any{
 		{"dsi_1", "ds_a", "q", "a", []byte(`["doc_1"]`), []byte(`[]`), "gold", 1.5, []byte(`["chunk_1"]`), []byte(`{"faithfulness":0.8}`)},
 	}}
@@ -127,7 +127,7 @@ func TestRepositoryDatasetItemsEnforcesTenant(t *testing.T) {
 func TestRepositoryDatasetItemsBySplitFiltersInSQL(t *testing.T) {
 	ctx := context.Background()
 	db := &fakeDatasetQueryer{
-		row: fakeDatasetRow{values: []any{"ds_a", "tenant_a", "regression", "golden", "v1", time.Now().UTC()}},
+		row: fakeDatasetRow{values: []any{"ds_a", "tenant_a", "prj_a", "regression", "golden", "v1", time.Now().UTC()}},
 		rows: &fakePgxRows{rows: [][]any{
 			{"dsi_1", "ds_a", "q", "a", []byte(`["doc_1"]`), []byte(`[]`), "holdout", 2.5, []byte(`[]`), []byte(`{}`)},
 		}},

@@ -10,19 +10,19 @@ import (
 
 func (r *Repository) CreateDataset(ctx context.Context, ds dataset.Dataset) (dataset.Dataset, error) {
 	_, err := r.datasetDB().Exec(ctx, `
-		INSERT INTO datasets(id, tenant_id, name, kind, version, created_at)
-		VALUES($1,$2,$3,$4,$5,$6)`,
-		ds.ID, ds.TenantID, ds.Name, ds.Kind, ds.Version, ds.CreatedAt)
+		INSERT INTO datasets(id, tenant_id, project_id, name, kind, version, created_at)
+		VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7)`,
+		ds.ID, ds.TenantID, ds.ProjectID, ds.Name, ds.Kind, ds.Version, ds.CreatedAt)
 	return ds, err
 }
 
 func (r *Repository) GetDataset(ctx context.Context, tenantID, id string) (dataset.Dataset, bool, error) {
 	row := r.datasetDB().QueryRow(ctx, `
-		SELECT id, tenant_id, name, kind, version, created_at
+		SELECT id, tenant_id, COALESCE(project_id,''), name, kind, version, created_at
 		FROM datasets
 		WHERE tenant_id=$1 AND id=$2`, tenantID, id)
 	var ds dataset.Dataset
-	if err := row.Scan(&ds.ID, &ds.TenantID, &ds.Name, &ds.Kind, &ds.Version, &ds.CreatedAt); err != nil {
+	if err := row.Scan(&ds.ID, &ds.TenantID, &ds.ProjectID, &ds.Name, &ds.Kind, &ds.Version, &ds.CreatedAt); err != nil {
 		if err == pgx.ErrNoRows {
 			return dataset.Dataset{}, false, nil
 		}
