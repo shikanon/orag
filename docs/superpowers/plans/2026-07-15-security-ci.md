@@ -19,7 +19,8 @@
 
 ### Task 3: Validate and publish
 
-- [ ] Validate workflow syntax and run applicable scanners and image builds locally.
+- [x] Validate workflow syntax and local scanners; build and scan both images on a GitHub-hosted runner when local Docker Hub access is unavailable.
 - [x] Record the security gates in project documentation, CHANGELOG, and both Roadmaps.
-- [ ] Push `codex/security-ci`, open a ready PR with `Closes #213`, and pass every remote check.
-- [ ] Add successful PR security contexts to protected `main`, squash merge, sync `main`, and clean this worktree/branch.
+- [x] Push `codex/security-ci`, open a ready PR with `Closes #213`, and pass every remote check.
+- [x] Add the successful PR security contexts to protected `main`.
+- [ ] Squash merge, verify the default-branch Scorecard run, sync `main`, and clean this worktree/branch.
