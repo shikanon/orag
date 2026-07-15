@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -177,7 +178,13 @@ type ObjectStorageConfig struct {
 }
 
 type TutorialConfig struct {
-	CatalogBaseURL string
+	CatalogBaseURL           string
+	MaxManifestBytes         int64
+	MaxObjectBytes           int64
+	HTTPTimeout              time.Duration
+	PrivateOutputDirectory   string
+	PrivateOutputPrefix      string
+	AllowInsecureCatalogHTTP bool
 }
 
 type ObservabilityConfig struct {
@@ -359,7 +366,13 @@ func Load() (Config, error) {
 			MockUpload:      getenvBool("OBJECT_STORAGE_MOCK_UPLOAD", true),
 		},
 		Tutorial: TutorialConfig{
-			CatalogBaseURL: getenv("TUTORIAL_CATALOG_BASE_URL", "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs"),
+			CatalogBaseURL:           getenv("TUTORIAL_CATALOG_BASE_URL", "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs"),
+			MaxManifestBytes:         int64(getenvInt("TUTORIAL_MAX_MANIFEST_BYTES", 4*1024*1024)),
+			MaxObjectBytes:           int64(getenvInt("TUTORIAL_MAX_OBJECT_BYTES", 32*1024*1024*1024)),
+			HTTPTimeout:              getenvDuration("TUTORIAL_HTTP_TIMEOUT", 2*time.Minute),
+			PrivateOutputDirectory:   getenv("TUTORIAL_PRIVATE_OUTPUT_DIR", "./.orag/tutorial-packs"),
+			PrivateOutputPrefix:      getenv("TUTORIAL_PRIVATE_OUTPUT_PREFIX", "tutorial-experiments"),
+			AllowInsecureCatalogHTTP: getenvBool("ORAG_TEST_MODE", false),
 		},
 		Observability: ObservabilityConfig{
 			OTLPEndpoint:      getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
@@ -519,6 +532,12 @@ func (c Config) Validate() error {
 	if c.RAG.GraphRetrieval.MaxEntitiesPerChunk <= 0 {
 		return errors.New("INGEST_GRAPH_MAX_ENTITIES_PER_CHUNK must be positive")
 	}
+	if err := c.Tutorial.Validate(); err != nil {
+		return err
+	}
+	if err := c.validateTutorialPrivateStore(); err != nil {
+		return err
+	}
 	if c.Observability.Trace.QueryMaxBytes < 0 {
 		return errors.New("TRACE_QUERY_MAX_BYTES must be non-negative")
 	}
@@ -532,6 +551,48 @@ func (c Config) Validate() error {
 		return fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+func (c TutorialConfig) Validate() error {
+	catalog, err := url.Parse(strings.TrimSpace(c.CatalogBaseURL))
+	if err != nil || catalog.Host == "" || catalog.User != nil || (catalog.Scheme != "https" && !(c.AllowInsecureCatalogHTTP && catalog.Scheme == "http")) {
+		return errors.New("TUTORIAL_CATALOG_BASE_URL must be an absolute HTTPS URL")
+	}
+	if c.MaxManifestBytes <= 0 {
+		return errors.New("TUTORIAL_MAX_MANIFEST_BYTES must be positive")
+	}
+	if c.MaxObjectBytes <= 0 || c.MaxObjectBytes < c.MaxManifestBytes {
+		return errors.New("TUTORIAL_MAX_OBJECT_BYTES must be positive and at least TUTORIAL_MAX_MANIFEST_BYTES")
+	}
+	if c.HTTPTimeout <= 0 {
+		return errors.New("TUTORIAL_HTTP_TIMEOUT must be positive")
+	}
+	if strings.TrimSpace(c.PrivateOutputDirectory) == "" {
+		return errors.New("TUTORIAL_PRIVATE_OUTPUT_DIR must not be empty")
+	}
+	prefix := strings.Trim(strings.TrimSpace(c.PrivateOutputPrefix), "/")
+	if prefix == "" || strings.Contains(prefix, "\\") || strings.Contains(prefix, "..") || strings.Contains(prefix, "/") {
+		return errors.New("TUTORIAL_PRIVATE_OUTPUT_PREFIX must be a single relative path component")
+	}
+	return nil
+}
+
+func (c Config) validateTutorialPrivateStore() error {
+	switch strings.ToLower(strings.TrimSpace(c.ObjectStorage.Provider)) {
+	case "local":
+		return nil
+	case "aliyun_oss":
+		if strings.TrimSpace(c.ObjectStorage.Endpoint) == "" || strings.TrimSpace(c.ObjectStorage.Bucket) == "" || strings.TrimSpace(c.ObjectStorage.AccessKeyID) == "" || strings.TrimSpace(c.ObjectStorage.AccessKeySecret) == "" {
+			return errors.New("OBJECT_STORAGE_ENDPOINT, OBJECT_STORAGE_BUCKET_NAME, OBJECT_STORAGE_ACCESS_KEY_ID, and OBJECT_STORAGE_ACCESS_KEY_SECRET are required when OBJECT_STORAGE_PROVIDER=aliyun_oss")
+		}
+		catalog, _ := url.Parse(c.Tutorial.CatalogBaseURL)
+		if strings.HasPrefix(catalog.Host, strings.TrimSpace(c.ObjectStorage.Bucket)+".") {
+			return errors.New("OBJECT_STORAGE_BUCKET_NAME must not be the public tutorial catalog bucket")
+		}
+		return nil
+	default:
+		return errors.New("OBJECT_STORAGE_PROVIDER must be local or aliyun_oss for tutorial Pack installation")
+	}
 }
 
 func (c OfflineKnowledgeOrganizerConfig) Validate() error {

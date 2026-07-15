@@ -31,6 +31,40 @@ func TestLoadTutorialCatalogBaseURLOverride(t *testing.T) {
 	}
 }
 
+func TestTutorialConfigRejectsInsecureCatalogOutsideTestMode(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "test-key")
+	t.Setenv("TUTORIAL_CATALOG_BASE_URL", "http://example.test/packs")
+	t.Setenv("ORAG_TEST_MODE", "false")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "TUTORIAL_CATALOG_BASE_URL") {
+		t.Fatalf("Load() error = %v, want secure catalog URL error", err)
+	}
+}
+
+func TestTutorialConfigAllowsFixtureCatalogOnlyInTestMode(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "test-key")
+	t.Setenv("TUTORIAL_CATALOG_BASE_URL", "http://127.0.0.1:9999/packs")
+	t.Setenv("ORAG_TEST_MODE", "true")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Tutorial.AllowInsecureCatalogHTTP || cfg.Tutorial.MaxManifestBytes != 4*1024*1024 || cfg.Tutorial.MaxObjectBytes != 32*1024*1024*1024 {
+		t.Fatalf("tutorial config = %#v", cfg.Tutorial)
+	}
+}
+
+func TestTutorialPrivateStoreRequiresSeparateAliyunOutputBucket(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "test-key")
+	t.Setenv("OBJECT_STORAGE_PROVIDER", "aliyun_oss")
+	t.Setenv("OBJECT_STORAGE_ENDPOINT", "https://oss-cn-guangzhou.aliyuncs.com")
+	t.Setenv("OBJECT_STORAGE_BUCKET_NAME", "orag")
+	t.Setenv("OBJECT_STORAGE_ACCESS_KEY_ID", "id")
+	t.Setenv("OBJECT_STORAGE_ACCESS_KEY_SECRET", "secret")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "must not be the public tutorial catalog bucket") {
+		t.Fatalf("Load() error = %v, want public/private bucket separation error", err)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("PORT", "")
 	t.Setenv("ARK_BASE_URL", "")
@@ -362,6 +396,9 @@ func TestRedactedEnv(t *testing.T) {
 	t.Setenv("JWT_SECRET", "secret-jwt-value")
 	t.Setenv("API_KEY_PEPPER", "secret-api-key-pepper")
 	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/orag?sslmode=disable")
+	t.Setenv("OBJECT_STORAGE_ACCESS_KEY_ID", "tutorial-access-key")
+	t.Setenv("OBJECT_STORAGE_ACCESS_KEY_SECRET", "tutorial-access-secret")
+	t.Setenv("OBJECT_STORAGE_BUCKET_NAME", "tenant-private-tutorial-bucket")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -373,6 +410,13 @@ func TestRedactedEnv(t *testing.T) {
 	for _, key := range []string{"ARK_API_KEY", "ALIYUN_RERANK_API_KEY", "JWT_SECRET", "API_KEY_PEPPER", "DATABASE_URL"} {
 		if got := env[key]; got == "" || got == "abcdefghi" || got == "sk-test-secret" || got == "secret-jwt-value" || got == "secret-api-key-pepper" || got == "postgres://user:pass@localhost:5432/orag?sslmode=disable" {
 			t.Fatalf("expected %s to be redacted, got %q", key, got)
+		}
+	}
+	for _, value := range []string{"tutorial-access-key", "tutorial-access-secret", "tenant-private-tutorial-bucket"} {
+		for key, got := range env {
+			if got == value {
+				t.Fatalf("redacted env leaked tutorial storage value %q in %s", value, key)
+			}
 		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/shikanon/orag/internal/platform/id"
+	"github.com/shikanon/orag/internal/project"
 )
 
 var (
@@ -117,13 +118,35 @@ type CloneRepository interface {
 	GetJob(context.Context, string, string) (CloneJob, bool, error)
 	Retry(context.Context, string, string, CloneStage, time.Time) (CloneJob, bool, error)
 	GetExperiment(context.Context, string, string) (Experiment, bool, error)
+	Acquire(context.Context, string, string, time.Time) (CloneJob, bool, error)
+	Advance(context.Context, string, string, CloneStage, CloneStage, CloneStatus, time.Time) (CloneJob, bool, error)
+	Fail(context.Context, string, string, CloneStage, string, time.Time) (CloneJob, bool, error)
+	EnsureExperiment(context.Context, Experiment) error
+	SetExperimentStatus(context.Context, string, string, PackStatus, time.Time) error
+}
+
+type CloneProjectService interface {
+	CreateWithID(context.Context, string, string, project.CreateInput) (project.Project, error)
+	Get(context.Context, string, string) (project.Project, error)
 }
 
 type CloneService struct {
-	catalog *Catalog
-	repo    CloneRepository
-	now     func() time.Time
-	newID   func(string) string
+	catalog  *Catalog
+	repo     CloneRepository
+	projects CloneProjectService
+	reader   *PublicPackReader
+	private  PrivateStore
+	now      func() time.Time
+	newID    func(string) string
+}
+
+func (s *CloneService) ConfigureInstaller(projects CloneProjectService, reader *PublicPackReader, private PrivateStore) {
+	if s == nil {
+		return
+	}
+	s.projects = projects
+	s.reader = reader
+	s.private = private
 }
 
 func NewCloneService(catalog *Catalog, repo CloneRepository, now func() time.Time) *CloneService {
@@ -225,6 +248,144 @@ func (s *CloneService) GetExperiment(ctx context.Context, subject Subject, proje
 		return Experiment{}, ErrCloneExperimentAbsent
 	}
 	return experiment, nil
+}
+
+// Run advances a single durable job until it reaches a terminal state or loses
+// its compare-and-swap claim. It can therefore be safely called by a retry,
+// a startup sweep, or more than one application instance.
+func (s *CloneService) Run(ctx context.Context, subject Subject, jobID string) error {
+	if s == nil || s.repo == nil || s.projects == nil || s.reader == nil || s.private == nil {
+		return ErrPrivateStoreConfiguration
+	}
+	subject = normalizeSubject(subject)
+	for {
+		job, claimed, err := s.repo.Acquire(ctx, subject.TenantID, strings.TrimSpace(jobID), s.now().UTC())
+		if err != nil || !claimed {
+			return err
+		}
+		switch job.Stage {
+		case CloneStageCreateProject:
+			if err := s.ensureProjectAndExperiment(ctx, job); err != nil {
+				return s.fail(ctx, job, err)
+			}
+			if _, advanced, err := s.repo.Advance(ctx, job.TenantID, job.ID, CloneStageCreateProject, CloneStageValidateManifest, CloneStatusQueued, s.now().UTC()); err != nil || !advanced {
+				return err
+			}
+		case CloneStageValidateManifest:
+			if _, err := s.fetchManifest(ctx, job); err != nil {
+				return s.fail(ctx, job, err)
+			}
+			if _, advanced, err := s.repo.Advance(ctx, job.TenantID, job.ID, CloneStageValidateManifest, CloneStageDownloadPack, CloneStatusQueued, s.now().UTC()); err != nil || !advanced {
+				return err
+			}
+		case CloneStageDownloadPack:
+			manifest, err := s.fetchManifest(ctx, job)
+			if err == nil {
+				err = s.installPack(ctx, job, manifest)
+			}
+			if err != nil {
+				return s.fail(ctx, job, err)
+			}
+			if err := s.repo.SetExperimentStatus(ctx, job.TenantID, job.ProjectID, PackStatusInstalled, s.now().UTC()); err != nil {
+				return s.fail(ctx, job, err)
+			}
+			if _, advanced, err := s.repo.Advance(ctx, job.TenantID, job.ID, CloneStageDownloadPack, CloneStagePackInstalled, CloneStatusCompleted, s.now().UTC()); err != nil || !advanced {
+				return err
+			}
+			return nil
+		default:
+			return s.fail(ctx, job, fmt.Errorf("unsupported clone stage %q", job.Stage))
+		}
+	}
+}
+
+func (s *CloneService) ensureProjectAndExperiment(ctx context.Context, job CloneJob) error {
+	if _, err := s.projects.Get(ctx, job.TenantID, job.ProjectID); err != nil {
+		if !errors.Is(err, project.ErrNotFound) {
+			return err
+		}
+		if _, err := s.projects.CreateWithID(ctx, job.TenantID, job.ProjectID, project.CreateInput{Name: job.ProjectName, Description: job.ProjectDescription}); err != nil {
+			return err
+		}
+	}
+	now := s.now().UTC()
+	return s.repo.EnsureExperiment(ctx, Experiment{
+		ID: s.newID("texp"), TenantID: job.TenantID, ProjectID: job.ProjectID,
+		TemplateID: job.TemplateID, TemplateVersion: job.TemplateVersion, Tier: job.Tier,
+		PackStatus: PackStatusInstalling, CreatedAt: now, UpdatedAt: now,
+	})
+}
+
+func (s *CloneService) fetchManifest(ctx context.Context, job CloneJob) (Manifest, error) {
+	template, err := s.catalog.Get(job.TemplateID, job.TemplateVersion)
+	if err != nil {
+		return Manifest{}, err
+	}
+	pack, ok := templatePack(template, job.Tier)
+	if !ok {
+		return Manifest{}, ErrManifestInvalid
+	}
+	raw, err := s.reader.FetchManifest(ctx, pack.ManifestPath)
+	if err != nil {
+		return Manifest{}, err
+	}
+	return ParseManifest(raw, template, pack)
+}
+
+func (s *CloneService) installPack(ctx context.Context, job CloneJob, manifest Manifest) error {
+	template, err := s.catalog.Get(job.TemplateID, job.TemplateVersion)
+	if err != nil {
+		return err
+	}
+	pack, ok := templatePack(template, job.Tier)
+	if !ok {
+		return ErrManifestInvalid
+	}
+	for _, item := range manifest.Objects {
+		object, err := s.reader.FetchObject(ctx, pack.ManifestPath, item)
+		if err != nil {
+			return err
+		}
+		err = s.private.PutVerified(ctx, PrivateObject{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Object: object})
+		removeErr := object.Remove()
+		if err != nil {
+			return err
+		}
+		if removeErr != nil {
+			return removeErr
+		}
+	}
+	return nil
+}
+
+func (s *CloneService) fail(ctx context.Context, job CloneJob, cause error) error {
+	code := cloneFailureCode(cause)
+	_, _, transitionErr := s.repo.Fail(ctx, job.TenantID, job.ID, job.Stage, code, s.now().UTC())
+	if transitionErr != nil {
+		return transitionErr
+	}
+	return cause
+}
+
+func cloneFailureCode(err error) string {
+	switch {
+	case errors.Is(err, ErrPublicPackResponse):
+		return "public_pack_unavailable"
+	case errors.Is(err, ErrPublicPackChecksum):
+		return "object_checksum_mismatch"
+	case errors.Is(err, ErrPublicPackSize):
+		return "object_size_invalid"
+	case errors.Is(err, ErrPublicPackContentType):
+		return "object_content_type_invalid"
+	case errors.Is(err, ErrPrivateStoreConfiguration):
+		return "storage_not_configured"
+	case errors.Is(err, ErrPrivateStoreWrite):
+		return "private_storage_write_failed"
+	case errors.Is(err, ErrManifestInvalid):
+		return "manifest_invalid"
+	default:
+		return "clone_failed"
+	}
 }
 
 func normalizeSubject(subject Subject) Subject {

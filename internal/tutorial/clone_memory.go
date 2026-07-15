@@ -65,21 +65,74 @@ func (r *MemoryCloneRepository) GetExperiment(_ context.Context, tenantID, proje
 	return experiment, ok && experiment.TenantID == tenantID, nil
 }
 
-// Fail records a redacted worker failure for domain tests. The real worker uses
-// the PostgreSQL compare-and-swap transition introduced with the installer.
-func (r *MemoryCloneRepository) Fail(jobID string, stage CloneStage, code string, now time.Time) {
+func (r *MemoryCloneRepository) Acquire(_ context.Context, tenantID, jobID string, now time.Time) (CloneJob, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	job, ok := r.jobs[jobID]
-	if !ok {
-		return
+	if !ok || job.TenantID != tenantID || job.Status != CloneStatusQueued {
+		return CloneJob{}, false, nil
 	}
-	job.Stage = stage
+	job.Status = CloneStatusRunning
+	job.UpdatedAt = now
+	job.Events = append(job.Events, StageEvent{Stage: job.Stage, Outcome: "started", OccurredAt: now})
+	r.jobs[job.ID] = job
+	return cloneJob(job), true, nil
+}
+
+func (r *MemoryCloneRepository) Advance(_ context.Context, tenantID, jobID string, expected, next CloneStage, status CloneStatus, now time.Time) (CloneJob, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	job, ok := r.jobs[jobID]
+	if !ok || job.TenantID != tenantID || job.Status != CloneStatusRunning || job.Stage != expected {
+		return CloneJob{}, false, nil
+	}
+	job.Stage = next
+	job.Status = status
+	job.UpdatedAt = now
+	job.Events = append(job.Events, StageEvent{Stage: next, Outcome: "completed", OccurredAt: now})
+	r.jobs[job.ID] = job
+	return cloneJob(job), true, nil
+}
+
+func (r *MemoryCloneRepository) Fail(_ context.Context, tenantID, jobID string, stage CloneStage, code string, now time.Time) (CloneJob, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	job, ok := r.jobs[jobID]
+	if !ok || job.TenantID != tenantID || job.Status != CloneStatusRunning || job.Stage != stage {
+		return CloneJob{}, false, nil
+	}
 	job.Status = CloneStatusFailed
 	job.LastErrorCode = code
 	job.UpdatedAt = now
 	job.Events = append(job.Events, StageEvent{Stage: stage, Outcome: "failed", DetailCode: code, OccurredAt: now})
 	r.jobs[job.ID] = job
+	return cloneJob(job), true, nil
+}
+
+func (r *MemoryCloneRepository) EnsureExperiment(_ context.Context, experiment Experiment) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if existing, ok := r.experiments[experiment.ProjectID]; ok {
+		if existing.TenantID != experiment.TenantID || existing.TemplateID != experiment.TemplateID || existing.TemplateVersion != experiment.TemplateVersion || existing.Tier != experiment.Tier {
+			return ErrCloneExperimentAbsent
+		}
+		return nil
+	}
+	r.experiments[experiment.ProjectID] = experiment
+	return nil
+}
+
+func (r *MemoryCloneRepository) SetExperimentStatus(_ context.Context, tenantID, projectID string, status PackStatus, now time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	experiment, ok := r.experiments[projectID]
+	if !ok || experiment.TenantID != tenantID {
+		return ErrCloneExperimentAbsent
+	}
+	experiment.PackStatus = status
+	experiment.UpdatedAt = now
+	r.experiments[projectID] = experiment
+	return nil
 }
 
 func (r *MemoryCloneRepository) Jobs() []CloneJob {

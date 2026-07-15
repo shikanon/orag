@@ -141,6 +141,26 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	datasets := dataset.NewService(backend.datasetRepo)
 	projects := project.NewService(backend.projectRepo, func() time.Time { return time.Now().UTC() })
 	tutorialClones := tutorial.NewCloneService(tutorials, backend.tutorialCloneRepo, func() time.Time { return time.Now().UTC() })
+	publicPacks, err := tutorial.NewPublicPackReader(
+		cfg.Tutorial.CatalogBaseURL,
+		cfg.Tutorial.MaxManifestBytes,
+		cfg.Tutorial.MaxObjectBytes,
+		cfg.Tutorial.HTTPTimeout,
+		"",
+		httpclient.New(cfg.Tutorial.HTTPTimeout),
+	)
+	if err != nil {
+		return nil, err
+	}
+	privatePacks, err := tutorial.NewPrivateStore(tutorial.PrivateStoreConfig{
+		Provider: cfg.ObjectStorage.Provider, Endpoint: cfg.ObjectStorage.Endpoint, Bucket: cfg.ObjectStorage.Bucket,
+		AccessKeyID: cfg.ObjectStorage.AccessKeyID, AccessKeySecret: cfg.ObjectStorage.AccessKeySecret,
+		LocalDirectory: cfg.Tutorial.PrivateOutputDirectory, Prefix: cfg.Tutorial.PrivateOutputPrefix,
+	})
+	if err != nil {
+		return nil, err
+	}
+	tutorialClones.ConfigureInstaller(projects, publicPacks, privatePacks)
 	releaseSvc := release.NewService(backend.releaseRepo)
 	pipelineSvc := pipeline.NewService(backend.pipelineRepo, pipeline.BuiltinRegistry())
 	pipelineCompiler := pipeline.NewCompiler(ragSvc, pipeline.BuiltinRegistry())
