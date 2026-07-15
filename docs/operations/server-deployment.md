@@ -52,6 +52,8 @@ ORAG_VERSION=v0.1.0-beta.2
 ORAG_API_IMAGE=ghcr.io/shikanon/orag-api:v0.1.0-beta.2
 ORAG_CONSOLE_IMAGE=ghcr.io/shikanon/orag-console:v0.1.0-beta.2
 PUBLIC_BASE_URL=https://orag.tensorbytes.com
+POSTGRES_IMAGE=postgres:16-alpine
+QDRANT_IMAGE=qdrant/qdrant:v1.11.5
 JWT_SECRET=<random-long-secret>
 ADMIN_DEFAULT_USERNAME=<bootstrap-admin>
 ADMIN_DEFAULT_PASSWORD=<random-long-password>
@@ -65,6 +67,11 @@ ALLOW_DETERMINISTIC_MOCK=false
 
 Inject provider and storage credentials through this file or a secret manager.
 Never commit it, copy it into an image, or print it in CI logs.
+
+If the host cannot reach Docker Hub, replace `POSTGRES_IMAGE` and
+`QDRANT_IMAGE` with organization-approved mirrors before pulling. The API and
+Console images remain pinned to GHCR release tags (and should be recorded by
+digest after the pull).
 
 Download the exact Compose file from the release tag and verify its checksum
 through the GitHub release before starting the stack:
