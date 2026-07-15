@@ -13,6 +13,11 @@ export type KnowledgeBase = components['schemas']['KnowledgeBase']
 export type QueryRequest = components['schemas']['QueryRequest']
 export type QueryResponse = components['schemas']['QueryResponse']
 export type TraceRecord = components['schemas']['TraceRecord']
+export type Dataset = components['schemas']['Dataset']
+export type CreateDatasetInput = components['schemas']['CreateDatasetRequest']
+export type CreateDatasetItemInput = components['schemas']['CreateDatasetItemRequest']
+export type RunEvaluationInput = components['schemas']['RunEvaluationRequest']
+export type EvaluationResult = components['schemas']['RunEvaluationResponse']
 
 export class ApiError extends Error {
   constructor(public readonly status: number) {
@@ -70,4 +75,11 @@ export const knowledgeBaseApi = {
 export const queryApi = {
   run: (input: QueryRequest) => request<QueryResponse>('/v1/query', { method: 'POST', body: JSON.stringify(input) }),
   getTrace: (traceId: string) => request<TraceRecord>(`/v1/traces/${encodeURIComponent(traceId)}`),
+}
+
+export const evaluationApi = {
+  createDataset: (input: CreateDatasetInput) => request<Dataset>('/v1/datasets', { method: 'POST', body: JSON.stringify(input) }),
+  addDatasetItem: (datasetId: string, input: CreateDatasetItemInput) => request<components['schemas']['DatasetItem']>(`/v1/datasets/${encodeURIComponent(datasetId)}/items`, { method: 'POST', body: JSON.stringify(input) }),
+  run: (input: RunEvaluationInput) => request<EvaluationResult>('/v1/evaluations', { method: 'POST', body: JSON.stringify(input) }),
+  get: (evaluationId: string) => request<EvaluationResult>(`/v1/evaluations/${encodeURIComponent(evaluationId)}`),
 }
