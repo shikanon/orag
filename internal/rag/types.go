@@ -92,3 +92,16 @@ type QueryResponse struct {
 	LatencyMS       int64             `json:"latency_ms"`
 	CreatedAt       time.Time         `json:"created_at"`
 }
+
+// NormalizeQueryResponse keeps the JSON representation aligned with the API
+// contract: successful queries always expose collection fields as arrays, not
+// null. It also protects callers of older semantic-cache payloads.
+func NormalizeQueryResponse(response QueryResponse) QueryResponse {
+	if response.Citations == nil {
+		response.Citations = []Citation{}
+	}
+	if response.RetrievedChunks == nil {
+		response.RetrievedChunks = []kb.SearchResult{}
+	}
+	return response
+}

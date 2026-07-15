@@ -19,7 +19,7 @@ export function RAGStudio() {
   const [notice, setNotice] = useState('')
   const definitions = nodes.data?.items ?? []
   const definitionByType = useMemo(() => new Map(definitions.map((item) => [item.type, item])), [definitions])
-  const create = useMutation({ mutationFn: () => pipelineApi.create(projectId, { name: name.trim() }), onSuccess: (item) => { setPipelineId(item.id); setNotice(`已创建 ${item.id}`); client.invalidateQueries({ queryKey: ['pipelines', projectId] }) } })
+  const create = useMutation({ mutationFn: () => pipelineApi.create(projectId, { name: name.trim() }), onSuccess: (item) => { setPipelineId(item.id); setRevision(0); setEditorNodes([]); setNotice(`已创建 ${item.id}`); client.invalidateQueries({ queryKey: ['pipelines', projectId] }) } })
   const save = useMutation({ mutationFn: () => pipelineApi.saveDraft(projectId, selectedID, { expected_revision: revision, definition: ({ nodes: editorNodes, edges: editorNodes.slice(1).map((item, index) => ({ id: `edge_${index + 1}`, source_node_id: editorNodes[index].id, source_port: 'out', target_node_id: item.id, target_port: 'in' })) } as unknown as SavePipelineDraftInput['definition']) }), onSuccess: (item) => { setRevision(item.revision); setNotice(`已保存 revision ${item.revision}`); client.invalidateQueries({ queryKey: ['pipeline-draft', projectId, selectedID] }) } })
   const createVersion = useMutation({ mutationFn: () => pipelineApi.createVersionFromDraft(projectId, selectedID, { expected_revision: revision }), onSuccess: (item) => setNotice(`已创建不可变版本 ${item.version.id}`) })
 
