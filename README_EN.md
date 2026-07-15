@@ -44,6 +44,8 @@ ORAG is a Go-native RAG service framework for building an end-to-end workflow ac
 
 ORAG labels each public capability as `experimental`, `beta`, or `stable` to describe its compatibility commitment. Every HTTP operation carries its own OpenAPI `x-orag-maturity` label; the `v0.1.0-beta.2` distribution being Beta does not imply that every included capability has reached `beta`. Experimental capabilities require independent validation and an explicit fallback before real-world use.
 
+`v0.1.0-beta.1` was ORAG's first public Beta release; `v0.1.0-beta.2` is the current recommended distribution.
+
 See the [compatibility and capability maturity policy](./docs/compatibility.md) for the full definitions, deprecation rules, and migration expectations. HTTP operations expose the same maturity through OpenAPI `x-orag-maturity`.
 
 ## Table Of Contents
