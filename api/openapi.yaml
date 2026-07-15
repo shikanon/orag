@@ -877,6 +877,18 @@ paths:
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
+  /v1/pipeline-node-definitions:
+    get:
+      tags: [Pipelines]
+      operationId: listPipelineNodeDefinitions
+      x-orag-maturity: beta
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Server-owned node definitions allowed in RAG Studio.
+          content: {application/json: {schema: {$ref: "#/components/schemas/PipelineNodeDefinitionListResponse"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
   /v1/projects/{project_id}/releases:
     parameters:
       - name: project_id
@@ -1868,6 +1880,31 @@ components:
         project_id: {type: string}
         content_hash: {type: string}
         created_at: {type: string, format: date-time}
+    PipelineNodeDefinition:
+      type: object
+      required: [type, schema_version, config_schema]
+      properties:
+        type: {type: string}
+        display_name: {type: string}
+        category: {type: string}
+        description: {type: string}
+        schema_version: {type: integer}
+        config_schema: {type: object}
+        default_config: {type: object}
+        singleton: {type: boolean}
+        entry: {type: boolean}
+        produces_answer: {type: boolean}
+        allows_cycles: {type: boolean}
+        allowed_targets:
+          type: array
+          items: {type: string}
+    PipelineNodeDefinitionListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/PipelineNodeDefinition"}
     PipelineVersionListResponse:
       type: object
       required: [items]

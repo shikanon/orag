@@ -429,6 +429,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pipeline-node-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPipelineNodeDefinitions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/releases": {
         parameters: {
             query?: never;
@@ -993,6 +1009,23 @@ export interface components {
             content_hash: string;
             /** Format: date-time */
             created_at: string;
+        };
+        PipelineNodeDefinition: {
+            type: string;
+            display_name?: string;
+            category?: string;
+            description?: string;
+            schema_version: number;
+            config_schema: Record<string, never>;
+            default_config?: Record<string, never>;
+            singleton?: boolean;
+            entry?: boolean;
+            produces_answer?: boolean;
+            allows_cycles?: boolean;
+            allowed_targets?: string[];
+        };
+        PipelineNodeDefinitionListResponse: {
+            items: components["schemas"]["PipelineNodeDefinition"][];
         };
         PipelineVersionListResponse: {
             items: components["schemas"]["PipelineVersion"][];
@@ -3249,6 +3282,28 @@ export interface operations {
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
+        };
+    };
+    listPipelineNodeDefinitions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-owned node definitions allowed in RAG Studio. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineNodeDefinitionListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
         };
     };
     listProjectReleases: {

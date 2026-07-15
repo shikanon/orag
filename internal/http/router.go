@@ -71,6 +71,7 @@ func (s *Server) Hertz() *server.Hertz {
 	v1.GET("/projects/:project_id", s.getProject)
 	v1.PATCH("/projects/:project_id", s.updateProject)
 	v1.GET("/projects/:project_id/environments", s.listReleaseEnvironments)
+	v1.GET("/pipeline-node-definitions", s.listPipelineNodeDefinitions)
 	v1.GET("/projects/:project_id/releases", s.listReleases)
 	v1.GET("/projects/:project_id/versions", s.listPipelineVersions)
 	v1.POST("/projects/:project_id/versions", s.createPipelineVersion)
