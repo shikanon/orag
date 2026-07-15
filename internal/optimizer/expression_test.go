@@ -1,6 +1,7 @@
 package optimizer
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -61,5 +62,31 @@ func TestExpressionRejectsDivisionByZero(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "division by zero") {
 		t.Fatalf("Evaluate() error = %v, want division by zero", err)
+	}
+}
+
+func TestExpressionPreservesLargeFiniteLiteral(t *testing.T) {
+	literal := "18" + strings.Repeat("0", 306)
+	expr, err := CompileExpression(literal)
+	if err != nil {
+		t.Fatalf("CompileExpression() error = %v", err)
+	}
+	value, err := expr.Evaluate(nil)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		t.Fatalf("Evaluate() = %v, want finite value", value)
+	}
+}
+
+func TestExpressionRejectsNonFiniteResult(t *testing.T) {
+	literal := "18" + strings.Repeat("0", 306)
+	expr, err := CompileExpression(literal + " * " + literal)
+	if err != nil {
+		t.Fatalf("CompileExpression() error = %v", err)
+	}
+	if _, err := expr.Evaluate(nil); err == nil || !strings.Contains(err.Error(), "expression result must be finite") {
+		t.Fatalf("Evaluate() error = %v, want finite-result validation error", err)
 	}
 }
