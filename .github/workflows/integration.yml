@@ -1,0 +1,35 @@
+name: integration
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-qdrant:
+    name: postgres + qdrant
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -tags=stdjson,gjson
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26.5"
+      - run: go mod download
+      - name: Start integration dependencies
+        run: docker compose -f deployments/docker-compose.test.yml up -d --wait
+      - name: Run PostgreSQL and Qdrant integration tests
+        run: make test-integration
+      - name: Collect dependency logs
+        if: always()
+        run: docker compose -f deployments/docker-compose.test.yml logs --no-color
+      - name: Stop integration dependencies
+        if: always()
+        run: docker compose -f deployments/docker-compose.test.yml down -v
