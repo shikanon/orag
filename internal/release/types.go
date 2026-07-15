@@ -14,6 +14,10 @@ const (
 	Development EnvironmentKind = "development"
 	Staging     EnvironmentKind = "staging"
 	Production  EnvironmentKind = "production"
+
+	ActionActivate = "activate"
+	ActionPromote  = "promote"
+	ActionRollback = "rollback"
 )
 
 var (
@@ -57,7 +61,7 @@ type Evidence struct {
 type Release struct {
 	ID                string          `json:"id"`
 	ProjectID         string          `json:"project_id"`
-	SourceVersionID   string          `json:"source_version_id"`
+	SourceVersionID   string          `json:"source_version_id,omitempty"`
 	TargetVersionID   string          `json:"target_version_id"`
 	SourceEnvironment EnvironmentKind `json:"source_environment"`
 	TargetEnvironment EnvironmentKind `json:"target_environment"`
@@ -74,6 +78,15 @@ type PromoteRequest struct {
 	TargetVersionID         string          `json:"target_version_id"`
 	ExpectedActiveVersionID string          `json:"expected_active_version_id,omitempty"`
 	Actor                   string          `json:"actor,omitempty"`
+}
+
+// ActivateRequest makes a fully evaluated, immutable pipeline version the
+// active development version for its project.
+type ActivateRequest struct {
+	ProjectID               string `json:"project_id,omitempty"`
+	TargetVersionID         string `json:"target_version_id"`
+	ExpectedActiveVersionID string `json:"expected_active_version_id,omitempty"`
+	Actor                   string `json:"actor,omitempty"`
 }
 
 type RollbackRequest struct {

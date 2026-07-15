@@ -1180,6 +1180,31 @@ paths:
         "403": {$ref: "#/components/responses/Error"}
         "409": {$ref: "#/components/responses/Error"}
         "422": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/environments/development/activate:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Releases]
+      operationId: activateProjectDevelopment
+      x-orag-maturity: experimental
+      description: Activates an immutable pipeline version in development after server-derived development evidence passes. The fixed path prevents using activation to skip the ordered environment lifecycle.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ActivateDevelopmentRequest"}}}
+      responses:
+        "201":
+          description: Initial development activation audit record.
+          content: {application/json: {schema: {$ref: "#/components/schemas/Release"}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
   /v1/projects/{project_id}/environments/{environment}/rollback:
     parameters:
       - name: project_id
@@ -2315,7 +2340,7 @@ components:
         created_at: {type: string, format: date-time}
     Release:
       type: object
-      required: [id, project_id, source_version_id, target_version_id, source_environment, target_environment, action, actor, created_at]
+      required: [id, project_id, target_version_id, source_environment, target_environment, action, actor, created_at]
       properties:
         id: {type: string}
         project_id: {type: string}
@@ -2323,7 +2348,7 @@ components:
         target_version_id: {type: string}
         source_environment: {type: string, enum: [development, staging, production]}
         target_environment: {type: string, enum: [development, staging, production]}
-        action: {type: string, enum: [promote, rollback]}
+        action: {type: string, enum: [activate, promote, rollback]}
         actor: {type: string}
         reason: {type: string}
         created_at: {type: string, format: date-time}
@@ -2342,6 +2367,14 @@ components:
         target_environment: {type: string, enum: [staging, production]}
         target_version_id: {type: string}
         expected_active_version_id: {type: string}
+    ActivateDevelopmentRequest:
+      type: object
+      required: [target_version_id]
+      properties:
+        target_version_id: {type: string}
+        expected_active_version_id:
+          type: string
+          description: The development active version observed by the caller. Omit or use an empty string for the first activation.
     RollbackReleaseRequest:
       type: object
       required: [target_version_id, reason]

@@ -57,6 +57,49 @@ func (s *Service) Validate(ctx context.Context, projectID, versionID string, evi
 	return s.repo.SaveEvidence(ctx, evidence)
 }
 
+// ActivateDevelopment makes an evaluated immutable version active in
+// development. It deliberately has no environment input so callers cannot use
+// it to skip the ordered development-to-staging-to-production lifecycle.
+func (s *Service) ActivateDevelopment(ctx context.Context, req ActivateRequest) (Release, error) {
+	if req.ProjectID == "" || req.TargetVersionID == "" || req.Actor == "" {
+		return Release{}, fmt.Errorf("%w: project, version, and actor are required", ErrInvalidTransition)
+	}
+	environment, err := s.repo.Environment(ctx, req.ProjectID, Development)
+	if err != nil {
+		return Release{}, err
+	}
+	if environment.ActiveVersionID != req.ExpectedActiveVersionID {
+		return Release{}, fmt.Errorf("%w: expected active version %q, current %q", ErrConflict, req.ExpectedActiveVersionID, environment.ActiveVersionID)
+	}
+	version, err := s.repo.Version(ctx, req.ProjectID, req.TargetVersionID)
+	if err != nil {
+		return Release{}, err
+	}
+	if version.ProjectID != req.ProjectID {
+		return Release{}, ErrNotFound
+	}
+	if version.PipelineID == "" || len(version.Definition) == 0 {
+		return Release{}, fmt.Errorf("%w: a frozen pipeline definition is required", ErrGateFailed)
+	}
+	if !environment.Bound {
+		return Release{}, ErrBindingMissing
+	}
+	evidence, err := s.repo.Evidence(ctx, req.ProjectID, version.ID, Development)
+	if err != nil {
+		return Release{}, err
+	}
+	if !evidence.Passed || evidence.ContentHash != version.ContentHash {
+		return Release{}, fmt.Errorf("%w: successful %s evidence is required", ErrGateFailed, Development)
+	}
+	record := Release{ID: id.New("rel"), ProjectID: req.ProjectID, SourceVersionID: environment.ActiveVersionID, TargetVersionID: version.ID, SourceEnvironment: Development, TargetEnvironment: Development, Action: ActionActivate, Actor: req.Actor, CreatedAt: s.now()}
+	environment.ActiveVersionID = version.ID
+	environment.Revision++
+	if err := s.repo.Commit(ctx, environment, record); err != nil {
+		return Release{}, err
+	}
+	return record, nil
+}
+
 func (s *Service) Promote(ctx context.Context, req PromoteRequest) (Release, error) {
 	if req.ProjectID == "" || req.TargetVersionID == "" || req.Actor == "" {
 		return Release{}, fmt.Errorf("%w: project, version, and actor are required", ErrInvalidTransition)
@@ -98,7 +141,7 @@ func (s *Service) Promote(ctx context.Context, req PromoteRequest) (Release, err
 	if !evidence.Passed || evidence.ContentHash != version.ContentHash {
 		return Release{}, fmt.Errorf("%w: successful %s evidence is required", ErrGateFailed, req.TargetEnvironment)
 	}
-	record := Release{ID: id.New("rel"), ProjectID: req.ProjectID, SourceVersionID: source.ActiveVersionID, TargetVersionID: version.ID, SourceEnvironment: req.SourceEnvironment, TargetEnvironment: req.TargetEnvironment, Action: "promote", Actor: req.Actor, CreatedAt: s.now()}
+	record := Release{ID: id.New("rel"), ProjectID: req.ProjectID, SourceVersionID: source.ActiveVersionID, TargetVersionID: version.ID, SourceEnvironment: req.SourceEnvironment, TargetEnvironment: req.TargetEnvironment, Action: ActionPromote, Actor: req.Actor, CreatedAt: s.now()}
 	target.ActiveVersionID = version.ID
 	target.Revision++
 	if err := s.repo.Commit(ctx, target, record); err != nil {
@@ -138,7 +181,7 @@ func (s *Service) Rollback(ctx context.Context, req RollbackRequest) (Release, e
 	if !env.Bound {
 		return Release{}, ErrBindingMissing
 	}
-	record := Release{ID: id.New("rel"), ProjectID: req.ProjectID, SourceVersionID: env.ActiveVersionID, TargetVersionID: version.ID, SourceEnvironment: req.Environment, TargetEnvironment: req.Environment, Action: "rollback", Actor: req.Actor, Reason: strings.TrimSpace(req.Reason), CreatedAt: s.now()}
+	record := Release{ID: id.New("rel"), ProjectID: req.ProjectID, SourceVersionID: env.ActiveVersionID, TargetVersionID: version.ID, SourceEnvironment: req.Environment, TargetEnvironment: req.Environment, Action: ActionRollback, Actor: req.Actor, Reason: strings.TrimSpace(req.Reason), CreatedAt: s.now()}
 	env.ActiveVersionID = version.ID
 	env.Revision++
 	if err := s.repo.Commit(ctx, env, record); err != nil {
