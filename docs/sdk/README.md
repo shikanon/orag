@@ -135,6 +135,12 @@ make sdk-check
 
 That gate compiles external-package tests, scans exported documentation for `internal/*` type leaks, and runs tests plus `go vet` in a standalone consumer module.
 
+The standalone consumer resolves the published module directly at
+`github.com/shikanon/orag v0.1.0-beta.1`; it intentionally has no `replace`
+directive pointing back to this repository. This keeps the release check honest:
+it proves that a downstream module can download and use the tagged SDK without
+access to the source checkout.
+
 ## Known beta limitations
 
 - Model-judge, QAG, pairwise judge, holdout-gate, optimizer, and advanced ingestion controls remain HTTP/control-plane-first APIs.

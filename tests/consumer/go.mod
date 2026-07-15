@@ -2,7 +2,7 @@ module github.com/shikanon/orag-sdk-consumer
 
 go 1.26
 
-require github.com/shikanon/orag v0.0.0
+require github.com/shikanon/orag v0.1.0-beta.1
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -30,7 +30,6 @@ require (
 	github.com/pelletier/go-toml/v2 v2.0.9 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/qdrant/go-client v1.11.0 // indirect
-	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
@@ -47,5 +46,3 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/shikanon/orag => ../..
