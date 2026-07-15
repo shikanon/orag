@@ -104,8 +104,8 @@ func TestPostgresAPIKeyLifecycleAndTenantProjectBoundary(t *testing.T) {
 	if status, body := performIntegrationJSON(h, "POST", "/v1/datasets/"+storedDataset.ID+"/items", `{"query":"hello","ground_truth":"Insufficient context."}`, created.Secret); status != 201 {
 		t.Fatalf("HTTP project dataset item status=%d body=%s", status, body)
 	}
-	if status, body := performIntegrationJSON(h, "POST", "/v1/query", `{"knowledge_base_id":"`+knowledgeBase.ID+`","query":"hello"}`, created.Secret); status != 200 {
-		t.Fatalf("HTTP project query status=%d body=%s", status, body)
+	if status, body := performIntegrationJSON(h, "POST", "/v1/query", `{"knowledge_base_id":"`+knowledgeBase.ID+`","query":"hello"}`, created.Secret); status != 409 || !strings.Contains(body, `"code":"production_version_unavailable"`) {
+		t.Fatalf("HTTP project query without production version status=%d body=%s", status, body)
 	}
 	if status, body := performIntegrationJSON(h, "GET", "/v1/traces", "", created.Secret); status != 403 {
 		t.Fatalf("HTTP unmigrated trace route status=%d body=%s", status, body)
