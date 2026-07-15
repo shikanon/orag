@@ -114,7 +114,14 @@ func (s *Server) createPipelineVersionFromDraft(ctx context.Context, c *app.Requ
 	}
 	sum := sha256.Sum256(payload)
 	contentHash := hex.EncodeToString(sum[:])
-	version := release.Version{ID: id.New("pv"), ProjectID: projectID, ContentHash: contentHash, CreatedAt: time.Now().UTC()}
+	version := release.Version{
+		ID:          id.New("pv"),
+		ProjectID:   projectID,
+		PipelineID:  c.Param("pipeline_id"),
+		ContentHash: contentHash,
+		Definition:  append(json.RawMessage(nil), payload...),
+		CreatedAt:   time.Now().UTC(),
+	}
 	if err := s.App.Release.CreateVersion(ctx, version); err != nil {
 		writeReleaseError(c, err)
 		return

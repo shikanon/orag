@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -64,7 +65,7 @@ func (r *Repository) Releases(ctx context.Context, projectID string) ([]release.
 }
 
 func (r *Repository) Versions(ctx context.Context, projectID string) ([]release.Version, error) {
-	rows, err := r.Pool.Query(ctx, `SELECT id, project_id, content_hash, created_at FROM pipeline_versions WHERE project_id=$1 ORDER BY created_at DESC, id DESC`, projectID)
+	rows, err := r.Pool.Query(ctx, `SELECT id, project_id, COALESCE(pipeline_id,''), content_hash, definition, created_at FROM pipeline_versions WHERE project_id=$1 ORDER BY created_at DESC, id DESC`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -72,16 +73,18 @@ func (r *Repository) Versions(ctx context.Context, projectID string) ([]release.
 	items := make([]release.Version, 0)
 	for rows.Next() {
 		var item release.Version
-		if err := rows.Scan(&item.ID, &item.ProjectID, &item.ContentHash, &item.CreatedAt); err != nil {
+		var definition []byte
+		if err := rows.Scan(&item.ID, &item.ProjectID, &item.PipelineID, &item.ContentHash, &definition, &item.CreatedAt); err != nil {
 			return nil, err
 		}
+		item.Definition = append(json.RawMessage(nil), definition...)
 		items = append(items, item)
 	}
 	return items, rows.Err()
 }
 
 func (r *Repository) CreateVersion(ctx context.Context, version release.Version) error {
-	_, err := r.Pool.Exec(ctx, `INSERT INTO pipeline_versions(id, project_id, content_hash, created_at) VALUES($1,$2,$3,$4)`, version.ID, version.ProjectID, version.ContentHash, version.CreatedAt)
+	_, err := r.Pool.Exec(ctx, `INSERT INTO pipeline_versions(id, project_id, pipeline_id, content_hash, definition, created_at) VALUES($1,$2,NULLIF($3,''),$4,$5,$6)`, version.ID, version.ProjectID, version.PipelineID, version.ContentHash, version.Definition, version.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return release.ErrConflict
@@ -93,14 +96,16 @@ func (r *Repository) CreateVersion(ctx context.Context, version release.Version)
 
 func (r *Repository) Version(ctx context.Context, projectID, versionID string) (release.Version, error) {
 	var item release.Version
-	err := r.Pool.QueryRow(ctx, `SELECT id, project_id, content_hash, created_at FROM pipeline_versions WHERE project_id=$1 AND id=$2`, projectID, versionID).
-		Scan(&item.ID, &item.ProjectID, &item.ContentHash, &item.CreatedAt)
+	var definition []byte
+	err := r.Pool.QueryRow(ctx, `SELECT id, project_id, COALESCE(pipeline_id,''), content_hash, definition, created_at FROM pipeline_versions WHERE project_id=$1 AND id=$2`, projectID, versionID).
+		Scan(&item.ID, &item.ProjectID, &item.PipelineID, &item.ContentHash, &definition, &item.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return release.Version{}, release.ErrNotFound
 	}
 	if err != nil {
 		return release.Version{}, err
 	}
+	item.Definition = append(json.RawMessage(nil), definition...)
 	return item, nil
 }
 

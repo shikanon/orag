@@ -3,6 +3,7 @@ package release
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -34,10 +35,15 @@ type Environment struct {
 }
 
 type Version struct {
-	ID          string    `json:"id"`
-	ProjectID   string    `json:"project_id"`
-	ContentHash string    `json:"content_hash"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          string `json:"id"`
+	ProjectID   string `json:"project_id"`
+	PipelineID  string `json:"pipeline_id,omitempty"`
+	ContentHash string `json:"content_hash"`
+	// Definition is the canonical, immutable pipeline DAG captured with a
+	// draft-originated version. It is deliberately kept off the existing
+	// release-list response until a version-definition read API is introduced.
+	Definition json.RawMessage `json:"-"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 type Evidence struct {

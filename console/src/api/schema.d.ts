@@ -494,7 +494,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Freezes the requested draft revision into an immutable content-hashed pipeline version. */
+        /** @description Freezes the requested draft revision, including its complete DAG definition and source pipeline, into an immutable content-hashed pipeline version. */
         post: operations["createPipelineVersionFromDraft"];
         delete?: never;
         options?: never;
@@ -1122,6 +1122,8 @@ export interface components {
         PipelineVersion: {
             id: string;
             project_id: string;
+            /** @description Source pipeline when the version was frozen from a draft. Omitted for legacy manually recorded versions. */
+            pipeline_id?: string;
             content_hash: string;
             /** Format: date-time */
             created_at: string;
