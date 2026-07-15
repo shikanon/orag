@@ -52,6 +52,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["version"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/docs": {
         parameters: {
             query?: never;
@@ -60,6 +76,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["docs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/openapi.yaml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getOpenAPISpec"];
         put?: never;
         post?: never;
         delete?: never;
@@ -301,6 +333,43 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Lists machine credential metadata for the current tenant. Secrets and hashes are never returned. */
+        get: operations["listAPIKeys"];
+        put?: never;
+        /** @description Creates a machine credential. The full secret is returned exactly once in this response. */
+        post: operations["createAPIKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/api-keys/{api_key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                api_key_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Idempotently revokes an API key owned by the current tenant. */
+        delete: operations["revokeAPIKey"];
         options?: never;
         head?: never;
         patch?: never;
@@ -699,6 +768,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        BuildInfo: {
+            /** @example v0.1.0-beta.1 */
+            version: string;
+            /** @example 0123456789abcdef */
+            commit: string;
+            /** @example 2026-07-14T00:00:00Z */
+            build_time: string;
+        };
         /** @enum {string} */
         Profile: "realtime" | "high_precision";
         ErrorResponse: {
@@ -723,6 +800,48 @@ export interface components {
             /** @example Bearer */
             token_type: string;
             expires_in: number;
+        };
+        /** @enum {string} */
+        APIKeyRole: "tenant_admin" | "project_editor" | "project_viewer";
+        CreateAPIKeyRequest: {
+            name: string;
+            role: components["schemas"]["APIKeyRole"];
+            /** @description Required for project_editor and project_viewer. Optional project constraint for tenant_admin. */
+            project_id?: string;
+            /**
+             * Format: date-time
+             * @description Optional future expiry instant.
+             */
+            expires_at?: string;
+        };
+        APIKey: {
+            id: string;
+            tenant_id: string;
+            project_id?: string;
+            name: string;
+            /** @description Non-secret display prefix. It cannot authenticate a request. */
+            prefix: string;
+            role: components["schemas"]["APIKeyRole"];
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at?: string;
+            /** Format: date-time */
+            revoked_at?: string;
+            /** Format: date-time */
+            last_used_at?: string;
+        };
+        CreateAPIKeyResponse: {
+            api_key: components["schemas"]["APIKey"];
+            /**
+             * Format: password
+             * @description One-time API key secret. It is never available from list or get operations.
+             */
+            secret: string;
+        };
+        APIKeyListResponse: {
+            api_keys: components["schemas"]["APIKey"][];
         };
         CreateProjectRequest: {
             name: string;
@@ -848,6 +967,8 @@ export interface components {
             error?: string;
         };
         CreateKnowledgeBaseRequest: {
+            /** @description Owning project. Omission is a deprecated beta compatibility path. */
+            project_id?: string;
             name: string;
             description?: string;
             metadata?: {
@@ -857,6 +978,7 @@ export interface components {
         KnowledgeBase: {
             id: string;
             tenant_id: string;
+            project_id?: string;
             name: string;
             description: string;
             metadata?: {
@@ -1046,6 +1168,8 @@ export interface components {
             created_at: string;
         };
         CreateDatasetRequest: {
+            /** @description Owning project. Omission is a deprecated beta compatibility path. */
+            project_id?: string;
             name: string;
             /** @default golden */
             kind: string;
@@ -1053,6 +1177,7 @@ export interface components {
         Dataset: {
             id: string;
             tenant_id: string;
+            project_id?: string;
             name: string;
             kind: string;
             version: string;
@@ -2175,6 +2300,26 @@ export interface operations {
             };
         };
     };
+    version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable build and release identity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildInfo"];
+                };
+            };
+        };
+    };
     docs: {
         parameters: {
             query?: never;
@@ -2184,13 +2329,33 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Minimal API documentation landing page. */
+            /** @description Interactive API documentation powered by the canonical OpenAPI specification. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "text/html": string;
+                };
+            };
+        };
+    };
+    getOpenAPISpec: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Canonical OpenAPI 3 specification. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/yaml": string;
                 };
             };
         };
@@ -2690,6 +2855,82 @@ export interface operations {
             500: components["responses"]["Error"];
         };
     };
+    listAPIKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tenant API key metadata ordered by newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIKeyListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    createAPIKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAPIKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description API key metadata and its one-time secret. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateAPIKeyResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    revokeAPIKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                api_key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description API key revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
     listProjects: {
         parameters: {
             query?: never;
@@ -2709,6 +2950,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };
     };
@@ -2736,6 +2978,7 @@ export interface operations {
             };
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
             409: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };
@@ -2761,6 +3004,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };
@@ -2791,6 +3035,7 @@ export interface operations {
             };
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
             500: components["responses"]["Error"];
@@ -3096,6 +3341,7 @@ export interface operations {
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };
     };

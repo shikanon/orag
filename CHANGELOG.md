@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Added Console API Key management with project-aware roles, metadata-only listing, explicit revocation confirmation, and a one-time secret reveal that is cleared when closed.
 - Added public Go SDK project and API key lifecycle methods, including one-time secret creation, metadata-only listing, revocation, embedded authentication, and project ownership on knowledge bases and datasets.
 - Added a phased PostgreSQL/Qdrant ingestion protocol with real-store failure, replacement, legacy payload, cleanup-warning, and concurrency integration coverage.
 - Added regression coverage proving RAG graph spans reach trace persistence with contiguous sequence numbers and real UTC execution windows, without relying on store-time fallback normalization.
