@@ -137,6 +137,45 @@ func (r *Repository) UpdateOptimizationRun(ctx context.Context, run optimizer.Op
 	return err
 }
 
+func (r *Repository) CompareAndSwapOptimizationRun(ctx context.Context, run optimizer.OptimizationRun, expectedStatus optimizer.RunStatus) (bool, error) {
+	objective, err := json.Marshal(run.Objective)
+	if err != nil {
+		return false, err
+	}
+	searchSpace, err := json.Marshal(run.SearchSpace)
+	if err != nil {
+		return false, err
+	}
+	runner, err := json.Marshal(run.RunnerWithConfig())
+	if err != nil {
+		return false, err
+	}
+	checkpoint, err := json.Marshal(run.Checkpoint)
+	if err != nil {
+		return false, err
+	}
+	tokenUsage, err := json.Marshal(run.TokenUsage)
+	if err != nil {
+		return false, err
+	}
+	tag, err := r.evaluationQueryer().Exec(ctx, `
+		UPDATE optimization_runs
+		SET dataset_id=$3, knowledge_base_id=$4, objective=$5, search_space=$6, runner=$7,
+			status=$8, status_reason=$9, best_candidate_id=$10, holdout_candidate_id=$11,
+			sampling_strategy=$12, search_space_size=$13, sampled_candidate_count=$14,
+			completed_candidate_count=$15, checkpoint=$16, token_usage=$17, cost_usd=$18,
+			cost_budget_usd=$19, cancel_requested_at=$20, updated_at=$21
+		WHERE tenant_id=$1 AND id=$2 AND status=$22`,
+		run.TenantID, run.ID, run.DatasetID, run.KnowledgeBaseID, objective, searchSpace, runner, run.Status, run.StatusReason,
+		run.BestCandidateID, run.HoldoutCandidateID, run.SamplingStrategy,
+		run.SearchSpaceSize, run.SampledCandidateCount, run.CompletedCandidateCount,
+		checkpoint, tokenUsage, run.CostUSD, run.CostBudgetUSD, run.CancelRequestedAt, run.UpdatedAt, expectedStatus)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 func (r *Repository) CreateOptimizationCandidate(ctx context.Context, candidate optimizer.OptimizationCandidate) error {
 	return insertOptimizationCandidate(ctx, r.evaluationQueryer(), candidate)
 }
@@ -176,6 +215,27 @@ func (r *Repository) UpdateOptimizationCandidate(ctx context.Context, candidate 
 		candidate.ObjectiveScore, candidate.HoldoutScore, confidence, metrics, tokenUsage, candidate.CostUSD,
 		artifacts, namespaces, candidate.CleanupStatus, candidate.ExpiresAt, candidate.Error, candidate.UpdatedAt)
 	return err
+}
+
+func (r *Repository) CompareAndSwapOptimizationCandidate(ctx context.Context, candidate optimizer.OptimizationCandidate, expectedStatus optimizer.CandidateStatus) (bool, error) {
+	config, confidence, metrics, tokenUsage, artifacts, namespaces, err := encodeOptimizationCandidate(candidate)
+	if err != nil {
+		return false, err
+	}
+	tag, err := r.evaluationQueryer().Exec(ctx, `
+		UPDATE optimization_candidates
+		SET config=$3, status=$4, evaluation_run_id=$5, judge_run_id=$6,
+			objective_score=$7, holdout_score=$8, confidence=$9, metrics=$10,
+			token_usage=$11, cost_usd=$12, artifacts=$13, temp_namespaces=$14,
+			cleanup_status=$15, expires_at=$16, error=$17, updated_at=$18
+		WHERE optimization_run_id=$1 AND id=$2 AND status=$19`,
+		candidate.OptimizationRunID, candidate.ID, config, candidate.Status, candidate.EvaluationRunID, candidate.JudgeRunID,
+		candidate.ObjectiveScore, candidate.HoldoutScore, confidence, metrics, tokenUsage, candidate.CostUSD,
+		artifacts, namespaces, candidate.CleanupStatus, candidate.ExpiresAt, candidate.Error, candidate.UpdatedAt, expectedStatus)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 func (r *Repository) ListOptimizationCandidates(ctx context.Context, tenantID, runID string) ([]optimizer.OptimizationCandidate, error) {

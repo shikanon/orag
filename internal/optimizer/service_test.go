@@ -247,6 +247,9 @@ func TestServiceConcurrentResumeStartsOneRunner(t *testing.T) {
 			case err == nil:
 				accepted++
 			case apperrors.IsCode(err, apperrors.CodeConflict):
+				if !errors.Is(err, ErrOptimizationStateConflict) {
+					t.Fatalf("Resume() conflict = %v, want state conflict sentinel", err)
+				}
 				conflicts++
 			default:
 				t.Fatalf("Resume() error = %v, want nil or conflict", err)
@@ -358,6 +361,59 @@ func TestServiceResumeRejectsNonResumableStates(t *testing.T) {
 				t.Fatalf("stored status = %q, want unchanged %q", stored.Status, status)
 			}
 		})
+	}
+}
+
+func TestServiceCandidateClaimConflictPreventsRunnerCall(t *testing.T) {
+	baseRepo := newMemoryOptimizationRepository()
+	repo := &candidateConflictOptimizationRepository{memoryOptimizationRepository: baseRepo}
+	runner := &recordingCandidateRunner{}
+	service := &Service{Repository: repo, Runner: runner, DisableAutoStart: true}
+	req := basicSubmitRequest()
+	req.HoldoutSplit = ""
+
+	run, err := service.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	err = service.RunPending(context.Background(), "tenant_a", run.ID, req)
+	if !errors.Is(err, ErrOptimizationStateConflict) || !apperrors.IsCode(err, apperrors.CodeConflict) {
+		t.Fatalf("RunPending() error = %v, want candidate claim conflict", err)
+	}
+	if got := runner.callCount(); got != 0 {
+		t.Fatalf("runner calls = %d, want 0 after candidate claim conflict", got)
+	}
+}
+
+func TestServiceResumeRetriesFailedCandidate(t *testing.T) {
+	repo := newMemoryOptimizationRepository()
+	runner := &recordingCandidateRunner{err: errors.New("first attempt failed")}
+	service := &Service{Repository: repo, Runner: runner, DisableAutoStart: true}
+	req := basicSubmitRequest()
+	req.HoldoutSplit = ""
+
+	run, err := service.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	if err := service.RunPending(context.Background(), "tenant_a", run.ID, req); err == nil {
+		t.Fatal("first RunPending() error = nil, want runner failure")
+	}
+	runner.err = nil
+	if _, err := service.Resume(context.Background(), "tenant_a", run.ID, req); err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if err := service.RunPending(context.Background(), "tenant_a", run.ID, req); err != nil {
+		t.Fatalf("retry RunPending() error = %v", err)
+	}
+	status, _, _ := service.Get(context.Background(), "tenant_a", run.ID)
+	if status.Run.Status != RunStatusCompleted {
+		t.Fatalf("status after retry = %q, want completed", status.Run.Status)
+	}
+	for _, candidate := range status.Candidates {
+		if candidate.Error != "" {
+			t.Fatalf("candidate %s retained retry error %q", candidate.ID, candidate.Error)
+		}
 	}
 }
 
@@ -796,6 +852,14 @@ type readBarrierOptimizationRepository struct {
 	release   <-chan struct{}
 }
 
+type candidateConflictOptimizationRepository struct {
+	*memoryOptimizationRepository
+}
+
+func (r *candidateConflictOptimizationRepository) CompareAndSwapOptimizationCandidate(context.Context, OptimizationCandidate, CandidateStatus) (bool, error) {
+	return false, nil
+}
+
 func (r *readBarrierOptimizationRepository) GetOptimizationRun(ctx context.Context, tenantID, runID string) (OptimizationRun, bool, error) {
 	run, ok, err := r.memoryOptimizationRepository.GetOptimizationRun(ctx, tenantID, runID)
 	r.barrierMu.Lock()
@@ -861,6 +925,17 @@ func (r *memoryOptimizationRepository) UpdateOptimizationRun(_ context.Context, 
 	return nil
 }
 
+func (r *memoryOptimizationRepository) CompareAndSwapOptimizationRun(_ context.Context, run OptimizationRun, expectedStatus RunStatus) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, ok := r.runs[run.ID]
+	if !ok || current.TenantID != run.TenantID || current.Status != expectedStatus {
+		return false, nil
+	}
+	r.runs[run.ID] = run
+	return true, nil
+}
+
 func (r *memoryOptimizationRepository) CreateOptimizationCandidate(_ context.Context, candidate OptimizationCandidate) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -874,6 +949,17 @@ func (r *memoryOptimizationRepository) UpdateOptimizationCandidate(_ context.Con
 	defer r.mu.Unlock()
 	r.candidates[candidate.ID] = candidate
 	return nil
+}
+
+func (r *memoryOptimizationRepository) CompareAndSwapOptimizationCandidate(_ context.Context, candidate OptimizationCandidate, expectedStatus CandidateStatus) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, ok := r.candidates[candidate.ID]
+	if !ok || current.OptimizationRunID != candidate.OptimizationRunID || current.Status != expectedStatus {
+		return false, nil
+	}
+	r.candidates[candidate.ID] = candidate
+	return true, nil
 }
 
 func (r *memoryOptimizationRepository) ListOptimizationCandidates(_ context.Context, tenantID, runID string) ([]OptimizationCandidate, error) {
