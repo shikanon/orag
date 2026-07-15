@@ -717,7 +717,7 @@ git add CHANGELOG.md ROADMAP.md ROADMAP_EN.md docs/architecture/rag-pipeline.md 
 git commit -m "docs: record staged visibility guarantees"
 ~~~
 
-- [ ] **Step 6: Rebase and publish**
+- [x] **Step 6: Rebase and publish**
 
 ~~~bash
 git fetch origin
