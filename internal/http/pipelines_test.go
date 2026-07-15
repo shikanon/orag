@@ -94,3 +94,24 @@ func TestSaveDebugRunAsEvaluationCase(t *testing.T) {
 		t.Fatalf("save case status=%d body=%s", response.Code, response.Body)
 	}
 }
+
+func TestCreatePipelineVersionFromDraftFreezesRevision(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	token := issueToken(t, application, "tenant_a")
+	projectID := project.LegacyDefaultID("tenant_a")
+	created := performJSON(h, "POST", "/v1/projects/"+projectID+"/pipelines", `{"name":"Versioned"}`, token)
+	if created.Code != 201 {
+		t.Fatalf("pipeline status=%d body=%s", created.Code, created.Body)
+	}
+	var pipelineID string
+	if err := json.Unmarshal([]byte(created.Body), &struct {
+		ID *string `json:"id"`
+	}{ID: &pipelineID}); err != nil || pipelineID == "" {
+		t.Fatalf("pipeline body=%s", created.Body)
+	}
+	response := performJSON(h, "POST", "/v1/projects/"+projectID+"/pipelines/"+pipelineID+"/versions", `{"expected_revision":0}`, token)
+	if response.Code != 201 || !strings.Contains(response.Body, `"draft_revision":0`) || !strings.Contains(response.Body, `"content_hash"`) {
+		t.Fatalf("version status=%d body=%s", response.Code, response.Body)
+	}
+}

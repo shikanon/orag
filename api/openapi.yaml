@@ -949,6 +949,31 @@ paths:
         "200": {description: Saved draft., content: {application/json: {schema: {$ref: "#/components/schemas/PipelineDraft"}}}}
         "409": {$ref: "#/components/responses/Error"}
         "422": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/pipelines/{pipeline_id}/versions:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: pipeline_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Releases]
+      operationId: createPipelineVersionFromDraft
+      x-orag-maturity: beta
+      description: Freezes the requested draft revision into an immutable content-hashed pipeline version.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/CreatePipelineVersionFromDraftRequest"}}}
+      responses:
+        "201": {description: Immutable pipeline version., content: {application/json: {schema: {$ref: "#/components/schemas/PipelineVersionFromDraftResponse"}}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
   /v1/projects/{project_id}/query:debug:
     parameters:
       - name: project_id
@@ -2109,6 +2134,18 @@ components:
       properties:
         id: {type: string}
         content_hash: {type: string}
+    CreatePipelineVersionFromDraftRequest:
+      type: object
+      required: [expected_revision]
+      properties:
+        expected_revision: {type: integer, format: int64, minimum: 0}
+    PipelineVersionFromDraftResponse:
+      type: object
+      required: [version, draft_revision]
+      properties:
+        version:
+          $ref: "#/components/schemas/PipelineVersion"
+        draft_revision: {type: integer, format: int64}
     ValidatePipelineVersionRequest:
       type: object
       required: [environment, content_hash]

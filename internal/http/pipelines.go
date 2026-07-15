@@ -2,6 +2,9 @@ package http
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -11,6 +14,7 @@ import (
 	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/pipeline"
 	"github.com/shikanon/orag/internal/platform/id"
+	"github.com/shikanon/orag/internal/release"
 )
 
 type createPipelineRequest struct {
@@ -19,6 +23,9 @@ type createPipelineRequest struct {
 type savePipelineDraftRequest struct {
 	ExpectedRevision int64               `json:"expected_revision"`
 	Definition       pipeline.Definition `json:"definition"`
+}
+type createPipelineVersionFromDraftRequest struct {
+	ExpectedRevision int64 `json:"expected_revision"`
 }
 
 func (s *Server) listPipelines(ctx context.Context, c *app.RequestContext) {
@@ -76,6 +83,39 @@ func (s *Server) savePipelineDraft(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	c.JSON(consts.StatusOK, item)
+}
+
+func (s *Server) createPipelineVersionFromDraft(ctx context.Context, c *app.RequestContext) {
+	projectID, principal, ok := releaseProjectRequest(c)
+	if !ok || !authorizeRequest(c, auth.ActionResourceWrite, principal.TenantID, projectID) {
+		return
+	}
+	var req createPipelineVersionFromDraftRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	draft, err := s.App.Pipeline.GetDraft(ctx, projectID, c.Param("pipeline_id"))
+	if err != nil {
+		writePipelineError(c, err)
+		return
+	}
+	if draft.Revision != req.ExpectedRevision {
+		writePipelineError(c, pipeline.ErrRevisionConflict)
+		return
+	}
+	payload, err := json.Marshal(draft.Definition)
+	if err != nil {
+		writePipelineError(c, err)
+		return
+	}
+	sum := sha256.Sum256(payload)
+	contentHash := hex.EncodeToString(sum[:])
+	version := release.Version{ID: id.New("pv"), ProjectID: projectID, ContentHash: contentHash, CreatedAt: time.Now().UTC()}
+	if err := s.App.Release.CreateVersion(ctx, version); err != nil {
+		writeReleaseError(c, err)
+		return
+	}
+	c.JSON(consts.StatusCreated, map[string]any{"version": version, "draft_revision": draft.Revision})
 }
 
 func writePipelineError(c *app.RequestContext, err error) {

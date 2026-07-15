@@ -33,6 +33,7 @@ export type PipelineDebugRequest = components['schemas']['PipelineDebugRequest']
 export type PipelineDebugResponse = components['schemas']['PipelineDebugResponse']
 export type CreatePipelineInput = components['schemas']['CreatePipelineRequest']
 export type SavePipelineDraftInput = components['schemas']['SavePipelineDraftRequest']
+export type CreatePipelineVersionFromDraftInput = components['schemas']['CreatePipelineVersionFromDraftRequest']
 
 export class ApiError extends Error {
   constructor(public readonly status: number) {
@@ -115,6 +116,7 @@ export const pipelineApi = {
   create: (projectId: string, input: CreatePipelineInput) => request<Pipeline>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines`, { method: 'POST', body: JSON.stringify(input) }),
   draft: (projectId: string, pipelineId: string) => request<PipelineDraft>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines/${encodeURIComponent(pipelineId)}/draft`),
   saveDraft: (projectId: string, pipelineId: string, input: SavePipelineDraftInput) => request<PipelineDraft>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines/${encodeURIComponent(pipelineId)}/draft`, { method: 'PUT', body: JSON.stringify(input) }),
+  createVersionFromDraft: (projectId: string, pipelineId: string, input: CreatePipelineVersionFromDraftInput) => request<{ version: PipelineVersion; draft_revision: number }>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines/${encodeURIComponent(pipelineId)}/versions`, { method: 'POST', body: JSON.stringify(input) }),
   debug: (projectId: string, input: PipelineDebugRequest) => request<PipelineDebugResponse>(`/v1/projects/${encodeURIComponent(projectId)}/query:debug`, { method: 'POST', body: JSON.stringify(input) }),
   saveCase: (projectId: string, runId: string, input: { dataset_id: string; query: string; ground_truth: string; expected_evidence?: string[] }) => request<{ run_id: string; item: components['schemas']['DatasetItem'] }>(`/v1/projects/${encodeURIComponent(projectId)}/debug-runs/${encodeURIComponent(runId)}/save-case`, { method: 'POST', body: JSON.stringify(input) }),
 }
