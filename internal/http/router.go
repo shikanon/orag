@@ -23,8 +23,10 @@ import (
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/offlineknowledge"
 	"github.com/shikanon/orag/internal/optimizer"
+	"github.com/shikanon/orag/internal/pipeline"
 	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/platform/id"
+	"github.com/shikanon/orag/internal/project"
 	"github.com/shikanon/orag/internal/rag"
 	"github.com/shikanon/orag/internal/storage/postgres"
 	"github.com/shikanon/orag/pkg/buildinfo"
@@ -706,7 +708,8 @@ func (s *Server) query(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	ragReq := req.ragRequest()
-	if _, ok := s.authorizedKnowledgeBase(ctx, c, ragReq.KnowledgeBaseID, auth.ActionResourceRead); !ok {
+	knowledgeBase, ok := s.authorizedKnowledgeBase(ctx, c, ragReq.KnowledgeBaseID, auth.ActionResourceRead)
+	if !ok {
 		return
 	}
 	start := time.Now()
@@ -714,8 +717,12 @@ func (s *Server) query(ctx context.Context, c *app.RequestContext) {
 	ctx = observability.WithTraceID(ctx, traceID)
 	ragReq.TenantID = tenantID(c)
 	ragReq.TraceID = traceID
-	resp, err := s.App.RAG.Query(ctx, ragReq)
+	ragReq.ProjectID = knowledgeBase.ProjectID
+	resp, err := s.queryProjectProduction(ctx, ragReq)
 	if err != nil {
+		if s.writeProjectQueryError(c, err) {
+			return
+		}
 		s.observeRAGError(ragReq.Profile, "query_failed", time.Since(start).Milliseconds())
 		writeError(c, consts.StatusInternalServerError, "query_failed", err.Error())
 		return
@@ -733,7 +740,8 @@ func (s *Server) queryStream(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	ragReq := req.ragRequest()
-	if _, ok := s.authorizedKnowledgeBase(ctx, c, ragReq.KnowledgeBaseID, auth.ActionResourceRead); !ok {
+	knowledgeBase, ok := s.authorizedKnowledgeBase(ctx, c, ragReq.KnowledgeBaseID, auth.ActionResourceRead)
+	if !ok {
 		return
 	}
 	start := time.Now()
@@ -741,10 +749,27 @@ func (s *Server) queryStream(ctx context.Context, c *app.RequestContext) {
 	ctx = observability.WithTraceID(ctx, traceID)
 	ragReq.TenantID = tenantID(c)
 	ragReq.TraceID = traceID
-	resp, err := s.App.RAG.Query(ctx, ragReq)
+	ragReq.ProjectID = knowledgeBase.ProjectID
+	resp, err := s.queryProjectProduction(ctx, ragReq)
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache")
 	if err != nil {
+		if errors.Is(err, pipeline.ErrProductionVersionUnavailable) {
+			c.Set("error_code", "production_version_unavailable")
+			s.observeRAGError(ragReq.Profile, "production_version_unavailable", time.Since(start).Milliseconds())
+			c.Response.SetStatusCode(consts.StatusConflict)
+			c.Response.Header.SetContentType("text/event-stream; charset=utf-8")
+			c.Response.SetBodyString(errorSSE("production_version_unavailable", "production has no active pipeline version", traceID))
+			return
+		}
+		if errors.Is(err, pipeline.ErrFrozenVersionInvalid) {
+			c.Set("error_code", "production_version_invalid")
+			s.observeRAGError(ragReq.Profile, "production_version_invalid", time.Since(start).Milliseconds())
+			c.Response.SetStatusCode(consts.StatusConflict)
+			c.Response.Header.SetContentType("text/event-stream; charset=utf-8")
+			c.Response.SetBodyString(errorSSE("production_version_invalid", "production active pipeline version is invalid", traceID))
+			return
+		}
 		c.Set("error_code", "query_failed")
 		s.observeRAGError(ragReq.Profile, "query_failed", time.Since(start).Milliseconds())
 		c.Response.SetStatusCode(consts.StatusInternalServerError)
@@ -756,6 +781,29 @@ func (s *Server) queryStream(ctx context.Context, c *app.RequestContext) {
 	c.Response.SetStatusCode(consts.StatusOK)
 	c.Response.Header.SetContentType("text/event-stream; charset=utf-8")
 	c.Response.SetBodyString(querySSE(resp))
+}
+
+func (s *Server) queryProjectProduction(ctx context.Context, request rag.QueryRequest) (rag.QueryResponse, error) {
+	// kb_default belongs to the tenant's compatibility project. It keeps the
+	// documented no-key mock walkthrough working while project-owned knowledge
+	// bases are strictly pinned to their production active version.
+	if strings.TrimSpace(request.ProjectID) == "" || request.ProjectID == project.LegacyDefaultID(request.TenantID) || s.App.ProductionQuery == nil {
+		return s.App.RAG.Query(ctx, request)
+	}
+	return s.App.ProductionQuery.Query(ctx, request)
+}
+
+func (s *Server) writeProjectQueryError(c *app.RequestContext, err error) bool {
+	switch {
+	case errors.Is(err, pipeline.ErrProductionVersionUnavailable):
+		writeError(c, consts.StatusConflict, "production_version_unavailable", "production has no active pipeline version")
+		return true
+	case errors.Is(err, pipeline.ErrFrozenVersionInvalid):
+		writeError(c, consts.StatusConflict, "production_version_invalid", "production active pipeline version is invalid")
+		return true
+	default:
+		return false
+	}
 }
 
 func (req queryRequest) ragRequest() rag.QueryRequest {

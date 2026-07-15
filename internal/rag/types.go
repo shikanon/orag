@@ -1,10 +1,17 @@
 package rag
 
 import (
+	"context"
 	"time"
 
 	"github.com/shikanon/orag/internal/kb"
 )
+
+// QueryRunner is the server-owned execution boundary for an API query.
+// Services and released pipeline runners both satisfy it.
+type QueryRunner interface {
+	Query(context.Context, QueryRequest) (QueryResponse, error)
+}
 
 type Profile string
 
@@ -14,15 +21,25 @@ const (
 )
 
 type QueryRequest struct {
-	TenantID               string  `json:"-"`
-	TraceID                string  `json:"-"`
-	SemanticCacheNamespace string  `json:"-"`
-	ScopedShadowItemID     string  `json:"-"`
-	KnowledgeBaseID        string  `json:"knowledge_base_id"`
-	Query                  string  `json:"query"`
-	Profile                Profile `json:"profile,omitempty"`
-	SessionID              string  `json:"session_id,omitempty"`
-	TopK                   int     `json:"top_k,omitempty"`
+	TenantID               string `json:"-"`
+	TraceID                string `json:"-"`
+	SemanticCacheNamespace string `json:"-"`
+	ScopedShadowItemID     string `json:"-"`
+	// Execution lineage is resolved by the server from the knowledge base and
+	// active environment. It is deliberately not part of the public request
+	// contract, so callers cannot select an arbitrary released version.
+	ProjectID         string  `json:"-"`
+	PipelineID        string  `json:"-"`
+	PipelineVersionID string  `json:"-"`
+	ReleaseID         string  `json:"-"`
+	Environment       string  `json:"-"`
+	DatasetID         string  `json:"-"`
+	EvaluationRunID   string  `json:"-"`
+	KnowledgeBaseID   string  `json:"knowledge_base_id"`
+	Query             string  `json:"query"`
+	Profile           Profile `json:"profile,omitempty"`
+	SessionID         string  `json:"session_id,omitempty"`
+	TopK              int     `json:"top_k,omitempty"`
 }
 
 type Citation struct {

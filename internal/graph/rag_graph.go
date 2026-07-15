@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/shikanon/orag/internal/rag"
 )
 
+var ErrRunnableNotConfigured = errors.New("rag graph runnable is not configured")
+
 type RAGGraph struct {
 	Service    *rag.Service
 	TraceStore TraceStore
@@ -19,7 +22,32 @@ type RAGGraph struct {
 }
 
 type TraceStore interface {
-	StoreTrace(ctx context.Context, tenantID, kbID, traceID, query string, profile rag.Profile, latencyMS int64, answer string, retrievedChunks []string, spans []NodeSpan) error
+	StoreTrace(ctx context.Context, input TraceInput) error
+}
+
+// TraceInput captures the server-resolved execution lineage together with the
+// query result. The lineage fields are never accepted from the public query
+// request and therefore remain trustworthy for replay and release audits.
+type TraceInput struct {
+	TenantID        string
+	KnowledgeBaseID string
+	TraceID         string
+	Query           string
+	Profile         rag.Profile
+	LatencyMS       int64
+	Answer          string
+	RetrievedChunks []string
+	Spans           []NodeSpan
+
+	ProjectID         string
+	PipelineID        string
+	PipelineVersionID string
+	ReleaseID         string
+	Environment       string
+	DatasetID         string
+	EvaluationRunID   string
+	RequestedTopK     int
+	RequestedProfile  rag.Profile
 }
 
 type traceRecord struct {
@@ -108,6 +136,16 @@ func NewRAGGraph(ctx context.Context, svc *rag.Service) (*RAGGraph, error) {
 }
 
 func (g *RAGGraph) Invoke(ctx context.Context, req rag.QueryRequest) (rag.QueryResponse, error) {
+	return g.InvokeCompiled(ctx, g.runner, req)
+}
+
+// InvokeCompiled executes a compiled, server-owned pipeline definition with
+// the same trace and metric behavior as the default graph. Production release
+// execution uses this path so a frozen version cannot bypass trace lineage.
+func (g *RAGGraph) InvokeCompiled(ctx context.Context, runner compose.Runnable[State, State], req rag.QueryRequest) (rag.QueryResponse, error) {
+	if runner == nil {
+		return rag.QueryResponse{}, ErrRunnableNotConfigured
+	}
 	start := time.Now()
 	traceID := strings.TrimSpace(req.TraceID)
 	if traceID == "" {
@@ -117,7 +155,7 @@ func (g *RAGGraph) Invoke(ctx context.Context, req rag.QueryRequest) (rag.QueryR
 	ctx = observability.WithTraceID(ctx, traceID)
 	collector := &spanCollector{}
 	ctx = context.WithValue(ctx, spanCollectorKey{}, collector)
-	out, err := g.runner.Invoke(ctx, State{Request: req})
+	out, err := runner.Invoke(ctx, State{Request: req})
 	if err != nil {
 		_ = g.storeTrace(ctx, req, g.traceRecord(req, traceID, start, out, collector.snapshot(), true))
 		return rag.QueryResponse{}, err
@@ -172,7 +210,27 @@ func (g *RAGGraph) storeTrace(ctx context.Context, req rag.QueryRequest, rec tra
 		return nil
 	}
 	start := time.Now()
-	err := g.TraceStore.StoreTrace(ctx, req.TenantID, req.KnowledgeBaseID, rec.traceID, req.Query, rec.profile, rec.latencyMS, rec.answer, rec.retrievedChunks, rec.spans)
+	err := g.TraceStore.StoreTrace(ctx, TraceInput{
+		TenantID:        req.TenantID,
+		KnowledgeBaseID: req.KnowledgeBaseID,
+		TraceID:         rec.traceID,
+		Query:           req.Query,
+		Profile:         rec.profile,
+		LatencyMS:       rec.latencyMS,
+		Answer:          rec.answer,
+		RetrievedChunks: rec.retrievedChunks,
+		Spans:           rec.spans,
+
+		ProjectID:         req.ProjectID,
+		PipelineID:        req.PipelineID,
+		PipelineVersionID: req.PipelineVersionID,
+		ReleaseID:         req.ReleaseID,
+		Environment:       req.Environment,
+		DatasetID:         req.DatasetID,
+		EvaluationRunID:   req.EvaluationRunID,
+		RequestedTopK:     req.TopK,
+		RequestedProfile:  req.Profile,
+	})
 	if g.Metrics != nil {
 		outcome := "success"
 		if err != nil {

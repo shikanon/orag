@@ -96,7 +96,7 @@ func (s *Server) recordProjectEvaluationEvidence(ctx context.Context, c *app.Req
 		writeEvaluationPolicyError(c, err)
 		return
 	}
-	if err := s.App.Release.Validate(ctx, projectID, version.ID, release.Evidence{EnvironmentID: string(environment), Passed: evidence.Passed, ContentHash: version.ContentHash}); err != nil {
+	if err := s.App.Release.Validate(ctx, projectID, version.ID, release.Evidence{EnvironmentID: string(environment), Passed: evidence.Passed, ContentHash: version.ContentHash, DatasetID: evidence.FrozenInput.DatasetID, EvaluationRunID: evidence.EvaluationRunID}); err != nil {
 		writeReleaseError(c, err)
 		return
 	}

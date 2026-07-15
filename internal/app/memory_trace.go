@@ -11,7 +11,6 @@ import (
 	"time"
 
 	raggraph "github.com/shikanon/orag/internal/graph"
-	"github.com/shikanon/orag/internal/rag"
 	"github.com/shikanon/orag/internal/storage/postgres"
 )
 
@@ -29,39 +28,55 @@ func newMemoryTraceRepository() *memoryTraceRepository {
 	return &memoryTraceRepository{traces: map[string]postgres.TraceRecord{}}
 }
 
-func (r *memoryTraceRepository) StoreTrace(_ context.Context, tenantID, kbID, traceID, query string, profile rag.Profile, latencyMS int64, answer string, retrievedChunks []string, spans []raggraph.NodeSpan) error {
-	if traceID == "" {
+func (r *memoryTraceRepository) StoreTrace(_ context.Context, input raggraph.TraceInput) error {
+	if input.TraceID == "" {
 		return nil
 	}
 	now := time.Now().UTC()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	record, ok := r.traces[traceID]
+	record, ok := r.traces[input.TraceID]
 	if !ok {
 		record = postgres.TraceRecord{
-			ID:              traceID,
-			TenantID:        tenantID,
-			KBID:            kbID,
-			Query:           query,
-			Profile:         profile,
-			Answer:          answer,
-			RetrievedChunks: append([]string(nil), retrievedChunks...),
-			LatencyMS:       latencyMS,
-			CreatedAt:       now,
+			ID:                input.TraceID,
+			TenantID:          input.TenantID,
+			KBID:              input.KnowledgeBaseID,
+			ProjectID:         input.ProjectID,
+			PipelineID:        input.PipelineID,
+			PipelineVersionID: input.PipelineVersionID,
+			ReleaseID:         input.ReleaseID,
+			Environment:       input.Environment,
+			DatasetID:         input.DatasetID,
+			EvaluationRunID:   input.EvaluationRunID,
+			RetrievalParams:   postgres.TraceRetrievalParams{TopK: input.RequestedTopK, RequestedProfile: input.RequestedProfile},
+			Query:             input.Query,
+			Profile:           input.Profile,
+			Answer:            input.Answer,
+			RetrievedChunks:   append([]string(nil), input.RetrievedChunks...),
+			LatencyMS:         input.LatencyMS,
+			CreatedAt:         now,
 		}
 	}
-	record.KBID = kbID
-	record.Query = query
-	record.Answer = answer
-	record.RetrievedChunks = append([]string(nil), retrievedChunks...)
-	record.Profile = profile
-	record.LatencyMS = latencyMS
-	spanBySequence := make(map[int]postgres.TraceNodeSpan, len(record.NodeSpans)+len(spans))
+	record.KBID = input.KnowledgeBaseID
+	record.ProjectID = input.ProjectID
+	record.PipelineID = input.PipelineID
+	record.PipelineVersionID = input.PipelineVersionID
+	record.ReleaseID = input.ReleaseID
+	record.Environment = input.Environment
+	record.DatasetID = input.DatasetID
+	record.EvaluationRunID = input.EvaluationRunID
+	record.RetrievalParams = postgres.TraceRetrievalParams{TopK: input.RequestedTopK, RequestedProfile: input.RequestedProfile}
+	record.Query = input.Query
+	record.Answer = input.Answer
+	record.RetrievedChunks = append([]string(nil), input.RetrievedChunks...)
+	record.Profile = input.Profile
+	record.LatencyMS = input.LatencyMS
+	spanBySequence := make(map[int]postgres.TraceNodeSpan, len(record.NodeSpans)+len(input.Spans))
 	for _, span := range record.NodeSpans {
 		spanBySequence[span.Sequence] = span
 	}
-	for i, span := range spans {
+	for i, span := range input.Spans {
 		seq := span.Sequence
 		if seq <= 0 {
 			seq = i + 1
@@ -72,7 +87,7 @@ func (r *memoryTraceRepository) StoreTrace(_ context.Context, tenantID, kbID, tr
 			createdAt = existing.CreatedAt
 		}
 		spanBySequence[seq] = postgres.TraceNodeSpan{
-			ID:        memoryTraceStableSpanID(traceID, seq, span.NodeName),
+			ID:        memoryTraceStableSpanID(input.TraceID, seq, span.NodeName),
 			NodeName:  span.NodeName,
 			Sequence:  seq,
 			LatencyMS: span.LatencyMS,
@@ -84,7 +99,7 @@ func (r *memoryTraceRepository) StoreTrace(_ context.Context, tenantID, kbID, tr
 	}
 	record.NodeSpans = sortedMemoryTraceSpans(spanBySequence)
 	record.HasError, record.ErrorCount = memoryTraceErrorSummary(record.NodeSpans)
-	r.traces[traceID] = record
+	r.traces[input.TraceID] = record
 	return nil
 }
 

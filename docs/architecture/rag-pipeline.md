@@ -33,6 +33,14 @@ answer + citations + trace_id + cache_status + warnings
 
 一次请求只有一个 `trace_id`。HTTP trace middleware 会先读取调用方传入的 `X-Trace-ID`；如果没有传入，则生成新的请求级 trace ID，并写回响应头 `X-Trace-ID`。后续认证、错误响应、JSON 查询、SSE 查询、RAG service、Graph 节点、结构化日志和 PostgreSQL trace 存储都复用这个 ID。
 
+## 项目生产版本执行
+
+对于归属到普通项目的知识库，`POST /v1/query` 与 `POST /v1/query:stream` 不接受调用方指定的版本或 DAG。服务端按知识库的 `project_id` 读取 `production` 环境的 `active_version_id`，加载该版本冻结的 Pipeline 定义并编译执行。没有已激活版本时，JSON 与 SSE 都返回 `409 production_version_unavailable`；冻结定义损坏或不再可编译时返回 `409 production_version_invalid`。这使评测通过的发布版本成为生产查询的唯一执行来源。
+
+`kb_default` 所在的租户兼容项目是确定性 mock walkthrough 的保留入口，继续使用内置默认图；它不允许调用方绕过任何普通项目的 production version。新建项目必须经过 development → staging → production 的评测和发布链路后才能提供生产查询。
+
+每条 production trace 除原有请求与节点 spans 外，还记录服务端解析的 `project_id`、`pipeline_id`、`pipeline_version_id`、`release_id`、`environment`、`dataset_id`、`evaluation_run_id` 与请求的 `retrieval_params`。这些字段用于重放、回归比较和发布审计，不从公开请求体读取。
+
 RAG trace 的层级关系：
 
 ```text

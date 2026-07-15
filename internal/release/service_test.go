@@ -18,7 +18,7 @@ func TestServicePromoteRequiresEvidenceAndCAS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Promote() error = %v", err)
 	}
-	if release.Action != "promote" || repo.env["staging"].ActiveVersionID != "v1" {
+	if release.Action != "promote" || repo.env["staging"].ActiveVersionID != "v1" || repo.env["staging"].ActiveReleaseID != release.ID {
 		t.Fatalf("unexpected release or state: %#v", release)
 	}
 	_, err = svc.Promote(context.Background(), PromoteRequest{ProjectID: "p1", SourceEnvironment: Development, TargetEnvironment: Staging, TargetVersionID: "v1", ExpectedActiveVersionID: "stale", Actor: "alice"})
@@ -46,7 +46,7 @@ func TestServiceActivateDevelopmentRequiresEvidenceAndCAS(t *testing.T) {
 	if record.Action != "activate" || record.SourceVersionID != "" || record.SourceEnvironment != Development || record.TargetEnvironment != Development {
 		t.Fatalf("unexpected activation record: %#v", record)
 	}
-	if got := repo.env["development"]; got.ActiveVersionID != "v2" || got.Revision != 1 {
+	if got := repo.env["development"]; got.ActiveVersionID != "v2" || got.ActiveReleaseID != record.ID || got.Revision != 1 {
 		t.Fatalf("unexpected development environment: %#v", got)
 	}
 	_, err = svc.ActivateDevelopment(context.Background(), ActivateRequest{ProjectID: "p1", TargetVersionID: "v1", ExpectedActiveVersionID: "", Actor: "alice"})
@@ -103,7 +103,7 @@ func TestServiceRejectsSkippedPromotionAndRollsBackValidatedVersion(t *testing.T
 	if err != nil {
 		t.Fatalf("Rollback() error = %v", err)
 	}
-	if release.Action != "rollback" || repo.env["staging"].ActiveVersionID != "v1" {
+	if release.Action != "rollback" || repo.env["staging"].ActiveVersionID != "v1" || repo.env["staging"].ActiveReleaseID != release.ID {
 		t.Fatalf("unexpected rollback state: %#v", repo.env["staging"])
 	}
 	_, err = svc.Rollback(context.Background(), RollbackRequest{ProjectID: "p1", Environment: Staging, TargetVersionID: "v2", ExpectedActiveVersionID: "v1", Actor: "alice", Reason: "same"})

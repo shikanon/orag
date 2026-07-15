@@ -56,6 +56,7 @@ type App struct {
 	Pipeline         *pipeline.Service
 	PipelineCompiler *pipeline.Compiler
 	PipelineDebug    *pipeline.DebugRunner
+	ProductionQuery  rag.QueryRunner
 	Metrics          *observability.Metrics
 	Traces           TraceRepository
 
@@ -142,6 +143,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	pipelineSvc := pipeline.NewService(backend.pipelineRepo, pipeline.BuiltinRegistry())
 	pipelineCompiler := pipeline.NewCompiler(ragSvc, pipeline.BuiltinRegistry())
 	pipelineDebug := &pipeline.DebugRunner{Drafts: pipelineSvc, Compiler: pipelineCompiler}
+	productionQuery := &pipeline.ProductionRunner{Release: releaseSvc, Compiler: pipelineCompiler, Executor: graphRunner}
 	evaluationPolicySvc := evaluationpolicy.NewService(backend.evaluationPolicyRepo, datasets, eval.DefaultMetricRegistry)
 	apiKeys := auth.NewAPIKeyService(backend.apiKeyRepo, cfg.Auth.APIKeyPepper)
 	evalRunner := eval.Runner{RAG: ragSvc, Datasets: datasets, Repository: backend.evalRepo}
@@ -190,6 +192,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Pipeline:         pipelineSvc,
 		PipelineCompiler: &pipelineCompiler,
 		PipelineDebug:    pipelineDebug,
+		ProductionQuery:  productionQuery,
 		Metrics:          metrics,
 		Traces:           backend.traceRepo,
 		Postgres:         backend.pool,
