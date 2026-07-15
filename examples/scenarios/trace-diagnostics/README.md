@@ -33,7 +33,7 @@ Then run or inspect the scenario-specific commands:
 
 ```sh
 ./examples/curl/36_trace_lookup.sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-check-smoke
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-check-smoke
 ```
 
 For agent-guided diagnosis prompts, inspect `examples/skills/self-check-diagnose-ops.md`.

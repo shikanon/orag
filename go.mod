@@ -2,7 +2,7 @@ module github.com/shikanon/orag
 
 go 1.26
 
-toolchain go1.26.4
+toolchain go1.26.5
 
 require (
 	github.com/cloudwego/eino v0.6.0

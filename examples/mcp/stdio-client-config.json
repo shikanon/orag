@@ -9,7 +9,7 @@
         "api/openapi.yaml"
       ],
       "env": {
-        "GOTOOLCHAIN": "go1.26.4",
+        "GOTOOLCHAIN": "go1.26.5",
         "CGO_ENABLED": "0",
         "GOFLAGS": "-tags=stdjson,gjson",
         "ORAG_API_BASE_URL": "http://localhost:8080",

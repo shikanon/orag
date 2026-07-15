@@ -25,7 +25,7 @@ Choose this scenario for feature discovery, launch readiness reviews, prompt or 
 From the repository root, run the Go scenario demo:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/product-team
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/product-team
 ```
 
 ## Demo Implementation

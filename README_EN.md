@@ -9,6 +9,8 @@
   <a href="./README_EN.md"><img alt="README in English" src="https://img.shields.io/badge/English-DBEDFA"></a>
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/shikanon/orag?color=4e6b99"></a>
   <a href="https://github.com/shikanon/orag/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/shikanon/orag/ci.yml?branch=main&label=CI"></a>
+  <a href="https://github.com/shikanon/orag/actions/workflows/security.yml"><img alt="Security" src="https://img.shields.io/github/actions/workflow/status/shikanon/orag/security.yml?branch=main&label=Security"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/shikanon/orag"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/shikanon/orag/badge"></a>
   <a href="https://shikanon.github.io/orag/"><img alt="Documentation" src="https://img.shields.io/badge/docs-GitHub%20Pages-0B51E5"></a>
   <a href="./go.mod"><img alt="Go Version" src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white"></a>
   <a href="./api/openapi.yaml"><img alt="OpenAPI" src="https://img.shields.io/badge/OpenAPI-3.x-6BA539?logo=openapiinitiative&logoColor=white"></a>
@@ -231,7 +233,7 @@ make openapi-validate
 The `Makefile` injects `CGO_ENABLED=0` and `GOFLAGS=-tags=stdjson,gjson` into Go commands by default. This avoids local cgo linkage issues with Hertz/Sonic native artifacts on Mac amd64 + Go 1.26. When running raw Go commands, use:
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./...
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.5 go test ./...
 ```
 
 PostgreSQL + Qdrant integration tests are skipped by default. Run them explicitly with:
@@ -245,7 +247,7 @@ make test-integration-down
 Real Ark smoke tests are skipped by default and only run when explicitly enabled:
 
 ```bash
-LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/live -v
+LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.5 go test ./tests/live -v
 ```
 
 ## Documentation
