@@ -26,6 +26,7 @@ export type RollbackReleaseInput = components['schemas']['RollbackReleaseRequest
 export type PipelineVersion = components['schemas']['PipelineVersion']
 export type CreatePipelineVersionInput = components['schemas']['CreatePipelineVersionRequest']
 export type ValidatePipelineVersionInput = components['schemas']['ValidatePipelineVersionRequest']
+export type PipelineNodeDefinition = components['schemas']['PipelineNodeDefinition']
 
 export class ApiError extends Error {
   constructor(public readonly status: number) {
@@ -100,4 +101,8 @@ export const releaseApi = {
   list: (projectId: string) => request<{ items: Release[] }>(`/v1/projects/${encodeURIComponent(projectId)}/releases`),
   promote: (projectId: string, input: PromoteReleaseInput) => request<Release>(`/v1/projects/${encodeURIComponent(projectId)}/releases:promote`, { method: 'POST', body: JSON.stringify(input) }),
   rollback: (projectId: string, environment: string, input: RollbackReleaseInput) => request<Release>(`/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environment)}/rollback`, { method: 'POST', body: JSON.stringify(input) }),
+}
+
+export const pipelineApi = {
+  nodeDefinitions: () => request<{ items: PipelineNodeDefinition[] }>('/v1/pipeline-node-definitions'),
 }
