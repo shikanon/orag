@@ -949,6 +949,29 @@ paths:
         "200": {description: Saved draft., content: {application/json: {schema: {$ref: "#/components/schemas/PipelineDraft"}}}}
         "409": {$ref: "#/components/responses/Error"}
         "422": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/query:debug:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Pipelines]
+      operationId: debugProjectQuery
+      x-orag-maturity: beta
+      description: Executes a frozen development pipeline draft and returns safe ordered diagnostic events.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/PipelineDebugRequest"}}}
+      responses:
+        "200": {description: Debug response with trace-linked diagnostics., content: {application/json: {schema: {$ref: "#/components/schemas/PipelineDebugResponse"}}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
   /v1/projects/{project_id}/releases:
     parameters:
       - name: project_id
@@ -2002,6 +2025,35 @@ components:
       properties:
         expected_revision: {type: integer, format: int64}
         definition: {type: object}
+    PipelineDebugRequest:
+      type: object
+      required: [pipeline_id, expected_revision, query]
+      properties:
+        pipeline_id: {type: string}
+        expected_revision: {type: integer, format: int64, minimum: 0}
+        environment: {type: string, enum: [development, staging, production], default: development}
+        query:
+          $ref: "#/components/schemas/QueryRequest"
+    DiagnosticEvent:
+      type: object
+      required: [sequence, node_id, node_type, latency_ms]
+      properties:
+        sequence: {type: integer}
+        node_id: {type: string}
+        node_type: {type: string}
+        latency_ms: {type: integer, format: int64}
+        error: {type: string}
+    PipelineDebugResponse:
+      type: object
+      required: [revision, trace_id, response, events]
+      properties:
+        revision: {type: integer, format: int64}
+        trace_id: {type: string}
+        response:
+          $ref: "#/components/schemas/QueryResponse"
+        events:
+          type: array
+          items: {$ref: "#/components/schemas/DiagnosticEvent"}
     PipelineVersionListResponse:
       type: object
       required: [items]

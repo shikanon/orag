@@ -445,6 +445,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/pipelines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listProjectPipelines"];
+        put?: never;
+        post: operations["createProjectPipeline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/pipelines/{pipeline_id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getProjectPipelineDraft"];
+        put: operations["saveProjectPipelineDraft"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/query:debug": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Executes a frozen development pipeline draft and returns safe ordered diagnostic events. */
+        post: operations["debugProjectQuery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/releases": {
         parameters: {
             query?: never;
@@ -1026,6 +1082,62 @@ export interface components {
         };
         PipelineNodeDefinitionListResponse: {
             items: components["schemas"]["PipelineNodeDefinition"][];
+        };
+        Pipeline: {
+            id: string;
+            project_id: string;
+            name: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        PipelineListResponse: {
+            items: components["schemas"]["Pipeline"][];
+        };
+        PipelineDraft: {
+            pipeline_id: string;
+            project_id: string;
+            /** Format: int64 */
+            revision: number;
+            schema_version: number;
+            definition: Record<string, never>;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreatePipelineRequest: {
+            name: string;
+        };
+        SavePipelineDraftRequest: {
+            /** Format: int64 */
+            expected_revision: number;
+            definition: Record<string, never>;
+        };
+        PipelineDebugRequest: {
+            pipeline_id: string;
+            /** Format: int64 */
+            expected_revision: number;
+            /**
+             * @default development
+             * @enum {string}
+             */
+            environment: "development" | "staging" | "production";
+            query: components["schemas"]["QueryRequest"];
+        };
+        DiagnosticEvent: {
+            sequence: number;
+            node_id: string;
+            node_type: string;
+            /** Format: int64 */
+            latency_ms: number;
+            error?: string;
+        };
+        PipelineDebugResponse: {
+            /** Format: int64 */
+            revision: number;
+            trace_id: string;
+            response: components["schemas"]["QueryResponse"];
+            events: components["schemas"]["DiagnosticEvent"][];
         };
         PipelineVersionListResponse: {
             items: components["schemas"]["PipelineVersion"][];
@@ -3304,6 +3416,146 @@ export interface operations {
             };
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+        };
+    };
+    listProjectPipelines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project pipelines. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createProjectPipeline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePipelineRequest"];
+            };
+        };
+        responses: {
+            /** @description Created pipeline. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pipeline"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    getProjectPipelineDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current revisioned draft. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineDraft"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    saveProjectPipelineDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavePipelineDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved draft. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineDraft"];
+                };
+            };
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    debugProjectQuery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineDebugRequest"];
+            };
+        };
+        responses: {
+            /** @description Debug response with trace-linked diagnostics. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineDebugResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     listProjectReleases: {
