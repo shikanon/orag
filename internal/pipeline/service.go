@@ -66,6 +66,13 @@ func (s *Service) ListPipelines(ctx context.Context, projectID string) ([]Pipeli
 func (s *Service) GetDraft(ctx context.Context, projectID, pipelineID string) (Draft, error) {
 	return s.repo.GetDraft(ctx, projectID, pipelineID)
 }
+
+// ValidateDefinition returns node-addressable validation diagnostics without
+// mutating the draft repository. Callers use this before operations that
+// materialize an immutable version from a draft.
+func (s *Service) ValidateDefinition(definition Definition) ValidationErrors {
+	return ValidationErrors(Validate(definition, s.registry))
+}
 func (s *Service) SaveDraft(ctx context.Context, projectID, pipelineID string, expectedRevision int64, definition Definition) (Draft, error) {
 	validation := Validate(definition, s.registry)
 	if len(validation) > 0 {

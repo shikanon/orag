@@ -111,7 +111,7 @@ func TestCreatePipelineVersionFromDraftFreezesRevision(t *testing.T) {
 		t.Fatalf("pipeline body=%s", created.Body)
 	}
 	response := performJSON(h, "POST", "/v1/projects/"+projectID+"/pipelines/"+pipelineID+"/versions", `{"expected_revision":0}`, token)
-	if response.Code != 201 || !strings.Contains(response.Body, `"draft_revision":0`) || !strings.Contains(response.Body, `"content_hash"`) {
+	if response.Code != 422 || !strings.Contains(response.Body, `pipeline_invalid_definition`) {
 		t.Fatalf("version status=%d body=%s", response.Code, response.Body)
 	}
 }

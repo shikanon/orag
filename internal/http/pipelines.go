@@ -103,6 +103,10 @@ func (s *Server) createPipelineVersionFromDraft(ctx context.Context, c *app.Requ
 		writePipelineError(c, pipeline.ErrRevisionConflict)
 		return
 	}
+	if validation := s.App.Pipeline.ValidateDefinition(draft.Definition); len(validation) > 0 {
+		writePipelineError(c, validation)
+		return
+	}
 	payload, err := json.Marshal(draft.Definition)
 	if err != nil {
 		writePipelineError(c, err)
