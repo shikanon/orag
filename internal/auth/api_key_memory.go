@@ -56,3 +56,22 @@ func (r *MemoryAPIKeyRepository) RevokeAPIKey(_ context.Context, tenantID, id st
 	}
 	return true, nil
 }
+
+func (r *MemoryAPIKeyRepository) TouchAPIKeyLastUsed(_ context.Context, id string, usedAt, notAfter time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item, ok := r.items[id]
+	if !ok {
+		return ErrAPIKeyNotFound
+	}
+	if item.LastUsedAt == nil || !item.LastUsedAt.After(notAfter) {
+		item.LastUsedAt = timePointerCopy(usedAt)
+		r.items[id] = item
+	}
+	return nil
+}
+
+func timePointerCopy(value time.Time) *time.Time {
+	copy := value
+	return &copy
+}

@@ -67,6 +67,13 @@ func (r *APIKeyRepository) RevokeAPIKey(ctx context.Context, tenantID, id string
 	return tag.RowsAffected() > 0, nil
 }
 
+func (r *APIKeyRepository) TouchAPIKeyLastUsed(ctx context.Context, id string, usedAt, notAfter time.Time) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE api_keys SET last_used_at=$2
+		WHERE id=$1 AND (last_used_at IS NULL OR last_used_at <= $3)`, id, usedAt, notAfter)
+	return err
+}
+
 const apiKeySelect = `
 	SELECT id, tenant_id, COALESCE(project_id,''), name, prefix, key_hash, role,
 		created_by, created_at, expires_at, revoked_at, last_used_at
