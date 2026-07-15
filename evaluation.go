@@ -65,6 +65,7 @@ type AddDatasetItemRequest struct {
 
 type RunEvaluationRequest struct {
 	TenantID        string
+	ProjectID       string
 	DatasetID       string
 	KnowledgeBaseID string
 	Profile         string
@@ -73,8 +74,9 @@ type RunEvaluationRequest struct {
 }
 
 type GetEvaluationRequest struct {
-	TenantID string
-	ID       string
+	TenantID  string
+	ProjectID string
+	ID        string
 }
 
 type EvaluationSplitSummary struct {
@@ -86,6 +88,7 @@ type EvaluationSplitSummary struct {
 // configuration remains an HTTP control-plane capability in the beta release.
 type EvaluationRun struct {
 	ID                    string
+	ProjectID             string
 	DatasetID             string
 	Profile               string
 	Total                 int
@@ -153,8 +156,34 @@ func (c *Client) RunEvaluation(ctx context.Context, req RunEvaluationRequest) (E
 	if strings.TrimSpace(req.DatasetID) == "" || strings.TrimSpace(req.KnowledgeBaseID) == "" {
 		return EvaluationRun{}, newError(CodeInvalidArgument, "run_evaluation", req.DatasetID, "", false, errors.New("dataset_id and knowledge_base_id are required"))
 	}
+	tenantID := c.tenant(req.TenantID)
+	datasetItem, found, err := c.app.Datasets.Get(ctx, tenantID, strings.TrimSpace(req.DatasetID))
+	if err != nil {
+		return EvaluationRun{}, wrapError("run_evaluation", req.DatasetID, "", err)
+	}
+	if !found {
+		return EvaluationRun{}, newError(CodeNotFound, "run_evaluation", req.DatasetID, "", false, dataset.ErrDatasetNotFound)
+	}
+	knowledgeBase, found, err := c.app.KBStore.GetKnowledgeBase(ctx, tenantID, strings.TrimSpace(req.KnowledgeBaseID))
+	if err != nil {
+		return EvaluationRun{}, wrapError("run_evaluation", req.KnowledgeBaseID, "", err)
+	}
+	if !found {
+		return EvaluationRun{}, newError(CodeNotFound, "run_evaluation", req.KnowledgeBaseID, "", false, errors.New("knowledge base not found"))
+	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	if projectID == "" {
+		projectID = datasetItem.ProjectID
+	}
+	if projectID == "" {
+		projectID = knowledgeBase.ProjectID
+	}
+	if (datasetItem.ProjectID != "" && datasetItem.ProjectID != projectID) || (knowledgeBase.ProjectID != "" && knowledgeBase.ProjectID != projectID) {
+		return EvaluationRun{}, newError(CodeInvalidArgument, "run_evaluation", req.DatasetID, "", false, errors.New("dataset and knowledge base must belong to the same project"))
+	}
 	result, err := c.app.Eval.Run(ctx, eval.RunRequest{
-		TenantID:        c.tenant(req.TenantID),
+		TenantID:        tenantID,
+		ProjectID:       projectID,
 		DatasetID:       strings.TrimSpace(req.DatasetID),
 		KnowledgeBaseID: strings.TrimSpace(req.KnowledgeBaseID),
 		Profile:         rag.Profile(req.Profile),
@@ -174,7 +203,14 @@ func (c *Client) GetEvaluation(ctx context.Context, req GetEvaluationRequest) (E
 	if strings.TrimSpace(req.ID) == "" {
 		return EvaluationRun{}, false, newError(CodeInvalidArgument, "get_evaluation", req.ID, "", false, errors.New("id is required"))
 	}
-	result, found, err := c.app.Eval.Get(ctx, c.tenant(req.TenantID), strings.TrimSpace(req.ID))
+	var result eval.RunResult
+	var found bool
+	var err error
+	if strings.TrimSpace(req.ProjectID) != "" {
+		result, found, err = c.app.Eval.GetInProject(ctx, c.tenant(req.TenantID), strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ID))
+	} else {
+		result, found, err = c.app.Eval.Get(ctx, c.tenant(req.TenantID), strings.TrimSpace(req.ID))
+	}
 	if err != nil {
 		return EvaluationRun{}, false, wrapError("get_evaluation", req.ID, "", err)
 	}
@@ -197,7 +233,7 @@ func fromEvaluationRun(item eval.RunResult) EvaluationRun {
 	for name, value := range item.SplitSummary {
 		summary[name] = EvaluationSplitSummary{UnweightedSampleCount: value.UnweightedSampleCount, WeightedSampleCount: value.WeightedSampleCount}
 	}
-	return EvaluationRun{ID: item.ID, DatasetID: item.DatasetID, Profile: item.Profile, Total: item.Total, HitRate: item.HitRate, Accuracy: item.Accuracy, WeightedSampleCount: item.WeightedSampleCount, UnweightedSampleCount: item.UnweightedSampleCount, Split: DatasetSplit(item.Split), SplitSummary: summary, MissingSplit: item.MissingSplit, Metrics: cloneFloats(item.Metrics), CreatedAt: item.CreatedAt}
+	return EvaluationRun{ID: item.ID, ProjectID: item.ProjectID, DatasetID: item.DatasetID, Profile: item.Profile, Total: item.Total, HitRate: item.HitRate, Accuracy: item.Accuracy, WeightedSampleCount: item.WeightedSampleCount, UnweightedSampleCount: item.UnweightedSampleCount, Split: DatasetSplit(item.Split), SplitSummary: summary, MissingSplit: item.MissingSplit, Metrics: cloneFloats(item.Metrics), CreatedAt: item.CreatedAt}
 }
 
 func cloneFloats(values map[string]float64) map[string]float64 {

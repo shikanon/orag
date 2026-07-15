@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Added project ownership and project-scoped authorization for evaluation and optimization run roots, including cross-project input rejection, migration backfill, OpenAPI fields, and public Go SDK scoping.
 - Added Console admin login, versioned tab-scoped Bearer sessions, authenticated API requests, automatic 401 session invalidation, and explicit logout.
 - Added Console API Key management with project-aware roles, metadata-only listing, explicit revocation confirmation, and a one-time secret reveal that is cleared when closed.
 - Added public Go SDK project and API key lifecycle methods, including one-time secret creation, metadata-only listing, revocation, embedded authentication, and project ownership on knowledge bases and datasets.

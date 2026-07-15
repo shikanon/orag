@@ -926,6 +926,7 @@ func TestRepositoryStoresOptimizationRunAndCandidate(t *testing.T) {
 	run := optimizerpkg.OptimizationRun{
 		ID:              "opt_1",
 		TenantID:        "tenant_1",
+		ProjectID:       "prj_1",
 		DatasetID:       "ds_1",
 		KnowledgeBaseID: "kb_1",
 		Objective:       optimizerpkg.ObjectiveSpec{Maximize: "pairwise_accuracy"},
@@ -967,11 +968,14 @@ func TestRepositoryStoresOptimizationRunAndCandidate(t *testing.T) {
 	if !strings.Contains(queryer.execSQL, "INSERT INTO optimization_runs") {
 		t.Fatalf("CreateOptimizationRun SQL = %s", queryer.execSQL)
 	}
-	checkpoint, _ := queryer.execArgs[15].([]byte)
-	if !strings.Contains(string(checkpoint), "completed_candidate_ids") || queryer.execArgs[18] != &costBudget {
+	checkpoint, _ := queryer.execArgs[16].([]byte)
+	if !strings.Contains(string(checkpoint), "completed_candidate_ids") || queryer.execArgs[19] != &costBudget {
 		t.Fatalf("run args = %#v checkpoint=%s", queryer.execArgs, string(checkpoint))
 	}
-	runner, _ := queryer.execArgs[6].([]byte)
+	if queryer.execArgs[2] != "prj_1" {
+		t.Fatalf("project arg = %#v, want prj_1", queryer.execArgs[2])
+	}
+	runner, _ := queryer.execArgs[7].([]byte)
 	for _, want := range []string{`"run_config"`, `"holdout_split":"holdout"`, `"profile":"high_precision"`, `"top_k":8`} {
 		if !strings.Contains(string(runner), want) {
 			t.Fatalf("runner config JSON missing %s: %s", want, string(runner))
@@ -1085,6 +1089,7 @@ func TestRepositoryCreateOptimizationRunWithCandidatesRollsBackCandidateInsertFa
 	run := optimizerpkg.OptimizationRun{
 		ID:              "opt_1",
 		TenantID:        "tenant_1",
+		ProjectID:       "prj_1",
 		DatasetID:       "ds_1",
 		KnowledgeBaseID: "kb_1",
 		Objective:       optimizerpkg.ObjectiveSpec{Maximize: "pairwise_accuracy"},
@@ -1133,6 +1138,7 @@ func TestRepositoryUpdateOptimizationRunIncludesReadbackFields(t *testing.T) {
 	run := optimizerpkg.OptimizationRun{
 		ID:              "opt_1",
 		TenantID:        "tenant_1",
+		ProjectID:       "prj_1",
 		DatasetID:       "ds_replacement",
 		KnowledgeBaseID: "kb_replacement",
 		Objective:       optimizerpkg.ObjectiveSpec{Maximize: "faithfulness"},
@@ -1146,7 +1152,7 @@ func TestRepositoryUpdateOptimizationRunIncludesReadbackFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{"dataset_id=$3", "knowledge_base_id=$4", "status=$8"} {
+	for _, want := range []string{"project_id=NULLIF($3,'')", "dataset_id=$4", "knowledge_base_id=$5", "status=$9"} {
 		if !strings.Contains(queryer.execSQL, want) {
 			t.Fatalf("UpdateOptimizationRun SQL missing %q: %s", want, queryer.execSQL)
 		}
@@ -1154,14 +1160,17 @@ func TestRepositoryUpdateOptimizationRunIncludesReadbackFields(t *testing.T) {
 	if len(queryer.execArgs) < 8 {
 		t.Fatalf("UpdateOptimizationRun args = %#v, want at least 8 args", queryer.execArgs)
 	}
-	if queryer.execArgs[2] != "ds_replacement" {
-		t.Fatalf("dataset arg = %#v, want replacement dataset", queryer.execArgs[2])
+	if queryer.execArgs[2] != "prj_1" {
+		t.Fatalf("project arg = %#v, want prj_1", queryer.execArgs[2])
 	}
-	if queryer.execArgs[3] != "kb_replacement" {
-		t.Fatalf("knowledge base arg = %#v, want replacement knowledge base", queryer.execArgs[3])
+	if queryer.execArgs[3] != "ds_replacement" {
+		t.Fatalf("dataset arg = %#v, want replacement dataset", queryer.execArgs[3])
 	}
-	if queryer.execArgs[7] != optimizerpkg.RunStatusRunning {
-		t.Fatalf("status arg = %#v, want %q", queryer.execArgs[7], optimizerpkg.RunStatusRunning)
+	if queryer.execArgs[4] != "kb_replacement" {
+		t.Fatalf("knowledge base arg = %#v, want replacement knowledge base", queryer.execArgs[4])
+	}
+	if queryer.execArgs[8] != optimizerpkg.RunStatusRunning {
+		t.Fatalf("status arg = %#v, want %q", queryer.execArgs[8], optimizerpkg.RunStatusRunning)
 	}
 }
 
@@ -1194,7 +1203,7 @@ func TestRepositoryCompareAndSwapOptimizationRunUsesExpectedStatus(t *testing.T)
 			if got != tt.want {
 				t.Fatalf("CompareAndSwapOptimizationRun() = %v, want %v", got, tt.want)
 			}
-			for _, wantSQL := range []string{"tenant_id=$1", "id=$2", "status=$22"} {
+			for _, wantSQL := range []string{"tenant_id=$1", "id=$2", "status=$23"} {
 				if !strings.Contains(queryer.execSQL, wantSQL) {
 					t.Fatalf("CAS SQL missing %q: %s", wantSQL, queryer.execSQL)
 				}
@@ -1494,6 +1503,8 @@ type fakeKnowledgeBaseQueryer struct {
 	querySQL  string
 	queryArgs []any
 	rowCtx    context.Context
+	rowSQL    string
+	rowArgs   []any
 	row       pgx.Row
 }
 
@@ -1732,8 +1743,10 @@ func (f *fakeKnowledgeBaseQueryer) Query(ctx context.Context, sql string, args .
 	return f.queryRows, f.queryErr
 }
 
-func (f *fakeKnowledgeBaseQueryer) QueryRow(ctx context.Context, _ string, _ ...any) pgx.Row {
+func (f *fakeKnowledgeBaseQueryer) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	f.rowCtx = ctx
+	f.rowSQL = sql
+	f.rowArgs = args
 	if f.row == nil {
 		return fakeTraceRow{err: pgx.ErrNoRows}
 	}

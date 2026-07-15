@@ -423,6 +423,12 @@ func TestServiceRejectsConfigChangingResume(t *testing.T) {
 		mutate func(*SubmitRequest)
 	}{
 		{
+			name: "project_id",
+			mutate: func(req *SubmitRequest) {
+				req.ProjectID = "prj_2"
+			},
+		},
+		{
 			name: "dataset_id",
 			mutate: func(req *SubmitRequest) {
 				req.DatasetID = "ds_2"
@@ -766,6 +772,7 @@ func TestServiceSubmitDoesNotPersistPartialRunWhenAtomicCreateFails(t *testing.T
 func basicSubmitRequest() SubmitRequest {
 	return SubmitRequest{
 		TenantID:        "tenant_a",
+		ProjectID:       "prj_1",
 		DatasetID:       "ds_1",
 		KnowledgeBaseID: "kb_1",
 		Objective:       ObjectiveSpec{Maximize: "pairwise_accuracy"},

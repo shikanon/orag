@@ -63,7 +63,8 @@ func projectScopedRouteSupported(c *app.RequestContext) bool {
 		"/v1/knowledge-bases/:id/documents", "/v1/knowledge-bases/:id/documents:import",
 		"/v1/knowledge-bases/:id/uploads", "/v1/uploads/:id", "/v1/uploads/*action",
 		"/v1/query", "/v1/query:stream", "/v1/datasets", "/v1/datasets/:id/items",
-		"/v1/evaluations", "/v1/evaluations/:id":
+		"/v1/evaluations", "/v1/evaluations/:id",
+		"/v1/optimizations", "/v1/optimizations/:id", "/v1/optimizations/*action":
 		return true
 	default:
 		return false

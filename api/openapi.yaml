@@ -2304,6 +2304,7 @@ components:
         stored runs may still contain rule-based `pairwise_accuracy`.
       example:
         id: eval_xxx
+        project_id: prj_xxx
         dataset_id: ds_xxx
         profile: realtime
         total: 1
@@ -2348,6 +2349,8 @@ components:
           cache_hit_rate: 0
         created_at: "2026-06-29T10:04:00Z"
       properties:
+        project_id:
+          type: string
         id:
           type: string
         dataset_id:
@@ -3638,6 +3641,8 @@ components:
       required: [id, dataset_id, knowledge_base_id, objective, search_space, status, sampling_strategy, search_space_size, sampled_candidate_count, completed_candidate_count, checkpoint, created_at, updated_at]
       properties:
         id:
+          type: string
+        project_id:
           type: string
         dataset_id:
           type: string
