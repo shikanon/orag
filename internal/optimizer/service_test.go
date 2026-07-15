@@ -196,6 +196,171 @@ func TestServiceBudgetStopAndResumeSkipsCompletedCandidate(t *testing.T) {
 	}
 }
 
+func TestServiceConcurrentResumeStartsOneRunner(t *testing.T) {
+	baseRepo := newMemoryOptimizationRepository()
+	readRelease := make(chan struct{})
+	repo := &readBarrierOptimizationRepository{
+		memoryOptimizationRepository: baseRepo,
+		blockGets:                    2,
+		arrived:                      make(chan struct{}, 2),
+		release:                      readRelease,
+	}
+	runnerStarted := make(chan struct{})
+	runnerRelease := make(chan struct{})
+	runner := &recordingCandidateRunner{blockOnFirst: runnerStarted, releaseFirst: runnerRelease}
+	service := &Service{Repository: repo, Runner: runner, DisableAutoStart: true}
+	req := basicSubmitRequest()
+	req.HoldoutSplit = ""
+
+	run, err := service.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	run.Status = RunStatusBudgetStopped
+	if err := baseRepo.UpdateOptimizationRun(context.Background(), run); err != nil {
+		t.Fatal(err)
+	}
+	service.DisableAutoStart = false
+
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, err := service.Resume(context.Background(), "tenant_a", run.ID, req)
+			results <- err
+		}()
+	}
+	for range 2 {
+		select {
+		case <-repo.arrived:
+		case <-time.After(time.Second):
+			t.Fatal("concurrent Resume calls did not reach the read barrier")
+		}
+	}
+	close(readRelease)
+
+	accepted := 0
+	conflicts := 0
+	for range 2 {
+		select {
+		case err := <-results:
+			switch {
+			case err == nil:
+				accepted++
+			case apperrors.IsCode(err, apperrors.CodeConflict):
+				conflicts++
+			default:
+				t.Fatalf("Resume() error = %v, want nil or conflict", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("concurrent Resume calls did not return")
+		}
+	}
+	if accepted != 1 || conflicts != 1 {
+		t.Fatalf("Resume results accepted/conflicts = %d/%d, want 1/1", accepted, conflicts)
+	}
+	select {
+	case <-runnerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("accepted resume did not start runner")
+	}
+	if got := runner.callCount(); got != 1 {
+		t.Fatalf("runner calls = %d, want 1", got)
+	}
+	close(runnerRelease)
+}
+
+func TestServiceConcurrentRunPendingClaimsRunOnce(t *testing.T) {
+	baseRepo := newMemoryOptimizationRepository()
+	readRelease := make(chan struct{})
+	repo := &readBarrierOptimizationRepository{
+		memoryOptimizationRepository: baseRepo,
+		blockGets:                    2,
+		arrived:                      make(chan struct{}, 2),
+		release:                      readRelease,
+	}
+	runnerStarted := make(chan struct{})
+	runnerRelease := make(chan struct{})
+	runner := &recordingCandidateRunner{blockOnFirst: runnerStarted, releaseFirst: runnerRelease}
+	service := &Service{Repository: repo, Runner: runner, DisableAutoStart: true}
+	req := basicSubmitRequest()
+	req.HoldoutSplit = ""
+
+	run, err := service.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			results <- service.RunPending(context.Background(), "tenant_a", run.ID, req)
+		}()
+	}
+	for range 2 {
+		select {
+		case <-repo.arrived:
+		case <-time.After(time.Second):
+			t.Fatal("concurrent RunPending calls did not reach the read barrier")
+		}
+	}
+	close(readRelease)
+	select {
+	case <-runnerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("claimed run did not start runner")
+	}
+
+	select {
+	case err := <-results:
+		if !apperrors.IsCode(err, apperrors.CodeConflict) {
+			t.Fatalf("first completed RunPending() error = %v, want conflict", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("losing RunPending call did not return")
+	}
+	if got := runner.callCount(); got != 1 {
+		t.Fatalf("runner calls while winner blocked = %d, want 1", got)
+	}
+	close(runnerRelease)
+	select {
+	case err := <-results:
+		if err != nil {
+			t.Fatalf("winning RunPending() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("winning RunPending call did not finish")
+	}
+}
+
+func TestServiceResumeRejectsNonResumableStates(t *testing.T) {
+	for _, status := range []RunStatus{RunStatusQueued, RunStatusRunning, RunStatusCanceling, RunStatusCompleted} {
+		t.Run(string(status), func(t *testing.T) {
+			repo := newMemoryOptimizationRepository()
+			service := &Service{Repository: repo, Runner: &recordingCandidateRunner{}, DisableAutoStart: true}
+			req := basicSubmitRequest()
+			run, err := service.Submit(context.Background(), req)
+			if err != nil {
+				t.Fatalf("Submit() error = %v", err)
+			}
+			run.Status = status
+			if err := repo.UpdateOptimizationRun(context.Background(), run); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = service.Resume(context.Background(), "tenant_a", run.ID, req)
+			if !apperrors.IsCode(err, apperrors.CodeConflict) {
+				t.Fatalf("Resume() error = %v, want conflict", err)
+			}
+			stored, ok, getErr := repo.GetOptimizationRun(context.Background(), "tenant_a", run.ID)
+			if getErr != nil || !ok {
+				t.Fatalf("GetOptimizationRun() ok=%v error=%v", ok, getErr)
+			}
+			if stored.Status != status {
+				t.Fatalf("stored status = %q, want unchanged %q", stored.Status, status)
+			}
+		})
+	}
+}
+
 func TestServiceRejectsConfigChangingResume(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -623,6 +788,33 @@ type memoryOptimizationRepository struct {
 	harness    []HarnessRunRecord
 }
 
+type readBarrierOptimizationRepository struct {
+	*memoryOptimizationRepository
+	barrierMu sync.Mutex
+	blockGets int
+	arrived   chan struct{}
+	release   <-chan struct{}
+}
+
+func (r *readBarrierOptimizationRepository) GetOptimizationRun(ctx context.Context, tenantID, runID string) (OptimizationRun, bool, error) {
+	run, ok, err := r.memoryOptimizationRepository.GetOptimizationRun(ctx, tenantID, runID)
+	r.barrierMu.Lock()
+	shouldBlock := r.blockGets > 0
+	if shouldBlock {
+		r.blockGets--
+	}
+	r.barrierMu.Unlock()
+	if shouldBlock {
+		r.arrived <- struct{}{}
+		select {
+		case <-ctx.Done():
+			return OptimizationRun{}, false, ctx.Err()
+		case <-r.release:
+		}
+	}
+	return run, ok, err
+}
+
 func newMemoryOptimizationRepository() *memoryOptimizationRepository {
 	return &memoryOptimizationRepository{
 		runs:       map[string]OptimizationRun{},
@@ -852,6 +1044,12 @@ func (r *recordingCandidateRunner) selectionIDs() map[string]struct{} {
 		}
 	}
 	return out
+}
+
+func (r *recordingCandidateRunner) callCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.calls)
 }
 
 func waitForRunStatus(t *testing.T, service *Service, runID string, want RunStatus) OptimizationStatus {
