@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const maxEmbeddingDimensions = 4096
+
 func NewServer() *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/chat/completions", func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +49,10 @@ func NewServer() *httptest.Server {
 		if req.Dimensions <= 0 {
 			req.Dimensions = 4
 		}
+		if req.Dimensions > maxEmbeddingDimensions {
+			http.Error(w, "dimensions exceed fake provider limit", http.StatusBadRequest)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{"embedding": fakeVector(1, req.Dimensions)},
 		})
@@ -67,10 +73,10 @@ func NewServer() *httptest.Server {
 }
 
 func fakeVector(seed, dims int) []float64 {
-	vector := make([]float64, dims)
-	if dims == 0 {
-		return vector
+	if dims <= 0 || dims > maxEmbeddingDimensions {
+		return nil
 	}
+	vector := make([]float64, dims)
 	vector[seed%dims] = 1
 	return vector
 }
