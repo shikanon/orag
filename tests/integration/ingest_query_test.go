@@ -19,6 +19,7 @@ import (
 	oraghttp "github.com/shikanon/orag/internal/http"
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
+	"github.com/shikanon/orag/internal/optimizer"
 	"github.com/shikanon/orag/internal/rag"
 	"github.com/shikanon/orag/internal/storage/postgres"
 	qdrantstore "github.com/shikanon/orag/internal/storage/qdrant"
@@ -43,6 +44,135 @@ func (r *failingCommitRepository) CommitActivation(context.Context, kb.Document,
 type failingFinalizeVectorStore struct {
 	qdrantstore.VectorStore
 	err error
+}
+
+func TestPostgresOptimizerClaimsAreSingleFlight(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	kbID := createIntegrationKnowledgeBase(t, ctx, app, "optimizer-singleflight")
+	datasetRecord, err := app.Datasets.Create(ctx, testTenantID, "optimizer-singleflight", "evaluation")
+	if err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	repo := postgres.NewRepository(app.Postgres)
+	now := time.Now().UTC()
+	run := optimizer.OptimizationRun{
+		ID:              fmt.Sprintf("opt_singleflight_%d", now.UnixNano()),
+		TenantID:        testTenantID,
+		DatasetID:       datasetRecord.ID,
+		KnowledgeBaseID: kbID,
+		Status:          optimizer.RunStatusQueued,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	candidate := optimizer.OptimizationCandidate{
+		ID:                fmt.Sprintf("cand_singleflight_%d", now.UnixNano()),
+		OptimizationRunID: run.ID,
+		Status:            optimizer.CandidateStatusQueued,
+		CleanupStatus:     optimizer.CleanupNotRequired,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if err := repo.CreateOptimizationRunWithCandidates(ctx, run, []optimizer.OptimizationCandidate{candidate}); err != nil {
+		t.Fatalf("create optimization fixture: %v", err)
+	}
+
+	runUpdate := run
+	runUpdate.Status = optimizer.RunStatusRunning
+	runUpdate.UpdatedAt = now.Add(time.Second)
+	if got := raceOptimizationRunClaims(t, ctx, repo, runUpdate, optimizer.RunStatusQueued, 16); got != 1 {
+		t.Fatalf("successful run claims = %d, want 1", got)
+	}
+	storedRun, ok, err := repo.GetOptimizationRun(ctx, testTenantID, run.ID)
+	if err != nil || !ok {
+		t.Fatalf("GetOptimizationRun() ok=%v error=%v", ok, err)
+	}
+	if storedRun.Status != optimizer.RunStatusRunning {
+		t.Fatalf("stored run status = %q, want running", storedRun.Status)
+	}
+
+	candidateUpdate := candidate
+	candidateUpdate.Status = optimizer.CandidateStatusRunning
+	candidateUpdate.UpdatedAt = now.Add(time.Second)
+	if got := raceOptimizationCandidateClaims(t, ctx, repo, candidateUpdate, optimizer.CandidateStatusQueued, 16); got != 1 {
+		t.Fatalf("successful candidate claims = %d, want 1", got)
+	}
+	storedCandidates, err := repo.ListOptimizationCandidates(ctx, testTenantID, run.ID)
+	if err != nil {
+		t.Fatalf("ListOptimizationCandidates() error = %v", err)
+	}
+	if len(storedCandidates) != 1 || storedCandidates[0].Status != optimizer.CandidateStatusRunning {
+		t.Fatalf("stored candidates = %#v, want one running candidate", storedCandidates)
+	}
+}
+
+func raceOptimizationRunClaims(t *testing.T, ctx context.Context, repo *postgres.Repository, run optimizer.OptimizationRun, expected optimizer.RunStatus, count int) int {
+	t.Helper()
+	start := make(chan struct{})
+	results := make(chan bool, count)
+	errs := make(chan error, count)
+	var wg sync.WaitGroup
+	for range count {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			swapped, err := repo.CompareAndSwapOptimizationRun(ctx, run, expected)
+			results <- swapped
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("CompareAndSwapOptimizationRun() error = %v", err)
+		}
+	}
+	winners := 0
+	for swapped := range results {
+		if swapped {
+			winners++
+		}
+	}
+	return winners
+}
+
+func raceOptimizationCandidateClaims(t *testing.T, ctx context.Context, repo *postgres.Repository, candidate optimizer.OptimizationCandidate, expected optimizer.CandidateStatus, count int) int {
+	t.Helper()
+	start := make(chan struct{})
+	results := make(chan bool, count)
+	errs := make(chan error, count)
+	var wg sync.WaitGroup
+	for range count {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			swapped, err := repo.CompareAndSwapOptimizationCandidate(ctx, candidate, expected)
+			results <- swapped
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("CompareAndSwapOptimizationCandidate() error = %v", err)
+		}
+	}
+	winners := 0
+	for swapped := range results {
+		if swapped {
+			winners++
+		}
+	}
+	return winners
 }
 
 type failOnceKnowledgeBaseVectorDeleter struct {
