@@ -1,9 +1,12 @@
 package contract
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
+
+var immutableActionReference = regexp.MustCompile(`uses:\s+[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}\s+#\s+v\d`)
 
 func TestDockerComposeAPIUsesContainerNetworkDefaults(t *testing.T) {
 	compose := readRepoFile(t, "deployments/docker-compose.yml")
@@ -66,7 +69,6 @@ func TestReleaseWorkflowPublishesBothImagesWithoutLatest(t *testing.T) {
 		"linux/amd64,linux/arm64",
 		"ghcr.io/shikanon/orag-api",
 		"ghcr.io/shikanon/orag-console",
-		"docker/build-push-action@v6",
 		"sbom: true",
 		"provenance: mode=max",
 		"cosign sign --yes",
@@ -79,5 +81,32 @@ func TestReleaseWorkflowPublishesBothImagesWithoutLatest(t *testing.T) {
 	}
 	if strings.Contains(workflow, ":latest") || strings.Contains(workflow, "type=raw,value=latest") {
 		t.Error("prerelease workflow must not publish latest")
+	}
+	if !strings.Contains(workflow, "docker/build-push-action@") || !immutableActionReference.MatchString(workflow) {
+		t.Error("release workflow must use build-push-action through an immutable commit with a version comment")
+	}
+}
+
+func TestWorkflowAndContainerInputsAreImmutable(t *testing.T) {
+	for _, path := range []string{
+		".github/workflows/ci.yml",
+		".github/workflows/docs.yml",
+		".github/workflows/release.yml",
+	} {
+		workflow := readRepoFile(t, path)
+		for lineNumber, line := range strings.Split(workflow, "\n") {
+			if strings.Contains(line, "uses:") && !immutableActionReference.MatchString(line) {
+				t.Errorf("%s:%d action must use a full commit SHA and version comment: %s", path, lineNumber+1, strings.TrimSpace(line))
+			}
+		}
+	}
+
+	for _, path := range []string{"deployments/Dockerfile", "deployments/console.Dockerfile"} {
+		dockerfile := readRepoFile(t, path)
+		for lineNumber, line := range strings.Split(dockerfile, "\n") {
+			if strings.HasPrefix(line, "FROM ") && !strings.Contains(line, "@sha256:") {
+				t.Errorf("%s:%d base image must use an immutable digest: %s", path, lineNumber+1, line)
+			}
+		}
 	}
 }

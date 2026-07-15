@@ -1,4 +1,4 @@
-FROM golang:1.26.5-alpine AS build
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS build
 WORKDIR /src
 ARG GOFLAGS=-tags=stdjson,gjson
 ARG VERSION=dev
@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOFLAGS="${GOFLAGS}" go build \
     -ldflags "-s -w -X github.com/shikanon/orag/pkg/buildinfo.Version=${VERSION} -X github.com/shikanon/orag/pkg/buildinfo.Commit=${COMMIT} -X github.com/shikanon/orag/pkg/buildinfo.BuildTime=${BUILD_TIME}" \
     -o /out/orag-demo ./cmd/orag-demo
 
-FROM alpine:3.24 AS api
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS api
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
