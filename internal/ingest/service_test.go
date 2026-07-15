@@ -61,9 +61,23 @@ func (i failingIndexer) Store(context.Context, kb.Document, []kb.Chunk) error {
 	return i.err
 }
 
+func (failingIndexer) PrepareActivation(context.Context, kb.Document, []kb.Chunk) error { return nil }
+func (failingIndexer) CommitActivation(context.Context, kb.Document, []kb.Chunk) error  { return nil }
+func (failingIndexer) AbortActivation(context.Context, kb.Document, []kb.Chunk) error   { return nil }
+func (failingIndexer) FinalizeActivation(context.Context, kb.Document, []kb.Chunk) error {
+	return nil
+}
+
 type noopIndexer struct{}
 
 func (noopIndexer) Store(context.Context, kb.Document, []kb.Chunk) error {
+	return nil
+}
+
+func (noopIndexer) PrepareActivation(context.Context, kb.Document, []kb.Chunk) error { return nil }
+func (noopIndexer) CommitActivation(context.Context, kb.Document, []kb.Chunk) error  { return nil }
+func (noopIndexer) AbortActivation(context.Context, kb.Document, []kb.Chunk) error   { return nil }
+func (noopIndexer) FinalizeActivation(context.Context, kb.Document, []kb.Chunk) error {
 	return nil
 }
 
@@ -98,7 +112,11 @@ func (s *stagedSearchStore) Store(_ context.Context, _ kb.Document, chunks []kb.
 	return nil
 }
 
-func (s *stagedSearchStore) Activate(_ context.Context, doc kb.Document, chunks []kb.Chunk) error {
+func (s *stagedSearchStore) PrepareActivation(context.Context, kb.Document, []kb.Chunk) error {
+	return nil
+}
+
+func (s *stagedSearchStore) CommitActivation(_ context.Context, doc kb.Document, chunks []kb.Chunk) error {
 	for id, chunk := range s.active {
 		if chunk.TenantID == doc.TenantID &&
 			chunk.KnowledgeBaseID == doc.KnowledgeBaseID &&
@@ -113,6 +131,19 @@ func (s *stagedSearchStore) Activate(_ context.Context, doc kb.Document, chunks 
 			delete(s.pending, chunk.ID)
 		}
 	}
+	return nil
+}
+
+func (s *stagedSearchStore) AbortActivation(_ context.Context, doc kb.Document, _ []kb.Chunk) error {
+	for id, chunk := range s.pending {
+		if chunk.DocumentID == doc.ID {
+			delete(s.pending, id)
+		}
+	}
+	return nil
+}
+
+func (s *stagedSearchStore) FinalizeActivation(context.Context, kb.Document, []kb.Chunk) error {
 	return nil
 }
 

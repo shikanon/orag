@@ -208,7 +208,11 @@ func (s *MemoryStore) Store(ctx context.Context, doc Document, chunks []Chunk) e
 	return nil
 }
 
-func (s *MemoryStore) Activate(_ context.Context, doc Document, chunks []Chunk) error {
+func (s *MemoryStore) PrepareActivation(context.Context, Document, []Chunk) error {
+	return nil
+}
+
+func (s *MemoryStore) CommitActivation(_ context.Context, doc Document, chunks []Chunk) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	stagedDoc, ok := s.pendingDocuments[doc.ID]
@@ -224,6 +228,22 @@ func (s *MemoryStore) Activate(_ context.Context, doc Document, chunks []Chunk) 
 		}
 	}
 	delete(s.pendingDocuments, doc.ID)
+	return nil
+}
+
+func (s *MemoryStore) AbortActivation(_ context.Context, doc Document, _ []Chunk) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.pendingDocuments, doc.ID)
+	for chunkID, chunk := range s.pendingChunks {
+		if chunk.DocumentID == doc.ID {
+			delete(s.pendingChunks, chunkID)
+		}
+	}
+	return nil
+}
+
+func (s *MemoryStore) FinalizeActivation(context.Context, Document, []Chunk) error {
 	return nil
 }
 

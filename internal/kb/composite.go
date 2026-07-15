@@ -1,9 +1,30 @@
 package kb
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
-type ActivatingIndexer interface {
-	Activate(ctx context.Context, doc Document, chunks []Chunk) error
+var ErrNonTransactionalCompositeIndexer = errors.New("composite indexer requires activation participants")
+
+type ActivationParticipant interface {
+	Indexer
+	PrepareActivation(ctx context.Context, doc Document, chunks []Chunk) error
+	CommitActivation(ctx context.Context, doc Document, chunks []Chunk) error
+	AbortActivation(ctx context.Context, doc Document, chunks []Chunk) error
+	FinalizeActivation(ctx context.Context, doc Document, chunks []Chunk) error
+}
+
+type PostCommitCleanupWarning struct {
+	Err error
+}
+
+func (w *PostCommitCleanupWarning) Error() string {
+	return "post-commit index cleanup failed: " + w.Err.Error()
+}
+
+func (w *PostCommitCleanupWarning) Unwrap() error {
+	return w.Err
 }
 
 type stagedStoreContextKey struct{}
@@ -28,29 +49,64 @@ type CompositeIndexer struct {
 }
 
 func (i CompositeIndexer) Store(ctx context.Context, doc Document, chunks []Chunk) error {
-	var activators []ActivatingIndexer
+	indexers := make([]Indexer, 0, len(i.Indexers))
 	for _, indexer := range i.Indexers {
-		if indexer == nil {
-			continue
-		}
-		storeCtx := ctx
-		activator, activating := indexer.(ActivatingIndexer)
-		if activating {
-			storeCtx = withStagedStore(ctx)
-		}
-		if err := indexer.Store(storeCtx, doc, chunks); err != nil {
-			return err
-		}
-		if activating {
-			activators = append(activators, activator)
+		if indexer != nil {
+			indexers = append(indexers, indexer)
 		}
 	}
-	for _, activator := range activators {
-		if err := activator.Activate(ctx, doc, chunks); err != nil {
-			return err
+	if len(indexers) == 0 {
+		return nil
+	}
+	if len(indexers) == 1 {
+		if _, ok := indexers[0].(ActivationParticipant); !ok {
+			return indexers[0].Store(ctx, doc, chunks)
 		}
+	}
+
+	participants := make([]ActivationParticipant, 0, len(indexers))
+	for _, indexer := range indexers {
+		participant, ok := indexer.(ActivationParticipant)
+		if !ok {
+			return ErrNonTransactionalCompositeIndexer
+		}
+		participants = append(participants, participant)
+	}
+
+	stored := make([]ActivationParticipant, 0, len(participants))
+	for _, participant := range participants {
+		if err := participant.Store(withStagedStore(ctx), doc, chunks); err != nil {
+			return abortActivation(ctx, stored, doc, chunks, err)
+		}
+		stored = append(stored, participant)
+	}
+	for _, participant := range participants {
+		if err := participant.PrepareActivation(ctx, doc, chunks); err != nil {
+			return abortActivation(ctx, stored, doc, chunks, err)
+		}
+	}
+	for _, participant := range participants {
+		if err := participant.CommitActivation(ctx, doc, chunks); err != nil {
+			return abortActivation(ctx, stored, doc, chunks, err)
+		}
+	}
+
+	var cleanupErr error
+	for _, participant := range participants {
+		cleanupErr = errors.Join(cleanupErr, participant.FinalizeActivation(ctx, doc, chunks))
+	}
+	if cleanupErr != nil {
+		return &PostCommitCleanupWarning{Err: cleanupErr}
 	}
 	return nil
+}
+
+func abortActivation(ctx context.Context, participants []ActivationParticipant, doc Document, chunks []Chunk, cause error) error {
+	err := cause
+	for idx := len(participants) - 1; idx >= 0; idx-- {
+		err = errors.Join(err, participants[idx].AbortActivation(ctx, doc, chunks))
+	}
+	return err
 }
 
 func (i CompositeIndexer) DeleteDocumentSource(ctx context.Context, tenantID, kbID, sourceURI string) error {
