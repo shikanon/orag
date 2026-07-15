@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Added a phased PostgreSQL/Qdrant ingestion protocol with real-store failure, replacement, legacy payload, cleanup-warning, and concurrency integration coverage.
+- Added regression coverage proving RAG graph spans reach trace persistence with contiguous sequence numbers and real UTC execution windows, without relying on store-time fallback normalization.
 
 ### Changed
 
