@@ -67,10 +67,10 @@ func (r *Repository) RecordEvidence(ctx context.Context, evidence evaluationpoli
 	_, err = r.evaluationQueryer().Exec(ctx, `
 		INSERT INTO project_evaluation_evidence(
 			id, tenant_id, project_id, policy_id, policy_version, evaluation_run_id,
-			pipeline_version_id, content_hash, frozen_input, gate_results, passed, created_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+			pipeline_version_id, content_hash, environment_kind, frozen_input, gate_results, passed, created_at)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,''),$10,$11,$12,$13)`,
 		evidence.ID, evidence.TenantID, evidence.ProjectID, evidence.PolicyID, evidence.PolicyVersion,
-		evidence.EvaluationRunID, evidence.PipelineVersionID, evidence.ContentHash, frozen, results,
+		evidence.EvaluationRunID, evidence.PipelineVersionID, evidence.ContentHash, evidence.Environment, frozen, results,
 		evidence.Passed, evidence.CreatedAt)
 	return evaluationPolicyPersistenceError(err)
 }

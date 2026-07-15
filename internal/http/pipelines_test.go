@@ -153,6 +153,10 @@ func TestCreatePipelineVersionFromDraftFreezesRevision(t *testing.T) {
 	if createdPayload.Version.ContentHash != wantHash {
 		t.Fatalf("content hash = %q, want %q", createdPayload.Version.ContentHash, wantHash)
 	}
+	manualValidation := performJSON(h, "POST", "/v1/projects/"+projectID+"/versions/"+createdPayload.Version.ID+"/validations", `{"environment":"staging","passed":true,"content_hash":"`+wantHash+`"}`, token)
+	if manualValidation.Code != 422 || !strings.Contains(manualValidation.Body, `server_derived_evidence_required`) {
+		t.Fatalf("manual validation status=%d body=%s", manualValidation.Code, manualValidation.Body)
+	}
 	version, err := application.Release.Versions(t.Context(), projectID)
 	if err != nil || len(version) != 1 || string(version[0].Definition) != string(payload) || version[0].PipelineID != pipelineID {
 		t.Fatalf("stored versions = %#v, err = %v", version, err)

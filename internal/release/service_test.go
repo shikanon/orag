@@ -27,6 +27,16 @@ func TestServicePromoteRequiresEvidenceAndCAS(t *testing.T) {
 	}
 }
 
+func TestServicePromoteRejectsLegacyHashOnlyVersion(t *testing.T) {
+	repo := newMemoryRepository()
+	repo.versions["v1"] = Version{ID: "v1", ProjectID: "p1", ContentHash: "hash-v1"}
+	repo.evidence["v1/staging"] = Evidence{VersionID: "v1", EnvironmentID: "staging", Passed: true, ContentHash: "hash-v1"}
+	_, err := NewService(repo).Promote(context.Background(), PromoteRequest{ProjectID: "p1", SourceEnvironment: Development, TargetEnvironment: Staging, TargetVersionID: "v1", Actor: "alice"})
+	if !errors.Is(err, ErrGateFailed) {
+		t.Fatalf("Promote() error = %v, want frozen-definition gate failure", err)
+	}
+}
+
 func TestServiceRejectsSkippedPromotionAndRollsBackValidatedVersion(t *testing.T) {
 	repo := newMemoryRepository()
 	svc := NewService(repo)
@@ -82,7 +92,7 @@ func (r *memoryRepository) CreateVersion(_ context.Context, v Version) error {
 }
 
 func newMemoryRepository() *memoryRepository {
-	return &memoryRepository{env: map[string]Environment{"development": {ID: "dev", ProjectID: "p1", Kind: Development, ActiveVersionID: "v1", Bound: true}, "staging": {ID: "stg", ProjectID: "p1", Kind: Staging, Bound: true}, "production": {ID: "prd", ProjectID: "p1", Kind: Production, Bound: true}}, versions: map[string]Version{"v1": {ID: "v1", ProjectID: "p1", ContentHash: "hash-v1"}, "v2": {ID: "v2", ProjectID: "p1", ContentHash: "hash-v2"}}, evidence: map[string]Evidence{}, validated: map[string]bool{}}
+	return &memoryRepository{env: map[string]Environment{"development": {ID: "dev", ProjectID: "p1", Kind: Development, ActiveVersionID: "v1", Bound: true}, "staging": {ID: "stg", ProjectID: "p1", Kind: Staging, Bound: true}, "production": {ID: "prd", ProjectID: "p1", Kind: Production, Bound: true}}, versions: map[string]Version{"v1": {ID: "v1", ProjectID: "p1", PipelineID: "pipe_1", Definition: []byte(`{"nodes":[]}`), ContentHash: "hash-v1"}, "v2": {ID: "v2", ProjectID: "p1", PipelineID: "pipe_1", Definition: []byte(`{"nodes":[]}`), ContentHash: "hash-v2"}}, evidence: map[string]Evidence{}, validated: map[string]bool{}}
 }
 func (r *memoryRepository) Environment(_ context.Context, _ string, kind EnvironmentKind) (Environment, error) {
 	item, ok := r.env[string(kind)]

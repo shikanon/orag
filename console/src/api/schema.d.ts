@@ -591,7 +591,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Derives append-only gate evidence for a pipeline version from a completed server-side evaluation run and immutable policy revision. */
+        /** @description Derives append-only gate evidence and the target-environment release validation for a pipeline version from a completed server-side evaluation run and immutable policy revision. */
         post: operations["recordProjectEvaluationEvidence"];
         delete?: never;
         options?: never;
@@ -1289,6 +1289,8 @@ export interface components {
         RecordEvaluationEvidenceRequest: {
             policy_id: string;
             evaluation_run_id: string;
+            /** @enum {string} */
+            environment: "development" | "staging" | "production";
         };
         EvaluationGateResult: {
             metric: string;
@@ -1309,6 +1311,8 @@ export interface components {
             evaluation_run_id: string;
             pipeline_version_id: string;
             content_hash: string;
+            /** @enum {string} */
+            environment?: "development" | "staging" | "production";
             gates: components["schemas"]["EvaluationGate"][];
             metrics: {
                 [key: string]: number;
@@ -1323,6 +1327,8 @@ export interface components {
             evaluation_run_id: string;
             pipeline_version_id: string;
             content_hash: string;
+            /** @enum {string} */
+            environment?: "development" | "staging" | "production";
             frozen_input: components["schemas"]["EvaluationFrozenInput"];
             gate_results: components["schemas"]["EvaluationGateResult"][];
             passed: boolean;
