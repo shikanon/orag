@@ -46,8 +46,8 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 | Offline Knowledge、MCP 自检/诊断/自运维 | `experimental` | 消除 fixture/占位依赖，完成安全边界与人工批准审计 |
 | ORAG Console | `experimental` | 完成编排、API 调试、评测门禁和发布回滚黄金路径 |
 | 教程实验室 | `experimental` | 支持 clone、Quick Run、Replay 和结果对比 |
-| 公共 Go SDK | `beta` | 已在 `v0.1.0-beta.1` 发布；以外部 consumer gate 和兼容政策持续验证 |
-| GHCR 镜像、完整 Compose、托管文档站 | `beta` | 已在 `v0.1.0-beta.1` 发布；持续验证签名、walkthrough 和文档契约 |
+| 公共 Go SDK | `beta` | 已在 `v0.1.0-beta.2` 发布；以外部 consumer gate 和兼容政策持续验证 |
+| GHCR 镜像、完整 Compose、托管文档站 | `beta` | 已在 `v0.1.0-beta.2` 发布；持续验证签名、walkthrough 和文档契约 |
 
 在 `v1.0.0` 之前，ORAG 不把任何能力标记为 `stable`。
 

@@ -2,7 +2,7 @@ module github.com/shikanon/orag-sdk-consumer
 
 go 1.26
 
-require github.com/shikanon/orag v0.1.0-beta.1
+require github.com/shikanon/orag v0.1.0-beta.2
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
