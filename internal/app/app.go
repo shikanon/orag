@@ -49,6 +49,8 @@ type App struct {
 	Tutorials           *tutorial.Catalog
 	TutorialClones      *tutorial.CloneService
 	TutorialCloneRunner *tutorial.CloneRunner
+	TutorialRuns        *tutorial.LiveRunService
+	TutorialRunRunner   *tutorial.ExperimentRunRunner
 	Eval                eval.Runner
 	EvaluationPolicy    *evaluationpolicy.Service
 	Optimizer           *optimizer.Service
@@ -171,6 +173,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	evaluationPolicySvc := evaluationpolicy.NewService(backend.evaluationPolicyRepo, datasets, eval.DefaultMetricRegistry)
 	apiKeys := auth.NewAPIKeyService(backend.apiKeyRepo, cfg.Auth.APIKeyPepper)
 	evalRunner := eval.Runner{RAG: ragSvc, Datasets: datasets, Repository: backend.evalRepo}
+	tutorialRunRepo, ok := backend.tutorialCloneRepo.(tutorial.ExperimentRunRepository)
+	if !ok {
+		return nil, errors.New("tutorial run repository is unavailable")
+	}
+	tutorialRuns := tutorial.NewLiveRunService(tutorialRunRepo, backend.tutorialCloneRepo, func() time.Time { return time.Now().UTC() })
+	tutorialRuns.Configure(ingestSvc, evalRunner, privatePacks)
 	optimizerRunner := optimizer.InternalRAGRunner{
 		BaseRAG:    ragSvc,
 		Datasets:   datasets,
@@ -203,6 +211,16 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		return nil, err
 	}
 	closers = append(closers, tutorialCloneRunner.Stop)
+	tutorialRunRunner := tutorial.NewExperimentRunRunner(tutorialRuns)
+	if err := tutorialRunRunner.Start(context.Background()); err != nil {
+		for i := len(closers) - 1; i >= 0; i-- {
+			if closers[i] != nil {
+				_ = closers[i]()
+			}
+		}
+		return nil, err
+	}
+	closers = append(closers, tutorialRunRunner.Stop)
 	return &App{
 		Config:              cfg,
 		Logger:              logger,
@@ -216,6 +234,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Tutorials:           tutorials,
 		TutorialClones:      tutorialClones,
 		TutorialCloneRunner: tutorialCloneRunner,
+		TutorialRuns:        tutorialRuns,
+		TutorialRunRunner:   tutorialRunRunner,
 		Eval:                evalRunner,
 		EvaluationPolicy:    evaluationPolicySvc,
 		Optimizer: &optimizer.Service{

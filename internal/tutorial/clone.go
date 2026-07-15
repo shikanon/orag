@@ -113,6 +113,7 @@ type Experiment struct {
 	DatasetID       string     `json:"dataset_id,omitempty"`
 	BaselineProfile string     `json:"baseline_profile,omitempty"`
 	BaselineTopK    int        `json:"baseline_top_k,omitempty"`
+	PackManifest    Manifest   `json:"-"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
@@ -130,7 +131,7 @@ type CloneRepository interface {
 	Fail(context.Context, string, string, CloneStage, string, time.Time) (CloneJob, bool, error)
 	EnsureExperiment(context.Context, Experiment) error
 	SetExperimentStatus(context.Context, string, string, PackStatus, time.Time) error
-	SetExperimentRuntime(context.Context, string, string, RuntimeResources, time.Time) error
+	SetExperimentRuntime(context.Context, string, string, RuntimeResources, Manifest, time.Time) error
 	RecoverPending(context.Context, time.Time) ([]CloneJob, error)
 }
 
@@ -353,13 +354,13 @@ func (s *CloneService) Run(ctx context.Context, subject Subject, jobID string) e
 				return s.fail(ctx, job, err)
 			}
 			resources := RuntimeResources{Status: "runtime_unavailable"}
-			if manifest.Runtime != nil && s.runtime != nil {
+			if supportsTextQuickBaseline(job.TemplateID, job.Tier) && manifest.Runtime != nil && s.runtime != nil {
 				resources, err = s.runtime.Ensure(ctx, job, manifest)
 				if err != nil {
 					return s.fail(ctx, job, err)
 				}
 			}
-			if err := s.repo.SetExperimentRuntime(ctx, job.TenantID, job.ProjectID, resources, s.now().UTC()); err != nil {
+			if err := s.repo.SetExperimentRuntime(ctx, job.TenantID, job.ProjectID, resources, manifest, s.now().UTC()); err != nil {
 				return s.fail(ctx, job, err)
 			}
 			if err := s.repo.SetExperimentStatus(ctx, job.TenantID, job.ProjectID, PackStatusInstalled, s.now().UTC()); err != nil {
@@ -510,10 +511,16 @@ func templatePack(template Template, tier string) (PackRef, bool) {
 	return PackRef{}, false
 }
 
+func supportsTextQuickBaseline(templateID, tier string) bool {
+	return templateID == "text-rag" && tier == "quick"
+}
+
 func resumeStage(stage CloneStage) CloneStage {
 	switch stage {
 	case CloneStageDownloadPack, CloneStageVerifyPack, CloneStageWritePrivate:
 		return CloneStageDownloadPack
+	case CloneStageCreateResources:
+		return CloneStageCreateResources
 	case CloneStagePackInstalled:
 		return CloneStagePackInstalled
 	default:

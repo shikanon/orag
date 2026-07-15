@@ -16,7 +16,7 @@
 | --- | --- | --- |
 | 系统检查 | `GET /healthz`、`GET /readyz`、`GET /metrics`、`GET /docs` | 否 |
 | 认证 | `POST /v1/auth/login` | 否 |
-| 教程实验 | `GET /v1/tutorials`、`POST /v1/tutorials/{template_id}/clones`、`GET /v1/tutorial-clone-jobs/{job_id}`、`POST /v1/tutorial-clone-jobs/{job_id}:retry`、`GET /v1/projects/{project_id}/tutorial-experiment` | 是 |
+| 教程实验 | `GET /v1/tutorials`、Clone/任务接口，以及文本 Quick baseline Run 的启动、查询、取消接口 | 是 |
 | 知识库 | `/v1/knowledge-bases` | 是 |
 | 文档入库 | `/v1/knowledge-bases/{id}/documents`、`/documents:import` | 是 |
 | 入库任务 | `GET /v1/ingestion-jobs/{id}` | 是 |
@@ -29,7 +29,9 @@
 
 教程目录是内嵌在服务二进制中的版本化只读资源。列表返回每个模板的最新版本，详情端点可以读取当前版本或指定的不可变语义版本。首批模板固定为 `text-rag`、`visual-document-rag` 和 `video-rag`，分别基于 CRUD-RAG、ViDoSeek 和 Video-MME 的精选子集设计。
 
-响应中的 Pack `manifest_url` 由非密钥配置 `TUTORIAL_CATALOG_BASE_URL` 和模板内的相对路径组合而成。`POST /v1/tutorials/{template_id}/clones` 只接收模板版本、Pack 层级、项目元数据、幂等键和许可确认；服务端异步读取公共对象、校验 Manifest/MIME/大小/SHA-256，并写入私有输出存储。任务和实验响应不会返回 bucket、object key、签名 URL 或凭证。完整前置条件与恢复方式见 [`../tutorials/clone-and-pack-install.md`](../tutorials/clone-and-pack-install.md)。Live Run、数据集生成、Replay 和视频入库仍不属于本阶段。
+响应中的 Pack `manifest_url` 由非密钥配置 `TUTORIAL_CATALOG_BASE_URL` 和模板内的相对路径组合而成。`POST /v1/tutorials/{template_id}/clones` 只接收模板版本、Pack 层级、项目元数据、幂等键和许可确认；服务端异步读取公共对象、校验 Manifest/MIME/大小/SHA-256，并写入私有输出存储。任务和实验响应不会返回 bucket、object key、签名 URL 或凭证。
+
+对带受支持运行时声明的 `text-rag` Quick Pack，`POST /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs` 只接收幂等键。服务端从保存的校验后 Manifest 推导私有对象、知识库、数据集、`realtime` profile 和 Top-K，随后创建普通评测运行。`GET` 同一路径下的 `{run_id}` 返回红脱敏进度和 `evaluation_run_id`，`:cancel` 请求取消运行。P0–P8 候选、Replay、结果对比与视觉/视频运行仍不属于本阶段。完整前置条件与恢复方式见 [`../tutorials/clone-and-pack-install.md`](../tutorials/clone-and-pack-install.md)。
 
 ## Trace 查询入口
 

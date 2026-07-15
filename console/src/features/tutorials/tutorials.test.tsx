@@ -2,7 +2,7 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
-import { server, tutorials } from '../../test/handlers'
+import { server, tutorials, useTutorialLiveRunHandlers } from '../../test/handlers'
 import { renderApp } from '../../test/render-app'
 
 describe('Tutorial catalog', () => {
@@ -25,13 +25,15 @@ describe('Tutorial catalog', () => {
   })
 
   it('starts the chosen Quick Pack clone and shows server progress', async () => {
+    useTutorialLiveRunHandlers()
     const user = userEvent.setup()
     renderApp('/tutorials/text-rag')
     await user.click(await screen.findByRole('button', { name: '克隆教程' }))
     await user.click(screen.getByRole('radio', { name: /Quick Pack/ }))
     await user.click(screen.getByRole('checkbox', { name: '我已确认数据许可' }))
     await user.click(screen.getByRole('button', { name: '创建实验项目' }))
-    expect(await screen.findByText('Pack 已安装，Live Run 即将开放。')).toBeVisible()
+    expect(await screen.findByText('Pack 已安装。支持运行声明的文本 Quick Pack 可进入基线 Live Run。')).toBeVisible()
+    expect(await screen.findByRole('link', { name: '打开基线 Live Run' })).toBeVisible()
     expect(screen.queryByText(/manifest_url|access key/i)).not.toBeInTheDocument()
   })
 
@@ -53,5 +55,14 @@ describe('Tutorial catalog', () => {
     renderApp('/tutorials/missing')
     expect(await screen.findByRole('alert')).toHaveTextContent('教程不存在')
     expect(screen.getByRole('link', { name: '返回教程库' })).toHaveAttribute('href', '/tutorials')
+  })
+
+  it('starts the server-derived baseline run without exposing Pack locations', async () => {
+    useTutorialLiveRunHandlers()
+    const user = userEvent.setup()
+    renderApp('/projects/prj_clone/tutorial/experiments/texp_clone')
+    await user.click(await screen.findByRole('button', { name: '运行基线评测' }))
+    expect(await screen.findByText('eval_tutorial_clone')).toBeVisible()
+    expect(screen.queryByText(/oss|access key|bucket/i)).not.toBeInTheDocument()
   })
 })

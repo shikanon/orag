@@ -25,6 +25,20 @@ const completedCloneJob = {
   id: 'tclj_clone', tenant_id: 'tenant_a', project_id: 'prj_clone', project_name: '中文文本 RAG 实验', project_description: 'Mock clone', template_id: 'text-rag', template_version: '1.0.0', pack_tier: 'quick', stage: 'pack_installed', status: 'completed', attempt: 1, events: [{ stage: 'pack_installed', outcome: 'completed', occurred_at: '2026-07-16T00:00:00Z' }], created_at: '2026-07-16T00:00:00Z', updated_at: '2026-07-16T00:00:00Z',
 } as const
 
+export const tutorialExperiment = {
+  id: 'texp_clone', tenant_id: 'tenant_a', project_id: completedCloneJob.project_id,
+  template_id: 'text-rag', template_version: '1.0.0', pack_tier: 'quick', pack_status: 'pack_installed',
+  runtime_status: 'ready', knowledge_base_id: 'tkb_clone', dataset_id: 'tds_clone', baseline_profile: 'realtime', baseline_top_k: 5,
+  created_at: '2026-07-16T00:00:00Z', updated_at: '2026-07-16T00:00:00Z',
+} as const
+
+export const completedTutorialRun = {
+  id: 'terun_clone', tenant_id: 'tenant_a', project_id: completedCloneJob.project_id, experiment_id: tutorialExperiment.id,
+  variant: 'baseline', stage: 'completed', status: 'completed', evaluation_run_id: 'eval_tutorial_clone',
+  events: [{ stage: 'index_private_pack', outcome: 'completed', occurred_at: '2026-07-16T00:00:00Z' }, { stage: 'run_evaluation', outcome: 'completed', occurred_at: '2026-07-16T00:00:01Z' }, { stage: 'completed', outcome: 'completed', occurred_at: '2026-07-16T00:00:02Z' }],
+  created_at: '2026-07-16T00:00:00Z', updated_at: '2026-07-16T00:00:02Z',
+} as const
+
 export const server = setupServer(
   http.post('/v1/auth/login', async ({ request }) => {
     const input = await request.json() as { username: string; password: string }
@@ -61,5 +75,13 @@ export const server = setupServer(
   }),
   http.get('/v1/tutorial-clone-jobs/:jobId', ({ params }) => params.jobId === completedCloneJob.id ? HttpResponse.json(completedCloneJob) : new HttpResponse(null, { status: 404 })),
   http.post('/v1/tutorial-clone-jobs/:jobId:retry', ({ params }) => params.jobId === completedCloneJob.id ? HttpResponse.json(completedCloneJob, { status: 202 }) : new HttpResponse(null, { status: 404 })),
-  http.get('/v1/projects/:projectId/tutorial-experiment', ({ params }) => params.projectId === completedCloneJob.project_id ? HttpResponse.json({ id: 'texp_clone', tenant_id: 'tenant_a', project_id: completedCloneJob.project_id, template_id: 'text-rag', template_version: '1.0.0', pack_tier: 'quick', pack_status: 'pack_installed', created_at: '2026-07-16T00:00:00Z', updated_at: '2026-07-16T00:00:00Z' }) : new HttpResponse(null, { status: 404 })),
 )
+
+export function useTutorialLiveRunHandlers() {
+  server.use(
+    http.get('/v1/projects/prj_clone/tutorial-experiment', () => HttpResponse.json(tutorialExperiment)),
+    http.post('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs', () => HttpResponse.json({ run_id: completedTutorialRun.id, poll_url: `/v1/projects/${completedCloneJob.project_id}/tutorial-experiments/${tutorialExperiment.id}/runs/${completedTutorialRun.id}`, run: completedTutorialRun }, { status: 202 })),
+    http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone', () => HttpResponse.json(completedTutorialRun)),
+    http.post('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone:cancel', () => HttpResponse.json(completedTutorialRun, { status: 202 })),
+  )
+}

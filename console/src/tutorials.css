@@ -458,6 +458,35 @@
 .tutorial-failure .primary-button {
   margin-top: 10px;
 }
+.tutorial-experiment-status .primary-button {
+  display: inline-flex;
+  margin-top: 14px;
+  text-decoration: none;
+}
+.tutorial-workbench {
+  max-width: 1040px;
+}
+.tutorial-workbench-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.tutorial-run-facts {
+  display: grid;
+  gap: 0;
+  margin: 24px 0;
+  border-top: 1px solid var(--line);
+}
+.tutorial-run-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.tutorial-run-facts dt { color: var(--muted); }
+.tutorial-run-facts dd { margin: 0; text-align: right; }
 @media (max-width: 980px) {
   .tutorial-card {
     grid-template-columns: 40px 1fr;
@@ -496,6 +525,9 @@
     grid-template-columns: repeat(2, 1fr);
   }
   .tutorial-pack-grid {
+    grid-template-columns: 1fr;
+  }
+  .tutorial-workbench-grid {
     grid-template-columns: 1fr;
   }
   .split-section {

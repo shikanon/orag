@@ -2,6 +2,8 @@ package tutorial
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +17,7 @@ import (
 var (
 	ErrPrivateStoreConfiguration = errors.New("tutorial private output storage is not configured")
 	ErrPrivateStoreWrite         = errors.New("tutorial private output storage write failed")
+	ErrPrivateStoreRead          = errors.New("tutorial private output storage read failed")
 )
 
 type PrivateObject struct {
@@ -24,10 +27,12 @@ type PrivateObject struct {
 	Object    VerifiedObject
 }
 
-// PrivateStore owns user-visible output only. It deliberately has no API for
-// fetching public catalog objects and never returns a key or URL to callers.
+// PrivateStore owns user-visible output only. Runtime reads are derived from a
+// verified Pack object plus tenant/project/job identity; it never accepts a
+// key, URL, or other object-storage detail from an HTTP caller.
 type PrivateStore interface {
 	PutVerified(context.Context, PrivateObject) error
+	ReadVerified(context.Context, PrivateObject) ([]byte, error)
 }
 
 type LocalPrivateStore struct {
@@ -78,7 +83,7 @@ func (s *LocalPrivateStore) PutVerified(ctx context.Context, input PrivateObject
 	if s == nil || !validPrivateComponent(input.TenantID) || !validPrivateComponent(input.ProjectID) || !validPrivateComponent(input.JobID) || input.Object.TempPath == "" || !sha256Pattern.MatchString(input.Object.SHA256) {
 		return ErrPrivateStoreConfiguration
 	}
-	destinationDir := filepath.Join(s.root, s.prefix, input.TenantID, input.ProjectID, input.JobID)
+	destinationDir := s.destinationDir(input)
 	if err := os.MkdirAll(destinationDir, 0o700); err != nil {
 		return fmt.Errorf("%w: %v", ErrPrivateStoreWrite, err)
 	}
@@ -121,6 +126,33 @@ func (s *LocalPrivateStore) PutVerified(ctx context.Context, input PrivateObject
 		return fmt.Errorf("%w: %v", ErrPrivateStoreWrite, err)
 	}
 	return nil
+}
+
+func (s *LocalPrivateStore) ReadVerified(ctx context.Context, input PrivateObject) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if s == nil || !validPrivateObject(input) {
+		return nil, ErrPrivateStoreConfiguration
+	}
+	filename := filepath.Join(s.destinationDir(input), input.Object.SHA256)
+	info, err := os.Stat(filename)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrPrivateStoreRead, err)
+	}
+	if info.Size() != input.Object.Bytes {
+		return nil, ErrPrivateStoreRead
+	}
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrPrivateStoreRead, err)
+	}
+	defer file.Close()
+	return readPrivateObject(file, input.Object.PackObject)
+}
+
+func (s *LocalPrivateStore) destinationDir(input PrivateObject) string {
+	return filepath.Join(s.root, s.prefix, input.TenantID, input.ProjectID, input.JobID)
 }
 
 func validPrivateComponent(value string) bool {
@@ -174,9 +206,47 @@ func (s *AliyunPrivateStore) PutVerified(ctx context.Context, input PrivateObjec
 		}
 		return ErrPrivateStoreWrite
 	}
-	key := strings.Join([]string{s.prefix, input.TenantID, input.ProjectID, input.JobID, input.Object.SHA256}, "/")
+	key := s.objectKey(input)
 	if err := s.bucket.PutObjectFromFile(key, input.Object.TempPath, oss.ContentType(input.Object.ContentType)); err != nil {
 		return fmt.Errorf("%w: %v", ErrPrivateStoreWrite, err)
 	}
 	return nil
+}
+
+func (s *AliyunPrivateStore) ReadVerified(ctx context.Context, input PrivateObject) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if s == nil || s.bucket == nil || !validPrivateObject(input) {
+		return nil, ErrPrivateStoreConfiguration
+	}
+	reader, err := s.bucket.GetObject(s.objectKey(input))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrPrivateStoreRead, err)
+	}
+	defer reader.Close()
+	return readPrivateObject(reader, input.Object.PackObject)
+}
+
+func (s *AliyunPrivateStore) objectKey(input PrivateObject) string {
+	return strings.Join([]string{s.prefix, input.TenantID, input.ProjectID, input.JobID, input.Object.SHA256}, "/")
+}
+
+func validPrivateObject(input PrivateObject) bool {
+	return validPrivateComponent(input.TenantID) && validPrivateComponent(input.ProjectID) && validPrivateComponent(input.JobID) && input.Object.Bytes > 0 && sha256Pattern.MatchString(input.Object.SHA256)
+}
+
+func readPrivateObject(reader io.Reader, object PackObject) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, object.Bytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrPrivateStoreRead, err)
+	}
+	if int64(len(data)) != object.Bytes {
+		return nil, ErrPrivateStoreRead
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != object.SHA256 {
+		return nil, ErrPrivateStoreRead
+	}
+	return data, nil
 }

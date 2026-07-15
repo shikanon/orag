@@ -12,6 +12,8 @@ type MemoryCloneRepository struct {
 	jobs        map[string]CloneJob
 	idempotency map[string]string
 	experiments map[string]Experiment
+	runs        map[string]ExperimentRun
+	runKeys     map[string]string
 }
 
 func NewMemoryCloneRepository() *MemoryCloneRepository {
@@ -19,7 +21,149 @@ func NewMemoryCloneRepository() *MemoryCloneRepository {
 		jobs:        make(map[string]CloneJob),
 		idempotency: make(map[string]string),
 		experiments: make(map[string]Experiment),
+		runs:        make(map[string]ExperimentRun),
+		runKeys:     make(map[string]string),
 	}
+}
+
+func (r *MemoryCloneRepository) CreateOrGetRun(_ context.Context, run ExperimentRun, idempotencyKey string) (ExperimentRun, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := run.TenantID + "\x00" + run.ProjectID + "\x00" + run.Variant + "\x00" + idempotencyKey
+	if existingID, ok := r.runKeys[key]; ok {
+		return cloneExperimentRun(r.runs[existingID]), true, nil
+	}
+	r.runs[run.ID] = cloneExperimentRun(run)
+	r.runKeys[key] = run.ID
+	return cloneExperimentRun(run), false, nil
+}
+
+func (r *MemoryCloneRepository) GetExperimentRun(_ context.Context, tenantID, runID string) (ExperimentRun, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	run, ok := r.runs[runID]
+	return cloneExperimentRun(run), ok && run.TenantID == tenantID, nil
+}
+
+func (r *MemoryCloneRepository) AcquireExperimentRun(_ context.Context, tenantID, runID string, now time.Time) (ExperimentRun, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	run, ok := r.runs[runID]
+	if !ok || run.TenantID != tenantID || run.Status != ExperimentRunQueued {
+		return ExperimentRun{}, false, nil
+	}
+	run.Status = ExperimentRunRunning
+	run.UpdatedAt = now
+	run.Events = append(run.Events, ExperimentRunEvent{Stage: run.Stage, Outcome: "started", OccurredAt: now})
+	r.runs[run.ID] = run
+	return cloneExperimentRun(run), true, nil
+}
+
+func (r *MemoryCloneRepository) AdvanceExperimentRun(_ context.Context, tenantID, runID string, expected, next ExperimentRunStage, now time.Time) (ExperimentRun, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	run, ok := r.runs[runID]
+	if !ok || run.TenantID != tenantID || run.Status != ExperimentRunRunning || run.Stage != expected {
+		return ExperimentRun{}, false, nil
+	}
+	run.Stage = next
+	run.Status = ExperimentRunQueued
+	run.UpdatedAt = now
+	run.Events = append(run.Events, ExperimentRunEvent{Stage: next, Outcome: "completed", OccurredAt: now})
+	r.runs[run.ID] = run
+	return cloneExperimentRun(run), true, nil
+}
+
+func (r *MemoryCloneRepository) CompleteExperimentRun(_ context.Context, tenantID, runID, evaluationID string, now time.Time) (ExperimentRun, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	run, ok := r.runs[runID]
+	if !ok || run.TenantID != tenantID || run.Status != ExperimentRunRunning || run.Stage != ExperimentRunStageEvaluate {
+		return ExperimentRun{}, false, nil
+	}
+	run.Stage = ExperimentRunStageComplete
+	run.Status = ExperimentRunCompleted
+	run.EvaluationRunID = evaluationID
+	run.UpdatedAt = now
+	run.Events = append(run.Events, ExperimentRunEvent{Stage: ExperimentRunStageComplete, Outcome: "completed", OccurredAt: now})
+	r.runs[run.ID] = run
+	return cloneExperimentRun(run), true, nil
+}
+
+func (r *MemoryCloneRepository) FailExperimentRun(_ context.Context, tenantID, runID string, stage ExperimentRunStage, code string, now time.Time) (ExperimentRun, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	run, ok := r.runs[runID]
+	if !ok || run.TenantID != tenantID || run.Status != ExperimentRunRunning || run.Stage != stage {
+		return ExperimentRun{}, false, nil
+	}
+	run.Status = ExperimentRunFailed
+	run.FailureCode = code
+	run.UpdatedAt = now
+	run.Events = append(run.Events, ExperimentRunEvent{Stage: stage, Outcome: "failed", DetailCode: code, OccurredAt: now})
+	r.runs[run.ID] = run
+	return cloneExperimentRun(run), true, nil
+}
+
+func (r *MemoryCloneRepository) CancelExperimentRun(_ context.Context, tenantID, runID string, now time.Time) (ExperimentRun, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	run, ok := r.runs[runID]
+	if !ok || run.TenantID != tenantID {
+		return ExperimentRun{}, false, nil
+	}
+	switch run.Status {
+	case ExperimentRunQueued:
+		run.Status = ExperimentRunCancelled
+		run.Events = append(run.Events, ExperimentRunEvent{Stage: run.Stage, Outcome: "cancelled", OccurredAt: now})
+	case ExperimentRunRunning:
+		run.Status = ExperimentRunCancelRequested
+		run.Events = append(run.Events, ExperimentRunEvent{Stage: run.Stage, Outcome: "cancel_requested", OccurredAt: now})
+	default:
+		return ExperimentRun{}, false, nil
+	}
+	run.UpdatedAt = now
+	r.runs[run.ID] = run
+	return cloneExperimentRun(run), true, nil
+}
+
+func (r *MemoryCloneRepository) MarkExperimentRunCancelled(_ context.Context, tenantID, runID string, now time.Time) (ExperimentRun, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	run, ok := r.runs[runID]
+	if !ok || run.TenantID != tenantID || run.Status != ExperimentRunCancelRequested {
+		return ExperimentRun{}, false, nil
+	}
+	run.Status = ExperimentRunCancelled
+	run.UpdatedAt = now
+	run.Events = append(run.Events, ExperimentRunEvent{Stage: run.Stage, Outcome: "cancelled", OccurredAt: now})
+	r.runs[run.ID] = run
+	return cloneExperimentRun(run), true, nil
+}
+
+func (r *MemoryCloneRepository) RecoverExperimentRuns(_ context.Context, now time.Time) ([]ExperimentRun, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	items := make([]ExperimentRun, 0)
+	for id, run := range r.runs {
+		switch run.Status {
+		case ExperimentRunRunning:
+			run.Status = ExperimentRunQueued
+			run.UpdatedAt = now
+			run.Events = append(run.Events, ExperimentRunEvent{Stage: run.Stage, Outcome: "recovered", OccurredAt: now})
+			r.runs[id] = run
+			items = append(items, cloneExperimentRun(run))
+		case ExperimentRunQueued:
+			items = append(items, cloneExperimentRun(run))
+		case ExperimentRunCancelRequested:
+			run.Status = ExperimentRunCancelled
+			run.UpdatedAt = now
+			run.Events = append(run.Events, ExperimentRunEvent{Stage: run.Stage, Outcome: "cancelled", OccurredAt: now})
+			r.runs[id] = run
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
 }
 
 func (r *MemoryCloneRepository) CreateOrGet(_ context.Context, job CloneJob) (CloneJob, bool, error) {
@@ -135,7 +279,7 @@ func (r *MemoryCloneRepository) SetExperimentStatus(_ context.Context, tenantID,
 	return nil
 }
 
-func (r *MemoryCloneRepository) SetExperimentRuntime(_ context.Context, tenantID, projectID string, resources RuntimeResources, now time.Time) error {
+func (r *MemoryCloneRepository) SetExperimentRuntime(_ context.Context, tenantID, projectID string, resources RuntimeResources, manifest Manifest, now time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	experiment, ok := r.experiments[projectID]
@@ -147,6 +291,7 @@ func (r *MemoryCloneRepository) SetExperimentRuntime(_ context.Context, tenantID
 	experiment.DatasetID = resources.DatasetID
 	experiment.BaselineProfile = resources.BaselineProfile
 	experiment.BaselineTopK = resources.BaselineTopK
+	experiment.PackManifest = cloneManifest(manifest)
 	experiment.UpdatedAt = now
 	r.experiments[projectID] = experiment
 	return nil
@@ -189,4 +334,9 @@ func cloneIdempotencyKey(job CloneJob) string {
 func cloneJob(job CloneJob) CloneJob {
 	job.Events = append([]StageEvent(nil), job.Events...)
 	return job
+}
+
+func cloneExperimentRun(run ExperimentRun) ExperimentRun {
+	run.Events = append([]ExperimentRunEvent(nil), run.Events...)
+	return run
 }

@@ -85,6 +85,8 @@ func TestLocalPrivateStoreCopiesVerifiedContentWithoutEscapingRoot(t *testing.T)
 	temp := t.TempDir()
 	inputPath := filepath.Join(temp, "verified")
 	content := []byte("verified pack")
+	hash := sha256.Sum256(content)
+	checksum := hex.EncodeToString(hash[:])
 	if err := os.WriteFile(inputPath, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -94,14 +96,21 @@ func TestLocalPrivateStoreCopiesVerifiedContentWithoutEscapingRoot(t *testing.T)
 	}
 	if err := store.PutVerified(context.Background(), PrivateObject{
 		TenantID: "tenant_a", ProjectID: "prj_a", JobID: "tclj_a",
-		Object: VerifiedObject{PackObject: PackObject{SHA256: strings.Repeat("a", 64), Bytes: int64(len(content))}, TempPath: inputPath},
+		Object: VerifiedObject{PackObject: PackObject{SHA256: checksum, Bytes: int64(len(content))}, TempPath: inputPath},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	output := filepath.Join(temp, "output", "tutorial-experiments", "tenant_a", "prj_a", "tclj_a", strings.Repeat("a", 64))
+	output := filepath.Join(temp, "output", "tutorial-experiments", "tenant_a", "prj_a", "tclj_a", checksum)
 	got, err := os.ReadFile(output)
 	if err != nil || string(got) != string(content) {
 		t.Fatalf("output = %q, %v", got, err)
+	}
+	read, err := store.ReadVerified(context.Background(), PrivateObject{
+		TenantID: "tenant_a", ProjectID: "prj_a", JobID: "tclj_a",
+		Object: VerifiedObject{PackObject: PackObject{SHA256: checksum, Bytes: int64(len(content))}},
+	})
+	if err != nil || string(read) != string(content) {
+		t.Fatalf("ReadVerified() = %q, %v", read, err)
 	}
 	if err := store.PutVerified(context.Background(), PrivateObject{TenantID: "../tenant", ProjectID: "prj_a", JobID: "tclj_a"}); !errors.Is(err, ErrPrivateStoreConfiguration) {
 		t.Fatalf("escape error = %v", err)

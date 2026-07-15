@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -141,17 +142,23 @@ func (r *TutorialCloneRepository) Retry(ctx context.Context, tenantID, jobID str
 
 func (r *TutorialCloneRepository) GetExperiment(ctx context.Context, tenantID, projectID string) (tutorial.Experiment, bool, error) {
 	var item tutorial.Experiment
+	var manifestRaw []byte
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, tenant_id, project_id, clone_job_id, template_id, template_version, pack_tier, pack_status,
-		       runtime_status, knowledge_base_id, dataset_id, baseline_profile, baseline_top_k, created_at, updated_at
+		       runtime_status, knowledge_base_id, dataset_id, baseline_profile, baseline_top_k, pack_manifest, created_at, updated_at
 		FROM tutorial_experiments WHERE tenant_id=$1 AND project_id=$2`, tenantID, projectID).
 		Scan(&item.ID, &item.TenantID, &item.ProjectID, &item.CloneJobID, &item.TemplateID, &item.TemplateVersion, &item.Tier, &item.PackStatus,
-			&item.RuntimeStatus, &item.KnowledgeBaseID, &item.DatasetID, &item.BaselineProfile, &item.BaselineTopK, &item.CreatedAt, &item.UpdatedAt)
+			&item.RuntimeStatus, &item.KnowledgeBaseID, &item.DatasetID, &item.BaselineProfile, &item.BaselineTopK, &manifestRaw, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return tutorial.Experiment{}, false, nil
 	}
 	if err != nil {
 		return tutorial.Experiment{}, false, err
+	}
+	if len(manifestRaw) > 0 && string(manifestRaw) != "{}" {
+		if err := json.Unmarshal(manifestRaw, &item.PackManifest); err != nil {
+			return tutorial.Experiment{}, false, fmt.Errorf("decode tutorial manifest snapshot: %w", err)
+		}
 	}
 	return item, true, nil
 }
@@ -253,24 +260,32 @@ func (r *TutorialCloneRepository) Fail(ctx context.Context, tenantID, jobID stri
 }
 
 func (r *TutorialCloneRepository) EnsureExperiment(ctx context.Context, item tutorial.Experiment) error {
-	_, err := r.pool.Exec(ctx, `
+	manifest, err := tutorialManifestJSON(item.PackManifest)
+	if err != nil {
+		return err
+	}
+	_, err = r.pool.Exec(ctx, `
 		INSERT INTO tutorial_experiments(
 			id, tenant_id, project_id, clone_job_id, template_id, template_version, pack_tier, pack_status,
-			runtime_status, knowledge_base_id, dataset_id, baseline_profile, baseline_top_k, created_at, updated_at
-		) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+			runtime_status, knowledge_base_id, dataset_id, baseline_profile, baseline_top_k, pack_manifest, created_at, updated_at
+		) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		ON CONFLICT (project_id) DO NOTHING`,
 		item.ID, item.TenantID, item.ProjectID, item.CloneJobID, item.TemplateID, item.TemplateVersion, item.Tier, item.PackStatus,
-		item.RuntimeStatus, item.KnowledgeBaseID, item.DatasetID, item.BaselineProfile, item.BaselineTopK, item.CreatedAt, item.UpdatedAt,
+		item.RuntimeStatus, item.KnowledgeBaseID, item.DatasetID, item.BaselineProfile, item.BaselineTopK, manifest, item.CreatedAt, item.UpdatedAt,
 	)
 	return err
 }
 
-func (r *TutorialCloneRepository) SetExperimentRuntime(ctx context.Context, tenantID, projectID string, resources tutorial.RuntimeResources, now time.Time) error {
+func (r *TutorialCloneRepository) SetExperimentRuntime(ctx context.Context, tenantID, projectID string, resources tutorial.RuntimeResources, manifest tutorial.Manifest, now time.Time) error {
+	manifestRaw, err := tutorialManifestJSON(manifest)
+	if err != nil {
+		return err
+	}
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE tutorial_experiments
-		SET runtime_status=$3, knowledge_base_id=$4, dataset_id=$5, baseline_profile=$6, baseline_top_k=$7, updated_at=$8
+		SET runtime_status=$3, knowledge_base_id=$4, dataset_id=$5, baseline_profile=$6, baseline_top_k=$7, pack_manifest=$8, updated_at=$9
 		WHERE tenant_id=$1 AND project_id=$2`,
-		tenantID, projectID, resources.Status, resources.KnowledgeBaseID, resources.DatasetID, resources.BaselineProfile, resources.BaselineTopK, now,
+		tenantID, projectID, resources.Status, resources.KnowledgeBaseID, resources.DatasetID, resources.BaselineProfile, resources.BaselineTopK, manifestRaw, now,
 	)
 	if err != nil {
 		return err
@@ -279,6 +294,14 @@ func (r *TutorialCloneRepository) SetExperimentRuntime(ctx context.Context, tena
 		return tutorial.ErrCloneExperimentAbsent
 	}
 	return nil
+}
+
+func tutorialManifestJSON(manifest tutorial.Manifest) ([]byte, error) {
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		return nil, fmt.Errorf("encode tutorial manifest snapshot: %w", err)
+	}
+	return raw, nil
 }
 
 func (r *TutorialCloneRepository) SetExperimentStatus(ctx context.Context, tenantID, projectID string, status tutorial.PackStatus, now time.Time) error {

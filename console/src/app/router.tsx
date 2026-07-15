@@ -10,6 +10,7 @@ const APIKeyList = lazy(() => import('../features/api-keys/api-key-list').then((
 const TutorialList = lazy(() => import('../features/tutorials/tutorial-list').then((module) => ({ default: module.TutorialList })))
 const TutorialDetail = lazy(() => import('../features/tutorials/tutorial-detail').then((module) => ({ default: module.TutorialDetail })))
 const TutorialCloneProgress = lazy(() => import('../features/tutorials/tutorial-clone-progress').then((module) => ({ default: module.TutorialCloneProgress })))
+const TutorialExperimentWorkbench = lazy(() => import('../features/tutorials/tutorial-experiment-workbench').then((module) => ({ default: module.TutorialExperimentWorkbench })))
 const APIDebugger = lazy(() => import('../features/debugger/api-debugger').then((module) => ({ default: module.APIDebugger })))
 const EvaluationCenter = lazy(() => import('../features/evaluation/evaluation-center').then((module) => ({ default: module.EvaluationCenter })))
 const ReleaseCenter = lazy(() => import('../features/releases/release-center').then((module) => ({ default: module.ReleaseCenter })))
@@ -50,6 +51,7 @@ export function createAppRouter(initialEntries?: string[]) {
     { path: 'tutorials', element: <TutorialList /> },
     { path: 'tutorials/:templateId', element: <TutorialDetail /> },
     { path: 'projects/:projectId/tutorial/setup', loader: projectLoader, element: <TutorialCloneProgress /> },
+    { path: 'projects/:projectId/tutorial/experiments/:experimentId', loader: projectLoader, element: <TutorialExperimentWorkbench /> },
   ] }]
   const future = { v7_startTransition: true, v7_relativeSplatPath: true }
   return initialEntries ? createMemoryRouter(routes, { initialEntries, future }) : createBrowserRouter(routes, { future })

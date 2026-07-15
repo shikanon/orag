@@ -29,6 +29,16 @@ type tutorialCloneAcceptedResponse struct {
 	Job       tutorial.CloneJob `json:"job"`
 }
 
+type tutorialExperimentRunRequest struct {
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+type tutorialExperimentRunAcceptedResponse struct {
+	RunID   string                 `json:"run_id"`
+	PollURL string                 `json:"poll_url"`
+	Run     tutorial.ExperimentRun `json:"run"`
+}
+
 func (s *Server) createTutorialClone(ctx context.Context, c *app.RequestContext) {
 	principal, ok := requestPrincipal(c)
 	if !ok || !authorizeRequest(c, auth.ActionTutorialCloneCreate, tenantID(c), "") {
@@ -126,6 +136,95 @@ func (s *Server) getProjectTutorialExperiment(ctx context.Context, c *app.Reques
 	c.JSON(consts.StatusOK, experiment)
 }
 
+func (s *Server) startTutorialExperimentRun(ctx context.Context, c *app.RequestContext) {
+	principal, ok := requestPrincipal(c)
+	if !ok {
+		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+		return
+	}
+	projectID := c.Param("project_id")
+	experiment, err := s.App.TutorialClones.GetExperiment(ctx, tutorial.Subject{TenantID: principal.TenantID, ID: principal.SubjectID}, projectID)
+	if err != nil {
+		writeTutorialRunError(c, err)
+		return
+	}
+	if experiment.ID != c.Param("experiment_id") {
+		writeError(c, consts.StatusNotFound, "tutorial_experiment_not_found", "tutorial experiment not found")
+		return
+	}
+	if !authorizeRequest(c, auth.ActionTutorialRunCreate, principal.TenantID, experiment.ProjectID) {
+		return
+	}
+	var req tutorialExperimentRunRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	run, duplicate, err := s.App.TutorialRuns.Start(ctx, tutorial.Subject{TenantID: principal.TenantID, ID: principal.SubjectID}, projectID, req.IdempotencyKey)
+	if err != nil {
+		writeTutorialRunError(c, err)
+		return
+	}
+	c.JSON(consts.StatusAccepted, tutorialExperimentRunAcceptedResponse{
+		RunID: run.ID, PollURL: "/v1/projects/" + projectID + "/tutorial-experiments/" + experiment.ID + "/runs/" + run.ID, Run: run,
+	})
+	if !duplicate && s.App.TutorialRunRunner != nil {
+		s.App.TutorialRunRunner.Schedule(principal.TenantID, run.ID)
+	}
+}
+
+func (s *Server) getTutorialExperimentRun(ctx context.Context, c *app.RequestContext) {
+	principal, ok := requestPrincipal(c)
+	if !ok {
+		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+		return
+	}
+	run, err := s.App.TutorialRuns.Get(ctx, tutorial.Subject{TenantID: principal.TenantID, ID: principal.SubjectID}, c.Param("run_id"))
+	if err != nil {
+		writeTutorialRunError(c, err)
+		return
+	}
+	if run.ProjectID != c.Param("project_id") || run.ExperimentID != c.Param("experiment_id") {
+		writeError(c, consts.StatusNotFound, "tutorial_experiment_run_not_found", "tutorial experiment run not found")
+		return
+	}
+	if !authorizeRequest(c, auth.ActionTutorialRunRead, principal.TenantID, run.ProjectID) {
+		return
+	}
+	c.JSON(consts.StatusOK, run)
+}
+
+func (s *Server) tutorialExperimentRunAction(ctx context.Context, c *app.RequestContext) {
+	principal, ok := requestPrincipal(c)
+	if !ok {
+		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+		return
+	}
+	action := strings.TrimPrefix(c.Param("action"), "/")
+	if !strings.HasSuffix(action, ":cancel") {
+		writeError(c, consts.StatusNotFound, "tutorial_experiment_run_not_found", "tutorial experiment run not found")
+		return
+	}
+	runID := strings.TrimSuffix(action, ":cancel")
+	run, err := s.App.TutorialRuns.Get(ctx, tutorial.Subject{TenantID: principal.TenantID, ID: principal.SubjectID}, runID)
+	if err != nil {
+		writeTutorialRunError(c, err)
+		return
+	}
+	if run.ProjectID != c.Param("project_id") || run.ExperimentID != c.Param("experiment_id") {
+		writeError(c, consts.StatusNotFound, "tutorial_experiment_run_not_found", "tutorial experiment run not found")
+		return
+	}
+	if !authorizeRequest(c, auth.ActionTutorialRunCancel, principal.TenantID, run.ProjectID) {
+		return
+	}
+	cancelled, err := s.App.TutorialRuns.Cancel(ctx, tutorial.Subject{TenantID: principal.TenantID, ID: principal.SubjectID}, runID)
+	if err != nil {
+		writeTutorialRunError(c, err)
+		return
+	}
+	c.JSON(consts.StatusAccepted, cancelled)
+}
+
 func writeTutorialCloneError(c *app.RequestContext, err error) {
 	switch {
 	case errors.Is(err, tutorial.ErrTemplateNotFound):
@@ -144,5 +243,24 @@ func writeTutorialCloneError(c *app.RequestContext, err error) {
 			return
 		}
 		writeError(c, consts.StatusInternalServerError, "tutorial_clone_failed", "tutorial clone operation failed")
+	}
+}
+
+func writeTutorialRunError(c *app.RequestContext, err error) {
+	switch {
+	case errors.Is(err, tutorial.ErrCloneExperimentAbsent):
+		writeError(c, consts.StatusNotFound, "tutorial_experiment_not_found", "tutorial experiment not found")
+	case errors.Is(err, tutorial.ErrExperimentRunNotFound):
+		writeError(c, consts.StatusNotFound, "tutorial_experiment_run_not_found", "tutorial experiment run not found")
+	case errors.Is(err, tutorial.ErrExperimentRunKey):
+		writeError(c, consts.StatusBadRequest, "invalid_tutorial_experiment_run_request", "tutorial experiment run request is invalid")
+	case errors.Is(err, tutorial.ErrRuntimeUnavailable):
+		writeError(c, consts.StatusConflict, "tutorial_runtime_unavailable", "tutorial Pack does not declare a runnable runtime")
+	case errors.Is(err, tutorial.ErrPackNotInstalled):
+		writeError(c, consts.StatusConflict, "tutorial_pack_not_installed", "tutorial Pack is not installed")
+	case errors.Is(err, tutorial.ErrExperimentRunCancelled):
+		writeError(c, consts.StatusConflict, "tutorial_experiment_run_cancelled", "tutorial experiment run is cancelled")
+	default:
+		writeError(c, consts.StatusInternalServerError, "tutorial_experiment_run_failed", "tutorial experiment run operation failed")
 	}
 }

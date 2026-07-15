@@ -8,6 +8,7 @@ const stageLabels: Record<TutorialCloneJob['stage'], string> = {
   download_pack: '正在下载数据包',
   verify_pack: '正在校验数据包',
   write_private_store: '正在写入项目私有存储',
+  create_runtime_resources: '正在创建基线实验资源',
   pack_installed: '数据包已安装',
 }
 
@@ -32,7 +33,8 @@ export function TutorialCloneProgress() {
   if (jobQuery.isLoading) return <main className="content tutorial-setup" aria-label="正在读取克隆进度" aria-busy="true"><div className="skeleton-line short" /><div className="skeleton-line" /></main>
   if (jobQuery.isError || !jobQuery.data) return <main className="content tutorial-setup"><section className="tutorial-state" role="alert"><h1>无法读取克隆进度</h1><p>请稍后重试，或返回教程库重新发起请求。</p><button className="secondary-button" onClick={() => void jobQuery.refetch()}>重新加载</button></section></main>
   const job = jobQuery.data
-  return <main className="content tutorial-setup"><Link className="back-link" to="/tutorials">← 返回教程库</Link><header className="page-header"><div><p className="eyebrow">Tutorial experiment</p><h1>{job.project_name}</h1><p>基于不可变模板 {job.template_id} v{job.template_version} 创建。数据访问与校验由服务端完成。</p></div><span className={`tutorial-job-status ${job.status}`}>{statusLabel(job.status)}</span></header><section className="tutorial-progress-card"><p className="eyebrow">Pack setup</p><h2>{stageLabels[job.stage]}</h2><p>{job.status === 'completed' ? 'Pack 已安装，Live Run 即将开放。' : job.status === 'failed' ? '安装未完成；可在修复外部数据包或存储配置后安全重试。' : '任务正在后台运行。你可以离开本页面，稍后用同一项目查看状态。'}</p><ol className="tutorial-stage-list">{(['create_project', 'validate_manifest', 'download_pack', 'verify_pack', 'write_private_store', 'pack_installed'] as const).map((stage) => <li className={stageState(job, stage)} key={stage}><span>{stageLabels[stage]}</span><small>{stageState(job, stage) === 'done' ? '完成' : stage === job.stage ? statusLabel(job.status) : '等待'}</small></li>)}</ol>{job.status === 'failed' ? <div className="tutorial-failure" role="alert"><strong>服务端失败代码：{job.failure_code || 'clone_failed'}</strong><p>该代码不包含存储地址或凭证。修复后将从安全检查点继续。</p><button className="primary-button" disabled={retry.isPending} onClick={() => retry.mutate()}>{retry.isPending ? '重新排队中…' : '重试安装'}</button>{retry.isError ? <p>重试未被接受，请刷新后确认任务状态。</p> : null}</div> : null}{installed && experimentQuery.data ? <p className="tutorial-experiment-status">项目实验状态：{experimentQuery.data.pack_status === 'pack_installed' ? 'Pack 已安装' : experimentQuery.data.pack_status}</p> : null}</section></main>
+  const experiment = experimentQuery.data
+  return <main className="content tutorial-setup"><Link className="back-link" to="/tutorials">← 返回教程库</Link><header className="page-header"><div><p className="eyebrow">Tutorial experiment</p><h1>{job.project_name}</h1><p>基于不可变模板 {job.template_id} v{job.template_version} 创建。数据访问与校验由服务端完成。</p></div><span className={`tutorial-job-status ${job.status}`}>{statusLabel(job.status)}</span></header><section className="tutorial-progress-card"><p className="eyebrow">Pack setup</p><h2>{stageLabels[job.stage]}</h2><p>{job.status === 'completed' ? 'Pack 已安装。支持运行声明的文本 Quick Pack 可进入基线 Live Run。' : job.status === 'failed' ? '安装未完成；可在修复外部数据包或存储配置后安全重试。' : '任务正在后台运行。你可以离开本页面，稍后用同一项目查看状态。'}</p><ol className="tutorial-stage-list">{(['create_project', 'validate_manifest', 'download_pack', 'verify_pack', 'write_private_store', 'create_runtime_resources', 'pack_installed'] as const).map((stage) => <li className={stageState(job, stage)} key={stage}><span>{stageLabels[stage]}</span><small>{stageState(job, stage) === 'done' ? '完成' : stage === job.stage ? statusLabel(job.status) : '等待'}</small></li>)}</ol>{job.status === 'failed' ? <div className="tutorial-failure" role="alert"><strong>服务端失败代码：{job.failure_code || 'clone_failed'}</strong><p>该代码不包含存储地址或凭证。修复后将从安全检查点继续。</p><button className="primary-button" disabled={retry.isPending} onClick={() => retry.mutate()}>{retry.isPending ? '重新排队中…' : '重试安装'}</button>{retry.isError ? <p>重试未被接受，请刷新后确认任务状态。</p> : null}</div> : null}{installed && experiment ? <div className="tutorial-experiment-status"><p>项目实验状态：{experiment.pack_status === 'pack_installed' ? 'Pack 已安装' : experiment.pack_status}</p>{experiment.runtime_status === 'ready' ? <Link className="primary-button" to={`/projects/${projectId}/tutorial/experiments/${experiment.id}`}>打开基线 Live Run</Link> : <p>当前 Pack 未发布可运行的文本基线声明；仍可安全保留安装副本。</p>}</div> : null}</section></main>
 }
 
 function terminal(status?: TutorialCloneJob['status']) {
@@ -44,7 +46,7 @@ function statusLabel(status: TutorialCloneJob['status']) {
 }
 
 function stageState(job: TutorialCloneJob, stage: TutorialCloneJob['stage']) {
-  const stages: TutorialCloneJob['stage'][] = ['create_project', 'validate_manifest', 'download_pack', 'verify_pack', 'write_private_store', 'pack_installed']
+  const stages: TutorialCloneJob['stage'][] = ['create_project', 'validate_manifest', 'download_pack', 'verify_pack', 'write_private_store', 'create_runtime_resources', 'pack_installed']
   const current = stages.indexOf(job.stage)
   const index = stages.indexOf(stage)
   if (job.status === 'completed' || index < current) return 'done'

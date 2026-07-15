@@ -17,6 +17,9 @@ const (
 	ActionTutorialCloneCreate Action = "tutorial_clone.create"
 	ActionTutorialCloneRead   Action = "tutorial_clone.read"
 	ActionTutorialCloneRetry  Action = "tutorial_clone.retry"
+	ActionTutorialRunCreate   Action = "tutorial_run.create"
+	ActionTutorialRunRead     Action = "tutorial_run.read"
+	ActionTutorialRunCancel   Action = "tutorial_run.cancel"
 )
 
 // Authorize denies unknown actions and malformed principals. resourceProjectID
@@ -39,7 +42,7 @@ func Authorize(principal Principal, action Action, resourceTenantID, resourcePro
 		if resourceProjectID == "" {
 			return ErrForbidden
 		}
-	case ActionResourceRead, ActionResourceWrite, ActionTutorialCloneRead, ActionTutorialCloneRetry:
+	case ActionResourceRead, ActionResourceWrite, ActionTutorialCloneRead, ActionTutorialCloneRetry, ActionTutorialRunCreate, ActionTutorialRunRead, ActionTutorialRunCancel:
 		// Project-less resources remain accessible only to an unconstrained tenant
 		// administrator during the beta compatibility window.
 		if resourceProjectID == "" {
@@ -60,11 +63,11 @@ func Authorize(principal Principal, action Action, resourceTenantID, resourcePro
 	case RoleTenantAdmin:
 		return nil
 	case RoleProjectEditor:
-		if action == ActionProjectRead || action == ActionResourceRead || action == ActionResourceWrite || action == ActionTutorialCloneRead || action == ActionTutorialCloneRetry {
+		if action == ActionProjectRead || action == ActionResourceRead || action == ActionResourceWrite || action == ActionTutorialCloneRead || action == ActionTutorialCloneRetry || action == ActionTutorialRunCreate || action == ActionTutorialRunRead || action == ActionTutorialRunCancel {
 			return nil
 		}
 	case RoleProjectViewer:
-		if action == ActionProjectRead || action == ActionResourceRead || action == ActionTutorialCloneRead {
+		if action == ActionProjectRead || action == ActionResourceRead || action == ActionTutorialCloneRead || action == ActionTutorialRunRead {
 			return nil
 		}
 	}
