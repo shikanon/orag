@@ -9,6 +9,11 @@ type KnowledgeBaseRepository interface {
 	DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error)
 }
 
+type ProjectKnowledgeBaseRepository interface {
+	ListKnowledgeBasesByProject(ctx context.Context, tenantID, projectID string) ([]KnowledgeBase, error)
+	GetKnowledgeBaseByProject(ctx context.Context, tenantID, projectID, id string) (KnowledgeBase, bool, error)
+}
+
 type KnowledgeBaseDeleter interface {
 	DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error)
 }

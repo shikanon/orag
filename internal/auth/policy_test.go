@@ -31,6 +31,8 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"viewer reads resource", viewer, ActionResourceRead, "tenant_1", "prj_1", true},
 		{"viewer cannot write resource", viewer, ActionResourceWrite, "tenant_1", "prj_1", false},
 		{"viewer cannot cross project", viewer, ActionProjectRead, "tenant_1", "prj_2", false},
+		{"admin reads compatibility resource", admin, ActionResourceRead, "tenant_1", "", true},
+		{"editor cannot read compatibility resource", editor, ActionResourceRead, "tenant_1", "", false},
 		{"tenant mismatch", admin, ActionProjectRead, "tenant_2", "prj_1", false},
 		{"project action requires project", admin, ActionProjectRead, "tenant_1", "", false},
 		{"unknown action denied", admin, Action("project.delete"), "tenant_1", "prj_1", false},

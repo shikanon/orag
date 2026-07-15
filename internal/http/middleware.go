@@ -48,15 +48,26 @@ func (s *Server) authMiddleware(ctx context.Context, c *app.RequestContext) {
 	}
 	c.Set("principal", principal)
 	c.Set("tenant_id", principal.TenantID)
-	// Project-owned RAG resources are introduced in the next migration slice.
-	// Until a handler has an explicit project policy, constrained credentials
-	// must not fall back to tenant-wide repository access.
-	if principal.ProjectID != "" && !strings.HasPrefix(string(c.Path()), "/v1/projects/") {
+	if principal.ProjectID != "" && !projectScopedRouteSupported(c) {
 		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
 		c.Abort()
 		return
 	}
 	c.Next(ctx)
+}
+
+func projectScopedRouteSupported(c *app.RequestContext) bool {
+	switch c.FullPath() {
+	case "/v1/projects/:project_id",
+		"/v1/knowledge-bases", "/v1/knowledge-bases/:id",
+		"/v1/knowledge-bases/:id/documents", "/v1/knowledge-bases/:id/documents:import",
+		"/v1/knowledge-bases/:id/uploads", "/v1/uploads/:id", "/v1/uploads/*action",
+		"/v1/query", "/v1/query:stream", "/v1/datasets", "/v1/datasets/:id/items",
+		"/v1/evaluations", "/v1/evaluations/:id":
+		return true
+	default:
+		return false
+	}
 }
 
 func authorizeRequest(c *app.RequestContext, action auth.Action, resourceTenantID, resourceProjectID string) bool {

@@ -198,7 +198,71 @@ func TestAPIKeyLifecycleAndProjectAuthorization(t *testing.T) {
 	assertErrorResponse(t, performJSONWithTrace(h, "PATCH", "/v1/projects/"+firstProject.ID, `{"name":"Changed"}`, viewer.Secret, "trace_viewer_update"), 403, "forbidden", "trace_viewer_update")
 	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/projects/"+secondProject.ID, "", viewer.Secret, "trace_cross_project"), 404, "project_not_found", "trace_cross_project")
 	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/api-keys", "", viewer.Secret, "trace_viewer_keys"), 403, "forbidden", "trace_viewer_keys")
-	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/knowledge-bases", "", viewer.Secret, "trace_viewer_legacy_resource"), 403, "forbidden", "trace_viewer_legacy_resource")
+	if response := performJSON(h, "GET", "/v1/knowledge-bases", "", viewer.Secret); response.Code != 200 || !strings.Contains(response.Body, `"items":[]`) {
+		t.Fatalf("empty project knowledge-base list status=%d body=%s", response.Code, response.Body)
+	}
+	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/tutorials", "", viewer.Secret, "trace_viewer_tutorials"), 403, "forbidden", "trace_viewer_tutorials")
+
+	firstKBResponse := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"First docs","project_id":"`+firstProject.ID+`"}`, adminToken)
+	secondKBResponse := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"Second docs","project_id":"`+secondProject.ID+`"}`, adminToken)
+	if firstKBResponse.Code != 201 || secondKBResponse.Code != 201 {
+		t.Fatalf("knowledge-base creation failed: first=%d second=%d", firstKBResponse.Code, secondKBResponse.Code)
+	}
+	var firstKB, secondKB kb.KnowledgeBase
+	if err := json.Unmarshal([]byte(firstKBResponse.Body), &firstKB); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(secondKBResponse.Body), &secondKB); err != nil {
+		t.Fatal(err)
+	}
+	viewerList := performJSON(h, "GET", "/v1/knowledge-bases", "", viewer.Secret)
+	if viewerList.Code != 200 || !strings.Contains(viewerList.Body, firstKB.ID) || strings.Contains(viewerList.Body, secondKB.ID) {
+		t.Fatalf("viewer project list status=%d body=%s", viewerList.Code, viewerList.Body)
+	}
+	if response := performJSON(h, "GET", "/v1/knowledge-bases/"+firstKB.ID, "", viewer.Secret); response.Code != 200 {
+		t.Fatalf("viewer own knowledge base status=%d body=%s", response.Code, response.Body)
+	}
+	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/knowledge-bases/"+secondKB.ID, "", viewer.Secret, "trace_foreign_kb"), 404, "knowledge_base_not_found", "trace_foreign_kb")
+	assertErrorResponse(t, performJSONWithTrace(h, "DELETE", "/v1/knowledge-bases/"+firstKB.ID, "", viewer.Secret, "trace_viewer_delete_kb"), 403, "forbidden", "trace_viewer_delete_kb")
+	if response := performJSON(h, "POST", "/v1/query", `{"knowledge_base_id":"`+firstKB.ID+`","query":"hello"}`, viewer.Secret); response.Code != 200 {
+		t.Fatalf("viewer query status=%d body=%s", response.Code, response.Body)
+	}
+
+	editorResponse := performJSON(h, "POST", "/v1/api-keys", `{"name":"project editor","role":"project_editor","project_id":"`+firstProject.ID+`"}`, adminToken)
+	if editorResponse.Code != 201 {
+		t.Fatalf("editor key status=%d body=%s", editorResponse.Code, editorResponse.Body)
+	}
+	var editor auth.APIKeyCreateResult
+	if err := json.Unmarshal([]byte(editorResponse.Body), &editor); err != nil {
+		t.Fatal(err)
+	}
+	editorKBResponse := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"Editor docs"}`, editor.Secret)
+	if editorKBResponse.Code != 201 || !strings.Contains(editorKBResponse.Body, `"project_id":"`+firstProject.ID+`"`) {
+		t.Fatalf("editor knowledge base status=%d body=%s", editorKBResponse.Code, editorKBResponse.Body)
+	}
+	editorDatasetResponse := performJSON(h, "POST", "/v1/datasets", `{"name":"Editor eval","kind":"golden"}`, editor.Secret)
+	if editorDatasetResponse.Code != 201 || !strings.Contains(editorDatasetResponse.Body, `"project_id":"`+firstProject.ID+`"`) {
+		t.Fatalf("editor dataset status=%d body=%s", editorDatasetResponse.Code, editorDatasetResponse.Body)
+	}
+	var editorDataset dataset.Dataset
+	if err := json.Unmarshal([]byte(editorDatasetResponse.Body), &editorDataset); err != nil {
+		t.Fatal(err)
+	}
+	if response := performJSON(h, "POST", "/v1/datasets/"+editorDataset.ID+"/items", `{"query":"hello","ground_truth":"Insufficient context."}`, editor.Secret); response.Code != 201 {
+		t.Fatalf("editor dataset item status=%d body=%s", response.Code, response.Body)
+	}
+	evaluationResponse := performJSON(h, "POST", "/v1/evaluations", `{"dataset_id":"`+editorDataset.ID+`","knowledge_base_id":"`+firstKB.ID+`","profile":"realtime"}`, editor.Secret)
+	if evaluationResponse.Code != 202 {
+		t.Fatalf("editor evaluation status=%d body=%s", evaluationResponse.Code, evaluationResponse.Body)
+	}
+	var evaluation evalpkg.RunResult
+	if err := json.Unmarshal([]byte(evaluationResponse.Body), &evaluation); err != nil {
+		t.Fatal(err)
+	}
+	if response := performJSON(h, "GET", "/v1/evaluations/"+evaluation.ID, "", viewer.Secret); response.Code != 200 {
+		t.Fatalf("viewer evaluation status=%d body=%s", response.Code, response.Body)
+	}
+	assertErrorResponse(t, performJSONWithTrace(h, "POST", "/v1/datasets", `{"name":"Denied"}`, viewer.Secret, "trace_viewer_create_dataset"), 403, "forbidden", "trace_viewer_create_dataset")
 
 	machineAdminResponse := performJSON(h, "POST", "/v1/api-keys", `{"name":"automation admin","role":"tenant_admin"}`, adminToken)
 	if machineAdminResponse.Code != 201 {

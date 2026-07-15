@@ -620,8 +620,33 @@ func (s knowledgeBaseStore) ListKnowledgeBases(ctx context.Context, tenantID str
 	return s.primary.ListKnowledgeBases(ctx, tenantID)
 }
 
+func (s knowledgeBaseStore) ListKnowledgeBasesByProject(ctx context.Context, tenantID, projectID string) ([]kb.KnowledgeBase, error) {
+	if scoped, ok := s.primary.(kb.ProjectKnowledgeBaseRepository); ok {
+		return scoped.ListKnowledgeBasesByProject(ctx, tenantID, projectID)
+	}
+	items, err := s.primary.ListKnowledgeBases(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]kb.KnowledgeBase, 0, len(items))
+	for _, item := range items {
+		if item.ProjectID == projectID {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
 func (s knowledgeBaseStore) GetKnowledgeBase(ctx context.Context, tenantID, id string) (kb.KnowledgeBase, bool, error) {
 	return s.primary.GetKnowledgeBase(ctx, tenantID, id)
+}
+
+func (s knowledgeBaseStore) GetKnowledgeBaseByProject(ctx context.Context, tenantID, projectID, id string) (kb.KnowledgeBase, bool, error) {
+	if scoped, ok := s.primary.(kb.ProjectKnowledgeBaseRepository); ok {
+		return scoped.GetKnowledgeBaseByProject(ctx, tenantID, projectID, id)
+	}
+	item, found, err := s.primary.GetKnowledgeBase(ctx, tenantID, id)
+	return item, found && item.ProjectID == projectID, err
 }
 
 func (s knowledgeBaseStore) DeleteKnowledgeBase(ctx context.Context, tenantID, id string) (bool, error) {

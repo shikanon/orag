@@ -32,8 +32,17 @@ func Authorize(principal Principal, action Action, resourceTenantID, resourcePro
 	}
 
 	switch action {
-	case ActionProjectRead, ActionProjectUpdate, ActionResourceRead, ActionResourceWrite:
+	case ActionProjectRead, ActionProjectUpdate:
 		if resourceProjectID == "" {
+			return ErrForbidden
+		}
+	case ActionResourceRead, ActionResourceWrite:
+		// Project-less resources remain accessible only to an unconstrained tenant
+		// administrator during the beta compatibility window.
+		if resourceProjectID == "" {
+			if principal.ProjectID == "" && principal.Role == RoleTenantAdmin {
+				return nil
+			}
 			return ErrForbidden
 		}
 	default:

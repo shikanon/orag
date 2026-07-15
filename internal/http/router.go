@@ -15,6 +15,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	oragapi "github.com/shikanon/orag/api"
 	core "github.com/shikanon/orag/internal/app"
+	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/dataset"
 	"github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/ingest"
@@ -227,17 +228,15 @@ func (s *Server) createKnowledgeBase(ctx context.Context, c *app.RequestContext)
 		writeError(c, consts.StatusBadRequest, "invalid_request", "name is required")
 		return
 	}
-	if req.ProjectID != "" {
-		if _, err := s.App.Projects.Get(ctx, tenantID(c), req.ProjectID); err != nil {
-			writeAPIKeyProjectError(c, err)
-			return
-		}
+	projectID, ok := s.authorizeResourceCreation(ctx, c, req.ProjectID)
+	if !ok {
+		return
 	}
 	now := time.Now().UTC()
 	item := kb.KnowledgeBase{
 		ID:          id.New("kb"),
 		TenantID:    tenantID(c),
-		ProjectID:   req.ProjectID,
+		ProjectID:   projectID,
 		Name:        req.Name,
 		Description: req.Description,
 		Metadata:    req.Metadata,
@@ -252,7 +251,22 @@ func (s *Server) createKnowledgeBase(ctx context.Context, c *app.RequestContext)
 }
 
 func (s *Server) listKnowledgeBases(ctx context.Context, c *app.RequestContext) {
-	items, err := s.App.KBStore.ListKnowledgeBases(ctx, tenantID(c))
+	principal, ok := requestPrincipal(c)
+	if !ok || !authorizeRequest(c, auth.ActionResourceRead, tenantID(c), principal.ProjectID) {
+		return
+	}
+	var items []kb.KnowledgeBase
+	var err error
+	if principal.ProjectID != "" {
+		scoped, supported := s.App.KBStore.(kb.ProjectKnowledgeBaseRepository)
+		if !supported {
+			writeError(c, consts.StatusInternalServerError, "project_scope_unavailable", "project-scoped knowledge base access is unavailable")
+			return
+		}
+		items, err = scoped.ListKnowledgeBasesByProject(ctx, tenantID(c), principal.ProjectID)
+	} else {
+		items, err = s.App.KBStore.ListKnowledgeBases(ctx, tenantID(c))
+	}
 	if err != nil {
 		writeError(c, consts.StatusInternalServerError, "knowledge_base_list_failed", err.Error())
 		return
@@ -261,19 +275,17 @@ func (s *Server) listKnowledgeBases(ctx context.Context, c *app.RequestContext) 
 }
 
 func (s *Server) getKnowledgeBase(ctx context.Context, c *app.RequestContext) {
-	item, ok, err := s.App.KBStore.GetKnowledgeBase(ctx, tenantID(c), c.Param("id"))
-	if err != nil {
-		writeError(c, consts.StatusInternalServerError, "knowledge_base_lookup_failed", err.Error())
-		return
-	}
+	item, ok := s.authorizedKnowledgeBase(ctx, c, c.Param("id"), auth.ActionResourceRead)
 	if !ok {
-		writeKnowledgeBaseNotFound(c)
 		return
 	}
 	c.JSON(consts.StatusOK, item)
 }
 
 func (s *Server) deleteKnowledgeBase(ctx context.Context, c *app.RequestContext) {
+	if _, ok := s.authorizedKnowledgeBase(ctx, c, c.Param("id"), auth.ActionResourceWrite); !ok {
+		return
+	}
 	deleted, err := s.App.KBStore.DeleteKnowledgeBase(ctx, tenantID(c), c.Param("id"))
 	if err != nil {
 		writeError(c, consts.StatusInternalServerError, "knowledge_base_delete_failed", err.Error())
@@ -288,7 +300,7 @@ func (s *Server) deleteKnowledgeBase(ctx context.Context, c *app.RequestContext)
 
 func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 	kbID := c.Param("id")
-	if !s.requireKnowledgeBase(ctx, c, kbID) {
+	if _, ok := s.authorizedKnowledgeBase(ctx, c, kbID, auth.ActionResourceWrite); !ok {
 		return
 	}
 	fileHeader, err := c.FormFile("file")
@@ -328,7 +340,7 @@ func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 
 func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 	kbID := c.Param("id")
-	if !s.requireKnowledgeBase(ctx, c, kbID) {
+	if _, ok := s.authorizedKnowledgeBase(ctx, c, kbID, auth.ActionResourceWrite); !ok {
 		return
 	}
 	var req struct {
@@ -372,7 +384,7 @@ type createUploadRequest struct {
 
 func (s *Server) createUploadSession(ctx context.Context, c *app.RequestContext) {
 	kbID := c.Param("id")
-	if !s.requireKnowledgeBase(ctx, c, kbID) {
+	if _, ok := s.authorizedKnowledgeBase(ctx, c, kbID, auth.ActionResourceWrite); !ok {
 		return
 	}
 	var req createUploadRequest
@@ -420,10 +432,25 @@ func (s *Server) getUploadSession(ctx context.Context, c *app.RequestContext) {
 		writeUploadNotFound(c)
 		return
 	}
+	if _, ok := s.authorizedKnowledgeBase(ctx, c, session.KnowledgeBaseID, auth.ActionResourceRead); !ok {
+		return
+	}
 	c.JSON(consts.StatusOK, uploadSessionResponse(session))
 }
 
 func (s *Server) appendUploadChunk(ctx context.Context, c *app.RequestContext) {
+	stored, ok, err := s.uploadStore().GetUpload(ctx, tenantID(c), c.Param("id"))
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "upload_lookup_failed", err.Error())
+		return
+	}
+	if !ok {
+		writeUploadNotFound(c)
+		return
+	}
+	if _, ok := s.authorizedKnowledgeBase(ctx, c, stored.KnowledgeBaseID, auth.ActionResourceWrite); !ok {
+		return
+	}
 	offsetHeader := strings.TrimSpace(string(c.GetHeader("Upload-Offset")))
 	if offsetHeader == "" {
 		writeError(c, consts.StatusBadRequest, "invalid_request", "Upload-Offset header is required")
@@ -452,6 +479,18 @@ func (s *Server) uploadAction(ctx context.Context, c *app.RequestContext) {
 }
 
 func (s *Server) completeUploadSession(ctx context.Context, c *app.RequestContext, uploadID string) {
+	session, found, err := s.uploadStore().GetUpload(ctx, tenantID(c), uploadID)
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "upload_lookup_failed", err.Error())
+		return
+	}
+	if !found {
+		writeUploadNotFound(c)
+		return
+	}
+	if _, ok := s.authorizedKnowledgeBase(ctx, c, session.KnowledgeBaseID, auth.ActionResourceWrite); !ok {
+		return
+	}
 	session, body, err := s.uploadStore().ReadUpload(ctx, tenantID(c), uploadID)
 	if err != nil {
 		writeUploadError(c, err, session)
@@ -482,6 +521,18 @@ func (s *Server) completeUploadSession(ctx context.Context, c *app.RequestContex
 }
 
 func (s *Server) cancelUploadSession(ctx context.Context, c *app.RequestContext) {
+	session, ok, err := s.uploadStore().GetUpload(ctx, tenantID(c), c.Param("id"))
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "upload_lookup_failed", err.Error())
+		return
+	}
+	if !ok {
+		writeUploadNotFound(c)
+		return
+	}
+	if _, ok := s.authorizedKnowledgeBase(ctx, c, session.KnowledgeBaseID, auth.ActionResourceWrite); !ok {
+		return
+	}
 	if err := s.uploadStore().CancelUpload(ctx, tenantID(c), c.Param("id")); err != nil {
 		writeUploadError(c, err, ingest.UploadSession{})
 		return
@@ -534,15 +585,68 @@ func writeUploadNotFound(c *app.RequestContext) {
 	writeError(c, consts.StatusNotFound, "upload_not_found", "upload session not found")
 }
 
-func (s *Server) requireKnowledgeBase(ctx context.Context, c *app.RequestContext, kbID string) bool {
-	if _, ok, err := s.App.KBStore.GetKnowledgeBase(ctx, tenantID(c), kbID); err != nil {
-		writeError(c, consts.StatusInternalServerError, "knowledge_base_lookup_failed", err.Error())
-		return false
-	} else if ok {
-		return true
+func (s *Server) authorizedKnowledgeBase(ctx context.Context, c *app.RequestContext, kbID string, action auth.Action) (kb.KnowledgeBase, bool) {
+	principal, valid := requestPrincipal(c)
+	if !valid {
+		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+		return kb.KnowledgeBase{}, false
 	}
-	writeKnowledgeBaseNotFound(c)
-	return false
+	var item kb.KnowledgeBase
+	var found bool
+	var err error
+	if principal.ProjectID != "" {
+		scoped, ok := s.App.KBStore.(kb.ProjectKnowledgeBaseRepository)
+		if !ok {
+			writeError(c, consts.StatusInternalServerError, "project_scope_unavailable", "project-scoped knowledge base access is unavailable")
+			return kb.KnowledgeBase{}, false
+		}
+		item, found, err = scoped.GetKnowledgeBaseByProject(ctx, tenantID(c), principal.ProjectID, kbID)
+	} else {
+		item, found, err = s.App.KBStore.GetKnowledgeBase(ctx, tenantID(c), kbID)
+	}
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "knowledge_base_lookup_failed", err.Error())
+		return kb.KnowledgeBase{}, false
+	}
+	if !found {
+		writeKnowledgeBaseNotFound(c)
+		return kb.KnowledgeBase{}, false
+	}
+	if !authorizeRequest(c, action, item.TenantID, item.ProjectID) {
+		return kb.KnowledgeBase{}, false
+	}
+	return item, true
+}
+
+func (s *Server) requireKnowledgeBase(ctx context.Context, c *app.RequestContext, kbID string) bool {
+	_, ok := s.authorizedKnowledgeBase(ctx, c, kbID, auth.ActionResourceRead)
+	return ok
+}
+
+func (s *Server) authorizeResourceCreation(ctx context.Context, c *app.RequestContext, requestedProjectID string) (string, bool) {
+	principal, ok := requestPrincipal(c)
+	if !ok {
+		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+		return "", false
+	}
+	projectID := strings.TrimSpace(requestedProjectID)
+	if principal.ProjectID != "" {
+		if projectID != "" && projectID != principal.ProjectID {
+			writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+			return "", false
+		}
+		projectID = principal.ProjectID
+	}
+	if projectID != "" {
+		if _, err := s.App.Projects.Get(ctx, principal.TenantID, projectID); err != nil {
+			writeAPIKeyProjectError(c, err)
+			return "", false
+		}
+	}
+	if !authorizeRequest(c, auth.ActionResourceWrite, principal.TenantID, projectID) {
+		return "", false
+	}
+	return projectID, true
 }
 
 func writeKnowledgeBaseNotFound(c *app.RequestContext) {
@@ -583,7 +687,7 @@ func (s *Server) query(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	ragReq := req.ragRequest()
-	if !s.requireKnowledgeBase(ctx, c, ragReq.KnowledgeBaseID) {
+	if _, ok := s.authorizedKnowledgeBase(ctx, c, ragReq.KnowledgeBaseID, auth.ActionResourceRead); !ok {
 		return
 	}
 	start := time.Now()
@@ -610,7 +714,7 @@ func (s *Server) queryStream(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	ragReq := req.ragRequest()
-	if !s.requireKnowledgeBase(ctx, c, ragReq.KnowledgeBaseID) {
+	if _, ok := s.authorizedKnowledgeBase(ctx, c, ragReq.KnowledgeBaseID, auth.ActionResourceRead); !ok {
 		return
 	}
 	start := time.Now()
@@ -824,13 +928,11 @@ func (s *Server) createDataset(ctx context.Context, c *app.RequestContext) {
 	if req.Kind == "" {
 		req.Kind = "golden"
 	}
-	if req.ProjectID != "" {
-		if _, err := s.App.Projects.Get(ctx, tenantID(c), req.ProjectID); err != nil {
-			writeAPIKeyProjectError(c, err)
-			return
-		}
+	projectID, ok := s.authorizeResourceCreation(ctx, c, req.ProjectID)
+	if !ok {
+		return
 	}
-	ds, err := s.App.Datasets.CreateInProject(ctx, tenantID(c), req.ProjectID, req.Name, req.Kind)
+	ds, err := s.App.Datasets.CreateInProject(ctx, tenantID(c), projectID, req.Name, req.Kind)
 	if err != nil {
 		writeError(c, consts.StatusInternalServerError, "dataset_create_failed", err.Error())
 		return
@@ -839,6 +941,9 @@ func (s *Server) createDataset(ctx context.Context, c *app.RequestContext) {
 }
 
 func (s *Server) addDatasetItem(ctx context.Context, c *app.RequestContext) {
+	if _, ok := s.authorizedDataset(ctx, c, c.Param("id"), auth.ActionResourceWrite); !ok {
+		return
+	}
 	var item dataset.Item
 	if !bindJSON(c, &item) {
 		return
@@ -861,11 +966,13 @@ func (s *Server) runEvaluation(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	req.TenantID = tenantID(c)
-	if !s.requireDatasetForEvaluation(ctx, c, req.DatasetID) {
-		return
+	if strings.TrimSpace(req.DatasetID) != "" {
+		if _, ok := s.authorizedDataset(ctx, c, req.DatasetID, auth.ActionResourceWrite); !ok {
+			return
+		}
 	}
 	if strings.TrimSpace(req.DatasetID) != "" && strings.TrimSpace(req.KnowledgeBaseID) != "" {
-		if !s.requireKnowledgeBase(ctx, c, req.KnowledgeBaseID) {
+		if _, ok := s.authorizedKnowledgeBase(ctx, c, req.KnowledgeBaseID, auth.ActionResourceRead); !ok {
 			return
 		}
 	}
@@ -879,20 +986,6 @@ func (s *Server) runEvaluation(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	c.JSON(consts.StatusAccepted, resp)
-}
-
-func (s *Server) requireDatasetForEvaluation(ctx context.Context, c *app.RequestContext, datasetID string) bool {
-	if strings.TrimSpace(datasetID) == "" {
-		return true
-	}
-	if _, ok, err := s.App.Datasets.Get(ctx, tenantID(c), datasetID); err != nil {
-		writeDatasetError(c, "dataset_lookup_failed", err)
-		return false
-	} else if !ok {
-		writeDatasetNotFound(c)
-		return false
-	}
-	return true
 }
 
 func (s *Server) getEvaluation(ctx context.Context, c *app.RequestContext) {
@@ -911,6 +1004,9 @@ func (s *Server) getEvaluation(ctx context.Context, c *app.RequestContext) {
 			writeError(c, consts.StatusNotFound, "evaluation_not_found", "evaluation not found")
 			return
 		}
+		if _, ok := s.authorizedDataset(ctx, c, detail.Run.DatasetID, auth.ActionResourceRead); !ok {
+			return
+		}
 		c.JSON(consts.StatusOK, detail)
 		return
 	}
@@ -923,7 +1019,38 @@ func (s *Server) getEvaluation(ctx context.Context, c *app.RequestContext) {
 		writeError(c, consts.StatusNotFound, "evaluation_not_found", "evaluation not found")
 		return
 	}
+	if _, ok := s.authorizedDataset(ctx, c, result.DatasetID, auth.ActionResourceRead); !ok {
+		return
+	}
 	c.JSON(consts.StatusOK, result)
+}
+
+func (s *Server) authorizedDataset(ctx context.Context, c *app.RequestContext, datasetID string, action auth.Action) (dataset.Dataset, bool) {
+	principal, valid := requestPrincipal(c)
+	if !valid {
+		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+		return dataset.Dataset{}, false
+	}
+	var item dataset.Dataset
+	var found bool
+	var err error
+	if principal.ProjectID != "" {
+		item, found, err = s.App.Datasets.GetInProject(ctx, principal.TenantID, principal.ProjectID, datasetID)
+	} else {
+		item, found, err = s.App.Datasets.Get(ctx, principal.TenantID, datasetID)
+	}
+	if err != nil {
+		writeDatasetError(c, "dataset_lookup_failed", err)
+		return dataset.Dataset{}, false
+	}
+	if !found {
+		writeDatasetNotFound(c)
+		return dataset.Dataset{}, false
+	}
+	if !authorizeRequest(c, action, item.TenantID, item.ProjectID) {
+		return dataset.Dataset{}, false
+	}
+	return item, true
 }
 
 func queryBool(c *app.RequestContext, key string) bool {
