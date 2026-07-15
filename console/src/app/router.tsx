@@ -4,6 +4,7 @@ import { ProjectSwitcher } from '../features/projects/project-switcher'
 
 const ProjectList = lazy(() => import('../features/projects/project-list').then((module) => ({ default: module.ProjectList })))
 const ProjectForm = lazy(() => import('../features/projects/project-form').then((module) => ({ default: module.ProjectForm })))
+const APIKeyList = lazy(() => import('../features/api-keys/api-key-list').then((module) => ({ default: module.APIKeyList })))
 const TutorialList = lazy(() => import('../features/tutorials/tutorial-list').then((module) => ({ default: module.TutorialList })))
 const TutorialDetail = lazy(() => import('../features/tutorials/tutorial-detail').then((module) => ({ default: module.TutorialDetail })))
 
@@ -13,7 +14,7 @@ function projectLoader({ params }: { params: { projectId?: string } }) {
 }
 
 function Shell() {
-  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects">项目</NavLink><NavLink to="/tutorials">教程实验室</NavLink><span className="nav-heading">工作区</span><span className="nav-disabled">RAG Studio</span><span className="nav-disabled">评测中心</span><span className="nav-disabled">发布中心</span></nav><footer><span className="status-dot" /> API connected</footer></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><span className="environment">Development</span></div><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></section></div>
+  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects">项目</NavLink><NavLink to="/tutorials">教程实验室</NavLink><NavLink to="/api-keys">API Keys</NavLink><span className="nav-heading">工作区</span><span className="nav-disabled">RAG Studio</span><span className="nav-disabled">评测中心</span><span className="nav-disabled">发布中心</span></nav><footer><span className="status-dot" /> API connected</footer></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><span className="environment">Development</span></div><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></section></div>
 }
 
 function RouteSkeleton() {
@@ -31,6 +32,7 @@ export function createAppRouter(initialEntries?: string[]) {
     { path: 'projects', element: <ProjectList /> },
     { path: 'projects/new', element: <ProjectForm /> },
     { path: 'projects/:projectId/overview', loader: projectLoader, element: <Overview /> },
+    { path: 'api-keys', element: <APIKeyList /> },
     { path: 'tutorials', element: <TutorialList /> },
     { path: 'tutorials/:templateId', element: <TutorialDetail /> },
   ] }]

@@ -6,6 +6,10 @@ export const projects = [
   { id: 'prj_b', tenant_id: 'tenant_a', name: 'Search', description: 'Product discovery', created_at: '2026-07-11T00:00:00Z', updated_at: '2026-07-11T00:00:00Z' },
 ]
 
+const apiKeys = [
+  { id: 'key_active', tenant_id: 'tenant_a', project_id: 'prj_a', name: 'Evaluation runner', prefix: 'orag_sk_key_active', role: 'project_editor' as const, created_by: 'user:admin', created_at: '2026-07-11T00:00:00Z' },
+]
+
 const packs = (id: string) => [
   { tier: 'quick', manifest_url: `https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs/${id}/1.0.0/quick/manifest.json`, estimated_bytes: 536870912, estimated_minutes: 20, requires_license_check: true },
   { tier: 'benchmark', manifest_url: `https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs/${id}/1.0.0/benchmark/manifest.json`, estimated_bytes: 4294967296, estimated_minutes: 90, requires_license_check: true },
@@ -20,6 +24,13 @@ export const tutorials = [
 export const server = setupServer(
   http.get('/v1/projects', () => HttpResponse.json({ projects })),
   http.get('/v1/projects/:projectId', ({ params }) => HttpResponse.json(projects.find((project) => project.id === params.projectId))),
+  http.get('/v1/api-keys', () => HttpResponse.json({ api_keys: apiKeys })),
+  http.post('/v1/api-keys', async ({ request }) => {
+    const input = await request.json() as { name: string; role: 'tenant_admin' | 'project_editor' | 'project_viewer'; project_id?: string }
+    const apiKey = { id: 'key_new', tenant_id: 'tenant_a', name: input.name, prefix: 'orag_sk_key_new', role: input.role, project_id: input.project_id, created_by: 'user:admin', created_at: '2026-07-11T00:00:00Z' }
+    return HttpResponse.json({ api_key: apiKey, secret: 'orag_sk_key_new_secret' }, { status: 201 })
+  }),
+  http.delete('/v1/api-keys/:apiKeyId', () => new HttpResponse(null, { status: 204 })),
   http.get('/v1/tutorials', () => HttpResponse.json({ tutorials })),
   http.get('/v1/tutorials/:templateId', ({ params }) => {
     const tutorial = tutorials.find((item) => item.id === params.templateId)
