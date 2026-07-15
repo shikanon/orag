@@ -482,6 +482,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/pipelines/{pipeline_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Freezes the requested draft revision into an immutable content-hashed pipeline version. */
+        post: operations["createPipelineVersionFromDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/query:debug": {
         parameters: {
             query?: never;
@@ -1175,6 +1195,15 @@ export interface components {
         CreatePipelineVersionRequest: {
             id?: string;
             content_hash: string;
+        };
+        CreatePipelineVersionFromDraftRequest: {
+            /** Format: int64 */
+            expected_revision: number;
+        };
+        PipelineVersionFromDraftResponse: {
+            version: components["schemas"]["PipelineVersion"];
+            /** Format: int64 */
+            draft_revision: number;
         };
         ValidatePipelineVersionRequest: {
             /** @enum {string} */
@@ -3554,6 +3583,37 @@ export interface operations {
             };
             409: components["responses"]["Error"];
             422: components["responses"]["Error"];
+        };
+    };
+    createPipelineVersionFromDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePipelineVersionFromDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Immutable pipeline version. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineVersionFromDraftResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     debugProjectQuery: {
