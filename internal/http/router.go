@@ -966,15 +966,24 @@ func (s *Server) runEvaluation(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	req.TenantID = tenantID(c)
+	var evaluationDataset dataset.Dataset
 	if strings.TrimSpace(req.DatasetID) != "" {
-		if _, ok := s.authorizedDataset(ctx, c, req.DatasetID, auth.ActionResourceWrite); !ok {
+		var ok bool
+		evaluationDataset, ok = s.authorizedDataset(ctx, c, req.DatasetID, auth.ActionResourceWrite)
+		if !ok {
 			return
 		}
 	}
 	if strings.TrimSpace(req.DatasetID) != "" && strings.TrimSpace(req.KnowledgeBaseID) != "" {
-		if _, ok := s.authorizedKnowledgeBase(ctx, c, req.KnowledgeBaseID, auth.ActionResourceRead); !ok {
+		knowledgeBase, ok := s.authorizedKnowledgeBase(ctx, c, req.KnowledgeBaseID, auth.ActionResourceRead)
+		if !ok {
 			return
 		}
+		if projectIDsConflict(evaluationDataset.ProjectID, knowledgeBase.ProjectID) {
+			writeError(c, consts.StatusBadRequest, "project_mismatch", "dataset and knowledge base must belong to the same project")
+			return
+		}
+		req.ProjectID = firstNonEmpty(evaluationDataset.ProjectID, knowledgeBase.ProjectID)
 	}
 	resp, err := s.App.Eval.Run(ctx, req)
 	if err != nil {
@@ -989,28 +998,7 @@ func (s *Server) runEvaluation(ctx context.Context, c *app.RequestContext) {
 }
 
 func (s *Server) getEvaluation(ctx context.Context, c *app.RequestContext) {
-	options := eval.EvaluationDetailOptions{
-		IncludeItems:    queryBool(c, "include_items"),
-		IncludeJudge:    queryBool(c, "include_judge"),
-		IncludePairwise: queryBool(c, "include_pairwise"),
-	}
-	if options.IncludeItems || options.IncludeJudge || options.IncludePairwise {
-		detail, ok, err := s.App.Eval.GetDetail(ctx, tenantID(c), c.Param("id"), options)
-		if err != nil {
-			writeError(c, consts.StatusInternalServerError, "evaluation_lookup_failed", err.Error())
-			return
-		}
-		if !ok {
-			writeError(c, consts.StatusNotFound, "evaluation_not_found", "evaluation not found")
-			return
-		}
-		if _, ok := s.authorizedDataset(ctx, c, detail.Run.DatasetID, auth.ActionResourceRead); !ok {
-			return
-		}
-		c.JSON(consts.StatusOK, detail)
-		return
-	}
-	result, ok, err := s.App.Eval.Get(ctx, tenantID(c), c.Param("id"))
+	result, ok, err := s.getEvaluationForRequest(ctx, c, c.Param("id"))
 	if err != nil {
 		writeError(c, consts.StatusInternalServerError, "evaluation_lookup_failed", err.Error())
 		return
@@ -1019,10 +1007,39 @@ func (s *Server) getEvaluation(ctx context.Context, c *app.RequestContext) {
 		writeError(c, consts.StatusNotFound, "evaluation_not_found", "evaluation not found")
 		return
 	}
-	if _, ok := s.authorizedDataset(ctx, c, result.DatasetID, auth.ActionResourceRead); !ok {
+	if !authorizeRequest(c, auth.ActionResourceRead, tenantID(c), result.ProjectID) {
+		return
+	}
+	options := eval.EvaluationDetailOptions{
+		IncludeItems:    queryBool(c, "include_items"),
+		IncludeJudge:    queryBool(c, "include_judge"),
+		IncludePairwise: queryBool(c, "include_pairwise"),
+	}
+	if options.IncludeItems || options.IncludeJudge || options.IncludePairwise {
+		detail, ok, err := s.App.Eval.GetDetail(ctx, tenantID(c), result.ID, options)
+		if err != nil {
+			writeError(c, consts.StatusInternalServerError, "evaluation_lookup_failed", err.Error())
+			return
+		}
+		if !ok {
+			writeError(c, consts.StatusNotFound, "evaluation_not_found", "evaluation not found")
+			return
+		}
+		c.JSON(consts.StatusOK, detail)
 		return
 	}
 	c.JSON(consts.StatusOK, result)
+}
+
+func (s *Server) getEvaluationForRequest(ctx context.Context, c *app.RequestContext, evaluationID string) (eval.RunResult, bool, error) {
+	principal, ok := requestPrincipal(c)
+	if !ok {
+		return eval.RunResult{}, false, nil
+	}
+	if principal.ProjectID != "" {
+		return s.App.Eval.GetInProject(ctx, principal.TenantID, principal.ProjectID, evaluationID)
+	}
+	return s.App.Eval.Get(ctx, principal.TenantID, evaluationID)
 }
 
 func (s *Server) authorizedDataset(ctx context.Context, c *app.RequestContext, datasetID string, action auth.Action) (dataset.Dataset, bool) {
@@ -1091,6 +1108,7 @@ type optimizationStatusResponse struct {
 
 type optimizationRunResponse struct {
 	ID                      string                   `json:"id"`
+	ProjectID               string                   `json:"project_id,omitempty"`
 	DatasetID               string                   `json:"dataset_id"`
 	KnowledgeBaseID         string                   `json:"knowledge_base_id"`
 	Objective               optimizer.ObjectiveSpec  `json:"objective"`
@@ -1152,7 +1170,7 @@ func (s *Server) optimize(ctx context.Context, c *app.RequestContext) {
 }
 
 func (s *Server) getOptimization(ctx context.Context, c *app.RequestContext) {
-	status, ok, err := s.App.Optimizer.Get(ctx, tenantID(c), c.Param("id"))
+	status, ok, err := s.getOptimizationForRequest(ctx, c, c.Param("id"))
 	if err != nil {
 		writeError(c, consts.StatusInternalServerError, "optimization_lookup_failed", err.Error())
 		return
@@ -1161,7 +1179,21 @@ func (s *Server) getOptimization(ctx context.Context, c *app.RequestContext) {
 		writeOptimizationNotFound(c)
 		return
 	}
+	if !authorizeRequest(c, auth.ActionResourceRead, status.Run.TenantID, status.Run.ProjectID) {
+		return
+	}
 	c.JSON(consts.StatusOK, optimizationStatus(status))
+}
+
+func (s *Server) getOptimizationForRequest(ctx context.Context, c *app.RequestContext, runID string) (optimizer.OptimizationStatus, bool, error) {
+	principal, ok := requestPrincipal(c)
+	if !ok {
+		return optimizer.OptimizationStatus{}, false, nil
+	}
+	if principal.ProjectID != "" {
+		return s.App.Optimizer.GetInProject(ctx, principal.TenantID, principal.ProjectID, runID)
+	}
+	return s.App.Optimizer.Get(ctx, principal.TenantID, runID)
 }
 
 func (s *Server) optimizationAction(ctx context.Context, c *app.RequestContext) {
@@ -1183,6 +1215,18 @@ func (s *Server) cancelOptimization(ctx context.Context, c *app.RequestContext) 
 		return
 	}
 	runID := optimizationActionID(c, "cancel")
+	status, ok, err := s.getOptimizationForRequest(ctx, c, runID)
+	if err != nil {
+		writeOptimizationError(c, err)
+		return
+	}
+	if !ok {
+		writeOptimizationNotFound(c)
+		return
+	}
+	if !authorizeRequest(c, auth.ActionResourceWrite, status.Run.TenantID, status.Run.ProjectID) {
+		return
+	}
 	run, err := s.App.Optimizer.Cancel(ctx, tenantID(c), runID, req.Reason)
 	if err != nil {
 		writeOptimizationError(c, err)
@@ -1193,13 +1237,16 @@ func (s *Server) cancelOptimization(ctx context.Context, c *app.RequestContext) 
 
 func (s *Server) resumeOptimization(ctx context.Context, c *app.RequestContext) {
 	runID := optimizationActionID(c, "resume")
-	status, ok, err := s.App.Optimizer.Get(ctx, tenantID(c), runID)
+	status, ok, err := s.getOptimizationForRequest(ctx, c, runID)
 	if err != nil {
 		writeError(c, consts.StatusInternalServerError, "optimization_lookup_failed", err.Error())
 		return
 	}
 	if !ok {
 		writeOptimizationNotFound(c)
+		return
+	}
+	if !authorizeRequest(c, auth.ActionResourceWrite, status.Run.TenantID, status.Run.ProjectID) {
 		return
 	}
 	req := optimizationRequestFromSubmit(status.Run.StoredSubmitRequest())
@@ -1227,14 +1274,16 @@ func (s *Server) optimizationSubmitRequest(ctx context.Context, c *app.RequestCo
 		writeError(c, consts.StatusBadRequest, "invalid_request", "knowledge_base_id is required")
 		return optimizer.SubmitRequest{}, false
 	}
-	if _, ok, err := s.App.Datasets.Get(ctx, tenantID(c), req.DatasetID); err != nil {
-		writeDatasetError(c, "dataset_lookup_failed", err)
-		return optimizer.SubmitRequest{}, false
-	} else if !ok {
-		writeDatasetNotFound(c)
+	datasetItem, ok := s.authorizedDataset(ctx, c, req.DatasetID, auth.ActionResourceWrite)
+	if !ok {
 		return optimizer.SubmitRequest{}, false
 	}
-	if !s.requireKnowledgeBase(ctx, c, req.KnowledgeBaseID) {
+	knowledgeBase, ok := s.authorizedKnowledgeBase(ctx, c, req.KnowledgeBaseID, auth.ActionResourceRead)
+	if !ok {
+		return optimizer.SubmitRequest{}, false
+	}
+	if projectIDsConflict(datasetItem.ProjectID, knowledgeBase.ProjectID) {
+		writeError(c, consts.StatusBadRequest, "project_mismatch", "dataset and knowledge base must belong to the same project")
 		return optimizer.SubmitRequest{}, false
 	}
 	req.applyLegacyShortcutDefaults()
@@ -1261,6 +1310,7 @@ func (s *Server) optimizationSubmitRequest(ctx context.Context, c *app.RequestCo
 	}
 	return optimizer.SubmitRequest{
 		TenantID:        tenantID(c),
+		ProjectID:       firstNonEmpty(datasetItem.ProjectID, knowledgeBase.ProjectID),
 		DatasetID:       req.DatasetID,
 		KnowledgeBaseID: req.KnowledgeBaseID,
 		Objective:       req.Objective,
@@ -1433,6 +1483,7 @@ func optimizationStatus(status optimizer.OptimizationStatus) optimizationStatusR
 	return optimizationStatusResponse{
 		Run: optimizationRunResponse{
 			ID:                      run.ID,
+			ProjectID:               run.ProjectID,
 			DatasetID:               run.DatasetID,
 			KnowledgeBaseID:         run.KnowledgeBaseID,
 			Objective:               run.Objective,
@@ -1848,6 +1899,12 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func projectIDsConflict(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	return left != "" && right != "" && left != right
 }
 
 func queryPositiveInt(c *app.RequestContext, key string) int {

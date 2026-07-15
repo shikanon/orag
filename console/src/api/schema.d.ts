@@ -1229,6 +1229,7 @@ export interface components {
          *
          * @example {
          *       "id": "eval_xxx",
+         *       "project_id": "prj_xxx",
          *       "dataset_id": "ds_xxx",
          *       "profile": "realtime",
          *       "total": 1,
@@ -1279,6 +1280,7 @@ export interface components {
          *     }
          */
         RunEvaluationResponse: {
+            project_id?: string;
             id: string;
             dataset_id: string;
             profile: string;
@@ -2134,6 +2136,7 @@ export interface components {
         };
         OptimizationRun: {
             id: string;
+            project_id?: string;
             dataset_id: string;
             knowledge_base_id: string;
             objective: components["schemas"]["ObjectiveSpec"];

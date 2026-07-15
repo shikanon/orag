@@ -37,9 +37,14 @@ type Repository interface {
 	StoreHarnessRun(ctx context.Context, run HarnessRunRecord) error
 }
 
+type ProjectRepository interface {
+	GetOptimizationRunInProject(ctx context.Context, tenantID, projectID, runID string) (OptimizationRun, bool, error)
+}
+
 type OptimizationRun struct {
 	ID                      string
 	TenantID                string
+	ProjectID               string
 	DatasetID               string
 	KnowledgeBaseID         string
 	Objective               ObjectiveSpec
@@ -107,6 +112,7 @@ type HarnessRunRecord struct {
 
 type SubmitRequest struct {
 	TenantID        string
+	ProjectID       string
 	DatasetID       string
 	KnowledgeBaseID string
 	Objective       ObjectiveSpec
@@ -148,6 +154,7 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (OptimizationRu
 	run := OptimizationRun{
 		ID:                      runID,
 		TenantID:                req.TenantID,
+		ProjectID:               req.ProjectID,
 		DatasetID:               req.DatasetID,
 		KnowledgeBaseID:         req.KnowledgeBaseID,
 		Objective:               req.Objective,
@@ -201,6 +208,23 @@ func (s *Service) Get(ctx context.Context, tenantID, runID string) (Optimization
 	return OptimizationStatus{Run: run, Candidates: candidates}, true, nil
 }
 
+func (s *Service) GetInProject(ctx context.Context, tenantID, projectID, runID string) (OptimizationStatus, bool, error) {
+	repository, ok := s.repo().(ProjectRepository)
+	if !ok {
+		status, found, err := s.Get(ctx, tenantID, runID)
+		return status, found && status.Run.ProjectID == projectID, err
+	}
+	run, found, err := repository.GetOptimizationRunInProject(ctx, tenantID, projectID, runID)
+	if err != nil || !found {
+		return OptimizationStatus{}, found, err
+	}
+	candidates, err := s.repo().ListOptimizationCandidates(ctx, tenantID, runID)
+	if err != nil {
+		return OptimizationStatus{}, false, err
+	}
+	return OptimizationStatus{Run: run, Candidates: candidates}, true, nil
+}
+
 func (s *Service) Cancel(ctx context.Context, tenantID, runID, reason string) (OptimizationRun, error) {
 	run, ok, err := s.repo().GetOptimizationRun(ctx, tenantID, runID)
 	if err != nil {
@@ -234,6 +258,9 @@ func (s *Service) Resume(ctx context.Context, tenantID, runID string, req Submit
 	if resumeReq.TenantID == "" {
 		resumeReq.TenantID = tenantID
 	}
+	if resumeReq.ProjectID == "" {
+		resumeReq.ProjectID = run.ProjectID
+	}
 	if err := validateResumeConfigInvariant(run, resumeReq); err != nil {
 		return OptimizationRun{}, err
 	}
@@ -243,6 +270,7 @@ func (s *Service) Resume(ctx context.Context, tenantID, runID string, req Submit
 	}
 	now := s.clock()
 	run.DatasetID = resumeReq.DatasetID
+	run.ProjectID = resumeReq.ProjectID
 	run.KnowledgeBaseID = resumeReq.KnowledgeBaseID
 	run.Objective = resumeReq.Objective
 	run.SearchSpace = resumeReq.SearchSpace
@@ -723,6 +751,9 @@ func isEmptySubmitRequest(req SubmitRequest) bool {
 }
 
 func validateResumeConfigInvariant(run OptimizationRun, req SubmitRequest) error {
+	if run.ProjectID != "" && req.ProjectID != "" && run.ProjectID != req.ProjectID {
+		return apperrors.New(apperrors.CodeValidation, "resume request changes project_id; submit a new optimization run")
+	}
 	stored := run.storedConfig()
 	requested := RunConfigFromSubmitRequest(req)
 	if field := changedResumeConfigField(stored, requested); field != "" {

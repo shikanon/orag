@@ -16,10 +16,10 @@ func (r *Repository) StoreEvaluationRun(ctx context.Context, tenantID string, re
 		return err
 	}
 	_, err = r.evaluationQueryer().Exec(ctx, `
-		INSERT INTO evaluation_runs(id, tenant_id, dataset_id, profile, metrics, created_at)
-		VALUES($1,$2,$3,$4,$5,$6)
+		INSERT INTO evaluation_runs(id, tenant_id, project_id, dataset_id, profile, metrics, created_at)
+		VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7)
 		ON CONFLICT (id) DO NOTHING`,
-		result.ID, tenantID, result.DatasetID, result.Profile, body, result.CreatedAt)
+		result.ID, tenantID, result.ProjectID, result.DatasetID, result.Profile, body, result.CreatedAt)
 	return err
 }
 
@@ -67,12 +67,29 @@ func (r *Repository) StoreEvaluationResult(ctx context.Context, runID, datasetIt
 
 func (r *Repository) GetEvaluationRun(ctx context.Context, tenantID, id string) (evalpkg.RunResult, bool, error) {
 	row := r.evaluationQueryer().QueryRow(ctx, `
-		SELECT id, dataset_id, profile, metrics, created_at
+		SELECT id, COALESCE(project_id,''), dataset_id, profile, metrics, created_at
 		FROM evaluation_runs
 		WHERE tenant_id=$1 AND id=$2`, tenantID, id)
 	var result evalpkg.RunResult
 	var metrics []byte
-	if err := row.Scan(&result.ID, &result.DatasetID, &result.Profile, &metrics, &result.CreatedAt); err != nil {
+	if err := row.Scan(&result.ID, &result.ProjectID, &result.DatasetID, &result.Profile, &metrics, &result.CreatedAt); err != nil {
+		if err == pgx.ErrNoRows {
+			return evalpkg.RunResult{}, false, nil
+		}
+		return evalpkg.RunResult{}, false, err
+	}
+	decodeEvaluationRunMetrics(metrics, &result)
+	return result, true, nil
+}
+
+func (r *Repository) GetEvaluationRunInProject(ctx context.Context, tenantID, projectID, id string) (evalpkg.RunResult, bool, error) {
+	row := r.evaluationQueryer().QueryRow(ctx, `
+		SELECT id, COALESCE(project_id,''), dataset_id, profile, metrics, created_at
+		FROM evaluation_runs
+		WHERE tenant_id=$1 AND project_id=$2 AND id=$3`, tenantID, projectID, id)
+	var result evalpkg.RunResult
+	var metrics []byte
+	if err := row.Scan(&result.ID, &result.ProjectID, &result.DatasetID, &result.Profile, &metrics, &result.CreatedAt); err != nil {
 		if err == pgx.ErrNoRows {
 			return evalpkg.RunResult{}, false, nil
 		}

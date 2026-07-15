@@ -33,8 +33,13 @@ type Repository interface {
 	GetEvaluationDetail(ctx context.Context, tenantID, id string, options EvaluationDetailOptions) (EvaluationDetail, bool, error)
 }
 
+type ProjectRepository interface {
+	GetEvaluationRunInProject(ctx context.Context, tenantID, projectID, id string) (RunResult, bool, error)
+}
+
 type RunRequest struct {
 	TenantID           string               `json:"-"`
+	ProjectID          string               `json:"-"`
 	DatasetID          string               `json:"dataset_id"`
 	KnowledgeBaseID    string               `json:"knowledge_base_id"`
 	Profile            rag.Profile          `json:"profile"`
@@ -49,6 +54,7 @@ type RunRequest struct {
 
 type RunResult struct {
 	ID                    string                  `json:"id"`
+	ProjectID             string                  `json:"project_id,omitempty"`
 	DatasetID             string                  `json:"dataset_id"`
 	Profile               string                  `json:"profile"`
 	Total                 int                     `json:"total"`
@@ -167,10 +173,17 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if strings.TrimSpace(req.KnowledgeBaseID) == "" {
 		return RunResult{}, apperrors.New(apperrors.CodeValidation, "knowledge_base_id is required")
 	}
-	if _, ok, err := r.Datasets.Get(ctx, req.TenantID, req.DatasetID); err != nil {
+	datasetItem, ok, err := r.Datasets.Get(ctx, req.TenantID, req.DatasetID)
+	if err != nil {
 		return RunResult{}, err
 	} else if !ok {
 		return RunResult{}, apperrors.Wrap(apperrors.CodeNotFound, "dataset not found", dataset.ErrDatasetNotFound)
+	}
+	if req.ProjectID != "" && datasetItem.ProjectID != "" && datasetItem.ProjectID != req.ProjectID {
+		return RunResult{}, apperrors.New(apperrors.CodeValidation, "dataset and knowledge base must belong to the same project")
+	}
+	if datasetItem.ProjectID != "" {
+		req.ProjectID = datasetItem.ProjectID
 	}
 	allItems, err := r.Datasets.Items(ctx, req.TenantID, req.DatasetID)
 	if err != nil {
@@ -196,6 +209,7 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			if holdoutGateEnabled(req.HoldoutGate) {
 				result := RunResult{
 					ID:           id.New("eval"),
+					ProjectID:    req.ProjectID,
 					DatasetID:    req.DatasetID,
 					Profile:      string(req.Profile),
 					Split:        requestedSplit,
@@ -404,6 +418,7 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 
 	result := RunResult{
 		ID:                    runID,
+		ProjectID:             req.ProjectID,
 		DatasetID:             req.DatasetID,
 		Profile:               string(req.Profile),
 		Total:                 total,
@@ -595,6 +610,17 @@ func (r Runner) Get(ctx context.Context, tenantID, id string) (RunResult, bool, 
 	return r.Repository.GetEvaluationRun(ctx, tenantID, id)
 }
 
+func (r Runner) GetInProject(ctx context.Context, tenantID, projectID, id string) (RunResult, bool, error) {
+	if r.Repository == nil {
+		return RunResult{}, false, nil
+	}
+	if repository, ok := r.Repository.(ProjectRepository); ok {
+		return repository.GetEvaluationRunInProject(ctx, tenantID, projectID, id)
+	}
+	result, found, err := r.Repository.GetEvaluationRun(ctx, tenantID, id)
+	return result, found && result.ProjectID == projectID, err
+}
+
 func (r Runner) GetDetail(ctx context.Context, tenantID, id string, options EvaluationDetailOptions) (EvaluationDetail, bool, error) {
 	if r.Repository == nil {
 		return EvaluationDetail{}, false, nil
@@ -662,6 +688,16 @@ func (r *MemoryRepository) GetEvaluationRun(_ context.Context, tenantID string, 
 		return RunResult{}, false, nil
 	}
 	return result, ok, nil
+}
+
+func (r *MemoryRepository) GetEvaluationRunInProject(_ context.Context, tenantID, projectID, id string) (RunResult, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result, ok := r.runs[id]
+	if !ok || r.runTenants[id] != tenantID || result.ProjectID != projectID {
+		return RunResult{}, false, nil
+	}
+	return result, true, nil
 }
 
 func (r *MemoryRepository) StoreJudgeRun(_ context.Context, tenantID string, run JudgeRunRecord) error {

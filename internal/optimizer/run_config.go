@@ -70,7 +70,9 @@ func (cfg RunConfig) IsZero() bool {
 
 func (run OptimizationRun) StoredSubmitRequest() SubmitRequest {
 	cfg := run.storedConfig()
-	return cfg.SubmitRequest(run.TenantID, run.Runner)
+	req := cfg.SubmitRequest(run.TenantID, run.Runner)
+	req.ProjectID = run.ProjectID
+	return req
 }
 
 func (run OptimizationRun) RunnerWithConfig() map[string]any {

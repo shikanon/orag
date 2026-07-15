@@ -259,9 +259,38 @@ func TestAPIKeyLifecycleAndProjectAuthorization(t *testing.T) {
 	if err := json.Unmarshal([]byte(evaluationResponse.Body), &evaluation); err != nil {
 		t.Fatal(err)
 	}
+	if evaluation.ProjectID != firstProject.ID {
+		t.Fatalf("evaluation project=%q want=%q", evaluation.ProjectID, firstProject.ID)
+	}
 	if response := performJSON(h, "GET", "/v1/evaluations/"+evaluation.ID, "", viewer.Secret); response.Code != 200 {
 		t.Fatalf("viewer evaluation status=%d body=%s", response.Code, response.Body)
 	}
+	mismatch := performJSONWithTrace(h, "POST", "/v1/evaluations", `{"dataset_id":"`+editorDataset.ID+`","knowledge_base_id":"`+secondKB.ID+`","profile":"realtime"}`, adminToken, "trace_evaluation_project_mismatch")
+	assertErrorResponse(t, mismatch, 400, "project_mismatch", "trace_evaluation_project_mismatch")
+
+	optimizationResponse := performJSON(h, "POST", "/v1/optimizations", `{"dataset_id":"`+editorDataset.ID+`","knowledge_base_id":"`+firstKB.ID+`","profiles":["realtime"],"top_ks":[1]}`, editor.Secret)
+	if optimizationResponse.Code != 202 {
+		t.Fatalf("editor optimization status=%d body=%s", optimizationResponse.Code, optimizationResponse.Body)
+	}
+	var optimization struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.Unmarshal([]byte(optimizationResponse.Body), &optimization); err != nil {
+		t.Fatal(err)
+	}
+	if response := performJSON(h, "GET", "/v1/optimizations/"+optimization.RunID, "", viewer.Secret); response.Code != 200 || !strings.Contains(response.Body, `"project_id":"`+firstProject.ID+`"`) {
+		t.Fatalf("viewer optimization status=%d body=%s", response.Code, response.Body)
+	}
+	secondViewerResponse := performJSON(h, "POST", "/v1/api-keys", `{"name":"second viewer","role":"project_viewer","project_id":"`+secondProject.ID+`"}`, adminToken)
+	if secondViewerResponse.Code != 201 {
+		t.Fatalf("second viewer status=%d body=%s", secondViewerResponse.Code, secondViewerResponse.Body)
+	}
+	var secondViewer auth.APIKeyCreateResult
+	if err := json.Unmarshal([]byte(secondViewerResponse.Body), &secondViewer); err != nil {
+		t.Fatal(err)
+	}
+	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/evaluations/"+evaluation.ID, "", secondViewer.Secret, "trace_foreign_evaluation"), 404, "evaluation_not_found", "trace_foreign_evaluation")
+	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/optimizations/"+optimization.RunID, "", secondViewer.Secret, "trace_foreign_optimization"), 404, "optimization_not_found", "trace_foreign_optimization")
 	assertErrorResponse(t, performJSONWithTrace(h, "POST", "/v1/datasets", `{"name":"Denied"}`, viewer.Secret, "trace_viewer_create_dataset"), 403, "forbidden", "trace_viewer_create_dataset")
 
 	machineAdminResponse := performJSON(h, "POST", "/v1/api-keys", `{"name":"automation admin","role":"tenant_admin"}`, adminToken)

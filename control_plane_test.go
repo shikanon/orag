@@ -81,6 +81,20 @@ func TestSDKProjectOwnedResources(t *testing.T) {
 	if err != nil || dataset.ProjectID != project.ID {
 		t.Fatalf("CreateDataset() dataset=%#v err=%v", dataset, err)
 	}
+	if _, err := client.AddDatasetItem(ctx, orag.AddDatasetItemRequest{DatasetID: dataset.ID, Query: "What is ORAG?", GroundTruth: "Insufficient context."}); err != nil {
+		t.Fatal(err)
+	}
+	evaluation, err := client.RunEvaluation(ctx, orag.RunEvaluationRequest{ProjectID: project.ID, DatasetID: dataset.ID, KnowledgeBaseID: knowledgeBase.ID, Profile: "realtime"})
+	if err != nil || evaluation.ProjectID != project.ID {
+		t.Fatalf("RunEvaluation() evaluation=%#v err=%v", evaluation, err)
+	}
+	storedEvaluation, found, err := client.GetEvaluation(ctx, orag.GetEvaluationRequest{ProjectID: project.ID, ID: evaluation.ID})
+	if err != nil || !found || storedEvaluation.ProjectID != project.ID {
+		t.Fatalf("GetEvaluation() evaluation=%#v found=%v err=%v", storedEvaluation, found, err)
+	}
+	if _, found, err := client.GetEvaluation(ctx, orag.GetEvaluationRequest{ProjectID: "prj_other", ID: evaluation.ID}); err != nil || found {
+		t.Fatalf("GetEvaluation() cross-project found=%v err=%v", found, err)
+	}
 	if _, err := client.CreateKnowledgeBase(ctx, orag.CreateKnowledgeBaseRequest{ProjectID: "prj_missing", Name: "invalid"}); !errors.Is(err, orag.ErrNotFound) {
 		t.Fatalf("CreateKnowledgeBase() missing project error=%v, want ErrNotFound", err)
 	}

@@ -67,14 +67,14 @@ func insertOptimizationRun(ctx context.Context, execer optimizationExecer, run o
 	}
 	_, err = execer.Exec(ctx, `
 		INSERT INTO optimization_runs(
-			id, tenant_id, dataset_id, knowledge_base_id, objective, search_space, runner,
+			id, tenant_id, project_id, dataset_id, knowledge_base_id, objective, search_space, runner,
 			status, status_reason, best_candidate_id, holdout_candidate_id, sampling_strategy,
 			search_space_size, sampled_candidate_count, completed_candidate_count,
 			checkpoint, token_usage, cost_usd, cost_budget_usd, cancel_requested_at,
 			created_at, updated_at
 		)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
-		run.ID, run.TenantID, run.DatasetID, run.KnowledgeBaseID, objective, searchSpace, runner,
+		VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+		run.ID, run.TenantID, run.ProjectID, run.DatasetID, run.KnowledgeBaseID, objective, searchSpace, runner,
 		run.Status, run.StatusReason, run.BestCandidateID, run.HoldoutCandidateID, run.SamplingStrategy,
 		run.SearchSpaceSize, run.SampledCandidateCount, run.CompletedCandidateCount,
 		checkpoint, tokenUsage, run.CostUSD, run.CostBudgetUSD, run.CancelRequestedAt,
@@ -84,13 +84,32 @@ func insertOptimizationRun(ctx context.Context, execer optimizationExecer, run o
 
 func (r *Repository) GetOptimizationRun(ctx context.Context, tenantID, runID string) (optimizer.OptimizationRun, bool, error) {
 	row := r.evaluationQueryer().QueryRow(ctx, `
-		SELECT id, tenant_id, dataset_id, knowledge_base_id, objective, search_space, runner,
+		SELECT id, tenant_id, COALESCE(project_id,''), dataset_id, knowledge_base_id, objective, search_space, runner,
 			status, status_reason, best_candidate_id, holdout_candidate_id, sampling_strategy,
 			search_space_size, sampled_candidate_count, completed_candidate_count,
 			checkpoint, token_usage, cost_usd, cost_budget_usd, cancel_requested_at,
 			created_at, updated_at
 		FROM optimization_runs
 		WHERE tenant_id=$1 AND id=$2`, tenantID, runID)
+	run, err := scanOptimizationRun(row)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return optimizer.OptimizationRun{}, false, nil
+		}
+		return optimizer.OptimizationRun{}, false, err
+	}
+	return run, true, nil
+}
+
+func (r *Repository) GetOptimizationRunInProject(ctx context.Context, tenantID, projectID, runID string) (optimizer.OptimizationRun, bool, error) {
+	row := r.evaluationQueryer().QueryRow(ctx, `
+		SELECT id, tenant_id, COALESCE(project_id,''), dataset_id, knowledge_base_id, objective, search_space, runner,
+			status, status_reason, best_candidate_id, holdout_candidate_id, sampling_strategy,
+			search_space_size, sampled_candidate_count, completed_candidate_count,
+			checkpoint, token_usage, cost_usd, cost_budget_usd, cancel_requested_at,
+			created_at, updated_at
+		FROM optimization_runs
+		WHERE tenant_id=$1 AND project_id=$2 AND id=$3`, tenantID, projectID, runID)
 	run, err := scanOptimizationRun(row)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -124,13 +143,13 @@ func (r *Repository) UpdateOptimizationRun(ctx context.Context, run optimizer.Op
 	}
 	_, err = r.evaluationQueryer().Exec(ctx, `
 		UPDATE optimization_runs
-		SET dataset_id=$3, knowledge_base_id=$4, objective=$5, search_space=$6, runner=$7,
-			status=$8, status_reason=$9, best_candidate_id=$10, holdout_candidate_id=$11,
-			sampling_strategy=$12, search_space_size=$13, sampled_candidate_count=$14,
-			completed_candidate_count=$15, checkpoint=$16, token_usage=$17, cost_usd=$18,
-			cost_budget_usd=$19, cancel_requested_at=$20, updated_at=$21
+		SET project_id=NULLIF($3,''), dataset_id=$4, knowledge_base_id=$5, objective=$6, search_space=$7, runner=$8,
+			status=$9, status_reason=$10, best_candidate_id=$11, holdout_candidate_id=$12,
+			sampling_strategy=$13, search_space_size=$14, sampled_candidate_count=$15,
+			completed_candidate_count=$16, checkpoint=$17, token_usage=$18, cost_usd=$19,
+			cost_budget_usd=$20, cancel_requested_at=$21, updated_at=$22
 		WHERE tenant_id=$1 AND id=$2`,
-		run.TenantID, run.ID, run.DatasetID, run.KnowledgeBaseID, objective, searchSpace, runner, run.Status, run.StatusReason,
+		run.TenantID, run.ID, run.ProjectID, run.DatasetID, run.KnowledgeBaseID, objective, searchSpace, runner, run.Status, run.StatusReason,
 		run.BestCandidateID, run.HoldoutCandidateID, run.SamplingStrategy,
 		run.SearchSpaceSize, run.SampledCandidateCount, run.CompletedCandidateCount,
 		checkpoint, tokenUsage, run.CostUSD, run.CostBudgetUSD, run.CancelRequestedAt, run.UpdatedAt)
@@ -160,13 +179,13 @@ func (r *Repository) CompareAndSwapOptimizationRun(ctx context.Context, run opti
 	}
 	tag, err := r.evaluationQueryer().Exec(ctx, `
 		UPDATE optimization_runs
-		SET dataset_id=$3, knowledge_base_id=$4, objective=$5, search_space=$6, runner=$7,
-			status=$8, status_reason=$9, best_candidate_id=$10, holdout_candidate_id=$11,
-			sampling_strategy=$12, search_space_size=$13, sampled_candidate_count=$14,
-			completed_candidate_count=$15, checkpoint=$16, token_usage=$17, cost_usd=$18,
-			cost_budget_usd=$19, cancel_requested_at=$20, updated_at=$21
-		WHERE tenant_id=$1 AND id=$2 AND status=$22`,
-		run.TenantID, run.ID, run.DatasetID, run.KnowledgeBaseID, objective, searchSpace, runner, run.Status, run.StatusReason,
+		SET project_id=NULLIF($3,''), dataset_id=$4, knowledge_base_id=$5, objective=$6, search_space=$7, runner=$8,
+			status=$9, status_reason=$10, best_candidate_id=$11, holdout_candidate_id=$12,
+			sampling_strategy=$13, search_space_size=$14, sampled_candidate_count=$15,
+			completed_candidate_count=$16, checkpoint=$17, token_usage=$18, cost_usd=$19,
+			cost_budget_usd=$20, cancel_requested_at=$21, updated_at=$22
+		WHERE tenant_id=$1 AND id=$2 AND status=$23`,
+		run.TenantID, run.ID, run.ProjectID, run.DatasetID, run.KnowledgeBaseID, objective, searchSpace, runner, run.Status, run.StatusReason,
 		run.BestCandidateID, run.HoldoutCandidateID, run.SamplingStrategy,
 		run.SearchSpaceSize, run.SampledCandidateCount, run.CompletedCandidateCount,
 		checkpoint, tokenUsage, run.CostUSD, run.CostBudgetUSD, run.CancelRequestedAt, run.UpdatedAt, expectedStatus)
@@ -325,7 +344,7 @@ type optimizationRunScanner interface {
 func scanOptimizationRun(row optimizationRunScanner) (optimizer.OptimizationRun, error) {
 	var run optimizer.OptimizationRun
 	var objective, searchSpace, runner, checkpoint, tokenUsage []byte
-	err := row.Scan(&run.ID, &run.TenantID, &run.DatasetID, &run.KnowledgeBaseID, &objective, &searchSpace, &runner,
+	err := row.Scan(&run.ID, &run.TenantID, &run.ProjectID, &run.DatasetID, &run.KnowledgeBaseID, &objective, &searchSpace, &runner,
 		&run.Status, &run.StatusReason, &run.BestCandidateID, &run.HoldoutCandidateID, &run.SamplingStrategy,
 		&run.SearchSpaceSize, &run.SampledCandidateCount, &run.CompletedCandidateCount,
 		&checkpoint, &tokenUsage, &run.CostUSD, &run.CostBudgetUSD, &run.CancelRequestedAt,

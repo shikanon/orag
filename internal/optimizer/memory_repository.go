@@ -52,6 +52,16 @@ func (r *MemoryRepository) GetOptimizationRun(_ context.Context, tenantID, runID
 	return run, true, nil
 }
 
+func (r *MemoryRepository) GetOptimizationRunInProject(_ context.Context, tenantID, projectID, runID string) (OptimizationRun, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	run, ok := r.runs[runID]
+	if !ok || run.TenantID != tenantID || run.ProjectID != projectID {
+		return OptimizationRun{}, false, nil
+	}
+	return run, true, nil
+}
+
 func (r *MemoryRepository) UpdateOptimizationRun(_ context.Context, run OptimizationRun) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
