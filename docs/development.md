@@ -186,6 +186,19 @@ npm --prefix console audit --omit=dev --audit-level=high
 
 GitHub 原生 provider secret scanning 和 push protection 已启用。当前仓库属于个人账号；GitHub Secret Protection 才提供的 non-provider patterns 与 validity checks 不适用于该仓库，因此由 Gitleaks 全历史门禁补足 private key、generic credential 等检测，而不是把不可用设置描述为已开启。
 
+### 模糊测试
+
+[`fuzz.yml`](../.github/workflows/fuzz.yml) 使用 Go 原生 coverage-guided fuzzing 持续探索两个直接处理不可信输入的边界：`BasicParser` 的文本、HTML、XML 与 Office ZIP 解析，以及 optimizer 表达式的 lexer、parser 和求值器。每个 Pull Request 和 `main` push 对两个 target 并行执行 20 秒；每周计划任务各执行 5 分钟。发生崩溃时，workflow 保存输入 artifact 供复现，但 corpus 与 crash 文件不提交到仓库。
+
+本地快速复现：
+
+```bash
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./internal/ingest/parser -run='^$' -fuzz='^FuzzBasicParser$' -fuzztime=30s
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./internal/optimizer -run='^$' -fuzz='^FuzzCompileExpression$' -fuzztime=30s
+```
+
+若 CI 发现 crash，下载 artifact 后把输入放入对应的 `testdata/fuzz/<Target>/`，先使用 `go test <package> -run='<Target>/<hash>'` 定点复现。修复后应把最小化、脱敏后的输入转换为具名单测或代码内 seed；不要提交自动生成的 corpus、原始 crash 或敏感文档内容。
+
 ### 契约测试
 
 OpenAPI 契约校验：
