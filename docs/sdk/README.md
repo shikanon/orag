@@ -93,6 +93,7 @@ The beta surface covers:
 - ingestion: `IngestText`, `IngestFile`, `GetIngestionJob`;
 - retrieval and generation: `Query`, `StreamQuery`;
 - evaluation: `CreateDataset`, `AddDatasetItem`, `RunEvaluation`, `GetEvaluation`;
+- release control: `CreatePipelineVersion`, `ListPipelineVersions`, `ValidatePipelineVersion`, `ListEnvironments`, `ListReleases`, `Promote`, `Rollback`;
 - operations: `Readiness`, `GetTrace`, `ListTraces`.
 
 Requests use the client tenant unless `TenantID` is explicitly set on the request. Treat a client as tenant-scoped and avoid sharing it across unrelated trust boundaries.
