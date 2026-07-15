@@ -62,12 +62,25 @@ curl -fsS http://localhost:8080/readyz
 | `payload_too_large` | 文档内容超过 `INGEST_MAX_DOCUMENT_BYTES`。 | 减小输入或调大配置。 |
 | `knowledge_base_not_found` | 知识库 ID 不存在或不属于当前 tenant。 | 重新运行建库脚本。 |
 | job 失败 | parser、chunker、embedding、store 任一阶段失败。 | 使用 `GET /v1/ingestion-jobs/{id}` 查看 job 结果。 |
+| job 为 `succeeded` 但 `error` 非空 | PostgreSQL 已提交新版本，但 Qdrant 旧点清理或其它非关键后处理失败。 | 将该字段按 warning 处理；确认新 chunk 已授权，再安排清理重试，不要重新标记 job 为失败。 |
+
+### PostgreSQL/Qdrant 可见性不一致
+
+入库或替换异常时，应同时检查 job、PostgreSQL 和 Qdrant，而不是只看 Qdrant payload：
+
+1. 记录 ingestion job ID、tenant、knowledge base、source URI 和 document ID。
+2. 查询 PostgreSQL `chunks`，确认候选行的 `searchable` 状态；这是 dense/sparse 可见性的最终依据。
+3. 检查 Qdrant payload 中的 `document_id`、`ingestion_job_id` 和诊断性 `searchable`。
+4. 若 job 为 `failed`，候选不得有 PostgreSQL `searchable=true` 行；旧版本应继续可查。
+5. 若 job 为 `succeeded` 且带清理 warning，新版本应为 PostgreSQL 唯一 active 版本；残留旧 Qdrant 点不会通过 PostgreSQL 屏障，可安全进入后续清理流程。
+
+不要通过手工把 Qdrant `searchable` 改为 `true` 来恢复查询：该字段不是授权源。若 PostgreSQL 可见性查询失败，dense retrieval 会 fail closed；先恢复 PostgreSQL 连接和查询能力。
 
 ## 查询失败或无上下文
 
 | 现象 | 优先检查 |
 | --- | --- |
-| 查询 500 | 从错误响应或 SSE `error` 事件取 `trace_id`，再检查模型接口、rerank 接口、Qdrant 或 PostgreSQL 访问是否失败。 |
+| 查询 500 | 从错误响应或 SSE `error` 事件取 `trace_id`，再检查模型接口、rerank 接口、Qdrant 或 PostgreSQL 访问是否失败；PostgreSQL 可见性查询失败时 dense retrieval 会主动 fail closed。 |
 | 答案无引用 | 文档是否成功入库，Qdrant 主 collection 是否有向量，PostgreSQL FTS 是否有 chunk。 |
 | 结果不稳定 | profile、top_k、rerank provider、provider base URL 和 mock/真实 provider 配置是否一致。 |
 | 延迟过高 | top-k 候选规模、rerank 超时、模型 provider timeout 和上下文 token 预算。 |

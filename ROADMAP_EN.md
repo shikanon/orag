@@ -2,7 +2,7 @@
 
 English | [简体中文](./ROADMAP.md)
 
-Last updated: 2026-07-14
+Last updated: 2026-07-15
 
 ## Positioning
 
@@ -46,8 +46,8 @@ Current baseline:
 | Offline Knowledge and MCP self-check/diagnose/ops | `experimental` | Remove fixture dependencies and validate approval and audit boundaries |
 | ORAG Console | `experimental` | Complete orchestration, API debugging, evaluation gates, promotion, and rollback |
 | Tutorial Lab | `experimental` | Support clone, Quick Run, Replay, and result comparison |
-| Public Go SDK | `planned` | Ship as `beta` in `v0.1.0-beta.1` |
-| GHCR images, full-stack Compose, hosted docs | `planned` | Ship as `beta` in `v0.1.0-beta.1` |
+| Public Go SDK | `beta` | Shipped in `v0.1.0-beta.1`; continue validation through the external consumer gate and compatibility policy |
+| GHCR images, full-stack Compose, hosted docs | `beta` | Shipped in `v0.1.0-beta.1`; continue validating signatures, the walkthrough, and documentation contracts |
 
 ORAG will not label any capability `stable` before `v1.0.0`.
 
@@ -132,6 +132,8 @@ Phases advance according to quality gates and available capacity, without target
 - Console, interactive `/docs`, hosted docs, and mock walkthrough use one versioned contract.
 
 ## Phase 3: Production pilot baseline
+
+Current progress: [#175](https://github.com/shikanon/orag/issues/175) is implemented according to the [cross-store staged visibility design](./docs/superpowers/specs/2026-07-15-qdrant-staged-visibility-design.md). PostgreSQL now authorizes sparse and dense visibility, failed candidates cannot enter retrieval, and the protocol is covered by real PostgreSQL + Qdrant failure, replacement, legacy, cleanup-warning, and concurrency tests. This completes only part of the consistency work below; Phase 3 is not complete.
 
 ### Consistency and execution safety
 

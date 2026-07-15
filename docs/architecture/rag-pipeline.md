@@ -47,6 +47,27 @@ trace context (trace_id)
 
 `rag_traces` 表示一次完整 RAG 查询；`rag_node_spans` 表示 Graph 中关键节点的执行片段。node span 按 `created_at, id` 排序后可还原节点执行顺序；任一 span 的 `error` 非空时，HTTP/CLI 查询结果会标记 `has_error=true` 并累计 `error_count`。如果调用方复用同一个 `X-Trace-ID`，持久化记录按最后完成的请求整体覆盖主记录和 node spans，不会把多次请求的 spans 追加到同一个 trace。当前持久化的是应用内 RAG trace，不是 OpenTelemetry span，也不是 LangFuse trace。
 
+## 入库可见性与检索授权
+
+PostgreSQL 的 `chunks.searchable` 是 sparse 与 dense 检索共同的唯一可见性权威。Qdrant 只负责召回 dense 候选；其 `searchable` payload 用于记录 staged/prepare 状态和诊断，不能独立授权某个 chunk 进入 RAG 上下文。
+
+一次 PostgreSQL + Qdrant 入库按以下阶段执行：
+
+```text
+Store(false) -> Prepare(Qdrant) -> Commit(PostgreSQL) -> Finalize(Qdrant cleanup)
+      |                |                    |                       |
+      +----------------+--------------------+-- pre-commit error: abort candidate
+                                               post-commit error: succeeded + warning
+```
+
+- `Store` 在两个存储中写入不可见候选，Qdrant 同时记录 `ingestion_job_id`。
+- `PrepareActivation` 让 Qdrant 候选可供检索，但 PostgreSQL 屏障仍会拒绝未提交 chunk。
+- `CommitActivation` 在 PostgreSQL advisory transaction lock 下原子替换同源旧版本，并将新 chunk 标记为 `searchable=true`。
+- `FinalizeActivation` 删除 Qdrant 中同源旧文档点；失败时新版本已经提交，job 保持 `succeeded` 并记录清理 warning。
+- dense retrieval 对每页 Qdrant 候选批量查询 PostgreSQL，只返回当前 `searchable=true` 的 chunk。可见性查询失败时 dense 查询 fail closed，不返回未经授权的候选。
+
+历史 Qdrant 点即使缺少 `searchable` payload，也必须通过 PostgreSQL 授权。因此升级不要求同步回填 Qdrant payload，孤儿点和失败候选仍不会进入检索结果。
+
 ## 关键阶段
 
 | 阶段 | 主要路径 | 说明 |
@@ -56,7 +77,7 @@ trace context (trace_id)
 | RAG Graph | [`../../internal/graph`](../../internal/graph) | 编排检索、融合、重排、打包、生成和引用节点，并记录 node span。 |
 | 查询路由 | [`../../internal/rag/query_router.go`](../../internal/rag/query_router.go) | 可选启发式路由 direct、single retrieval 和 multi-step retrieval；direct 查询绕过检索，multi-step 查询提升到高精检索路径。 |
 | 语义缓存 | [`../../internal/rag/semantic_cache.go`](../../internal/rag/semantic_cache.go)、[`../../internal/storage/qdrant/semantic_cache.go`](../../internal/storage/qdrant/semantic_cache.go) | 查询相似历史问题，命中时可减少生成成本。 |
-| dense retrieval | [`../../internal/kb/retrievers.go`](../../internal/kb/retrievers.go)、[`../../internal/storage/qdrant`](../../internal/storage/qdrant) | 从 Qdrant 主 collection 检索向量候选。 |
+| dense retrieval | [`../../internal/kb/retrievers.go`](../../internal/kb/retrievers.go)、[`../../internal/storage/qdrant`](../../internal/storage/qdrant) | 从 Qdrant 主 collection 检索候选，并由 PostgreSQL `chunks.searchable` 批量授权后返回。 |
 | sparse retrieval | [`../../internal/storage/postgres/fts.go`](../../internal/storage/postgres/fts.go) | 使用 PostgreSQL FTS 检索文本候选；启用 Contextual Retrieval 时查询 `contextual_text + content` 生成的 search vector。 |
 | RAPTOR 摘要层 | [`../../internal/ingest/raptor.go`](../../internal/ingest/raptor.go) | 可选生成递归摘要 chunk；摘要随普通 chunk 一起进入 embedding 和 FTS 检索。 |
 | 图扩展 | [`../../internal/kb/graph.go`](../../internal/kb/graph.go)、[`../../internal/ingest/graph.go`](../../internal/ingest/graph.go) | 可选抽取 chunk 内实体共现关系，检索时按查询实体扩展相关 chunk。 |

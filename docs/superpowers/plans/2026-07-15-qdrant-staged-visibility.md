@@ -35,7 +35,7 @@
 - Produces: kb.ErrNonTransactionalCompositeIndexer
 - Consumes: kb.Indexer, kb.Document, kb.Chunk
 
-- [ ] **Step 1: Write failing phase-order and abort tests**
+- [x] **Step 1: Write failing phase-order and abort tests**
 
 Add this participant double to internal/kb/store_test.go:
 
@@ -102,7 +102,7 @@ Add this fixed test matrix:
 | TestCompositeIndexerReturnsPostCommitCleanupWarning | qdrant finalizeErr is cleanup failed | errors.As returns *PostCommitCleanupWarning and no abort event exists |
 | TestCompositeIndexerRejectsNonTransactionalIndexer | first indexer is a participant and second only implements Store | error is ErrNonTransactionalCompositeIndexer and events is empty |
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run:
 
@@ -112,7 +112,7 @@ go test ./internal/kb -run 'TestCompositeIndexer(RunsActivationPhasesInOrder|Abo
 
 Expected: FAIL because ActivationParticipant, phased callbacks, and PostCommitCleanupWarning do not exist.
 
-- [ ] **Step 3: Implement the protocol**
+- [x] **Step 3: Implement the protocol**
 
 Replace ActivatingIndexer in internal/kb/composite.go with:
 
@@ -139,7 +139,7 @@ CompositeIndexer.Store must preflight every non-nil indexer, stage participants,
 
 Move MemoryStore.Activate behavior to CommitActivation. Implement no-op prepare/finalize and AbortActivation that removes only pending candidate entries. Update the staged store and indexer doubles in internal/ingest/service_test.go to implement all participant methods.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 ~~~bash
 go test ./internal/kb ./internal/ingest -run 'TestCompositeIndexer|TestIngestFailedComposite|TestIngestSuccessfulComposite' -v
@@ -147,7 +147,7 @@ go test ./internal/kb ./internal/ingest -run 'TestCompositeIndexer|TestIngestFai
 
 Expected: PASS. Failed replacements preserve the previous memory-store version.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ~~~bash
 git add internal/kb/composite.go internal/kb/types.go internal/kb/store_test.go internal/ingest/service_test.go
@@ -166,7 +166,7 @@ git commit -m "feat(kb): coordinate staged index activation"
 - Implements: kb.ActivationParticipant on *postgres.Repository
 - Consumes: knowledgeBaseTx and knowledgeBaseQueryer
 
-- [ ] **Step 1: Write failing visibility and activation tests**
+- [x] **Step 1: Write failing visibility and activation tests**
 
 Add this interface to internal/kb/types.go:
 
@@ -209,7 +209,7 @@ Add this fixed test matrix:
 
 Extend fakeKnowledgeBaseQueryer with queryArgs. Extend fakeKnowledgeBaseTx with a queued rows field so multiple QueryRow calls return deterministic lock/candidate results.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ~~~bash
 go test ./internal/storage/postgres -run 'TestRepository(FilterSearchableChunkIDs|CommitActivation|AbortActivation)' -v
@@ -217,7 +217,7 @@ go test ./internal/storage/postgres -run 'TestRepository(FilterSearchableChunkID
 
 Expected: FAIL because the visibility method and participant phases are missing.
 
-- [ ] **Step 3: Implement active-chunk filtering**
+- [x] **Step 3: Implement active-chunk filtering**
 
 Add:
 
@@ -248,7 +248,7 @@ func (r *Repository) FilterSearchableChunkIDs(
 }
 ~~~
 
-- [ ] **Step 4: Implement PostgreSQL phases**
+- [x] **Step 4: Implement PostgreSQL phases**
 
 Define kb.ErrActivationCandidateMissing. Keep Store staged. PrepareActivation and FinalizeActivation return nil.
 
@@ -281,7 +281,7 @@ WHERE d.tenant_id=$1 AND d.knowledge_base_id=$2 AND d.id=$3
 
 This preserves active chunks reused by an idempotent re-ingestion.
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 ~~~bash
 go test ./internal/storage/postgres -run 'TestRepository(StoreStaged|FilterSearchableChunkIDs|CommitActivation|AbortActivation)' -v
@@ -289,7 +289,7 @@ go test ./internal/storage/postgres -run 'TestRepository(StoreStaged|FilterSearc
 
 Expected: PASS with tenant scope, advisory serialization, and rollback assertions.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ~~~bash
 git add internal/kb/types.go internal/storage/postgres/repository.go internal/storage/postgres/repository_test.go
@@ -311,7 +311,7 @@ git commit -m "feat(postgres): authorize active ingestion chunks"
 - Implements: kb.ActivationParticipant on qdrantstore.VectorStore
 - Produces payload keys: searchable and ingestion_job_id
 
-- [ ] **Step 1: Write failing payload and phase tests**
+- [x] **Step 1: Write failing payload and phase tests**
 
 Record Upsert and SetPayload requests. Assert Store sends searchable=false and the chunk ingestion job ID:
 
@@ -336,7 +336,7 @@ Add this fixed test matrix:
 
 Add SetPayload to every PointsClient fake, including failingPointsClient in integration tests.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ~~~bash
 go test ./internal/storage/qdrant -run 'Test(VectorStoreStoresStagedPayload|PrepareActivation|AbortActivation|CommitActivation|FinalizeActivation)' -v
@@ -344,7 +344,7 @@ go test ./internal/storage/qdrant -run 'Test(VectorStoreStoresStagedPayload|Prep
 
 Expected: FAIL because payload fields, SetPayload, and phase methods are missing.
 
-- [ ] **Step 3: Extend the client and payload**
+- [x] **Step 3: Extend the client and payload**
 
 Add to PointsClient:
 
@@ -363,7 +363,7 @@ Add boolValue and these fields to chunkPayload while retaining every existing fi
 "searchable":        boolValue(false),
 ~~~
 
-- [ ] **Step 4: Implement Qdrant phases**
+- [x] **Step 4: Implement Qdrant phases**
 
 Add a documentFilter scoped by tenant ID, knowledge-base ID, and document ID. Use:
 
@@ -390,7 +390,7 @@ func (s VectorStore) setDocumentSearchable(
 
 Prepare maps to true, Abort maps to false, Commit is a no-op, and the old Activate source cleanup becomes FinalizeActivation.
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 ~~~bash
 go test ./internal/storage/qdrant -run 'Test(VectorStoreStoresStagedPayload|PrepareActivation|AbortActivation|CommitActivation|FinalizeActivation|PayloadRoundTrip)' -v
@@ -398,7 +398,7 @@ go test ./internal/storage/qdrant -run 'Test(VectorStoreStoresStagedPayload|Prep
 
 Expected: PASS. All mutations are tenant, KB, and document/source scoped.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ~~~bash
 git add internal/storage/qdrant/client.go internal/storage/qdrant/payload.go internal/storage/qdrant/vector_store.go internal/storage/qdrant/vector_store_test.go internal/storage/qdrant/semantic_cache_test.go tests/integration/ingest_query_test.go
@@ -415,7 +415,7 @@ git commit -m "feat(qdrant): stage vector visibility state"
 - Consumes: kb.SearchableChunkFilter
 - Produces: bounded, paged, fail-closed VectorStore.Retrieve
 
-- [ ] **Step 1: Write failing retrieval tests**
+- [x] **Step 1: Write failing retrieval tests**
 
 Create fixedSearchableChunkFilter with active IDs, a sentinel error, and recorded calls. Make the points fake return pages based on SearchPoints.GetOffset.
 
@@ -428,7 +428,7 @@ Add tests for:
 - an inactive first page causes a second Qdrant page;
 - scanning stops at max(limit*8, 256).
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ~~~bash
 go test ./internal/storage/qdrant -run 'TestRetrieve(RequiresVisibilityFilter|FiltersInactiveCandidates|FailsClosed|PagesForActiveResults|StopsAtScanCap)' -v
@@ -436,7 +436,7 @@ go test ./internal/storage/qdrant -run 'TestRetrieve(RequiresVisibilityFilter|Fi
 
 Expected: FAIL because retrieval returns unchecked candidates.
 
-- [ ] **Step 3: Implement bounded authorization**
+- [x] **Step 3: Implement bounded authorization**
 
 Add:
 
@@ -453,7 +453,7 @@ type VectorStore struct {
 
 Use pageSize=max(limit*2, 32), scanCap=max(limit*8, 256), and Qdrant Offset. For each page, extract IDs, call FilterSearchableChunkIDs once, append only authorized points in score order, and set ranks after filtering. Stop when TopK active points are collected, Qdrant is exhausted, or the cap is reached. Return no candidates when visibility lookup fails.
 
-- [ ] **Step 4: Verify GREEN and race safety**
+- [x] **Step 4: Verify GREEN and race safety**
 
 ~~~bash
 go test ./internal/storage/qdrant -run TestRetrieve -v
@@ -462,7 +462,7 @@ go test -race ./internal/storage/qdrant
 
 Expected: PASS. Offsets increase monotonically and never cross the cap.
 
-- [ ] **Step 5: Commit Task 4**
+- [x] **Step 5: Commit Task 4**
 
 ~~~bash
 git add internal/storage/qdrant/vector_store.go internal/storage/qdrant/vector_store_test.go
@@ -481,7 +481,7 @@ git commit -m "feat(qdrant): authorize dense candidates in postgres"
 - Consumes: *kb.PostCommitCleanupWarning
 - Wires: qdrantstore.VectorStore.Visibility = repo
 
-- [ ] **Step 1: Write failing job and wiring tests**
+- [x] **Step 1: Write failing job and wiring tests**
 
 Have an indexer return &kb.PostCommitCleanupWarning{Err: cleanupErr}. Assert Service.Ingest returns no error, result and stored job statuses are succeeded, document/chunk counts are present, and job.Error contains the cleanup warning.
 
@@ -500,7 +500,7 @@ func TestBuildKnowledgeBackendWiresVectorVisibility(t *testing.T) {
 
 The test calls the helper with a repository pointer and asserts the returned Visibility is that exact pointer, the client is unchanged, and the collection is unchanged.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ~~~bash
 go test ./internal/ingest ./internal/app -run 'Test(IngestPostCommitCleanupWarningSucceeds|BuildKnowledgeBackendWiresVectorVisibility)' -v
@@ -508,7 +508,7 @@ go test ./internal/ingest ./internal/app -run 'Test(IngestPostCommitCleanupWarni
 
 Expected: FAIL because every indexer error currently fails the job and visibility is not wired.
 
-- [ ] **Step 3: Handle cleanup warnings**
+- [x] **Step 3: Handle cleanup warnings**
 
 Use:
 
@@ -525,7 +525,7 @@ if err := s.Indexer.Store(ctx, doc, chunks); err != nil {
 
 Include indexWarnings with contextual, RAPTOR, and graph warnings before persisting the succeeded job.
 
-- [ ] **Step 4: Wire one vector-store value everywhere**
+- [x] **Step 4: Wire one vector-store value everywhere**
 
 Implement newPostgresVectorStore, then make buildKnowledgeBackend use its return value for the composite indexer, dense retriever, and vector deleter:
 
@@ -543,7 +543,7 @@ func newPostgresVectorStore(
 }
 ~~~
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 ~~~bash
 go test ./internal/ingest ./internal/app -run 'Test(IngestPostCommitCleanupWarningSucceeds|BuildKnowledgeBackendWiresVectorVisibility|IngestFailedComposite)' -v
@@ -551,7 +551,7 @@ go test ./internal/ingest ./internal/app -run 'Test(IngestPostCommitCleanupWarni
 
 Expected: PASS. Pre-commit errors still fail; cleanup warnings succeed.
 
-- [ ] **Step 6: Commit Task 5**
+- [x] **Step 6: Commit Task 5**
 
 ~~~bash
 git add internal/ingest/service.go internal/ingest/service_test.go internal/app/app.go internal/app/app_test.go
@@ -568,7 +568,7 @@ git commit -m "fix(ingest): distinguish committed cleanup warnings"
 - Consumes: real PostgreSQL, real Qdrant, deterministic mock embedder
 - Proves: failure invisibility, successful replacement, legacy compatibility, cleanup warnings, serialized replacement
 
-- [ ] **Step 1: Add integration participants and helpers**
+- [x] **Step 1: Add integration participants and helpers**
 
 Add:
 
@@ -599,7 +599,7 @@ func deleteQdrantDocumentPayloadKey(t *testing.T, ctx context.Context, app *core
 
 integrationQueryVector calls app.Ingest.Embedder.Embed with one text and fails unless exactly one vector is returned. Every Qdrant payload helper filters by testTenantID, KB ID, and document ID and sets Wait=true.
 
-- [ ] **Step 2: Write the failing commit test**
+- [x] **Step 2: Write the failing commit test**
 
 TestFailedPostgresActivationDoesNotExposePreparedQdrantVectors performs:
 
@@ -620,7 +620,7 @@ ORAG_INTEGRATION_TESTS=1 DATABASE_URL="postgres://orag:orag@localhost:55432/orag
 
 Expected: FAIL before the full protocol is connected.
 
-- [ ] **Step 3: Add success and legacy tests**
+- [x] **Step 3: Add success and legacy tests**
 
 Add:
 
@@ -629,13 +629,13 @@ Add:
 
 The legacy test removes searchable from a real point, proves it remains retrievable with an active PostgreSQL chunk, then makes that chunk inactive and proves dense retrieval filters the orphan.
 
-- [ ] **Step 4: Add cleanup-warning and concurrency tests**
+- [x] **Step 4: Add cleanup-warning and concurrency tests**
 
 Wrap a real vector participant so FinalizeActivation returns a sentinel error after real prepare. Assert ingestion succeeds with a warning and retrieval returns only the committed version.
 
 Run two same-source replacements concurrently. Assert exactly one source document has searchable chunks and every dense result belongs to that active document. The winner is lock-acquisition order, not request creation time.
 
-- [ ] **Step 5: Verify the full integration package**
+- [x] **Step 5: Verify the full integration package**
 
 ~~~bash
 make test-integration
@@ -643,7 +643,7 @@ make test-integration
 
 Expected: PASS for all ingestion, query, deletion, auth, and visibility tests.
 
-- [ ] **Step 6: Stop services and commit Task 6**
+- [x] **Step 6: Stop services and commit Task 6**
 
 ~~~bash
 make test-integration-down
@@ -666,7 +666,7 @@ git commit -m "test: prove cross-store ingestion visibility"
 - Documents: visibility invariant, cleanup-warning behavior, operator diagnosis
 - Publishes: an implementation PR closing issue #175 only after gates pass
 
-- [ ] **Step 1: Update project truth**
+- [x] **Step 1: Update project truth**
 
 Document:
 
@@ -678,7 +678,7 @@ Document:
 
 Add an Unreleased changelog entry. Add a Stage 3 progress note to both Roadmaps linking issue #175 and the design without claiming the stage is complete. Set the spec status to Implemented and verified only after integration passes. Check completed plan boxes.
 
-- [ ] **Step 2: Run formatting and focused gates**
+- [x] **Step 2: Run formatting and focused gates**
 
 ~~~bash
 gofmt -w internal/kb internal/storage/postgres internal/storage/qdrant internal/ingest internal/app tests/integration
@@ -689,7 +689,7 @@ go test -race ./internal/kb ./internal/ingest ./internal/storage/qdrant
 
 Expected: all PASS and no formatting diff after gofmt.
 
-- [ ] **Step 3: Run repository-wide gates**
+- [x] **Step 3: Run repository-wide gates**
 
 ~~~bash
 make agent-gate
@@ -699,7 +699,7 @@ npm --prefix console run build
 
 Expected: all PASS, including SDK consumer, OpenAPI, agent artifacts, and Console compatibility.
 
-- [ ] **Step 4: Re-run integration from a clean stack**
+- [x] **Step 4: Re-run integration from a clean stack**
 
 ~~~bash
 make test-integration-down
@@ -710,7 +710,7 @@ make test-integration-down
 
 Expected: all PASS and no test containers or volumes left running.
 
-- [ ] **Step 5: Commit documentation**
+- [x] **Step 5: Commit documentation**
 
 ~~~bash
 git add CHANGELOG.md ROADMAP.md ROADMAP_EN.md docs/architecture/rag-pipeline.md docs/operations/troubleshooting.md docs/superpowers/specs/2026-07-15-qdrant-staged-visibility-design.md docs/superpowers/plans/2026-07-15-qdrant-staged-visibility.md
