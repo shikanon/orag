@@ -61,6 +61,7 @@ func projectScopedRouteSupported(c *app.RequestContext) bool {
 	case "/v1/projects/:project_id",
 		"/v1/projects/:project_id/environments", "/v1/projects/:project_id/releases", "/v1/projects/:project_id/releases:promote", "/v1/projects/:project_id/environments/:environment/rollback",
 		"/v1/projects/:project_id/versions", "/v1/projects/:project_id/versions/:version_id/validations",
+		"/v1/projects/:project_id/pipelines", "/v1/projects/:project_id/pipelines/:pipeline_id/draft",
 		"/v1/knowledge-bases", "/v1/knowledge-bases/:id",
 		"/v1/knowledge-bases/:id/documents", "/v1/knowledge-bases/:id/documents:import",
 		"/v1/knowledge-bases/:id/uploads", "/v1/uploads/:id", "/v1/uploads/*action",

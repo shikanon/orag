@@ -889,6 +889,66 @@ paths:
           content: {application/json: {schema: {$ref: "#/components/schemas/PipelineNodeDefinitionListResponse"}}}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/pipelines:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      tags: [Pipelines]
+      operationId: listProjectPipelines
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {description: Project pipelines., content: {application/json: {schema: {$ref: "#/components/schemas/PipelineListResponse"}}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [Pipelines]
+      operationId: createProjectPipeline
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/CreatePipelineRequest"}}}
+      responses:
+        "201": {description: Created pipeline., content: {application/json: {schema: {$ref: "#/components/schemas/Pipeline"}}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/pipelines/{pipeline_id}/draft:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: pipeline_id
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      tags: [Pipelines]
+      operationId: getProjectPipelineDraft
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {description: Current revisioned draft., content: {application/json: {schema: {$ref: "#/components/schemas/PipelineDraft"}}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [Pipelines]
+      operationId: saveProjectPipelineDraft
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/SavePipelineDraftRequest"}}}
+      responses:
+        "200": {description: Saved draft., content: {application/json: {schema: {$ref: "#/components/schemas/PipelineDraft"}}}}
+        "409": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
   /v1/projects/{project_id}/releases:
     parameters:
       - name: project_id
@@ -1905,6 +1965,43 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/PipelineNodeDefinition"}
+    Pipeline:
+      type: object
+      required: [id, project_id, name, created_at, updated_at]
+      properties:
+        id: {type: string}
+        project_id: {type: string}
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    PipelineListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Pipeline"}
+    PipelineDraft:
+      type: object
+      required: [pipeline_id, project_id, revision, schema_version, definition, updated_at]
+      properties:
+        pipeline_id: {type: string}
+        project_id: {type: string}
+        revision: {type: integer, format: int64}
+        schema_version: {type: integer}
+        definition: {type: object}
+        updated_at: {type: string, format: date-time}
+    CreatePipelineRequest:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+    SavePipelineDraftRequest:
+      type: object
+      required: [expected_revision, definition]
+      properties:
+        expected_revision: {type: integer, format: int64}
+        definition: {type: object}
     PipelineVersionListResponse:
       type: object
       required: [items]

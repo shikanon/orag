@@ -23,6 +23,7 @@ import (
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/offlineknowledge"
 	"github.com/shikanon/orag/internal/optimizer"
+	"github.com/shikanon/orag/internal/pipeline"
 	"github.com/shikanon/orag/internal/platform/httpclient"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/project"
@@ -50,6 +51,7 @@ type App struct {
 	OfflineKnowledge *offlineknowledge.Service
 	OfflineScheduler *offlineknowledge.Scheduler
 	Release          *release.Service
+	Pipeline         *pipeline.Service
 	Metrics          *observability.Metrics
 	Traces           TraceRepository
 
@@ -133,6 +135,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	datasets := dataset.NewService(backend.datasetRepo)
 	projects := project.NewService(backend.projectRepo, func() time.Time { return time.Now().UTC() })
 	releaseSvc := release.NewService(backend.releaseRepo)
+	pipelineSvc := pipeline.NewService(backend.pipelineRepo, pipeline.BuiltinRegistry())
 	apiKeys := auth.NewAPIKeyService(backend.apiKeyRepo, cfg.Auth.APIKeyPepper)
 	evalRunner := eval.Runner{RAG: ragSvc, Datasets: datasets, Repository: backend.evalRepo}
 	optimizerRunner := optimizer.InternalRAGRunner{
@@ -176,6 +179,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		OfflineKnowledge: offlineKnowledgeSvc,
 		OfflineScheduler: offlineScheduler,
 		Release:          releaseSvc,
+		Pipeline:         pipelineSvc,
 		Metrics:          metrics,
 		Traces:           backend.traceRepo,
 		Postgres:         backend.pool,
@@ -585,6 +589,7 @@ type knowledgeBackend struct {
 	optimizerRepo        optimizer.Repository
 	offlineKnowledgeRepo offlineknowledge.Repository
 	releaseRepo          release.Repository
+	pipelineRepo         pipeline.Repository
 	chunkSource          kb.ChunkSource
 	pool                 *pgxpool.Pool
 	qdrant               *qdrantstore.Client
@@ -717,6 +722,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			datasetRepo:          dataset.NewMemoryRepository(),
 			projectRepo:          projectRepo,
 			releaseRepo:          release.NewMemoryRepository(project.LegacyDefaultID(defaultTenant)),
+			pipelineRepo:         pipeline.NewMemoryRepository(),
 			apiKeyRepo:           auth.NewMemoryAPIKeyRepository(),
 			evalRepo:             eval.NewMemoryRepository(),
 			optimizerRepo:        optimizer.NewMemoryRepository(),
@@ -775,6 +781,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 		datasetRepo:          repo,
 		projectRepo:          postgres.NewProjectRepository(pool),
 		releaseRepo:          repo,
+		pipelineRepo:         repo,
 		apiKeyRepo:           postgres.NewAPIKeyRepository(pool),
 		evalRepo:             repo,
 		optimizerRepo:        repo,
