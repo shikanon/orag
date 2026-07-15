@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -47,6 +48,9 @@ func TestAPIKeyCreateAuthenticateListAndRevoke(t *testing.T) {
 	items, err := service.List(ctx, "tenant_1")
 	if err != nil || len(items) != 1 {
 		t.Fatalf("List() items=%d err=%v", len(items), err)
+	}
+	if items[0].LastUsedAt == nil || !items[0].LastUsedAt.Equal(now) {
+		t.Fatalf("last_used_at = %v, want %v", items[0].LastUsedAt, now)
 	}
 	encoded, err := json.Marshal(items[0])
 	if err != nil {
@@ -149,6 +153,81 @@ func TestAPIKeyHashIsBoundToServerPepper(t *testing.T) {
 	if left.hashAPIKey(secret) == right.hashAPIKey(secret) {
 		t.Fatal("different server peppers produced the same API key hash")
 	}
+}
+
+func TestAPIKeyLastUsedWritesAreThrottledAndBestEffort(t *testing.T) {
+	ctx := context.Background()
+	base := NewMemoryAPIKeyRepository()
+	repo := &countingAPIKeyRepository{MemoryAPIKeyRepository: base}
+	service := NewAPIKeyService(repo, "test-pepper")
+	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	created, err := service.Create(ctx, APIKeyCreateInput{TenantID: "tenant_1", Name: "robot", Role: RoleTenantAdmin, CreatedBy: "user_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrong := created.Secret[:len(created.Secret)-1] + "A"
+	if strings.HasSuffix(created.Secret, "A") {
+		wrong = created.Secret[:len(created.Secret)-1] + "B"
+	}
+	if _, err := service.Authenticate(ctx, wrong); !errors.Is(err, ErrAPIKeyInvalid) {
+		t.Fatalf("wrong secret error = %v", err)
+	}
+	if got := repo.touches.Load(); got != 0 {
+		t.Fatalf("invalid authentication touches = %d, want 0", got)
+	}
+
+	if _, err := service.Authenticate(ctx, created.Secret); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Authenticate(ctx, created.Secret); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(defaultLastUsedWriteInterval - time.Second)
+	if _, err := service.Authenticate(ctx, created.Secret); err != nil {
+		t.Fatal(err)
+	}
+	if got := repo.touches.Load(); got != 1 {
+		t.Fatalf("touches before interval = %d, want 1", got)
+	}
+
+	now = now.Add(time.Second)
+	if _, err := service.Authenticate(ctx, created.Secret); err != nil {
+		t.Fatal(err)
+	}
+	if got := repo.touches.Load(); got != 2 {
+		t.Fatalf("touches after interval = %d, want 2", got)
+	}
+	items, err := service.List(ctx, "tenant_1")
+	if err != nil || len(items) != 1 || items[0].LastUsedAt == nil || !items[0].LastUsedAt.Equal(now) {
+		t.Fatalf("last-used metadata = %#v, err=%v", items, err)
+	}
+
+	repo.touchErr = errors.New("audit store unavailable")
+	now = now.Add(defaultLastUsedWriteInterval)
+	if _, err := service.Authenticate(ctx, created.Secret); err != nil {
+		t.Fatalf("best-effort touch changed authentication result: %v", err)
+	}
+	if _, err := service.Authenticate(ctx, created.Secret); err != nil {
+		t.Fatal(err)
+	}
+	if got := repo.touches.Load(); got != 3 {
+		t.Fatalf("failed touch attempts = %d, want one throttled attempt", got)
+	}
+}
+
+type countingAPIKeyRepository struct {
+	*MemoryAPIKeyRepository
+	touches  atomic.Int64
+	touchErr error
+}
+
+func (r *countingAPIKeyRepository) TouchAPIKeyLastUsed(ctx context.Context, id string, usedAt, notAfter time.Time) error {
+	r.touches.Add(1)
+	if r.touchErr != nil {
+		return r.touchErr
+	}
+	return r.MemoryAPIKeyRepository.TouchAPIKeyLastUsed(ctx, id, usedAt, notAfter)
 }
 
 func timePointer(value time.Time) *time.Time { return &value }

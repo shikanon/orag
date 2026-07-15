@@ -10,12 +10,17 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shikanon/orag/internal/platform/id"
 )
 
-const apiKeyPrefix = "orag_sk_"
+const (
+	apiKeyPrefix                 = "orag_sk_"
+	defaultLastUsedWriteInterval = 5 * time.Minute
+	maxLastUsedThrottleEntries   = 10_000
+)
 
 var (
 	ErrAPIKeyNotFound = errors.New("api key not found")
@@ -58,6 +63,7 @@ type APIKeyRepository interface {
 	ListAPIKeys(context.Context, string) ([]APIKey, error)
 	GetAPIKeyByID(context.Context, string) (APIKey, bool, error)
 	RevokeAPIKey(context.Context, string, string, time.Time) (bool, error)
+	TouchAPIKeyLastUsed(context.Context, string, time.Time, time.Time) error
 }
 
 type APIKeyService struct {
@@ -65,10 +71,17 @@ type APIKeyService struct {
 	pepper []byte
 	now    func() time.Time
 	rand   func([]byte) (int, error)
+
+	lastUsedMu            sync.Mutex
+	lastUsedWriteInterval time.Duration
+	lastUsedAttempts      map[string]time.Time
 }
 
 func NewAPIKeyService(repo APIKeyRepository, pepper string) *APIKeyService {
-	return &APIKeyService{repo: repo, pepper: []byte(pepper), now: func() time.Time { return time.Now().UTC() }, rand: rand.Read}
+	return &APIKeyService{
+		repo: repo, pepper: []byte(pepper), now: func() time.Time { return time.Now().UTC() }, rand: rand.Read,
+		lastUsedWriteInterval: defaultLastUsedWriteInterval, lastUsedAttempts: make(map[string]time.Time),
+	}
 }
 
 func (s *APIKeyService) Create(ctx context.Context, input APIKeyCreateInput) (APIKeyCreateResult, error) {
@@ -147,14 +160,37 @@ func (s *APIKeyService) Authenticate(ctx context.Context, secret string) (Princi
 	if item.RevokedAt != nil {
 		return Principal{}, ErrAPIKeyRevoked
 	}
-	if item.ExpiresAt != nil && !item.ExpiresAt.After(s.now()) {
+	now := s.now()
+	if item.ExpiresAt != nil && !item.ExpiresAt.After(now) {
 		return Principal{}, ErrAPIKeyExpired
 	}
 	principal := Principal{Kind: PrincipalAPIKey, SubjectID: item.ID, TenantID: item.TenantID, Role: item.Role, ProjectID: item.ProjectID}
 	if !principal.Valid() {
 		return Principal{}, ErrAPIKeyInvalid
 	}
+	s.touchLastUsed(ctx, item.ID, now)
 	return principal, nil
+}
+
+func (s *APIKeyService) touchLastUsed(ctx context.Context, keyID string, usedAt time.Time) {
+	interval := s.lastUsedWriteInterval
+	s.lastUsedMu.Lock()
+	lastAttempt, attempted := s.lastUsedAttempts[keyID]
+	if attempted && interval > 0 && usedAt.Before(lastAttempt.Add(interval)) {
+		s.lastUsedMu.Unlock()
+		return
+	}
+	if !attempted && len(s.lastUsedAttempts) >= maxLastUsedThrottleEntries {
+		clear(s.lastUsedAttempts)
+	}
+	s.lastUsedAttempts[keyID] = usedAt
+	s.lastUsedMu.Unlock()
+
+	// Authentication has already succeeded. Usage accounting is deliberately
+	// best-effort so an audit-write failure cannot turn a valid credential into
+	// an availability failure. The repository cutoff also protects multi-instance
+	// deployments from writing the same key on every request.
+	_ = s.repo.TouchAPIKeyLastUsed(ctx, keyID, usedAt, usedAt.Add(-interval))
 }
 
 func (s *APIKeyService) hashAPIKey(secret string) string {

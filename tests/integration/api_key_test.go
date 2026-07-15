@@ -74,6 +74,9 @@ func TestPostgresAPIKeyLifecycleAndTenantProjectBoundary(t *testing.T) {
 			if item.KeyHash == "" {
 				t.Fatal("repository must retain the hash for authentication")
 			}
+			if item.LastUsedAt == nil {
+				t.Fatal("successful authentication must record last_used_at")
+			}
 		}
 	}
 	if !found {
