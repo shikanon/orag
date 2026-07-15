@@ -22,6 +22,7 @@ import (
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/offlineknowledge"
+	"github.com/shikanon/orag/internal/optimizer"
 	"github.com/shikanon/orag/internal/platform/logger"
 	"github.com/shikanon/orag/internal/project"
 	"github.com/shikanon/orag/internal/rag"
@@ -1153,6 +1154,18 @@ func TestOptimizationAsyncHTTPLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertOriginalCandidateSet(t, status, resp.Body)
+
+	resp = performJSONWithTrace(h, "POST", accepted.ResumeURL, `{}`, token, "trace_resume_conflict")
+	assertErrorResponse(t, resp, 409, "optimization_state_conflict", "trace_resume_conflict")
+
+	storedStatus, ok, err = app.Optimizer.Get(ctx, "tenant_default", accepted.RunID)
+	if err != nil || !ok {
+		t.Fatalf("optimizer Get() before terminal resume ok=%v err=%v", ok, err)
+	}
+	storedStatus.Run.Status = optimizer.RunStatusCanceled
+	if err := app.Optimizer.Repository.UpdateOptimizationRun(ctx, storedStatus.Run); err != nil {
+		t.Fatalf("mark optimization canceled: %v", err)
+	}
 
 	resp = performJSON(h, "POST", accepted.ResumeURL, `{}`, token)
 	if resp.Code != 202 || !strings.Contains(resp.Body, `"status":"queued"`) {

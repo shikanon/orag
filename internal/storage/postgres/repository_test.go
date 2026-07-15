@@ -1135,6 +1135,86 @@ func TestRepositoryUpdateOptimizationRunIncludesReadbackFields(t *testing.T) {
 	}
 }
 
+func TestRepositoryCompareAndSwapOptimizationRunUsesExpectedStatus(t *testing.T) {
+	now := time.Date(2026, 7, 15, 3, 0, 0, 0, time.UTC)
+	run := optimizerpkg.OptimizationRun{
+		ID:        "opt_claim",
+		TenantID:  "tenant_1",
+		Status:    optimizerpkg.RunStatusRunning,
+		UpdatedAt: now,
+	}
+
+	for _, tt := range []struct {
+		name    string
+		tag     pgconn.CommandTag
+		want    bool
+		wantErr error
+	}{
+		{name: "claimed", tag: pgconn.NewCommandTag("UPDATE 1"), want: true},
+		{name: "conflict", tag: pgconn.NewCommandTag("UPDATE 0"), want: false},
+		{name: "repository error", wantErr: errors.New("cas failed")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			queryer := &fakeKnowledgeBaseQueryer{execTag: tt.tag, execErr: tt.wantErr}
+			repo := &Repository{evalQueryer: queryer}
+			got, err := repo.CompareAndSwapOptimizationRun(context.Background(), run, optimizerpkg.RunStatusQueued)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("CompareAndSwapOptimizationRun() error = %v, want %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("CompareAndSwapOptimizationRun() = %v, want %v", got, tt.want)
+			}
+			for _, wantSQL := range []string{"tenant_id=$1", "id=$2", "status=$22"} {
+				if !strings.Contains(queryer.execSQL, wantSQL) {
+					t.Fatalf("CAS SQL missing %q: %s", wantSQL, queryer.execSQL)
+				}
+			}
+			if gotStatus := queryer.execArgs[len(queryer.execArgs)-1]; gotStatus != optimizerpkg.RunStatusQueued {
+				t.Fatalf("expected status arg = %#v, want queued", gotStatus)
+			}
+		})
+	}
+}
+
+func TestRepositoryCompareAndSwapOptimizationCandidateUsesExpectedStatus(t *testing.T) {
+	now := time.Date(2026, 7, 15, 3, 0, 0, 0, time.UTC)
+	candidate := optimizerpkg.OptimizationCandidate{
+		ID:                "cand_claim",
+		OptimizationRunID: "opt_claim",
+		Status:            optimizerpkg.CandidateStatusRunning,
+		UpdatedAt:         now,
+	}
+
+	for _, tt := range []struct {
+		name string
+		tag  pgconn.CommandTag
+		want bool
+	}{
+		{name: "claimed", tag: pgconn.NewCommandTag("UPDATE 1"), want: true},
+		{name: "conflict", tag: pgconn.NewCommandTag("UPDATE 0"), want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			queryer := &fakeKnowledgeBaseQueryer{execTag: tt.tag}
+			repo := &Repository{evalQueryer: queryer}
+			got, err := repo.CompareAndSwapOptimizationCandidate(context.Background(), candidate, optimizerpkg.CandidateStatusQueued)
+			if err != nil {
+				t.Fatalf("CompareAndSwapOptimizationCandidate() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("CompareAndSwapOptimizationCandidate() = %v, want %v", got, tt.want)
+			}
+			for _, wantSQL := range []string{"optimization_run_id=$1", "id=$2", "status=$19"} {
+				if !strings.Contains(queryer.execSQL, wantSQL) {
+					t.Fatalf("candidate CAS SQL missing %q: %s", wantSQL, queryer.execSQL)
+				}
+			}
+			if gotStatus := queryer.execArgs[len(queryer.execArgs)-1]; gotStatus != optimizerpkg.CandidateStatusQueued {
+				t.Fatalf("expected status arg = %#v, want queued", gotStatus)
+			}
+		})
+	}
+}
+
 func TestRepositoryListsOptimizationCandidatesWithTenantGuard(t *testing.T) {
 	queryer := &fakeKnowledgeBaseQueryer{queryRows: &fakeTraceRows{}}
 	repo := &Repository{evalQueryer: queryer}

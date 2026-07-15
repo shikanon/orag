@@ -1348,6 +1348,8 @@ func writeOptimizationError(c *app.RequestContext, err error) {
 	switch {
 	case apperrors.IsCode(err, apperrors.CodeValidation):
 		writeError(c, consts.StatusBadRequest, "invalid_request", err.Error())
+	case apperrors.IsCode(err, apperrors.CodeConflict):
+		writeError(c, consts.StatusConflict, "optimization_state_conflict", err.Error())
 	case apperrors.IsCode(err, apperrors.CodeNotFound):
 		writeError(c, consts.StatusNotFound, "not_found", err.Error())
 	default:

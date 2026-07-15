@@ -59,6 +59,17 @@ func (r *MemoryRepository) UpdateOptimizationRun(_ context.Context, run Optimiza
 	return nil
 }
 
+func (r *MemoryRepository) CompareAndSwapOptimizationRun(_ context.Context, run OptimizationRun, expectedStatus RunStatus) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, ok := r.runs[run.ID]
+	if !ok || current.TenantID != run.TenantID || current.Status != expectedStatus {
+		return false, nil
+	}
+	r.runs[run.ID] = run
+	return true, nil
+}
+
 func (r *MemoryRepository) CreateOptimizationCandidate(_ context.Context, candidate OptimizationCandidate) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -72,6 +83,17 @@ func (r *MemoryRepository) UpdateOptimizationCandidate(_ context.Context, candid
 	defer r.mu.Unlock()
 	r.candidates[candidate.ID] = candidate
 	return nil
+}
+
+func (r *MemoryRepository) CompareAndSwapOptimizationCandidate(_ context.Context, candidate OptimizationCandidate, expectedStatus CandidateStatus) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, ok := r.candidates[candidate.ID]
+	if !ok || current.OptimizationRunID != candidate.OptimizationRunID || current.Status != expectedStatus {
+		return false, nil
+	}
+	r.candidates[candidate.ID] = candidate
+	return true, nil
 }
 
 func (r *MemoryRepository) ListOptimizationCandidates(_ context.Context, tenantID, runID string) ([]OptimizationCandidate, error) {

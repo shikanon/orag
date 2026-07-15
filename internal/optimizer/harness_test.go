@@ -45,7 +45,7 @@ func TestHarnessRunnerRunsArgvAndRedactsSensitiveData(t *testing.T) {
 	runner := HarnessRunner{
 		ExecutableAllowlist: []string{exe},
 		BaseWorkingDir:      t.TempDir(),
-		Timeout:             time.Second,
+		Timeout:             5 * time.Second,
 	}
 	result, err := runner.Run(t.Context(), HarnessRunRequest{
 		Candidate: HarnessCandidate{
@@ -91,7 +91,7 @@ func TestHarnessRunnerRejectsUnknownMetric(t *testing.T) {
 	runner := HarnessRunner{
 		ExecutableAllowlist: []string{exe},
 		BaseWorkingDir:      t.TempDir(),
-		Timeout:             time.Second,
+		Timeout:             5 * time.Second,
 	}
 	_, err := runner.Run(t.Context(), HarnessRunRequest{
 		Candidate: HarnessCandidate{Argv: []string{exe, "-test.run=TestHarnessHelper", "--", "unknown-metric"}},

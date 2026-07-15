@@ -19,15 +19,20 @@ const (
 	PhaseHoldout   = "holdout"
 )
 
-var ErrOptimizationNotFound = errors.New("optimization run not found")
+var (
+	ErrOptimizationNotFound      = errors.New("optimization run not found")
+	ErrOptimizationStateConflict = errors.New("optimization state conflict")
+)
 
 type Repository interface {
 	CreateOptimizationRun(ctx context.Context, run OptimizationRun) error
 	CreateOptimizationRunWithCandidates(ctx context.Context, run OptimizationRun, candidates []OptimizationCandidate) error
 	GetOptimizationRun(ctx context.Context, tenantID, runID string) (OptimizationRun, bool, error)
 	UpdateOptimizationRun(ctx context.Context, run OptimizationRun) error
+	CompareAndSwapOptimizationRun(ctx context.Context, run OptimizationRun, expectedStatus RunStatus) (bool, error)
 	CreateOptimizationCandidate(ctx context.Context, candidate OptimizationCandidate) error
 	UpdateOptimizationCandidate(ctx context.Context, candidate OptimizationCandidate) error
+	CompareAndSwapOptimizationCandidate(ctx context.Context, candidate OptimizationCandidate, expectedStatus CandidateStatus) (bool, error)
 	ListOptimizationCandidates(ctx context.Context, tenantID, runID string) ([]OptimizationCandidate, error)
 	StoreHarnessRun(ctx context.Context, run HarnessRunRecord) error
 }
@@ -232,6 +237,10 @@ func (s *Service) Resume(ctx context.Context, tenantID, runID string, req Submit
 	if err := validateResumeConfigInvariant(run, resumeReq); err != nil {
 		return OptimizationRun{}, err
 	}
+	expectedStatus := run.Status
+	if !isResumableRunStatus(expectedStatus) {
+		return OptimizationRun{}, stateConflict("optimization run " + run.ID + " cannot resume from status " + string(expectedStatus))
+	}
 	now := s.clock()
 	run.DatasetID = resumeReq.DatasetID
 	run.KnowledgeBaseID = resumeReq.KnowledgeBaseID
@@ -245,8 +254,12 @@ func (s *Service) Resume(ctx context.Context, tenantID, runID string, req Submit
 	run.Checkpoint.CancelRequestedAt = nil
 	run.Checkpoint.StatusReason = ""
 	run.UpdatedAt = now
-	if err := s.repo().UpdateOptimizationRun(ctx, run); err != nil {
+	swapped, err := s.repo().CompareAndSwapOptimizationRun(ctx, run, expectedStatus)
+	if err != nil {
 		return OptimizationRun{}, err
+	}
+	if !swapped {
+		return OptimizationRun{}, stateConflict("optimization run " + run.ID + " changed while resuming")
 	}
 	if !s.DisableAutoStart {
 		go s.run(context.Background(), run.ID, resumeReq)
@@ -276,8 +289,14 @@ func (s *Service) run(ctx context.Context, runID string, req SubmitRequest) erro
 	if err != nil || !ok {
 		return err
 	}
+	if run.Status == RunStatusCanceling || run.CancelRequestedAt != nil {
+		return s.claimRun(ctx, &run, run.Status, RunStatusCanceled, "canceled", run.StatusReason)
+	}
+	if run.Status != RunStatusQueued {
+		return stateConflict("optimization run " + run.ID + " cannot start from status " + string(run.Status))
+	}
 	started := s.clock()
-	if err := s.transitionRun(ctx, &run, RunStatusRunning, "running", ""); err != nil {
+	if err := s.claimRun(ctx, &run, RunStatusQueued, RunStatusRunning, "running", ""); err != nil {
 		return err
 	}
 	candidates, err := s.repo().ListOptimizationCandidates(ctx, req.TenantID, run.ID)
@@ -322,7 +341,7 @@ func (s *Service) run(ctx context.Context, runID string, req SubmitRequest) erro
 }
 
 func (s *Service) runCandidate(ctx context.Context, run *OptimizationRun, candidate *OptimizationCandidate, req SubmitRequest, phase, split string) error {
-	if err := s.transitionCandidate(ctx, candidate, CandidateStatusRunning, nil); err != nil {
+	if err := s.claimCandidate(ctx, candidate, phase); err != nil {
 		return err
 	}
 	if err := s.limiter().Wait(ctx); err != nil {
@@ -554,6 +573,47 @@ func (s *Service) transitionRun(ctx context.Context, run *OptimizationRun, statu
 	return s.repo().UpdateOptimizationRun(ctx, *run)
 }
 
+func (s *Service) claimRun(ctx context.Context, run *OptimizationRun, expectedStatus, status RunStatus, stage, reason string) error {
+	run.Status = status
+	run.StatusReason = reason
+	run.Checkpoint.Stage = stage
+	run.Checkpoint.StatusReason = reason
+	run.UpdatedAt = s.clock()
+	swapped, err := s.repo().CompareAndSwapOptimizationRun(ctx, *run, expectedStatus)
+	if err != nil {
+		return err
+	}
+	if !swapped {
+		return stateConflict("optimization run " + run.ID + " was already acquired")
+	}
+	return nil
+}
+
+func (s *Service) claimCandidate(ctx context.Context, candidate *OptimizationCandidate, phase string) error {
+	expectedStatus := candidate.Status
+	allowed := false
+	switch phase {
+	case PhaseSelection:
+		allowed = expectedStatus == CandidateStatusQueued || expectedStatus == CandidateStatusFailed
+	case PhaseHoldout:
+		allowed = expectedStatus == CandidateStatusScored
+	}
+	if !allowed {
+		return stateConflict("optimization candidate " + candidate.ID + " cannot start " + phase + " from status " + string(expectedStatus))
+	}
+	candidate.Status = CandidateStatusRunning
+	candidate.Error = ""
+	candidate.UpdatedAt = s.clock()
+	swapped, err := s.repo().CompareAndSwapOptimizationCandidate(ctx, *candidate, expectedStatus)
+	if err != nil {
+		return err
+	}
+	if !swapped {
+		return stateConflict("optimization candidate " + candidate.ID + " was already acquired")
+	}
+	return nil
+}
+
 func (s *Service) transitionCandidate(ctx context.Context, candidate *OptimizationCandidate, status CandidateStatus, metrics map[string]float64) error {
 	candidate.Status = status
 	if metrics != nil {
@@ -597,6 +657,14 @@ func isCandidateComplete(status CandidateStatus) bool {
 		status == CandidateStatusPromoted ||
 		status == CandidateStatusHoldoutEvaluated ||
 		status == CandidateStatusCleanupDone
+}
+
+func isResumableRunStatus(status RunStatus) bool {
+	return status == RunStatusFailed || status == RunStatusCanceled || status == RunStatusBudgetStopped
+}
+
+func stateConflict(message string) error {
+	return apperrors.Wrap(apperrors.CodeConflict, message, ErrOptimizationStateConflict)
 }
 
 func selectionSplit(req SubmitRequest) string {
