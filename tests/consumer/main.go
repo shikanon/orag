@@ -21,7 +21,26 @@ func walkthrough(ctx context.Context) error {
 	}
 	defer client.Close()
 
-	knowledgeBase, err := client.CreateKnowledgeBase(ctx, orag.CreateKnowledgeBaseRequest{Name: "consumer proof"})
+	project, err := client.CreateProject(ctx, orag.CreateProjectRequest{Name: "consumer project"})
+	if err != nil {
+		return err
+	}
+	createdKey, err := client.CreateAPIKey(ctx, orag.CreateAPIKeyRequest{
+		ProjectID: project.ID,
+		Name:      "consumer automation",
+		Role:      orag.RoleProjectEditor,
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := client.AuthenticateAPIKey(ctx, orag.AuthenticateAPIKeyRequest{Secret: createdKey.Secret}); err != nil {
+		return err
+	}
+	if _, err := client.ListAPIKeys(ctx, orag.ListAPIKeysRequest{}); err != nil {
+		return err
+	}
+
+	knowledgeBase, err := client.CreateKnowledgeBase(ctx, orag.CreateKnowledgeBaseRequest{ProjectID: project.ID, Name: "consumer proof"})
 	if err != nil {
 		return err
 	}
@@ -49,7 +68,7 @@ func walkthrough(ctx context.Context) error {
 		return fmt.Errorf("trace %q was not stored", response.TraceID)
 	}
 
-	dataset, err := client.CreateDataset(ctx, orag.CreateDatasetRequest{Name: "consumer evaluation", Kind: "retrieval"})
+	dataset, err := client.CreateDataset(ctx, orag.CreateDatasetRequest{ProjectID: project.ID, Name: "consumer evaluation", Kind: "retrieval"})
 	if err != nil {
 		return err
 	}
@@ -68,5 +87,8 @@ func walkthrough(ctx context.Context) error {
 		Profile:         "realtime",
 		Split:           orag.DatasetSplitEval,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	return client.RevokeAPIKey(ctx, orag.RevokeAPIKeyRequest{ID: createdKey.APIKey.ID})
 }

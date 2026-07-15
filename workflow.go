@@ -23,10 +23,18 @@ func (c *Client) CreateKnowledgeBase(ctx context.Context, req CreateKnowledgeBas
 	if name == "" {
 		return KnowledgeBase{}, newError(CodeInvalidArgument, "create_knowledge_base", "knowledge_base", "", false, errors.New("name is required"))
 	}
+	tenantID := c.tenant(req.TenantID)
+	projectID := strings.TrimSpace(req.ProjectID)
+	if projectID != "" {
+		if _, err := c.app.Projects.Get(ctx, tenantID, projectID); err != nil {
+			return KnowledgeBase{}, controlPlaneError("create_knowledge_base", projectID, err)
+		}
+	}
 	now := time.Now().UTC()
 	item := kb.KnowledgeBase{
 		ID:          id.New("kb"),
-		TenantID:    c.tenant(req.TenantID),
+		TenantID:    tenantID,
+		ProjectID:   projectID,
 		Name:        name,
 		Description: strings.TrimSpace(req.Description),
 		Metadata:    cloneStrings(req.Metadata),
@@ -229,7 +237,7 @@ func (c *Client) requireOpen(operation string) error {
 }
 
 func fromKnowledgeBase(item kb.KnowledgeBase) KnowledgeBase {
-	return KnowledgeBase{ID: item.ID, TenantID: item.TenantID, Name: item.Name, Description: item.Description, Metadata: cloneStrings(item.Metadata), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return KnowledgeBase{ID: item.ID, TenantID: item.TenantID, ProjectID: item.ProjectID, Name: item.Name, Description: item.Description, Metadata: cloneStrings(item.Metadata), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func fromIngestResult(result ingest.Result) IngestResult {
