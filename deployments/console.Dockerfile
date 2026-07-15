@@ -6,6 +6,7 @@ COPY console/ ./
 RUN npm run build
 
 FROM nginx:1.30.3-alpine AS console
+RUN apk upgrade --no-cache
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
