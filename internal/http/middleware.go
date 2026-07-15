@@ -8,6 +8,7 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/observability"
 )
 
@@ -35,7 +36,9 @@ func (s *Server) authMiddleware(ctx context.Context, c *app.RequestContext) {
 		c.Abort()
 		return
 	}
-	c.Set("tenant_id", claims.TenantID)
+	principal := claims.Principal()
+	c.Set("principal", principal)
+	c.Set("tenant_id", principal.TenantID)
 	c.Next(ctx)
 }
 
@@ -83,13 +86,18 @@ func requestErrorCode(c *app.RequestContext) string {
 }
 
 func tenantID(c *app.RequestContext) string {
-	v, ok := c.Get("tenant_id")
+	principal, ok := requestPrincipal(c)
 	if !ok {
-		return "tenant_default"
+		return ""
 	}
-	tenantID, ok := v.(string)
-	if !ok || tenantID == "" {
-		return "tenant_default"
+	return principal.TenantID
+}
+
+func requestPrincipal(c *app.RequestContext) (auth.Principal, bool) {
+	v, ok := c.Get("principal")
+	if !ok {
+		return auth.Principal{}, false
 	}
-	return tenantID
+	principal, ok := v.(auth.Principal)
+	return principal, ok && principal.Valid()
 }

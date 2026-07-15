@@ -14,6 +14,7 @@ import (
 type Claims struct {
 	TenantID  string `json:"tenant_id"`
 	UserID    string `json:"user_id"`
+	Role      Role   `json:"role,omitempty"`
 	ExpiresAt int64  `json:"exp"`
 }
 
@@ -33,6 +34,7 @@ func (s *Service) IssueToken(tenantID, userID string) (string, error) {
 	claims := Claims{
 		TenantID:  tenantID,
 		UserID:    userID,
+		Role:      RoleTenantAdmin,
 		ExpiresAt: time.Now().Add(s.ttl).Unix(),
 	}
 	body, err := json.Marshal(claims)
@@ -66,7 +68,25 @@ func (s *Service) ParseToken(token string) (Claims, error) {
 	if claims.TenantID == "" || claims.UserID == "" {
 		return Claims{}, fmt.Errorf("token missing tenant or user")
 	}
+	// Tokens issued before RBAC did not carry a role. They represented the
+	// bootstrap administrator and remain tenant-admin compatible during beta.
+	if claims.Role == "" {
+		claims.Role = RoleTenantAdmin
+	}
+	principal := claims.Principal()
+	if !principal.Valid() || principal.Role != RoleTenantAdmin {
+		return Claims{}, errors.New("invalid token role")
+	}
 	return claims, nil
+}
+
+func (c Claims) Principal() Principal {
+	return Principal{
+		Kind:      PrincipalUser,
+		SubjectID: c.UserID,
+		TenantID:  c.TenantID,
+		Role:      c.Role,
+	}
 }
 
 func (s *Service) sign(payload string) string {
