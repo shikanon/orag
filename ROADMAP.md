@@ -133,7 +133,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 ## 阶段三：生产试点基线
 
-当前进展：[#175](https://github.com/shikanon/orag/issues/175) 已按[跨存储 staged visibility 设计](./docs/superpowers/specs/2026-07-15-qdrant-staged-visibility-design.md)实现。PostgreSQL 现在统一授权 sparse/dense 可见性，失败候选不会进入检索，并已通过真实 PostgreSQL + Qdrant 的失败、替换、legacy、清理告警和并发测试。[#177](https://github.com/shikanon/orag/issues/177) 也已按[可重试知识库删除设计](./docs/superpowers/specs/2026-07-15-kb-delete-retry-design.md)实现：外部索引清理失败时保留 metadata 作为持久重试入口，真实存储测试证明重复 DELETE 可完成清理。上述进展只完成下方一致性条目的一部分，不代表阶段三已完成。
+当前进展：[#175](https://github.com/shikanon/orag/issues/175) 已按[跨存储 staged visibility 设计](./docs/superpowers/specs/2026-07-15-qdrant-staged-visibility-design.md)实现。PostgreSQL 现在统一授权 sparse/dense 可见性，失败候选不会进入检索，并已通过真实 PostgreSQL + Qdrant 的失败、替换、legacy、清理告警和并发测试。[#177](https://github.com/shikanon/orag/issues/177) 也已按[可重试知识库删除设计](./docs/superpowers/specs/2026-07-15-kb-delete-retry-design.md)实现：外部索引清理失败时保留 metadata 作为持久重试入口，真实存储测试证明重复 DELETE 可完成清理。[#176](https://github.com/shikanon/orag/issues/176) 按[optimizer single-flight 状态迁移设计](./docs/superpowers/specs/2026-07-15-optimizer-singleflight-design.md)完成跨实例 CAS：并发 resume/run/candidate 领取只有一个 winner，loser 得到可诊断的 `409`，并由真实 PostgreSQL 并发测试覆盖。上述进展只完成下方一致性条目的一部分，不代表阶段三已完成。
 
 ### 数据一致性与执行安全
 

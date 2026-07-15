@@ -14,7 +14,7 @@
 
 ### Task 1: Specify conflict behavior with failing tests
 
-- [ ] **Step 1: Add optimizer service concurrency tests**
+- [x] **Step 1: Add optimizer service concurrency tests**
 
 Files:
 - Modify: `internal/optimizer/service_test.go`
@@ -29,7 +29,7 @@ go test ./internal/optimizer -run 'TestService(ConcurrentResume|ConcurrentRunPen
 
 Expected: FAIL because repository CAS and conflict behavior do not exist.
 
-- [ ] **Step 2: Add HTTP conflict test**
+- [x] **Step 2: Add HTTP conflict test**
 
 Files:
 - Modify: `internal/http/router_test.go`
@@ -44,7 +44,7 @@ go test ./internal/http -run TestOptimizationResumeConflict -count=1
 
 Expected: FAIL with the current `202`/blind update behavior.
 
-- [ ] **Step 3: Commit the red tests**
+- [x] **Step 3: Commit the red tests**
 
 ```bash
 git add internal/optimizer/service_test.go internal/http/router_test.go
@@ -53,7 +53,7 @@ git commit -m "test: expose duplicate optimizer runners"
 
 ### Task 2: Implement repository compare-and-swap
 
-- [ ] **Step 1: Extend the optimizer repository contract**
+- [x] **Step 1: Extend the optimizer repository contract**
 
 Files:
 - Modify: `internal/optimizer/service.go`
@@ -62,7 +62,7 @@ Files:
 
 Add run and candidate CAS methods returning `(bool, error)`. Implement atomic status comparison under the memory repository mutex.
 
-- [ ] **Step 2: Add PostgreSQL CAS tests**
+- [x] **Step 2: Add PostgreSQL CAS tests**
 
 Files:
 - Modify: `internal/storage/postgres/repository_test.go`
@@ -77,7 +77,7 @@ go test ./internal/storage/postgres -run 'TestRepositoryCompareAndSwapOptimizati
 
 Expected: FAIL before the PostgreSQL methods exist.
 
-- [ ] **Step 3: Implement PostgreSQL CAS**
+- [x] **Step 3: Implement PostgreSQL CAS**
 
 Files:
 - Modify: `internal/storage/postgres/optimizer.go`
@@ -92,7 +92,7 @@ go test ./internal/storage/postgres -run 'TestRepositoryCompareAndSwapOptimizati
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit repository support**
+- [x] **Step 4: Commit repository support**
 
 ```bash
 git add internal/optimizer/service.go internal/optimizer/memory_repository.go internal/optimizer/service_test.go internal/storage/postgres/optimizer.go internal/storage/postgres/repository_test.go
@@ -101,21 +101,21 @@ git commit -m "feat(optimizer): add atomic execution claims"
 
 ### Task 3: Gate service execution and expose HTTP conflict
 
-- [ ] **Step 1: Implement resumable-state and run acquisition gates**
+- [x] **Step 1: Implement resumable-state and run acquisition gates**
 
 Files:
 - Modify: `internal/optimizer/service.go`
 
 Allow only `failed`, `canceled`, and `budget_stopped` resume sources. CAS the selected source to `queued`, then CAS `queued` to `running` inside execution. Return an optimizer conflict sentinel wrapped with `apperrors.CodeConflict` on a disallowed state or CAS miss.
 
-- [ ] **Step 2: Implement phase-aware candidate acquisition**
+- [x] **Step 2: Implement phase-aware candidate acquisition**
 
 Files:
 - Modify: `internal/optimizer/service.go`
 
 CAS selection candidates from `queued`/`failed` and holdout candidates from `scored` before rate limiting or external runner calls. Never reclaim `running`.
 
-- [ ] **Step 3: Map and document conflict responses**
+- [x] **Step 3: Map and document conflict responses**
 
 Files:
 - Modify: `internal/http/router.go`
@@ -132,7 +132,7 @@ go test ./internal/optimizer ./internal/http -count=1
 
 Expected: PASS, including the new race and state-table tests.
 
-- [ ] **Step 4: Run race detection and commit service behavior**
+- [x] **Step 4: Run race detection and commit service behavior**
 
 ```bash
 go test -race ./internal/optimizer -count=1
@@ -142,14 +142,14 @@ git commit -m "fix(optimizer): prevent duplicate resume runners"
 
 ### Task 4: Prove real PostgreSQL concurrency
 
-- [ ] **Step 1: Add a real-store integration test**
+- [x] **Step 1: Add a real-store integration test**
 
 Files:
 - Modify: `tests/integration/ingest_query_test.go` or the optimizer integration test file selected by the existing suite
 
 Create one queued run and candidate, launch multiple PostgreSQL CAS claimers, and assert exactly one run winner and one candidate winner. Verify the persisted states are `running`.
 
-- [ ] **Step 2: Run targeted integration coverage**
+- [x] **Step 2: Run targeted integration coverage**
 
 ```bash
 make test-integration
@@ -157,7 +157,7 @@ make test-integration
 
 Expected: PASS with real PostgreSQL and the existing Qdrant-backed suite.
 
-- [ ] **Step 3: Commit integration proof**
+- [x] **Step 3: Commit integration proof**
 
 ```bash
 git add tests/integration
@@ -166,7 +166,7 @@ git commit -m "test: prove optimizer single-flight in postgres"
 
 ### Task 5: Update operator and Roadmap documentation
 
-- [ ] **Step 1: Document conflict behavior**
+- [x] **Step 1: Document conflict behavior**
 
 Files:
 - Modify: `docs/operations/troubleshooting.md`
@@ -174,7 +174,7 @@ Files:
 
 Explain that `409` means another execution owns the run or the run is not resumable, and direct operators to fetch the current state rather than retrying aggressively.
 
-- [ ] **Step 2: Record Stage 3 progress**
+- [x] **Step 2: Record Stage 3 progress**
 
 Files:
 - Modify: `ROADMAP.md`
@@ -183,7 +183,7 @@ Files:
 
 Link Issue #176 and this design from the Stage 3 progress paragraph. Mark the design implemented only after all validation passes; keep Stage 3 explicitly incomplete.
 
-- [ ] **Step 3: Commit documentation**
+- [x] **Step 3: Commit documentation**
 
 ```bash
 git add CHANGELOG.md ROADMAP.md ROADMAP_EN.md docs/operations/troubleshooting.md docs/superpowers/specs/2026-07-15-optimizer-singleflight-design.md docs/superpowers/plans/2026-07-15-optimizer-singleflight.md
@@ -235,4 +235,3 @@ git -C /Users/bytedance/Documents/orag rev-list --left-right --count main...orig
 ```
 
 Verify Issue #176 is closed, remove only this feature worktree/local branch, and leave unrelated worktrees and `.superpowers/` untouched.
-

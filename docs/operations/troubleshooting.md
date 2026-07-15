@@ -88,6 +88,20 @@ curl -fsS http://localhost:8080/readyz
 
 首次失败后，semantic cache 可能已经清空，或 vectors 已部分/完全清空，而 PostgreSQL metadata 仍可见。此时查询可能重新生成答案或暂时退化为 sparse retrieval，这是保留同步重试入口的预期行为。不要手工删除 metadata，否则会再次失去正常 DELETE 的重试路径。
 
+### Optimizer resume 返回 409
+
+`POST /v1/optimizations/{id}:resume` 返回 `409 optimization_state_conflict` 时，请求没有启动新的 runner。常见原因是 run 已处于 `queued`、`running`、`canceling` 或 `completed`，或者另一个 API 实例刚刚赢得了同一状态的原子领取。
+
+处理步骤：
+
+1. 调用 `GET /v1/optimizations/{id}` 读取 PostgreSQL 中的当前 run/candidate 状态。
+2. `queued` 或 `running` 表示已有执行者，继续轮询，不要高频重试 resume。
+3. `canceling` 表示先等待当前执行者确认取消并进入 `canceled`。
+4. 只有 `failed`、`canceled` 或 `budget_stopped` 可恢复；确认失败原因或预算配置已处理后再提交 resume。
+5. `completed` 不可恢复；如需不同候选或配置，创建新的 optimization run。
+
+ORAG 使用 PostgreSQL 条件更新领取 run 和 candidate，因此多副本环境中也只有一个 winner。不要手工把 `running` 改回 `queued`：没有 lease/attempt generation 时，这可能与仍存活的执行者重复运行。若进程崩溃后长期停在 `running`，先保留现场并按事故流程处理，等待后续 lease-based recovery 能力。
+
 ## 查询失败或无上下文
 
 | 现象 | 优先检查 |

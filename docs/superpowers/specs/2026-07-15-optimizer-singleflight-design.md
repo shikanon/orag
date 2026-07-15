@@ -1,6 +1,6 @@
 # Optimizer Single-Flight State Transition Design
 
-**Status:** Selected for implementation under the standing Roadmap execution directive
+**Status:** Implemented and verified on 2026-07-15
 
 **Roadmap:** Stage 3 — production-pilot baseline / data consistency and execution safety
 
@@ -145,6 +145,18 @@ Blindly changing `running -> running` or `running -> queued` can duplicate an ex
 No schema migration is required. The change is compatible with existing status values and makes multi-replica execution safer immediately. Operators seeing `409` should fetch the run: an active/queued run is already owned, while a terminal run can be retried only after observing an allowed resumable state.
 
 Crash recovery for runs stranded in `running` should be addressed separately with leases or explicit operator recovery rather than weakening this single-flight invariant.
+
+## Validation
+
+The implementation passed:
+
+- optimizer, PostgreSQL repository, and HTTP unit suites;
+- the complete optimizer race suite, including concurrent resume and `RunPending` tests;
+- the repository-wide `make agent-gate` contract, SDK, unit, and vet checks;
+- the complete real PostgreSQL + Qdrant integration suite;
+- a 16-way real PostgreSQL race proving exactly one successful run claim and one successful candidate claim.
+
+The two subprocess-based harness tests use a five-second success-path timeout so race-instrumented test-binary startup is not mistaken for an external harness timeout. The dedicated 10ms timeout behavior test remains unchanged.
 
 ## Acceptance Criteria
 
