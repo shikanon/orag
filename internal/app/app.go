@@ -52,6 +52,8 @@ type App struct {
 	OfflineScheduler *offlineknowledge.Scheduler
 	Release          *release.Service
 	Pipeline         *pipeline.Service
+	PipelineCompiler *pipeline.Compiler
+	PipelineDebug    *pipeline.DebugRunner
 	Metrics          *observability.Metrics
 	Traces           TraceRepository
 
@@ -136,6 +138,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	projects := project.NewService(backend.projectRepo, func() time.Time { return time.Now().UTC() })
 	releaseSvc := release.NewService(backend.releaseRepo)
 	pipelineSvc := pipeline.NewService(backend.pipelineRepo, pipeline.BuiltinRegistry())
+	pipelineCompiler := pipeline.NewCompiler(ragSvc, pipeline.BuiltinRegistry())
+	pipelineDebug := &pipeline.DebugRunner{Drafts: pipelineSvc, Compiler: pipelineCompiler}
 	apiKeys := auth.NewAPIKeyService(backend.apiKeyRepo, cfg.Auth.APIKeyPepper)
 	evalRunner := eval.Runner{RAG: ragSvc, Datasets: datasets, Repository: backend.evalRepo}
 	optimizerRunner := optimizer.InternalRAGRunner{
@@ -180,6 +184,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		OfflineScheduler: offlineScheduler,
 		Release:          releaseSvc,
 		Pipeline:         pipelineSvc,
+		PipelineCompiler: &pipelineCompiler,
+		PipelineDebug:    pipelineDebug,
 		Metrics:          metrics,
 		Traces:           backend.traceRepo,
 		Postgres:         backend.pool,
