@@ -501,6 +501,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/debug-runs/{run_id}/save-case": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Saves a debug request as an evaluation dataset item while preserving its run/trace identifier. */
+        post: operations["saveDebugRunAsCase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/releases": {
         parameters: {
             query?: never;
@@ -1138,6 +1158,16 @@ export interface components {
             trace_id: string;
             response: components["schemas"]["QueryResponse"];
             events: components["schemas"]["DiagnosticEvent"][];
+        };
+        SaveDebugCaseRequest: {
+            dataset_id: string;
+            query: string;
+            ground_truth: string;
+            expected_evidence?: string[];
+        };
+        SavedDebugCase: {
+            run_id: string;
+            item: components["schemas"]["DatasetItem"];
         };
         PipelineVersionListResponse: {
             items: components["schemas"]["PipelineVersion"][];
@@ -3556,6 +3586,37 @@ export interface operations {
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
             422: components["responses"]["Error"];
+        };
+    };
+    saveDebugRunAsCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveDebugCaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved evaluation case. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedDebugCase"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     listProjectReleases: {

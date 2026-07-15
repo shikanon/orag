@@ -972,6 +972,31 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
         "409": {$ref: "#/components/responses/Error"}
         "422": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/debug-runs/{run_id}/save-case:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: run_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Evaluation]
+      operationId: saveDebugRunAsCase
+      x-orag-maturity: beta
+      description: Saves a debug request as an evaluation dataset item while preserving its run/trace identifier.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/SaveDebugCaseRequest"}}}
+      responses:
+        "201": {description: Saved evaluation case., content: {application/json: {schema: {$ref: "#/components/schemas/SavedDebugCase"}}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
   /v1/projects/{project_id}/releases:
     parameters:
       - name: project_id
@@ -2054,6 +2079,23 @@ components:
         events:
           type: array
           items: {$ref: "#/components/schemas/DiagnosticEvent"}
+    SaveDebugCaseRequest:
+      type: object
+      required: [dataset_id, query, ground_truth]
+      properties:
+        dataset_id: {type: string}
+        query: {type: string}
+        ground_truth: {type: string}
+        expected_evidence:
+          type: array
+          items: {type: string}
+    SavedDebugCase:
+      type: object
+      required: [run_id, item]
+      properties:
+        run_id: {type: string}
+        item:
+          $ref: "#/components/schemas/DatasetItem"
     PipelineVersionListResponse:
       type: object
       required: [items]

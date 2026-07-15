@@ -116,4 +116,5 @@ export const pipelineApi = {
   draft: (projectId: string, pipelineId: string) => request<PipelineDraft>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines/${encodeURIComponent(pipelineId)}/draft`),
   saveDraft: (projectId: string, pipelineId: string, input: SavePipelineDraftInput) => request<PipelineDraft>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines/${encodeURIComponent(pipelineId)}/draft`, { method: 'PUT', body: JSON.stringify(input) }),
   debug: (projectId: string, input: PipelineDebugRequest) => request<PipelineDebugResponse>(`/v1/projects/${encodeURIComponent(projectId)}/query:debug`, { method: 'POST', body: JSON.stringify(input) }),
+  saveCase: (projectId: string, runId: string, input: { dataset_id: string; query: string; ground_truth: string; expected_evidence?: string[] }) => request<{ run_id: string; item: components['schemas']['DatasetItem'] }>(`/v1/projects/${encodeURIComponent(projectId)}/debug-runs/${encodeURIComponent(runId)}/save-case`, { method: 'POST', body: JSON.stringify(input) }),
 }
