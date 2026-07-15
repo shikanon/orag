@@ -2,11 +2,14 @@ package kb
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 )
+
+var ErrActivationCandidateMissing = errors.New("activation candidate is missing")
 
 type KnowledgeBase struct {
 	ID          string            `json:"id"`
@@ -105,6 +108,15 @@ type Retriever interface {
 
 type Indexer interface {
 	Store(ctx context.Context, doc Document, chunks []Chunk) error
+}
+
+type SearchableChunkFilter interface {
+	FilterSearchableChunkIDs(
+		ctx context.Context,
+		tenantID string,
+		knowledgeBaseID string,
+		chunkIDs []string,
+	) (map[string]struct{}, error)
 }
 
 type DocumentSourceDeleter interface {

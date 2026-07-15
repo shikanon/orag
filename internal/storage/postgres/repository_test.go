@@ -339,11 +339,72 @@ func TestRepositoryStoreStagedChunksDoesNotDeleteExistingSource(t *testing.T) {
 	}
 }
 
-func TestRepositoryActivateDeletesOldSourceAndMarksNewChunksSearchable(t *testing.T) {
-	tx := &fakeKnowledgeBaseTx{}
+func TestRepositoryFilterSearchableChunkIDsIsTenantScoped(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{queryRows: &fakeTraceRows{rows: [][]any{{"chk_1"}, {"chk_3"}}}}
+	repo := &Repository{kbQueryer: queryer}
+
+	got, err := repo.FilterSearchableChunkIDs(context.Background(), "tenant_1", "kb_1", []string{"chk_1", "chk_2", "chk_3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["chk_1"]; !ok {
+		t.Fatalf("active IDs = %#v, want chk_1", got)
+	}
+	if _, ok := got["chk_3"]; !ok {
+		t.Fatalf("active IDs = %#v, want chk_3", got)
+	}
+	if _, ok := got["chk_2"]; ok {
+		t.Fatalf("active IDs = %#v, chk_2 must be absent", got)
+	}
+	for _, fragment := range []string{"tenant_id=$1", "knowledge_base_id=$2", "searchable", "id = ANY($3)"} {
+		if !strings.Contains(queryer.querySQL, fragment) {
+			t.Fatalf("query missing %q: %s", fragment, queryer.querySQL)
+		}
+	}
+	if !reflect.DeepEqual(queryer.queryArgs, []any{"tenant_1", "kb_1", []string{"chk_1", "chk_2", "chk_3"}}) {
+		t.Fatalf("query args = %#v", queryer.queryArgs)
+	}
+}
+
+func TestRepositoryCommitActivationLocksSourceBeforeMutation(t *testing.T) {
+	tx := &fakeKnowledgeBaseTx{rows: []pgx.Row{fakeTraceRow{values: []any{"doc_new"}}}}
+	repo := &Repository{kbTxBeginner: &fakeKnowledgeBaseTxBeginner{tx: tx}}
+	doc := kb.Document{ID: "doc_new", TenantID: "tenant_1", KnowledgeBaseID: "kb_1", SourceURI: "memory://doc.md", ContentHash: "hash_new"}
+
+	if err := repo.CommitActivation(context.Background(), doc, []kb.Chunk{{ID: "chk_new"}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(tx.execSQLs) == 0 || !strings.Contains(tx.execSQLs[0], "pg_advisory_xact_lock") {
+		t.Fatalf("first exec is not advisory lock: %#v", tx.execSQLs)
+	}
+	if got, want := tx.execArgs[0][0], "tenant_1\x00kb_1\x00memory://doc.md"; got != want {
+		t.Fatalf("lock key = %#v, want %#v", got, want)
+	}
+}
+
+func TestRepositoryCommitActivationScopesCandidate(t *testing.T) {
+	tx := &fakeKnowledgeBaseTx{rows: []pgx.Row{fakeTraceRow{values: []any{"doc_new"}}}}
+	repo := &Repository{kbTxBeginner: &fakeKnowledgeBaseTxBeginner{tx: tx}}
+	doc := kb.Document{ID: "doc_new", TenantID: "tenant_1", KnowledgeBaseID: "kb_1", SourceURI: "memory://doc.md", ContentHash: "hash_new"}
+
+	if err := repo.CommitActivation(context.Background(), doc, []kb.Chunk{{ID: "chk_new"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"tenant_id=$1", "knowledge_base_id=$2", "id=$3"} {
+		if !strings.Contains(tx.queryRowSQLs[0], fragment) {
+			t.Fatalf("candidate query missing %q: %s", fragment, tx.queryRowSQLs[0])
+		}
+	}
+	if !reflect.DeepEqual(tx.queryRowArgs[0], []any{"tenant_1", "kb_1", "doc_new"}) {
+		t.Fatalf("candidate args = %#v", tx.queryRowArgs[0])
+	}
+}
+
+func TestRepositoryCommitActivationDeletesOldAndActivatesCandidate(t *testing.T) {
+	tx := &fakeKnowledgeBaseTx{rows: []pgx.Row{fakeTraceRow{values: []any{"doc_new"}}}}
 	repo := &Repository{kbTxBeginner: &fakeKnowledgeBaseTxBeginner{tx: tx}}
 
-	err := repo.Activate(context.Background(), kb.Document{
+	err := repo.CommitActivation(context.Background(), kb.Document{
 		ID:              "doc_new",
 		TenantID:        "tenant_1",
 		KnowledgeBaseID: "kb_1",
@@ -351,12 +412,12 @@ func TestRepositoryActivateDeletesOldSourceAndMarksNewChunksSearchable(t *testin
 		ContentHash:     "hash_new",
 	}, []kb.Chunk{{ID: "chk_new"}})
 	if err != nil {
-		t.Fatalf("Activate() error = %v", err)
+		t.Fatalf("CommitActivation() error = %v", err)
 	}
-	if len(tx.execSQLs) != 3 {
-		t.Fatalf("Activate() exec calls = %d, want old chunk delete, old doc delete, activation update: %#v", len(tx.execSQLs), tx.execSQLs)
+	if len(tx.execSQLs) != 4 {
+		t.Fatalf("CommitActivation() exec calls = %d, want lock, old chunk delete, old doc delete, activation update: %#v", len(tx.execSQLs), tx.execSQLs)
 	}
-	for i := 0; i < 2; i++ {
+	for i := 1; i < 3; i++ {
 		if !strings.Contains(tx.execSQLs[i], "content_hash<>$4") {
 			t.Fatalf("old source delete %d missing current hash guard: %s", i, tx.execSQLs[i])
 		}
@@ -364,14 +425,71 @@ func TestRepositoryActivateDeletesOldSourceAndMarksNewChunksSearchable(t *testin
 			t.Fatalf("old source delete %d keep hash arg = %#v, want hash_new", i, got)
 		}
 	}
-	if !strings.Contains(tx.execSQLs[2], "SET searchable=TRUE") {
-		t.Fatalf("activation update missing searchable flag: %s", tx.execSQLs[2])
+	if !strings.Contains(tx.execSQLs[3], "SET searchable=TRUE") {
+		t.Fatalf("activation update missing searchable flag: %s", tx.execSQLs[3])
 	}
-	if got := tx.execArgs[2][2]; got != "doc_new" {
+	if got := tx.execArgs[3][2]; got != "doc_new" {
 		t.Fatalf("activation document arg = %#v, want doc_new", got)
 	}
 	if tx.commitCalls != 1 {
 		t.Fatalf("Commit calls = %d, want 1", tx.commitCalls)
+	}
+}
+
+func TestRepositoryCommitActivationRejectsMissingCandidate(t *testing.T) {
+	tx := &fakeKnowledgeBaseTx{rows: []pgx.Row{fakeTraceRow{err: pgx.ErrNoRows}}}
+	repo := &Repository{kbTxBeginner: &fakeKnowledgeBaseTxBeginner{tx: tx}}
+	doc := kb.Document{ID: "doc_missing", TenantID: "tenant_1", KnowledgeBaseID: "kb_1", SourceURI: "memory://doc.md"}
+
+	err := repo.CommitActivation(context.Background(), doc, []kb.Chunk{{ID: "chk_new"}})
+	if !errors.Is(err, kb.ErrActivationCandidateMissing) {
+		t.Fatalf("CommitActivation() error = %v, want ErrActivationCandidateMissing", err)
+	}
+	if len(tx.execSQLs) != 1 {
+		t.Fatalf("missing candidate mutations = %#v, want lock only", tx.execSQLs)
+	}
+	if tx.commitCalls != 0 || tx.rollbackCalls != 1 {
+		t.Fatalf("commit/rollback = %d/%d, want 0/1", tx.commitCalls, tx.rollbackCalls)
+	}
+}
+
+func TestRepositoryAbortActivationDeletesOnlyPendingCandidate(t *testing.T) {
+	tx := &fakeKnowledgeBaseTx{}
+	repo := &Repository{kbTxBeginner: &fakeKnowledgeBaseTxBeginner{tx: tx}}
+	doc := kb.Document{ID: "doc_new", TenantID: "tenant_1", KnowledgeBaseID: "kb_1"}
+
+	if err := repo.AbortActivation(context.Background(), doc, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(tx.execSQLs) != 2 {
+		t.Fatalf("abort execs = %#v, want chunk and orphan document delete", tx.execSQLs)
+	}
+	for _, fragment := range []string{"tenant_id=$1", "knowledge_base_id=$2", "document_id=$3", "searchable=FALSE"} {
+		if !strings.Contains(tx.execSQLs[0], fragment) {
+			t.Fatalf("chunk cleanup missing %q: %s", fragment, tx.execSQLs[0])
+		}
+	}
+	for _, fragment := range []string{"NOT EXISTS", "tenant_id=$1", "knowledge_base_id=$2", "id=$3"} {
+		if !strings.Contains(tx.execSQLs[1], fragment) {
+			t.Fatalf("document cleanup missing %q: %s", fragment, tx.execSQLs[1])
+		}
+	}
+	if tx.commitCalls != 1 {
+		t.Fatalf("Commit calls = %d, want 1", tx.commitCalls)
+	}
+}
+
+func TestRepositoryAbortActivationRollsBackOnError(t *testing.T) {
+	want := errors.New("delete failed")
+	tx := &fakeKnowledgeBaseTx{execErrs: []error{want}}
+	repo := &Repository{kbTxBeginner: &fakeKnowledgeBaseTxBeginner{tx: tx}}
+
+	err := repo.AbortActivation(context.Background(), kb.Document{ID: "doc_new", TenantID: "tenant_1", KnowledgeBaseID: "kb_1"}, nil)
+	if !errors.Is(err, want) {
+		t.Fatalf("AbortActivation() error = %v, want %v", err, want)
+	}
+	if tx.commitCalls != 0 || tx.rollbackCalls != 1 {
+		t.Fatalf("commit/rollback = %d/%d, want 0/1", tx.commitCalls, tx.rollbackCalls)
 	}
 }
 
@@ -1264,6 +1382,7 @@ type fakeKnowledgeBaseQueryer struct {
 	queryErr  error
 	queryCtx  context.Context
 	querySQL  string
+	queryArgs []any
 	rowCtx    context.Context
 	row       pgx.Row
 }
@@ -1430,8 +1549,11 @@ func cloneFakeTraceSpans(in map[string][]TraceNodeSpan) map[string][]TraceNodeSp
 
 type fakeKnowledgeBaseTx struct {
 	row           pgx.Row
+	rows          []pgx.Row
 	queryRowSQL   string
 	queryRowArg   []any
+	queryRowSQLs  []string
+	queryRowArgs  [][]any
 	execErrs      []error
 	execTags      []pgconn.CommandTag
 	execSQLs      []string
@@ -1445,6 +1567,13 @@ type fakeKnowledgeBaseTx struct {
 func (f *fakeKnowledgeBaseTx) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
 	f.queryRowSQL = sql
 	f.queryRowArg = args
+	f.queryRowSQLs = append(f.queryRowSQLs, sql)
+	f.queryRowArgs = append(f.queryRowArgs, append([]any(nil), args...))
+	if len(f.rows) > 0 {
+		row := f.rows[0]
+		f.rows = f.rows[1:]
+		return row
+	}
 	if f.row == nil {
 		return fakeTraceRow{err: pgx.ErrNoRows}
 	}
@@ -1486,9 +1615,10 @@ func (f *fakeKnowledgeBaseQueryer) Exec(ctx context.Context, sql string, args ..
 	return f.execTag, err
 }
 
-func (f *fakeKnowledgeBaseQueryer) Query(ctx context.Context, sql string, _ ...any) (pgx.Rows, error) {
+func (f *fakeKnowledgeBaseQueryer) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	f.queryCtx = ctx
 	f.querySQL = sql
+	f.queryArgs = append([]any(nil), args...)
 	return f.queryRows, f.queryErr
 }
 
