@@ -16,7 +16,7 @@
 
 - [x] Run graph, PostgreSQL trace, and app memory-trace tests.
 - [x] Confirm `normalizedSpanTimes` and `memoryTraceSpanTimes` remain unchanged for legacy/manual zero-valued spans.
-- [ ] Run the full optimizer-independent repository gate with `make agent-gate`.
+- [x] Run the full optimizer-independent repository gate with `make agent-gate`.
 
 ### Task 3: Record and publish Roadmap completion
 
