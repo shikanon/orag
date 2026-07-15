@@ -34,6 +34,30 @@ func TestReleaseRoutesEnforcePromotionEvidenceAndConcurrency(t *testing.T) {
 	}
 }
 
+func TestReleaseRoutesActivateDevelopmentWithDerivedEvidence(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	projectID := project.LegacyDefaultID("tenant_a")
+	repo := release.NewMemoryRepository(projectID)
+	repo.PutVersion(release.Version{ID: "pv_1", ProjectID: projectID, PipelineID: "pipe_1", Definition: []byte(`{"nodes":[]}`), ContentHash: "hash"})
+	application.Release = release.NewService(repo)
+	token := issueToken(t, application, "tenant_a")
+
+	blocked := performJSON(h, "POST", "/v1/projects/"+projectID+"/environments/development/activate", `{"target_version_id":"pv_1"}`, token)
+	if blocked.Code != 422 {
+		t.Fatalf("activation without evidence status=%d body=%s", blocked.Code, blocked.Body)
+	}
+	repo.PutEvidence(release.Evidence{VersionID: "pv_1", EnvironmentID: string(release.Development), Passed: true, ContentHash: "hash"})
+	activated := performJSON(h, "POST", "/v1/projects/"+projectID+"/environments/development/activate", `{"target_version_id":"pv_1","expected_active_version_id":""}`, token)
+	if activated.Code != 201 || !strings.Contains(activated.Body, `"action":"activate"`) {
+		t.Fatalf("activation status=%d body=%s", activated.Code, activated.Body)
+	}
+	stale := performJSON(h, "POST", "/v1/projects/"+projectID+"/environments/development/activate", `{"target_version_id":"pv_1","expected_active_version_id":""}`, token)
+	if stale.Code != 409 {
+		t.Fatalf("stale activation status=%d body=%s", stale.Code, stale.Body)
+	}
+}
+
 func TestPipelineVersionRoutesRequireMatchingEvidence(t *testing.T) {
 	h, application, closeApp := newTestHertzWithApp(t)
 	defer closeApp()

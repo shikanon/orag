@@ -654,6 +654,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/environments/development/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Activates an immutable pipeline version in development after server-derived development evidence passes. The fixed path prevents using activation to skip the ordered environment lifecycle. */
+        post: operations["activateProjectDevelopment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/environments/{environment}/rollback": {
         parameters: {
             query?: never;
@@ -1338,14 +1357,14 @@ export interface components {
         Release: {
             id: string;
             project_id: string;
-            source_version_id: string;
+            source_version_id?: string;
             target_version_id: string;
             /** @enum {string} */
             source_environment: "development" | "staging" | "production";
             /** @enum {string} */
             target_environment: "development" | "staging" | "production";
             /** @enum {string} */
-            action: "promote" | "rollback";
+            action: "activate" | "promote" | "rollback";
             actor: string;
             reason?: string;
             /** Format: date-time */
@@ -1360,6 +1379,11 @@ export interface components {
             /** @enum {string} */
             target_environment: "staging" | "production";
             target_version_id: string;
+            expected_active_version_id?: string;
+        };
+        ActivateDevelopmentRequest: {
+            target_version_id: string;
+            /** @description The development active version observed by the caller. Omit or use an empty string for the first activation. */
             expected_active_version_id?: string;
         };
         RollbackReleaseRequest: {
@@ -4020,6 +4044,38 @@ export interface operations {
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    activateProjectDevelopment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivateDevelopmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Initial development activation audit record. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Release"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
             422: components["responses"]["Error"];
         };

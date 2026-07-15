@@ -135,6 +135,24 @@ func (s *Server) promoteRelease(ctx context.Context, c *app.RequestContext) {
 	c.JSON(consts.StatusCreated, item)
 }
 
+func (s *Server) activateDevelopmentRelease(ctx context.Context, c *app.RequestContext) {
+	projectID, principal, ok := releaseProjectRequest(c)
+	if !ok || !authorizeRequest(c, auth.ActionResourceWrite, principal.TenantID, projectID) {
+		return
+	}
+	var req release.ActivateRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	req.ProjectID, req.Actor = projectID, principal.SubjectID
+	item, err := s.App.Release.ActivateDevelopment(ctx, req)
+	if err != nil {
+		writeReleaseError(c, err)
+		return
+	}
+	c.JSON(consts.StatusCreated, item)
+}
+
 func (s *Server) rollbackRelease(ctx context.Context, c *app.RequestContext) {
 	projectID, principal, ok := releaseProjectRequest(c)
 	if !ok || !authorizeRequest(c, auth.ActionResourceWrite, principal.TenantID, projectID) {

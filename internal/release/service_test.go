@@ -27,6 +27,56 @@ func TestServicePromoteRequiresEvidenceAndCAS(t *testing.T) {
 	}
 }
 
+func TestServiceActivateDevelopmentRequiresEvidenceAndCAS(t *testing.T) {
+	repo := newMemoryRepository()
+	development := repo.env["development"]
+	development.ActiveVersionID = ""
+	repo.env["development"] = development
+	svc := NewService(repo)
+
+	_, err := svc.ActivateDevelopment(context.Background(), ActivateRequest{ProjectID: "p1", TargetVersionID: "v2", Actor: "alice"})
+	if !errors.Is(err, ErrGateFailed) {
+		t.Fatalf("ActivateDevelopment() error = %v, want gate failed", err)
+	}
+	repo.evidence["v2/development"] = Evidence{VersionID: "v2", EnvironmentID: "development", Passed: true, ContentHash: "hash-v2"}
+	record, err := svc.ActivateDevelopment(context.Background(), ActivateRequest{ProjectID: "p1", TargetVersionID: "v2", ExpectedActiveVersionID: "", Actor: "alice"})
+	if err != nil {
+		t.Fatalf("ActivateDevelopment() error = %v", err)
+	}
+	if record.Action != "activate" || record.SourceVersionID != "" || record.SourceEnvironment != Development || record.TargetEnvironment != Development {
+		t.Fatalf("unexpected activation record: %#v", record)
+	}
+	if got := repo.env["development"]; got.ActiveVersionID != "v2" || got.Revision != 1 {
+		t.Fatalf("unexpected development environment: %#v", got)
+	}
+	_, err = svc.ActivateDevelopment(context.Background(), ActivateRequest{ProjectID: "p1", TargetVersionID: "v1", ExpectedActiveVersionID: "", Actor: "alice"})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale ActivateDevelopment() error = %v, want conflict", err)
+	}
+}
+
+func TestServiceActivateDevelopmentRejectsLegacyOrUnboundVersion(t *testing.T) {
+	repo := newMemoryRepository()
+	development := repo.env["development"]
+	development.ActiveVersionID = ""
+	repo.env["development"] = development
+	repo.versions["v2"] = Version{ID: "v2", ProjectID: "p1", ContentHash: "hash-v2"}
+	repo.evidence["v2/development"] = Evidence{VersionID: "v2", EnvironmentID: "development", Passed: true, ContentHash: "hash-v2"}
+	svc := NewService(repo)
+
+	_, err := svc.ActivateDevelopment(context.Background(), ActivateRequest{ProjectID: "p1", TargetVersionID: "v2", Actor: "alice"})
+	if !errors.Is(err, ErrGateFailed) {
+		t.Fatalf("legacy ActivateDevelopment() error = %v, want gate failed", err)
+	}
+	repo.versions["v2"] = Version{ID: "v2", ProjectID: "p1", PipelineID: "pipe_1", Definition: []byte(`{"nodes":[]}`), ContentHash: "hash-v2"}
+	development.Bound = false
+	repo.env["development"] = development
+	_, err = svc.ActivateDevelopment(context.Background(), ActivateRequest{ProjectID: "p1", TargetVersionID: "v2", Actor: "alice"})
+	if !errors.Is(err, ErrBindingMissing) {
+		t.Fatalf("unbound ActivateDevelopment() error = %v, want binding missing", err)
+	}
+}
+
 func TestServicePromoteRejectsLegacyHashOnlyVersion(t *testing.T) {
 	repo := newMemoryRepository()
 	repo.versions["v1"] = Version{ID: "v1", ProjectID: "p1", ContentHash: "hash-v1"}

@@ -22,6 +22,7 @@ export type Environment = components['schemas']['Environment']
 export type EnvironmentKind = Environment['kind']
 export type Release = components['schemas']['Release']
 export type PromoteReleaseInput = components['schemas']['PromoteReleaseRequest']
+export type ActivateDevelopmentInput = components['schemas']['ActivateDevelopmentRequest']
 export type RollbackReleaseInput = components['schemas']['RollbackReleaseRequest']
 export type PipelineVersion = components['schemas']['PipelineVersion']
 export type CreatePipelineVersionInput = components['schemas']['CreatePipelineVersionRequest']
@@ -107,6 +108,7 @@ export const releaseApi = {
   environments: (projectId: string) => request<{ items: Environment[] }>(`/v1/projects/${encodeURIComponent(projectId)}/environments`),
   list: (projectId: string) => request<{ items: Release[] }>(`/v1/projects/${encodeURIComponent(projectId)}/releases`),
   promote: (projectId: string, input: PromoteReleaseInput) => request<Release>(`/v1/projects/${encodeURIComponent(projectId)}/releases:promote`, { method: 'POST', body: JSON.stringify(input) }),
+  activateDevelopment: (projectId: string, input: ActivateDevelopmentInput) => request<Release>(`/v1/projects/${encodeURIComponent(projectId)}/environments/development/activate`, { method: 'POST', body: JSON.stringify(input) }),
   rollback: (projectId: string, environment: string, input: RollbackReleaseInput) => request<Release>(`/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environment)}/rollback`, { method: 'POST', body: JSON.stringify(input) }),
 }
 
