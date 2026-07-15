@@ -215,7 +215,7 @@ git diff --check
 
 Update checked boxes and validation evidence only after the commands succeed.
 
-- [ ] **Step 3: Push and open a ready PR**
+- [x] **Step 3: Push and open a ready PR**
 
 ```bash
 git push -u origin codex/optimizer-singleflight
