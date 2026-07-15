@@ -1,10 +1,13 @@
 package http
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/shikanon/orag/internal/pipeline"
 	"github.com/shikanon/orag/internal/project"
 )
 
@@ -114,4 +117,57 @@ func TestCreatePipelineVersionFromDraftFreezesRevision(t *testing.T) {
 	if response.Code != 422 || !strings.Contains(response.Body, `pipeline_invalid_definition`) {
 		t.Fatalf("version status=%d body=%s", response.Code, response.Body)
 	}
+
+	definition := versionablePipelineDefinition()
+	draftBody, err := json.Marshal(struct {
+		ExpectedRevision int64               `json:"expected_revision"`
+		Definition       pipeline.Definition `json:"definition"`
+	}{ExpectedRevision: 0, Definition: definition})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := performJSON(h, "PUT", "/v1/projects/"+projectID+"/pipelines/"+pipelineID+"/draft", string(draftBody), token)
+	if saved.Code != 200 || !strings.Contains(saved.Body, `"revision":1`) {
+		t.Fatalf("save draft status=%d body=%s", saved.Code, saved.Body)
+	}
+
+	createdVersion := performJSON(h, "POST", "/v1/projects/"+projectID+"/pipelines/"+pipelineID+"/versions", `{"expected_revision":1}`, token)
+	if createdVersion.Code != 201 || !strings.Contains(createdVersion.Body, `"pipeline_id":"`+pipelineID+`"`) {
+		t.Fatalf("create version status=%d body=%s", createdVersion.Code, createdVersion.Body)
+	}
+	var createdPayload struct {
+		Version struct {
+			ID          string `json:"id"`
+			PipelineID  string `json:"pipeline_id"`
+			ContentHash string `json:"content_hash"`
+		} `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(createdVersion.Body), &createdPayload); err != nil || createdPayload.Version.ID == "" || createdPayload.Version.PipelineID != pipelineID {
+		t.Fatalf("version body=%s err=%v", createdVersion.Body, err)
+	}
+	payload, err := json.Marshal(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantHash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	if createdPayload.Version.ContentHash != wantHash {
+		t.Fatalf("content hash = %q, want %q", createdPayload.Version.ContentHash, wantHash)
+	}
+	version, err := application.Release.Versions(t.Context(), projectID)
+	if err != nil || len(version) != 1 || string(version[0].Definition) != string(payload) || version[0].PipelineID != pipelineID {
+		t.Fatalf("stored versions = %#v, err = %v", version, err)
+	}
+}
+
+func versionablePipelineDefinition() pipeline.Definition {
+	types := []string{"init", "query_route", "semantic_cache_lookup", "query_rewrite", "multi_query", "hybrid_retrieve", "ark_rerank", "context_pack", "prompt_prefix_cache", "ark_generate", "semantic_cache_write"}
+	nodes := make([]pipeline.Node, len(types))
+	edges := make([]pipeline.Edge, 0, len(types)-1)
+	for i, nodeType := range types {
+		nodes[i] = pipeline.Node{ID: nodeType, Type: nodeType}
+		if i > 0 {
+			edges = append(edges, pipeline.Edge{ID: fmt.Sprintf("edge_%d", i), SourceNodeID: types[i-1], SourcePort: "out", TargetNodeID: nodeType, TargetPort: "in"})
+		}
+	}
+	return pipeline.Definition{Nodes: nodes, Edges: edges}
 }

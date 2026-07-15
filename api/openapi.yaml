@@ -963,7 +963,7 @@ paths:
       tags: [Releases]
       operationId: createPipelineVersionFromDraft
       x-orag-maturity: beta
-      description: Freezes the requested draft revision into an immutable content-hashed pipeline version.
+      description: Freezes the requested draft revision, including its complete DAG definition and source pipeline, into an immutable content-hashed pipeline version.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -2042,6 +2042,9 @@ components:
       properties:
         id: {type: string}
         project_id: {type: string}
+        pipeline_id:
+          type: string
+          description: Source pipeline when the version was frozen from a draft. Omitted for legacy manually recorded versions.
         content_hash: {type: string}
         created_at: {type: string, format: date-time}
     PipelineNodeDefinition:
