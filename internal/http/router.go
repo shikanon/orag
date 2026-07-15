@@ -89,6 +89,7 @@ func (s *Server) Hertz() *server.Hertz {
 	v1.POST("/projects/:project_id/versions", s.createPipelineVersion)
 	v1.POST("/projects/:project_id/versions/:version_id/validations", s.validatePipelineVersion)
 	v1.POST("/projects/:project_id/releases:promote", s.promoteRelease)
+	v1.PUT("/projects/:project_id/environments/:environment/binding", s.bindReleaseEnvironment)
 	v1.POST("/projects/:project_id/environments/development/activate", s.activateDevelopmentRelease)
 	v1.POST("/projects/:project_id/environments/:environment/rollback", s.rollbackRelease)
 	v1.GET("/tutorials", s.listTutorials)

@@ -160,7 +160,7 @@ func (g *RAGGraph) InvokeCompiled(ctx context.Context, runner compose.Runnable[S
 		_ = g.storeTrace(ctx, req, g.traceRecord(req, traceID, start, out, collector.snapshot(), true))
 		return rag.QueryResponse{}, err
 	}
-	resp := out.Response
+	resp := rag.NormalizeQueryResponse(out.Response)
 	if err := g.storeTrace(ctx, req, g.traceRecord(req, traceID, start, out, collector.snapshot(), false)); err != nil {
 		resp.Warnings = append(resp.Warnings, "trace store failed: "+err.Error())
 	}

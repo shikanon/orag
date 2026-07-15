@@ -262,6 +262,31 @@ func TestExecuteExplicitTopKNotTruncatedByContextTopN(t *testing.T) {
 	}
 }
 
+func TestExecuteNoContextReturnsEmptyCollections(t *testing.T) {
+	service := Service{
+		Retriever:           emptyServiceRetriever{},
+		Model:               &scriptedServiceModel{},
+		Packer:              ContextPacker{MaxTokens: 512, TopN: 4},
+		PromptStrategy:      prompt.NewStrategy("auto"),
+		DefaultProfile:      ProfileRealtime,
+		NoContextAnswer:     "no context",
+		TopK:                4,
+		QueryRewriteEnabled: false,
+		HyDEEnabled:         false,
+	}
+
+	response, err := service.Query(context.Background(), QueryRequest{TenantID: "tenant_default", KnowledgeBaseID: "kb_default", Query: "missing context"})
+	if err != nil {
+		t.Fatalf("Query() error = %v", err)
+	}
+	if response.Citations == nil || response.RetrievedChunks == nil {
+		t.Fatalf("Query() returned null collections: %#v", response)
+	}
+	if len(response.Citations) != 0 || len(response.RetrievedChunks) != 0 {
+		t.Fatalf("Query() returned non-empty no-context collections: %#v", response)
+	}
+}
+
 func TestExecuteDirectRouteBypassesRetrieval(t *testing.T) {
 	ctx := context.Background()
 	retriever := &recordingServiceRetriever{}
@@ -573,6 +598,12 @@ func (s *semanticCacheStub) Store(_ context.Context, entry SemanticCacheEntry) e
 
 type recordingServiceRetriever struct {
 	requests []kb.SearchRequest
+}
+
+type emptyServiceRetriever struct{}
+
+func (emptyServiceRetriever) Retrieve(context.Context, kb.SearchRequest) ([]kb.SearchResult, error) {
+	return nil, nil
 }
 
 func (r *recordingServiceRetriever) Retrieve(_ context.Context, req kb.SearchRequest) ([]kb.SearchResult, error) {

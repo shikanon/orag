@@ -24,6 +24,8 @@ export function ReleaseCenter() {
   const [evidenceVersion, setEvidenceVersion] = useState('')
   const [evidenceHash, setEvidenceHash] = useState('')
   const [evidenceEnvironment, setEvidenceEnvironment] = useState<EnvironmentKind>('staging')
+  const [bindingEnvironment, setBindingEnvironment] = useState<EnvironmentKind>('development')
+  const [bindingRef, setBindingRef] = useState('')
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ['release-environments', projectId] })
     void client.invalidateQueries({ queryKey: ['releases', projectId] })
@@ -31,6 +33,7 @@ export function ReleaseCenter() {
   }
   const createVersion = useMutation({ mutationFn: () => releaseApi.createVersion(projectId, { id: newVersionID || undefined, content_hash: newVersionHash }), onSuccess: () => { refresh(); setNewVersionID(''); setNewVersionHash('') } })
   const validateVersion = useMutation({ mutationFn: () => releaseApi.validateVersion(projectId, evidenceVersion, { environment: evidenceEnvironment, passed: true, content_hash: evidenceHash }), onSuccess: () => { refresh(); setEvidenceVersion(''); setEvidenceHash('') } })
+  const bindEnvironment = useMutation({ mutationFn: () => releaseApi.bindEnvironment(projectId, bindingEnvironment, bindingRef.trim()), onSuccess: () => { refresh(); setBindingRef('') } })
   const developmentEnv = findEnv(environments.data?.items, 'development')
   const activateDevelopment = useMutation({ mutationFn: () => releaseApi.activateDevelopment(projectId, { target_version_id: developmentVersion, expected_active_version_id: developmentEnv?.active_version_id ?? '' }), onSuccess: () => { refresh(); setDevelopmentVersion('') } })
   const promote = useMutation({ mutationFn: () => releaseApi.promote(projectId, { source_environment: source as 'development' | 'staging', target_environment: target as 'staging' | 'production', target_version_id: version, expected_active_version_id: findEnv(environments.data?.items, target)?.active_version_id ?? '' }), onSuccess: refresh })
@@ -39,10 +42,12 @@ export function ReleaseCenter() {
   function submitDevelopmentActivation(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (developmentVersion) activateDevelopment.mutate() }
   function submitPromotion(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (version.trim()) promote.mutate() }
   function submitRollback(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (rollbackVersion.trim() && reason.trim()) rollback.mutate() }
+  function submitBinding(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (bindingRef.trim()) bindEnvironment.mutate() }
 
   return <main className="content release-page">
     <Link className="back-link" to={`/projects/${projectId}/overview`}>← 返回项目概览</Link>
     <header className="page-header"><div><span className="eyebrow">实验性 · Hard gates</span><h1>发布中心</h1><p>冻结版本必须具备服务端推导的环境评测证据，才能先激活到开发环境，再按开发 → 预发 → 生产顺序晋级。</p></div><code className="project-pill">{projectId}</code></header>
+    <section className="release-card"><h2>环境资源绑定</h2><p className="muted">绑定引用只写入服务端，不会在 Console、trace 或发布历史中返回。</p><form onSubmit={submitBinding}><label>环境<select value={bindingEnvironment} onChange={(event) => setBindingEnvironment(event.target.value as EnvironmentKind)}>{kinds.map((kind) => <option key={kind} value={kind}>{labels[kind]}</option>)}</select></label><label>绑定引用<input required value={bindingRef} onChange={(event) => setBindingRef(event.target.value)} placeholder="例如：deployment://production" autoComplete="off" /></label>{bindEnvironment.isError ? <p className="debugger-error" role="alert">绑定失败，请确认环境和引用有效。</p> : null}<button className="secondary-button" disabled={bindEnvironment.isPending || !bindingRef.trim()}>{bindEnvironment.isPending ? '绑定中…' : '保存环境绑定'}</button></form></section>
     <section className="release-actions">
       <form className="release-card" onSubmit={submitDevelopmentActivation}><h2>激活 development</h2><p className="muted">仅接受由冻结 DAG 和已完成服务端评测产生的 development 证据。</p><label>选择要激活到 development 的版本<select required value={developmentVersion} onChange={(event) => setDevelopmentVersion(event.target.value)}><option value="">选择版本</option>{versions.data?.items.map((item) => <option key={item.id} value={item.id}>{item.id}</option>)}</select></label>{activateDevelopment.isError ? <p className="debugger-error" role="alert">激活被拒绝：请确认 development 绑定和服务端评测证据均已通过。</p> : null}<button className="primary-button" disabled={activateDevelopment.isPending || !developmentVersion || !developmentEnv?.bound}>激活 development</button></form>
       <form className="release-card" onSubmit={(event) => { event.preventDefault(); if (newVersionHash.trim()) createVersion.mutate() }}><h2>旧版候选版本（兼容）</h2><p className="muted">只用于既有手工版本记录；新版本请从 RAG Studio 冻结创建。</p><label>版本 ID（可选）<input value={newVersionID} onChange={(event) => setNewVersionID(event.target.value)} placeholder="自动生成" /></label><label>内容 hash<input required value={newVersionHash} onChange={(event) => setNewVersionHash(event.target.value)} placeholder="sha256:..." /></label><button className="secondary-button" disabled={createVersion.isPending || !newVersionHash.trim()}>创建旧版记录</button></form>

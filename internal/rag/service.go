@@ -55,9 +55,10 @@ func (s *Service) Query(ctx context.Context, req QueryRequest) (QueryResponse, e
 		if err != nil {
 			s.logFailure(ctx, req, s.Profile(req.Profile), traceID, "rag_pipeline", start, err)
 		}
-		return resp, err
+		return NormalizeQueryResponse(resp), err
 	}
-	return s.Execute(ctx, req)
+	resp, err := s.Execute(ctx, req)
+	return NormalizeQueryResponse(resp), err
 }
 
 func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse, error) {
@@ -97,7 +98,7 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 		if route != nil && cached.Route == nil {
 			cached.Route = route
 		}
-		return cached, nil
+		return NormalizeQueryResponse(cached), nil
 	} else if warning != "" {
 		warnings = append(warnings, warning)
 	}
@@ -113,14 +114,16 @@ func (s *Service) Execute(ctx context.Context, req QueryRequest) (QueryResponse,
 	}
 	if len(results) == 0 {
 		return QueryResponse{
-			Answer:      s.NoContextAnswer,
-			TraceID:     traceID,
-			CacheStatus: "miss",
-			Profile:     profile,
-			Route:       route,
-			Warnings:    append(warnings, "no_retrieved_context"),
-			CreatedAt:   time.Now().UTC(),
-			LatencyMS:   time.Since(start).Milliseconds(),
+			Answer:          s.NoContextAnswer,
+			Citations:       []Citation{},
+			RetrievedChunks: []kb.SearchResult{},
+			TraceID:         traceID,
+			CacheStatus:     "miss",
+			Profile:         profile,
+			Route:           route,
+			Warnings:        append(warnings, "no_retrieved_context"),
+			CreatedAt:       time.Now().UTC(),
+			LatencyMS:       time.Since(start).Milliseconds(),
 		}, nil
 	}
 	results = s.ApplyRerank(ctx, req.Query, results, topK)

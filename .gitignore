@@ -37,6 +37,9 @@ go.work.sum
 .claude/skills/
 .worktrees/
 _site/
+.tmp/console-real-backend-e2e/
+console/playwright-report/
+console/test-results/
 
 # macOS
 .DS_Store

@@ -58,6 +58,27 @@ func TestReleaseRoutesActivateDevelopmentWithDerivedEvidence(t *testing.T) {
 	}
 }
 
+func TestReleaseEnvironmentBindingIsWriteOnlyAndProjectAuthorized(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	projectID := project.LegacyDefaultID("tenant_a")
+	repo := release.NewMemoryRepository(projectID)
+	application.Release = release.NewService(repo)
+	token := issueToken(t, application, "tenant_a")
+
+	bound := performJSON(h, "PUT", "/v1/projects/"+projectID+"/environments/staging/binding", `{"binding_ref":"deployment://staging-secret-ref"}`, token)
+	if bound.Code != 200 || !strings.Contains(bound.Body, `"kind":"staging"`) || !strings.Contains(bound.Body, `"bound":true`) {
+		t.Fatalf("binding status=%d body=%s", bound.Code, bound.Body)
+	}
+	if strings.Contains(bound.Body, "deployment://staging-secret-ref") || strings.Contains(bound.Body, "binding_ref") {
+		t.Fatalf("binding reference leaked in response: %s", bound.Body)
+	}
+	invalid := performJSON(h, "PUT", "/v1/projects/"+projectID+"/environments/staging/binding", `{"binding_ref":" "}`, token)
+	if invalid.Code != 400 || !strings.Contains(invalid.Body, `"code":"invalid_release_request"`) {
+		t.Fatalf("invalid binding status=%d body=%s", invalid.Code, invalid.Body)
+	}
+}
+
 func TestPipelineVersionRoutesRequireMatchingEvidence(t *testing.T) {
 	h, application, closeApp := newTestHertzWithApp(t)
 	defer closeApp()

@@ -136,6 +136,15 @@ func (r *Repository) PreviouslyValidated(ctx context.Context, projectID, version
 	return passed, err
 }
 
+func (r *Repository) Bind(ctx context.Context, projectID string, environment release.EnvironmentKind, bindingRef string) error {
+	_, err := r.Pool.Exec(ctx, `
+		INSERT INTO project_environment_bindings(project_id, environment_kind, binding_ref)
+		VALUES($1,$2,$3)
+		ON CONFLICT (project_id, environment_kind)
+		DO UPDATE SET binding_ref=EXCLUDED.binding_ref, created_at=now()`, projectID, environment, bindingRef)
+	return err
+}
+
 func (r *Repository) Commit(ctx context.Context, environment release.Environment, record release.Release) error {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {

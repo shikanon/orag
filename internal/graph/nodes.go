@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/llm/ark"
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/prompt"
@@ -187,14 +188,16 @@ func (n NodeSet) Generate(ctx context.Context, st State) (State, error) {
 		}
 		if len(st.Results) == 0 {
 			st.Response = rag.QueryResponse{
-				Answer:      n.Service.NoContextAnswer,
-				TraceID:     st.TraceID,
-				CacheStatus: "miss",
-				Profile:     st.Profile,
-				Route:       st.Route,
-				Warnings:    append(st.Warnings, "no_retrieved_context"),
-				CreatedAt:   time.Now().UTC(),
-				LatencyMS:   time.Since(st.Start).Milliseconds(),
+				Answer:          n.Service.NoContextAnswer,
+				Citations:       []rag.Citation{},
+				RetrievedChunks: []kb.SearchResult{},
+				TraceID:         st.TraceID,
+				CacheStatus:     "miss",
+				Profile:         st.Profile,
+				Route:           st.Route,
+				Warnings:        append(st.Warnings, "no_retrieved_context"),
+				CreatedAt:       time.Now().UTC(),
+				LatencyMS:       time.Since(st.Start).Milliseconds(),
 			}
 			return nil
 		}
