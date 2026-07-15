@@ -137,6 +137,8 @@ Current progress: [#175](https://github.com/shikanon/orag/issues/175) is impleme
 
 For continuous security exploration, [#219](https://github.com/shikanon/orag/issues/219) adds native Go fuzz targets, pull-request smoke gates, and longer scheduled exploration for document/Office parsing and optimizer expressions.
 
+For dependency boundaries, [#221](https://github.com/shikanon/orag/issues/221) upgrades Eino to 0.9.12 with its Jinja filesystem-access fix, adds `file`/`fileset` regressions, and records why GO-2026-5932 is unreachable and has no fixed upstream x/crypto release.
+
 ### Consistency and execution safety
 
 - Use staged/active visibility or an equivalent transaction protocol so failed documents and vectors never become searchable early.
