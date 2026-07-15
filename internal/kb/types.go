@@ -14,6 +14,7 @@ var ErrActivationCandidateMissing = errors.New("activation candidate is missing"
 type KnowledgeBase struct {
 	ID          string            `json:"id"`
 	TenantID    string            `json:"tenant_id"`
+	ProjectID   string            `json:"project_id,omitempty"`
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Metadata    map[string]string `json:"metadata,omitempty"`

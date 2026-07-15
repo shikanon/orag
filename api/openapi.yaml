@@ -1832,6 +1832,9 @@ components:
       type: object
       required: [name]
       properties:
+        project_id:
+          type: string
+          description: Owning project. Omission is a deprecated beta compatibility path.
         name:
           type: string
         description:
@@ -1847,6 +1850,8 @@ components:
         id:
           type: string
         tenant_id:
+          type: string
+        project_id:
           type: string
         name:
           type: string
@@ -2195,6 +2200,9 @@ components:
       type: object
       required: [name]
       properties:
+        project_id:
+          type: string
+          description: Owning project. Omission is a deprecated beta compatibility path.
         name:
           type: string
         kind:
@@ -2207,6 +2215,8 @@ components:
         id:
           type: string
         tenant_id:
+          type: string
+        project_id:
           type: string
         name:
           type: string

@@ -2,8 +2,30 @@ package project
 
 import (
 	"context"
+	"strings"
 	"time"
 )
+
+func LegacyDefaultID(tenantID string) string {
+	return "prj_default_" + strings.TrimSpace(tenantID)
+}
+
+func LegacyDefaultEnvironments(tenantID string, now time.Time) []Environment {
+	tenantID = strings.TrimSpace(tenantID)
+	projectID := LegacyDefaultID(tenantID)
+	kinds := [...]EnvironmentKind{EnvironmentDevelopment, EnvironmentStaging, EnvironmentProduction}
+	environments := make([]Environment, 0, len(kinds))
+	for _, kind := range kinds {
+		environments = append(environments, Environment{
+			ID:        "env_default_" + string(kind) + "_" + tenantID,
+			ProjectID: projectID,
+			Kind:      kind,
+			CreatedAt: now,
+			UpdatedAt: now,
+		})
+	}
+	return environments
+}
 
 type EnvironmentKind string
 

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shikanon/orag/internal/kb"
+	"github.com/shikanon/orag/internal/project"
 )
 
 type Repository struct {
@@ -187,20 +188,21 @@ func (r *Repository) evaluationTxBeginner() evalTxBeginner {
 func (r *Repository) PutKnowledgeBase(ctx context.Context, item kb.KnowledgeBase) error {
 	meta := mustJSON(item.Metadata)
 	_, err := r.knowledgeBaseQueryer().Exec(ctx, `
-		INSERT INTO knowledge_bases(id, tenant_id, name, description, metadata, created_at, updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7)
+		INSERT INTO knowledge_bases(id, tenant_id, project_id, name, description, metadata, created_at, updated_at)
+		VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8)
 		ON CONFLICT (id) DO UPDATE SET
+			project_id=EXCLUDED.project_id,
 			name=EXCLUDED.name,
 			description=EXCLUDED.description,
 			metadata=EXCLUDED.metadata,
 			updated_at=EXCLUDED.updated_at`,
-		item.ID, item.TenantID, item.Name, item.Description, meta, item.CreatedAt, item.UpdatedAt)
+		item.ID, item.TenantID, item.ProjectID, item.Name, item.Description, meta, item.CreatedAt, item.UpdatedAt)
 	return err
 }
 
 func (r *Repository) ListKnowledgeBases(ctx context.Context, tenantID string) ([]kb.KnowledgeBase, error) {
 	rows, err := r.knowledgeBaseQueryer().Query(ctx, `
-		SELECT id, tenant_id, name, description, metadata, created_at, updated_at
+		SELECT id, tenant_id, COALESCE(project_id,''), name, description, metadata, created_at, updated_at
 		FROM knowledge_bases
 		WHERE tenant_id=$1
 		ORDER BY created_at`, tenantID)
@@ -224,7 +226,7 @@ func (r *Repository) ListKnowledgeBases(ctx context.Context, tenantID string) ([
 
 func (r *Repository) GetKnowledgeBase(ctx context.Context, tenantID, id string) (kb.KnowledgeBase, bool, error) {
 	row := r.knowledgeBaseQueryer().QueryRow(ctx, `
-		SELECT id, tenant_id, name, description, metadata, created_at, updated_at
+		SELECT id, tenant_id, COALESCE(project_id,''), name, description, metadata, created_at, updated_at
 		FROM knowledge_bases
 		WHERE tenant_id=$1 AND id=$2`, tenantID, id)
 	item, err := scanKnowledgeBase(row)
@@ -647,9 +649,26 @@ func (r *Repository) BootstrapDefaults(ctx context.Context, tenantID, kbID strin
 		ON CONFLICT (id) DO NOTHING`, tenantID, tenantID, now); err != nil {
 		return err
 	}
+	projectID := project.LegacyDefaultID(tenantID)
+	if _, err := r.knowledgeBaseQueryer().Exec(ctx, `
+		INSERT INTO projects(id, tenant_id, name, description, created_at, updated_at)
+		VALUES($1,$2,'Legacy Default','Compatibility project for pre-project resources.',$3,$3)
+		ON CONFLICT (id) DO NOTHING`, projectID, tenantID, now); err != nil {
+		return err
+	}
+	for _, environment := range project.LegacyDefaultEnvironments(tenantID, now) {
+		if _, err := r.knowledgeBaseQueryer().Exec(ctx, `
+			INSERT INTO project_environments(id, project_id, kind, created_at, updated_at)
+			VALUES($1,$2,$3,$4,$5)
+			ON CONFLICT (project_id, kind) DO NOTHING`, environment.ID, environment.ProjectID,
+			environment.Kind, environment.CreatedAt, environment.UpdatedAt); err != nil {
+			return err
+		}
+	}
 	return r.PutKnowledgeBase(ctx, kb.KnowledgeBase{
 		ID:          kbID,
 		TenantID:    tenantID,
+		ProjectID:   projectID,
 		Name:        "Default Knowledge Base",
 		Description: "默认知识库",
 		Metadata:    map[string]string{"created_by": "bootstrap"},
@@ -679,7 +698,7 @@ type kbScanner interface {
 func scanKnowledgeBase(row kbScanner) (kb.KnowledgeBase, error) {
 	var item kb.KnowledgeBase
 	var meta []byte
-	err := row.Scan(&item.ID, &item.TenantID, &item.Name, &item.Description, &meta, &item.CreatedAt, &item.UpdatedAt)
+	err := row.Scan(&item.ID, &item.TenantID, &item.ProjectID, &item.Name, &item.Description, &meta, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return item, err
 	}

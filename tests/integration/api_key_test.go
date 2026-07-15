@@ -8,6 +8,7 @@ import (
 
 	"github.com/shikanon/orag/internal/auth"
 	oraghttp "github.com/shikanon/orag/internal/http"
+	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/project"
 )
 
@@ -19,6 +20,32 @@ func TestPostgresAPIKeyLifecycleAndTenantProjectBoundary(t *testing.T) {
 	ownedProject, err := app.Projects.Create(ctx, testTenantID, project.CreateInput{Name: "API key integration"})
 	if err != nil {
 		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	knowledgeBase := kb.KnowledgeBase{
+		ID: "kb_project_ownership_integration", TenantID: testTenantID, ProjectID: ownedProject.ID,
+		Name: "Project-owned integration knowledge base", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := app.KBStore.PutKnowledgeBase(ctx, knowledgeBase); err != nil {
+		t.Fatal(err)
+	}
+	storedKnowledgeBase, ok, err := app.KBStore.GetKnowledgeBase(ctx, testTenantID, knowledgeBase.ID)
+	if err != nil || !ok {
+		t.Fatalf("get project-owned knowledge base found=%v err=%v", ok, err)
+	}
+	if storedKnowledgeBase.ProjectID != ownedProject.ID {
+		t.Fatalf("stored knowledge base project=%q, want %q", storedKnowledgeBase.ProjectID, ownedProject.ID)
+	}
+	storedDataset, err := app.Datasets.CreateInProject(ctx, testTenantID, ownedProject.ID, "Project-owned integration dataset", "golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedDataset, ok, err = app.Datasets.Get(ctx, testTenantID, storedDataset.ID)
+	if err != nil || !ok {
+		t.Fatalf("get project-owned dataset found=%v err=%v", ok, err)
+	}
+	if storedDataset.ProjectID != ownedProject.ID {
+		t.Fatalf("stored dataset project=%q, want %q", storedDataset.ProjectID, ownedProject.ID)
 	}
 	created, err := app.APIKeys.Create(ctx, auth.APIKeyCreateInput{
 		TenantID: testTenantID, ProjectID: ownedProject.ID, Name: "integration robot",

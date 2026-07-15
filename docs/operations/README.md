@@ -2,6 +2,8 @@
 
 本目录面向部署、监控和故障排查。完整长文仍保留在 [`../operations.md`](../operations.md)，本目录提供更结构化的运维入口。
 
+- [Project 资源归属迁移](project-ownership-migration.md)：说明 `000018` 的默认 Project 回填、验证与安全回滚边界。
+
 ## 运行依赖
 
 | 依赖 | 配置 | 说明 |
