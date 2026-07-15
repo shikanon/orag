@@ -189,7 +189,7 @@ make test-integration
 make test-integration-down
 ```
 
-- [ ] **Step 3: Rebase and publish**
+- [x] **Step 3: Rebase and publish**
 
 ```bash
 git fetch origin
