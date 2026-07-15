@@ -224,7 +224,7 @@ gh pr create --base main --head codex/optimizer-singleflight --title "fix: make 
 
 The PR body must list actual validation commands and contain `Closes #176`.
 
-- [ ] **Step 4: Merge and prove final state**
+- [x] **Step 4: Merge and prove final state**
 
 ```bash
 gh pr checks --watch
