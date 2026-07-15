@@ -11,7 +11,8 @@
 - [x] Pin API and Console base images to verified multi-architecture manifest digests while retaining readable tags.
 - [x] Give general CI only `contents: read`; retain narrowly scoped writes for Pages, packages, attestations, OIDC, and GitHub Releases.
 - [x] Pass local workflow, documentation, Compose, and repository gates.
-- [ ] Pass protected remote checks and merge a ready pull request that closes #217.
+- [x] Pass all protected remote checks on the ready pull request.
+- [ ] Merge the pull request and close #217.
 - [ ] Confirm the default-branch Scorecard rerun no longer reports the addressed pinned-dependency and token-permission findings.
 
 ## Verification
