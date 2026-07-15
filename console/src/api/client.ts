@@ -23,6 +23,9 @@ export type EnvironmentKind = Environment['kind']
 export type Release = components['schemas']['Release']
 export type PromoteReleaseInput = components['schemas']['PromoteReleaseRequest']
 export type RollbackReleaseInput = components['schemas']['RollbackReleaseRequest']
+export type PipelineVersion = components['schemas']['PipelineVersion']
+export type CreatePipelineVersionInput = components['schemas']['CreatePipelineVersionRequest']
+export type ValidatePipelineVersionInput = components['schemas']['ValidatePipelineVersionRequest']
 
 export class ApiError extends Error {
   constructor(public readonly status: number) {
@@ -90,6 +93,9 @@ export const evaluationApi = {
 }
 
 export const releaseApi = {
+  versions: (projectId: string) => request<{ items: PipelineVersion[] }>(`/v1/projects/${encodeURIComponent(projectId)}/versions`),
+  createVersion: (projectId: string, input: CreatePipelineVersionInput) => request<PipelineVersion>(`/v1/projects/${encodeURIComponent(projectId)}/versions`, { method: 'POST', body: JSON.stringify(input) }),
+  validateVersion: (projectId: string, versionId: string, input: ValidatePipelineVersionInput) => request<{ version_id: string; environment: string; passed: boolean; content_hash: string }>(`/v1/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/validations`, { method: 'POST', body: JSON.stringify(input) }),
   environments: (projectId: string) => request<{ items: Environment[] }>(`/v1/projects/${encodeURIComponent(projectId)}/environments`),
   list: (projectId: string) => request<{ items: Release[] }>(`/v1/projects/${encodeURIComponent(projectId)}/releases`),
   promote: (projectId: string, input: PromoteReleaseInput) => request<Release>(`/v1/projects/${encodeURIComponent(projectId)}/releases:promote`, { method: 'POST', body: JSON.stringify(input) }),
