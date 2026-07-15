@@ -2,6 +2,8 @@
 
 ## 部署依赖
 
+面向社区的服务器部署请先阅读[参考服务器部署指南](operations/server-deployment.md)。该指南使用发布后的 GHCR 镜像、独立 DNS 主机名和服务器侧 secrets；本文件中的本地 Compose 命令适合开发与验证。
+
 默认生产形态使用 `STORAGE_BACKEND=qdrant_postgres`，服务启动和查询依赖以下组件：
 
 - PostgreSQL：默认连接串来自 `DATABASE_URL`，示例为 `postgres://orag:orag@localhost:5432/orag?sslmode=disable`。部署后需要执行数据库迁移。
