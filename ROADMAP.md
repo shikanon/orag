@@ -166,6 +166,8 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 ## 阶段四：评测优先控制面
 
+当前进展：Pipeline server-owned node registry、revisioned draft persistence、Compiler/Debug Runner、项目级 draft debug API、Console API Debugger、RAG Studio draft workbench，以及 Debug Run 保存为评测 case 已在 `main` 合并（PR #253–#259）。当前黄金路径已经覆盖“创建 Pipeline → 填充标准链路 → 保存 draft → 按 revision 调试 → 查看节点诊断 → 写入评测数据集”。仍待完成真实浏览器 E2E、不可变版本与评测证据的自动串联、生产 active version 查询 lineage，以及文本/视觉/视频教程的 Replay/结果对比闭环。
+
 ### Project 到 Release 的黄金路径
 
 - 完成项目级 RAG Studio、受约束 DAG、API Debugger 和不可变 pipeline version。
