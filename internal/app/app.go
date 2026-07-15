@@ -707,7 +707,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			return knowledgeBackend{}, err
 		}
 	}
-	vectors := qdrantstore.VectorStore{Client: qdrantClient, Collection: cfg.Qdrant.Collection}
+	vectors := newPostgresVectorStore(qdrantClient, cfg.Qdrant.Collection, repo)
 	indexer := kb.CompositeIndexer{Indexers: []kb.Indexer{repo, vectors}}
 	cache := qdrantstore.SemanticCache{Client: qdrantClient, Collection: cfg.Qdrant.SemanticCacheCollection, Threshold: cfg.RAG.SemanticCacheThreshold}
 	return knowledgeBackend{
@@ -735,6 +735,14 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			},
 		},
 	}, nil
+}
+
+func newPostgresVectorStore(client *qdrantstore.Client, collection string, repo *postgres.Repository) qdrantstore.VectorStore {
+	return qdrantstore.VectorStore{
+		Client:     client,
+		Collection: collection,
+		Visibility: repo,
+	}
 }
 
 func bootstrapMemory(ctx context.Context, store *kb.MemoryStore, tenantID string) error {

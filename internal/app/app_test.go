@@ -11,7 +11,24 @@ import (
 	"github.com/shikanon/orag/internal/config"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/project"
+	"github.com/shikanon/orag/internal/storage/postgres"
+	qdrantstore "github.com/shikanon/orag/internal/storage/qdrant"
 )
+
+func TestBuildKnowledgeBackendWiresVectorVisibility(t *testing.T) {
+	client := &qdrantstore.Client{}
+	repo := &postgres.Repository{}
+	got := newPostgresVectorStore(client, "chunks", repo)
+	if got.Client != client {
+		t.Fatal("client was not preserved")
+	}
+	if got.Collection != "chunks" {
+		t.Fatalf("collection = %q", got.Collection)
+	}
+	if got.Visibility != repo {
+		t.Fatal("postgres visibility filter was not wired")
+	}
+}
 
 func TestNewWiresProjectServiceForMemoryBackend(t *testing.T) {
 	t.Setenv("STORAGE_BACKEND", "memory")

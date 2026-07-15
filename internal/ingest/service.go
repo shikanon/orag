@@ -164,8 +164,13 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 	for i := range chunks {
 		chunks[i].Vector = vectors[i]
 	}
+	var indexWarnings []string
 	if err := s.Indexer.Store(ctx, doc, chunks); err != nil {
-		return fail(err)
+		var cleanupWarning *kb.PostCommitCleanupWarning
+		if !errors.As(err, &cleanupWarning) {
+			return fail(err)
+		}
+		indexWarnings = append(indexWarnings, cleanupWarning.Error())
 	}
 	graphWarnings, err := s.storeGraphRelations(ctx, doc, chunks)
 	if err != nil {
@@ -174,7 +179,7 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 	job.Status = JobStatusSucceeded
 	job.DocumentID = doc.ID
 	job.ChunkCount = len(chunks)
-	warnings := append(append(contextualWarnings, raptorWarnings...), graphWarnings...)
+	warnings := append(append(append(contextualWarnings, raptorWarnings...), indexWarnings...), graphWarnings...)
 	if len(warnings) > 0 && job.Error == "" {
 		job.Error = strings.Join(warnings, "; ")
 	}

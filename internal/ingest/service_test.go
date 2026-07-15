@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,6 +80,14 @@ func (noopIndexer) CommitActivation(context.Context, kb.Document, []kb.Chunk) er
 func (noopIndexer) AbortActivation(context.Context, kb.Document, []kb.Chunk) error   { return nil }
 func (noopIndexer) FinalizeActivation(context.Context, kb.Document, []kb.Chunk) error {
 	return nil
+}
+
+type cleanupWarningIndexer struct {
+	err error
+}
+
+func (i cleanupWarningIndexer) Store(context.Context, kb.Document, []kb.Chunk) error {
+	return &kb.PostCommitCleanupWarning{Err: i.err}
 }
 
 type capturingIndexer struct {
@@ -170,6 +179,43 @@ func (s *stagedSearchStore) Chunks(tenantID, kbID string) []kb.Chunk {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+func TestIngestPostCommitCleanupWarningSucceeds(t *testing.T) {
+	ctx := context.Background()
+	cleanupErr := errors.New("qdrant old point cleanup failed")
+	jobs := NewMemoryJobStore()
+	svc := &Service{
+		Parser:   parser.BasicParser{},
+		Splitter: chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder: fakeEmbedder{},
+		Indexer:  cleanupWarningIndexer{err: cleanupErr},
+		Jobs:     jobs,
+	}
+
+	result, err := svc.Ingest(ctx, Request{
+		TenantID: "tenant_1", KnowledgeBaseID: "kb_1", SourceURI: "memory://warning.md",
+		Name: "warning.md", Content: []byte("committed document content"),
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v, want nil cleanup warning", err)
+	}
+	if result.Job.Status != JobStatusSucceeded || result.Job.DocumentID == "" || result.Job.ChunkCount == 0 {
+		t.Fatalf("result job = %#v", result.Job)
+	}
+	if !strings.Contains(result.Job.Error, cleanupErr.Error()) {
+		t.Fatalf("result warning = %q, want %q", result.Job.Error, cleanupErr)
+	}
+	stored, ok, err := jobs.GetJob(ctx, "tenant_1", result.Job.ID)
+	if err != nil || !ok {
+		t.Fatalf("GetJob() ok=%v err=%v", ok, err)
+	}
+	if stored.Status != JobStatusSucceeded || stored.DocumentID != result.Document.ID || stored.ChunkCount != len(result.Chunks) {
+		t.Fatalf("stored job = %#v", stored)
+	}
+	if !strings.Contains(stored.Error, cleanupErr.Error()) {
+		t.Fatalf("stored warning = %q, want %q", stored.Error, cleanupErr)
+	}
 }
 
 func TestIngestCreatesJobAndStableIDs(t *testing.T) {
