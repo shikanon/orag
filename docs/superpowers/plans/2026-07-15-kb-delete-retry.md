@@ -30,7 +30,7 @@
 - Consumes: `knowledgeBaseVectorDeleter`
 - Consumes: `knowledgeBaseSemanticCacheDeleter`
 
-- [ ] **Step 1: Write failing order and retry tests**
+- [x] **Step 1: Write failing order and retry tests**
 
 Replace metadata-first assertions with these fixed contracts:
 
@@ -44,7 +44,7 @@ Replace metadata-first assertions with these fixed contracts:
 
 Extend the cleanup fakes with queued errors so the same instance can fail once and then succeed.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```bash
 go test ./internal/app -run 'TestKnowledgeBaseStoreDeleteKnowledgeBase(CleansExternalIndexesBeforeMetadata|Retries|SkipsMissingOrWrongTenant)' -v
@@ -52,7 +52,7 @@ go test ./internal/app -run 'TestKnowledgeBaseStoreDeleteKnowledgeBase(CleansExt
 
 Expected: tests fail because metadata is currently deleted first and cleanup failures report `deleted=true`.
 
-- [ ] **Step 3: Implement cleanup-before-metadata**
+- [x] **Step 3: Implement cleanup-before-metadata**
 
 `knowledgeBaseStore.DeleteKnowledgeBase` must:
 
@@ -64,7 +64,7 @@ Expected: tests fail because metadata is currently deleted first and cleanup fai
 
 Any external cleanup error returns `false, err` immediately. Do not wrap the error unless the original remains discoverable through `errors.Is`.
 
-- [ ] **Step 4: Verify GREEN and app regressions**
+- [x] **Step 4: Verify GREEN and app regressions**
 
 ```bash
 go test ./internal/app -run 'TestKnowledgeBaseStoreDeleteKnowledgeBase' -v
@@ -73,7 +73,7 @@ go test ./internal/app ./internal/http
 
 Expected: PASS. HTTP missing/wrong-tenant semantics remain unchanged.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add internal/app/app.go internal/app/app_test.go
@@ -90,7 +90,7 @@ git commit -m "fix(app): make knowledge base deletion retryable"
 - Consumes: real `qdrantstore.VectorStore`
 - Proves: a failed external cleanup leaves a retryable metadata row and a retry removes all stores
 
-- [ ] **Step 1: Add a fail-once vector deleter and test**
+- [x] **Step 1: Add a fail-once vector deleter and test**
 
 Add a wrapper that records calls, returns a sentinel on the first `DeleteKnowledgeBaseVectors`, and delegates to the real vector store on later calls.
 
@@ -106,7 +106,7 @@ Add a wrapper that records calls, returns a sentinel on the first `DeleteKnowled
 
 If the current unexported facade prevents integration construction, extract a narrow exported constructor or behavior-bearing type without exposing storage-specific implementation details.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```bash
 make test-integration-up
@@ -116,11 +116,11 @@ ORAG_INTEGRATION_TESTS=1 DATABASE_URL="postgres://orag:orag@localhost:55432/orag
 
 Expected: FAIL before the production deletion ordering is wired into the testable facade.
 
-- [ ] **Step 3: Implement the smallest testability seam**
+- [x] **Step 3: Implement the smallest testability seam**
 
 Prefer exercising the same facade used by `App.KBStore`. Do not duplicate the deletion algorithm in integration-only code.
 
-- [ ] **Step 4: Verify the full integration package from a clean stack**
+- [x] **Step 4: Verify the full integration package from a clean stack**
 
 ```bash
 go clean -testcache
@@ -130,7 +130,7 @@ make test-integration-down
 
 Expected: PASS and no test containers or volumes remain.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add tests/integration/ingest_query_test.go internal/app/app.go internal/app/app_test.go
@@ -147,7 +147,7 @@ git commit -m "test: prove retryable knowledge base cleanup"
 - Modify: `docs/superpowers/specs/2026-07-15-kb-delete-retry-design.md`
 - Modify: `docs/superpowers/plans/2026-07-15-kb-delete-retry.md`
 
-- [ ] **Step 1: Document behavior**
+- [x] **Step 1: Document behavior**
 
 Document:
 
@@ -159,7 +159,7 @@ Document:
 
 Add an Unreleased changelog entry. Add a Stage 3 progress note to both Roadmaps linking Issue #177 and the design without claiming Stage 3 complete. Set the design status to Implemented and verified only after the real integration test passes. Check completed plan boxes.
 
-- [ ] **Step 2: Commit Task 3**
+- [x] **Step 2: Commit Task 3**
 
 ```bash
 git add CHANGELOG.md ROADMAP.md ROADMAP_EN.md docs/operations/troubleshooting.md docs/superpowers/specs/2026-07-15-kb-delete-retry-design.md docs/superpowers/plans/2026-07-15-kb-delete-retry.md

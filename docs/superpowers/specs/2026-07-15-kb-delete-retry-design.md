@@ -1,6 +1,6 @@
 # Retryable Knowledge-Base Deletion Design
 
-**Status:** Approved on 2026-07-15
+**Status:** Implemented and verified on 2026-07-15
 
 **Roadmap:** Stage 3 — production-pilot baseline / data consistency and execution safety
 

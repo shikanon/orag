@@ -133,7 +133,7 @@ Phases advance according to quality gates and available capacity, without target
 
 ## Phase 3: Production pilot baseline
 
-Current progress: [#175](https://github.com/shikanon/orag/issues/175) is implemented according to the [cross-store staged visibility design](./docs/superpowers/specs/2026-07-15-qdrant-staged-visibility-design.md). PostgreSQL now authorizes sparse and dense visibility, failed candidates cannot enter retrieval, and the protocol is covered by real PostgreSQL + Qdrant failure, replacement, legacy, cleanup-warning, and concurrency tests. This completes only part of the consistency work below; Phase 3 is not complete.
+Current progress: [#175](https://github.com/shikanon/orag/issues/175) is implemented according to the [cross-store staged visibility design](./docs/superpowers/specs/2026-07-15-qdrant-staged-visibility-design.md). PostgreSQL now authorizes sparse and dense visibility, failed candidates cannot enter retrieval, and the protocol is covered by real PostgreSQL + Qdrant failure, replacement, legacy, cleanup-warning, and concurrency tests. [#177](https://github.com/shikanon/orag/issues/177) is also implemented according to the [retryable knowledge-base deletion design](./docs/superpowers/specs/2026-07-15-kb-delete-retry-design.md): failed external cleanup retains metadata as a durable retry handle, and real-store tests prove that repeating DELETE completes cleanup. This completes only part of the consistency work below; Phase 3 is not complete.
 
 ### Consistency and execution safety
 

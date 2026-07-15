@@ -76,6 +76,18 @@ curl -fsS http://localhost:8080/readyz
 
 不要通过手工把 Qdrant `searchable` 改为 `true` 来恢复查询：该字段不是授权源。若 PostgreSQL 可见性查询失败，dense retrieval 会 fail closed；先恢复 PostgreSQL 连接和查询能力。
 
+### 知识库删除清理失败
+
+知识库删除按 semantic cache、document vectors、PostgreSQL metadata 的顺序执行。若 Qdrant 清理失败，DELETE 返回错误，PostgreSQL metadata 会保留，因此同一个 tenant/knowledge-base DELETE 仍是有效的持久重试入口。
+
+恢复步骤：
+
+1. 从错误响应的 `trace_id` 和 Qdrant 日志确认失败原因，恢复 Qdrant 连接或权限。
+2. 重新发送完全相同的 `DELETE /v1/knowledge-bases/{id}`；外部 filter delete 是幂等操作。
+3. 成功响应后确认 PostgreSQL `knowledge_bases`/`documents`/`chunks`/`ingestion_jobs` 行和两个 Qdrant collection 中该 KB 的点均为零。
+
+首次失败后，semantic cache 可能已经清空，或 vectors 已部分/完全清空，而 PostgreSQL metadata 仍可见。此时查询可能重新生成答案或暂时退化为 sparse retrieval，这是保留同步重试入口的预期行为。不要手工删除 metadata，否则会再次失去正常 DELETE 的重试路径。
+
 ## 查询失败或无上下文
 
 | 现象 | 优先检查 |

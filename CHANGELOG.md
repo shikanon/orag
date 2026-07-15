@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Failed or partially activated ingestions can no longer expose Qdrant vectors, and dense visibility lookup failures now fail closed.
 - Same-source PostgreSQL activation is serialized with a tenant-, knowledge-base-, and source-scoped advisory transaction lock.
+- Knowledge-base deletion now cleans semantic cache and vectors before PostgreSQL metadata, so transient Qdrant failures retain a durable DELETE retry path instead of leaving unreachable orphan points.
 
 ## [0.1.0-beta.1] - 2026-07-14
 
