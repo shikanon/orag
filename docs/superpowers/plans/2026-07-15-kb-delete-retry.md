@@ -200,7 +200,7 @@ gh pr create --base main --head codex/kb-delete-retry --title "fix: make knowled
 
 The PR body must list the actual commands and contain `Closes #177`.
 
-- [ ] **Step 4: Merge and prove final state**
+- [x] **Step 4: Merge and prove final state**
 
 ```bash
 gh pr checks --watch
