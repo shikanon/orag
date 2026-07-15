@@ -162,6 +162,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		return nil, err
 	}
 	tutorialClones.ConfigureInstaller(projects, publicPacks, privatePacks)
+	tutorialClones.ConfigureRuntime(tutorial.ResourceInitializer{KnowledgeBases: backend.store, Datasets: datasets})
 	releaseSvc := release.NewService(backend.releaseRepo)
 	pipelineSvc := pipeline.NewService(backend.pipelineRepo, pipeline.BuiltinRegistry())
 	pipelineCompiler := pipeline.NewCompiler(ragSvc, pipeline.BuiltinRegistry())

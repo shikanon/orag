@@ -25,11 +25,12 @@ var (
 // Manifest describes one immutable, redistributable tutorial pack. It is
 // validated against the selected catalog entry before any object is fetched.
 type Manifest struct {
-	TemplateID string       `json:"template_id"`
-	Version    string       `json:"version"`
-	Tier       string       `json:"tier"`
-	License    License      `json:"license"`
-	Objects    []PackObject `json:"objects"`
+	TemplateID string           `json:"template_id"`
+	Version    string           `json:"version"`
+	Tier       string           `json:"tier"`
+	License    License          `json:"license"`
+	Objects    []PackObject     `json:"objects"`
+	Runtime    *RuntimeManifest `json:"runtime,omitempty"`
 }
 
 type License struct {
@@ -43,6 +44,39 @@ type PackObject struct {
 	SHA256      string `json:"sha256"`
 	Bytes       int64  `json:"bytes"`
 	ContentType string `json:"content_type"`
+}
+
+// RuntimeManifest is an optional, immutable declaration of the resource roots
+// a Pack may create. It deliberately contains no object-storage location,
+// model provider, or arbitrary client configuration. A missing declaration
+// leaves the Pack installable but makes Live Run unavailable.
+type RuntimeManifest struct {
+	Baseline  RuntimeBaseline   `json:"baseline"`
+	Documents []RuntimeDocument `json:"documents"`
+	Dataset   RuntimeDataset    `json:"dataset"`
+}
+
+type RuntimeBaseline struct {
+	Profile string `json:"profile"`
+	TopK    int    `json:"top_k"`
+}
+
+type RuntimeDocument struct {
+	ObjectPath string `json:"object_path"`
+	Name       string `json:"name"`
+}
+
+type RuntimeDataset struct {
+	Name  string               `json:"name"`
+	Items []RuntimeDatasetItem `json:"items"`
+}
+
+type RuntimeDatasetItem struct {
+	Query            string   `json:"query"`
+	GroundTruth      string   `json:"ground_truth"`
+	ExpectedEvidence []string `json:"expected_evidence,omitempty"`
+	Split            string   `json:"split,omitempty"`
+	Weight           float64  `json:"weight,omitempty"`
 }
 
 // ParseManifest rejects malformed or mismatched data before a clone worker
@@ -93,7 +127,54 @@ func ParseManifest(raw []byte, template Template, pack PackRef) (Manifest, error
 	if pack.EstimatedBytes > 0 && total > pack.EstimatedBytes {
 		return Manifest{}, fmt.Errorf("%w: object bytes exceed catalog estimate", ErrManifestInvalid)
 	}
+	if manifest.Runtime != nil {
+		if err := validateRuntimeManifest(*manifest.Runtime, template, paths); err != nil {
+			return Manifest{}, err
+		}
+	}
 	return cloneManifest(manifest), nil
+}
+
+func validateRuntimeManifest(runtime RuntimeManifest, template Template, objectPaths map[string]struct{}) error {
+	if template.Modality != ModalityText {
+		return fmt.Errorf("%w: runtime declarations are only supported for text packs", ErrManifestInvalid)
+	}
+	if runtime.Baseline.Profile != "realtime" || runtime.Baseline.TopK < 1 || runtime.Baseline.TopK > 100 {
+		return fmt.Errorf("%w: runtime baseline must use bounded realtime retrieval", ErrManifestInvalid)
+	}
+	if strings.TrimSpace(runtime.Dataset.Name) == "" || len(runtime.Dataset.Items) == 0 || len(runtime.Dataset.Items) > maxManifestObjects {
+		return fmt.Errorf("%w: runtime dataset is invalid", ErrManifestInvalid)
+	}
+	if len(runtime.Documents) == 0 || len(runtime.Documents) > maxManifestObjects {
+		return fmt.Errorf("%w: runtime documents are invalid", ErrManifestInvalid)
+	}
+	seenDocuments := make(map[string]struct{}, len(runtime.Documents))
+	for index, document := range runtime.Documents {
+		if strings.TrimSpace(document.Name) == "" || !validObjectPath(document.ObjectPath) {
+			return fmt.Errorf("%w: runtime document %d is invalid", ErrManifestInvalid, index)
+		}
+		if _, found := objectPaths[document.ObjectPath]; !found {
+			return fmt.Errorf("%w: runtime document %d is not a Pack object", ErrManifestInvalid, index)
+		}
+		if _, duplicate := seenDocuments[document.ObjectPath]; duplicate {
+			return fmt.Errorf("%w: duplicate runtime document", ErrManifestInvalid)
+		}
+		seenDocuments[document.ObjectPath] = struct{}{}
+	}
+	for index, item := range runtime.Dataset.Items {
+		if strings.TrimSpace(item.Query) == "" || strings.TrimSpace(item.GroundTruth) == "" {
+			return fmt.Errorf("%w: runtime dataset item %d is invalid", ErrManifestInvalid, index)
+		}
+		switch strings.TrimSpace(item.Split) {
+		case "", "eval", "gold", "holdout", "train":
+		default:
+			return fmt.Errorf("%w: runtime dataset item %d split is invalid", ErrManifestInvalid, index)
+		}
+		if item.Weight < 0 {
+			return fmt.Errorf("%w: runtime dataset item %d weight is invalid", ErrManifestInvalid, index)
+		}
+	}
+	return nil
 }
 
 func validLicense(license License) bool {
@@ -128,5 +209,14 @@ func allowedContentType(value string) bool {
 func cloneManifest(manifest Manifest) Manifest {
 	cloned := manifest
 	cloned.Objects = slices.Clone(manifest.Objects)
+	if manifest.Runtime != nil {
+		runtime := *manifest.Runtime
+		runtime.Documents = slices.Clone(manifest.Runtime.Documents)
+		runtime.Dataset.Items = slices.Clone(manifest.Runtime.Dataset.Items)
+		for index := range runtime.Dataset.Items {
+			runtime.Dataset.Items[index].ExpectedEvidence = slices.Clone(manifest.Runtime.Dataset.Items[index].ExpectedEvidence)
+		}
+		cloned.Runtime = &runtime
+	}
 	return cloned
 }

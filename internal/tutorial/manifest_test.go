@@ -62,6 +62,37 @@ func TestParseManifestReturnsDefensiveObjectCopies(t *testing.T) {
 	}
 }
 
+func TestParseManifestValidatesRuntimeDeclaration(t *testing.T) {
+	template, pack := testTemplateAndPack(t)
+	valid := []byte(`{
+		"template_id":"text-rag","version":"1.0.0","tier":"quick",
+		"license":{"spdx":"CC-BY-4.0","source_url":"https://example.test/license","redistributable":true},
+		"objects":[{"path":"corpus/data.txt","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":1,"content_type":"text/plain"}],
+		"runtime":{"baseline":{"profile":"realtime","top_k":5},"documents":[{"object_path":"corpus/data.txt","name":"数据"}],"dataset":{"name":"验证集","items":[{"query":"问题","ground_truth":"答案","split":"eval"}]}}
+	}`)
+	manifest, err := ParseManifest(valid, template, pack)
+	if err != nil || manifest.Runtime == nil || manifest.Runtime.Baseline.TopK != 5 {
+		t.Fatalf("manifest=%#v err=%v", manifest, err)
+	}
+	manifest.Runtime.Dataset.Items[0].ExpectedEvidence = []string{"mutated"}
+	reparsed, err := ParseManifest(valid, template, pack)
+	if err != nil || len(reparsed.Runtime.Dataset.Items[0].ExpectedEvidence) != 0 {
+		t.Fatalf("runtime copy aliases parser state: %#v err=%v", reparsed, err)
+	}
+
+	for name, raw := range map[string][]byte{
+		"outside_object": []byte(strings.Replace(string(valid), `"corpus/data.txt","name":"数据"`, `"other.txt","name":"数据"`, 1)),
+		"wrong_profile":  []byte(strings.Replace(string(valid), `"profile":"realtime"`, `"profile":"high_precision"`, 1)),
+		"wrong_split":    []byte(strings.Replace(string(valid), `"split":"eval"`, `"split":"mystery"`, 1)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseManifest(raw, template, pack); !errors.Is(err, ErrManifestInvalid) {
+				t.Fatalf("ParseManifest() error = %v, want ErrManifestInvalid", err)
+			}
+		})
+	}
+}
+
 func TestValidObjectPathRejectsEscapes(t *testing.T) {
 	for _, value := range []string{"", "/root", "../root", "folder/../root", "folder\\root", "folder/%2e%2e/root"} {
 		if validObjectPath(value) {

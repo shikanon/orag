@@ -142,9 +142,11 @@ func (r *TutorialCloneRepository) Retry(ctx context.Context, tenantID, jobID str
 func (r *TutorialCloneRepository) GetExperiment(ctx context.Context, tenantID, projectID string) (tutorial.Experiment, bool, error) {
 	var item tutorial.Experiment
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, tenant_id, project_id, template_id, template_version, pack_tier, pack_status, created_at, updated_at
+		SELECT id, tenant_id, project_id, clone_job_id, template_id, template_version, pack_tier, pack_status,
+		       runtime_status, knowledge_base_id, dataset_id, baseline_profile, baseline_top_k, created_at, updated_at
 		FROM tutorial_experiments WHERE tenant_id=$1 AND project_id=$2`, tenantID, projectID).
-		Scan(&item.ID, &item.TenantID, &item.ProjectID, &item.TemplateID, &item.TemplateVersion, &item.Tier, &item.PackStatus, &item.CreatedAt, &item.UpdatedAt)
+		Scan(&item.ID, &item.TenantID, &item.ProjectID, &item.CloneJobID, &item.TemplateID, &item.TemplateVersion, &item.Tier, &item.PackStatus,
+			&item.RuntimeStatus, &item.KnowledgeBaseID, &item.DatasetID, &item.BaselineProfile, &item.BaselineTopK, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return tutorial.Experiment{}, false, nil
 	}
@@ -252,12 +254,31 @@ func (r *TutorialCloneRepository) Fail(ctx context.Context, tenantID, jobID stri
 
 func (r *TutorialCloneRepository) EnsureExperiment(ctx context.Context, item tutorial.Experiment) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO tutorial_experiments(id, tenant_id, project_id, template_id, template_version, pack_tier, pack_status, created_at, updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		INSERT INTO tutorial_experiments(
+			id, tenant_id, project_id, clone_job_id, template_id, template_version, pack_tier, pack_status,
+			runtime_status, knowledge_base_id, dataset_id, baseline_profile, baseline_top_k, created_at, updated_at
+		) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		ON CONFLICT (project_id) DO NOTHING`,
-		item.ID, item.TenantID, item.ProjectID, item.TemplateID, item.TemplateVersion, item.Tier, item.PackStatus, item.CreatedAt, item.UpdatedAt,
+		item.ID, item.TenantID, item.ProjectID, item.CloneJobID, item.TemplateID, item.TemplateVersion, item.Tier, item.PackStatus,
+		item.RuntimeStatus, item.KnowledgeBaseID, item.DatasetID, item.BaselineProfile, item.BaselineTopK, item.CreatedAt, item.UpdatedAt,
 	)
 	return err
+}
+
+func (r *TutorialCloneRepository) SetExperimentRuntime(ctx context.Context, tenantID, projectID string, resources tutorial.RuntimeResources, now time.Time) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE tutorial_experiments
+		SET runtime_status=$3, knowledge_base_id=$4, dataset_id=$5, baseline_profile=$6, baseline_top_k=$7, updated_at=$8
+		WHERE tenant_id=$1 AND project_id=$2`,
+		tenantID, projectID, resources.Status, resources.KnowledgeBaseID, resources.DatasetID, resources.BaselineProfile, resources.BaselineTopK, now,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return tutorial.ErrCloneExperimentAbsent
+	}
+	return nil
 }
 
 func (r *TutorialCloneRepository) SetExperimentStatus(ctx context.Context, tenantID, projectID string, status tutorial.PackStatus, now time.Time) error {

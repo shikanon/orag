@@ -29,6 +29,7 @@ const (
 	CloneStageDownloadPack     CloneStage = "download_pack"
 	CloneStageVerifyPack       CloneStage = "verify_pack"
 	CloneStageWritePrivate     CloneStage = "write_private_store"
+	CloneStageCreateResources  CloneStage = "create_runtime_resources"
 	CloneStagePackInstalled    CloneStage = "pack_installed"
 )
 
@@ -102,10 +103,16 @@ type Experiment struct {
 	ID              string     `json:"id"`
 	TenantID        string     `json:"tenant_id"`
 	ProjectID       string     `json:"project_id"`
+	CloneJobID      string     `json:"-"`
 	TemplateID      string     `json:"template_id"`
 	TemplateVersion string     `json:"template_version"`
 	Tier            string     `json:"pack_tier"`
 	PackStatus      PackStatus `json:"pack_status"`
+	RuntimeStatus   string     `json:"runtime_status"`
+	KnowledgeBaseID string     `json:"knowledge_base_id,omitempty"`
+	DatasetID       string     `json:"dataset_id,omitempty"`
+	BaselineProfile string     `json:"baseline_profile,omitempty"`
+	BaselineTopK    int        `json:"baseline_top_k,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
@@ -123,6 +130,7 @@ type CloneRepository interface {
 	Fail(context.Context, string, string, CloneStage, string, time.Time) (CloneJob, bool, error)
 	EnsureExperiment(context.Context, Experiment) error
 	SetExperimentStatus(context.Context, string, string, PackStatus, time.Time) error
+	SetExperimentRuntime(context.Context, string, string, RuntimeResources, time.Time) error
 	RecoverPending(context.Context, time.Time) ([]CloneJob, error)
 }
 
@@ -131,14 +139,35 @@ type CloneProjectService interface {
 	Get(context.Context, string, string) (project.Project, error)
 }
 
+// RuntimeResources are derived by the server from a verified Pack declaration.
+// They are stable project identifiers, never browser inputs.
+type RuntimeResources struct {
+	Status          string
+	KnowledgeBaseID string
+	DatasetID       string
+	BaselineProfile string
+	BaselineTopK    int
+}
+
+type RuntimeInitializer interface {
+	Ensure(context.Context, CloneJob, Manifest) (RuntimeResources, error)
+}
+
 type CloneService struct {
 	catalog  *Catalog
 	repo     CloneRepository
 	projects CloneProjectService
 	reader   *PublicPackReader
 	private  PrivateStore
+	runtime  RuntimeInitializer
 	now      func() time.Time
 	newID    func(string) string
+}
+
+func (s *CloneService) ConfigureRuntime(initializer RuntimeInitializer) {
+	if s != nil {
+		s.runtime = initializer
+	}
 }
 
 func (s *CloneService) ConfigureInstaller(projects CloneProjectService, reader *PublicPackReader, private PrivateStore) {
@@ -315,10 +344,28 @@ func (s *CloneService) Run(ctx context.Context, subject Subject, jobID string) e
 			if err != nil {
 				return s.fail(ctx, job, err)
 			}
+			if _, advanced, err := s.repo.Advance(ctx, job.TenantID, job.ID, CloneStageWritePrivate, CloneStageCreateResources, CloneStatusQueued, s.now().UTC()); err != nil || !advanced {
+				return err
+			}
+		case CloneStageCreateResources:
+			manifest, err := s.fetchManifest(ctx, job)
+			if err != nil {
+				return s.fail(ctx, job, err)
+			}
+			resources := RuntimeResources{Status: "runtime_unavailable"}
+			if manifest.Runtime != nil && s.runtime != nil {
+				resources, err = s.runtime.Ensure(ctx, job, manifest)
+				if err != nil {
+					return s.fail(ctx, job, err)
+				}
+			}
+			if err := s.repo.SetExperimentRuntime(ctx, job.TenantID, job.ProjectID, resources, s.now().UTC()); err != nil {
+				return s.fail(ctx, job, err)
+			}
 			if err := s.repo.SetExperimentStatus(ctx, job.TenantID, job.ProjectID, PackStatusInstalled, s.now().UTC()); err != nil {
 				return s.fail(ctx, job, err)
 			}
-			if _, advanced, err := s.repo.Advance(ctx, job.TenantID, job.ID, CloneStageWritePrivate, CloneStagePackInstalled, CloneStatusCompleted, s.now().UTC()); err != nil || !advanced {
+			if _, advanced, err := s.repo.Advance(ctx, job.TenantID, job.ID, CloneStageCreateResources, CloneStagePackInstalled, CloneStatusCompleted, s.now().UTC()); err != nil || !advanced {
 				return err
 			}
 			return nil
@@ -341,7 +388,7 @@ func (s *CloneService) ensureProjectAndExperiment(ctx context.Context, job Clone
 	return s.repo.EnsureExperiment(ctx, Experiment{
 		ID: s.newID("texp"), TenantID: job.TenantID, ProjectID: job.ProjectID,
 		TemplateID: job.TemplateID, TemplateVersion: job.TemplateVersion, Tier: job.Tier,
-		PackStatus: PackStatusInstalling, CreatedAt: now, UpdatedAt: now,
+		CloneJobID: job.ID, PackStatus: PackStatusInstalling, RuntimeStatus: "pending", CreatedAt: now, UpdatedAt: now,
 	})
 }
 

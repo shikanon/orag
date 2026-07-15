@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shikanon/orag/internal/dataset"
+	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/project"
 )
 
@@ -121,7 +123,7 @@ func TestCloneStartHasSingleWinnerUnderConcurrency(t *testing.T) {
 func TestCloneRunCreatesProjectCopiesVerifiedPackAndMarksExperimentInstalled(t *testing.T) {
 	content := []byte("tutorial corpus")
 	hash := sha256.Sum256(content)
-	manifest := `{"template_id":"text-rag","version":"1.0.0","tier":"quick","license":{"spdx":"CC-BY-4.0","source_url":"https://example.test/license","redistributable":true},"objects":[{"path":"corpus/data.txt","sha256":"` + hex.EncodeToString(hash[:]) + `","bytes":15,"content_type":"text/plain"}]}`
+	manifest := `{"template_id":"text-rag","version":"1.0.0","tier":"quick","license":{"spdx":"CC-BY-4.0","source_url":"https://example.test/license","redistributable":true},"objects":[{"path":"corpus/data.txt","sha256":"` + hex.EncodeToString(hash[:]) + `","bytes":15,"content_type":"text/plain"}],"runtime":{"baseline":{"profile":"realtime","top_k":5},"documents":[{"object_path":"corpus/data.txt","name":"教程语料"}],"dataset":{"name":"教程评测","items":[{"query":"教程语料是什么？","ground_truth":"tutorial corpus","split":"eval"}]}}}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/packs/text-rag/1.0.0/quick/manifest.json":
@@ -150,6 +152,7 @@ func TestCloneRunCreatesProjectCopiesVerifiedPackAndMarksExperimentInstalled(t *
 	}
 	projects := newFakeCloneProjects()
 	svc.ConfigureInstaller(projects, reader, store)
+	svc.ConfigureRuntime(ResourceInitializer{KnowledgeBases: kb.NewMemoryStore(), Datasets: dataset.NewService(dataset.NewMemoryRepository())})
 
 	job, _, err := svc.Start(context.Background(), Subject{TenantID: "tenant_a", ID: "user_a"}, CloneRequest{
 		TemplateID: "text-rag", Version: "1.0.0", Tier: "quick", ProjectName: "Text lab", IdempotencyKey: "run_1", LicenseAccepted: true,
@@ -168,7 +171,7 @@ func TestCloneRunCreatesProjectCopiesVerifiedPackAndMarksExperimentInstalled(t *
 	for _, event := range completed.Events {
 		seenStages[event.Stage] = true
 	}
-	for _, stage := range []CloneStage{CloneStageCreateProject, CloneStageValidateManifest, CloneStageDownloadPack, CloneStageVerifyPack, CloneStageWritePrivate, CloneStagePackInstalled} {
+	for _, stage := range []CloneStage{CloneStageCreateProject, CloneStageValidateManifest, CloneStageDownloadPack, CloneStageVerifyPack, CloneStageWritePrivate, CloneStageCreateResources, CloneStagePackInstalled} {
 		if !seenStages[stage] {
 			t.Fatalf("events did not record %q: %#v", stage, completed.Events)
 		}
@@ -177,7 +180,7 @@ func TestCloneRunCreatesProjectCopiesVerifiedPackAndMarksExperimentInstalled(t *
 		t.Fatalf("project is absent: %v", err)
 	}
 	experiment, err := svc.GetExperiment(context.Background(), Subject{TenantID: "tenant_a", ID: "user_a"}, job.ProjectID)
-	if err != nil || experiment.PackStatus != PackStatusInstalled {
+	if err != nil || experiment.PackStatus != PackStatusInstalled || experiment.RuntimeStatus != "ready" || experiment.KnowledgeBaseID == "" || experiment.DatasetID == "" {
 		t.Fatalf("experiment = %#v, %v", experiment, err)
 	}
 	output := filepath.Join(outputRoot, "tutorial-experiments", "tenant_a", job.ProjectID, job.ID, hex.EncodeToString(hash[:]))

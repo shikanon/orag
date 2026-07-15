@@ -135,6 +135,23 @@ func (r *MemoryCloneRepository) SetExperimentStatus(_ context.Context, tenantID,
 	return nil
 }
 
+func (r *MemoryCloneRepository) SetExperimentRuntime(_ context.Context, tenantID, projectID string, resources RuntimeResources, now time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	experiment, ok := r.experiments[projectID]
+	if !ok || experiment.TenantID != tenantID {
+		return ErrCloneExperimentAbsent
+	}
+	experiment.RuntimeStatus = resources.Status
+	experiment.KnowledgeBaseID = resources.KnowledgeBaseID
+	experiment.DatasetID = resources.DatasetID
+	experiment.BaselineProfile = resources.BaselineProfile
+	experiment.BaselineTopK = resources.BaselineTopK
+	experiment.UpdatedAt = now
+	r.experiments[projectID] = experiment
+	return nil
+}
+
 func (r *MemoryCloneRepository) RecoverPending(_ context.Context, now time.Time) ([]CloneJob, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
