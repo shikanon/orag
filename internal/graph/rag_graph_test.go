@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/llm/ark"
@@ -136,6 +137,59 @@ func TestRAGGraphInvokeUsesRequestTraceIDInPersistence(t *testing.T) {
 	}
 	if len(store.spans) == 0 {
 		t.Fatalf("expected persisted node spans")
+	}
+}
+
+func TestRAGGraphPersistsSpanTimelineMetadata(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+	svc.Cache = nil
+	g, err := NewRAGGraph(ctx, svc)
+	if err != nil {
+		t.Fatalf("NewRAGGraph() error = %v", err)
+	}
+	store := &capturingTraceStore{}
+	g.TraceStore = store
+	windowStart := time.Now().UTC()
+
+	_, err = g.Invoke(ctx, rag.QueryRequest{
+		TenantID:        "tenant_default",
+		TraceID:         "trace_span_timeline",
+		KnowledgeBaseID: "kb_default",
+		Query:           "qdrant vector search",
+	})
+	windowEnd := time.Now().UTC()
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	if len(store.spans) < 2 {
+		t.Fatalf("persisted spans = %d, want multiple graph nodes", len(store.spans))
+	}
+
+	var previousEnd time.Time
+	for i, span := range store.spans {
+		if span.Sequence != i+1 {
+			t.Fatalf("span[%d] sequence = %d, want %d: %#v", i, span.Sequence, i+1, span)
+		}
+		if span.StartedAt.IsZero() || span.EndedAt.IsZero() {
+			t.Fatalf("span[%d] has zero execution timestamp: %#v", i, span)
+		}
+		if span.StartedAt.Location() != time.UTC || span.EndedAt.Location() != time.UTC {
+			t.Fatalf("span[%d] timestamps are not UTC: start=%v end=%v", i, span.StartedAt.Location(), span.EndedAt.Location())
+		}
+		if span.StartedAt.Before(windowStart) || span.EndedAt.After(windowEnd) {
+			t.Fatalf("span[%d] window %s..%s is outside invocation %s..%s", i, span.StartedAt, span.EndedAt, windowStart, windowEnd)
+		}
+		if span.EndedAt.Before(span.StartedAt) {
+			t.Fatalf("span[%d] ends before it starts: %#v", i, span)
+		}
+		if !previousEnd.IsZero() && span.StartedAt.Before(previousEnd) {
+			t.Fatalf("span[%d] starts before prior span ended: prior=%s current=%s", i, previousEnd, span.StartedAt)
+		}
+		if got := span.EndedAt.Sub(span.StartedAt).Milliseconds(); got != span.LatencyMS {
+			t.Fatalf("span[%d] window latency = %dms, recorded latency = %dms", i, got, span.LatencyMS)
+		}
+		previousEnd = span.EndedAt
 	}
 }
 
