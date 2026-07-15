@@ -24,6 +24,35 @@ func (s *Service) Environments(ctx context.Context, projectID string) ([]Environ
 func (s *Service) Releases(ctx context.Context, projectID string) ([]Release, error) {
 	return s.repo.Releases(ctx, projectID)
 }
+func (s *Service) Versions(ctx context.Context, projectID string) ([]Version, error) {
+	return s.repo.Versions(ctx, projectID)
+}
+func (s *Service) CreateVersion(ctx context.Context, version Version) error {
+	if version.ProjectID == "" || version.ID == "" || version.ContentHash == "" {
+		return fmt.Errorf("%w: project, id, and content hash are required", ErrInvalidTransition)
+	}
+	if version.CreatedAt.IsZero() {
+		version.CreatedAt = s.now()
+	}
+	return s.repo.CreateVersion(ctx, version)
+}
+func (s *Service) Validate(ctx context.Context, projectID, versionID string, evidence Evidence) error {
+	if projectID == "" || versionID == "" || evidence.EnvironmentID == "" {
+		return fmt.Errorf("%w: project, version, and environment are required", ErrGateFailed)
+	}
+	version, err := s.repo.Version(ctx, projectID, versionID)
+	if err != nil {
+		return err
+	}
+	if evidence.VersionID == "" {
+		evidence.VersionID = versionID
+	}
+	evidence.ProjectID = projectID
+	if evidence.VersionID != versionID || evidence.ContentHash != version.ContentHash {
+		return fmt.Errorf("%w: evidence content hash does not match version", ErrGateFailed)
+	}
+	return s.repo.SaveEvidence(ctx, evidence)
+}
 
 func (s *Service) Promote(ctx context.Context, req PromoteRequest) (Release, error) {
 	if req.ProjectID == "" || req.TargetVersionID == "" || req.Actor == "" {

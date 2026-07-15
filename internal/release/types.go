@@ -34,12 +34,14 @@ type Environment struct {
 }
 
 type Version struct {
-	ID          string `json:"id"`
-	ProjectID   string `json:"project_id"`
-	ContentHash string `json:"content_hash"`
+	ID          string    `json:"id"`
+	ProjectID   string    `json:"project_id"`
+	ContentHash string    `json:"content_hash"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type Evidence struct {
+	ProjectID     string `json:"project_id,omitempty"`
 	VersionID     string `json:"version_id"`
 	EnvironmentID string `json:"environment_id"`
 	Passed        bool   `json:"passed"`
@@ -81,8 +83,11 @@ type Repository interface {
 	Environments(ctx context.Context, projectID string) ([]Environment, error)
 	Environment(ctx context.Context, projectID string, kind EnvironmentKind) (Environment, error)
 	Releases(ctx context.Context, projectID string) ([]Release, error)
+	Versions(ctx context.Context, projectID string) ([]Version, error)
+	CreateVersion(ctx context.Context, version Version) error
 	Version(ctx context.Context, projectID, versionID string) (Version, error)
 	Evidence(ctx context.Context, projectID, versionID string, environment EnvironmentKind) (Evidence, error)
+	SaveEvidence(ctx context.Context, evidence Evidence) error
 	PreviouslyValidated(ctx context.Context, projectID, versionID string, environment EnvironmentKind) (bool, error)
 	Commit(ctx context.Context, environment Environment, release Release) error
 }

@@ -895,6 +895,67 @@ paths:
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/versions:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      tags: [Releases]
+      operationId: listProjectPipelineVersions
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Immutable pipeline versions for the project.
+          content: {application/json: {schema: {$ref: "#/components/schemas/PipelineVersionListResponse"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [Releases]
+      operationId: createProjectPipelineVersion
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/CreatePipelineVersionRequest"}}}
+      responses:
+        "201":
+          description: Immutable pipeline version.
+          content: {application/json: {schema: {$ref: "#/components/schemas/PipelineVersion"}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/versions/{version_id}/validations:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: version_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Releases]
+      operationId: validateProjectPipelineVersion
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ValidatePipelineVersionRequest"}}}
+      responses:
+        "201":
+          description: Recorded release evidence.
+          content: {application/json: {schema: {$ref: "#/components/schemas/PipelineValidation"}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
   /v1/projects/{project_id}/releases:promote:
     parameters:
       - name: project_id
@@ -1799,6 +1860,42 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/Environment"}
+    PipelineVersion:
+      type: object
+      required: [id, project_id, content_hash, created_at]
+      properties:
+        id: {type: string}
+        project_id: {type: string}
+        content_hash: {type: string}
+        created_at: {type: string, format: date-time}
+    PipelineVersionListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/PipelineVersion"}
+    CreatePipelineVersionRequest:
+      type: object
+      required: [content_hash]
+      properties:
+        id: {type: string}
+        content_hash: {type: string}
+    ValidatePipelineVersionRequest:
+      type: object
+      required: [environment, content_hash]
+      properties:
+        environment: {type: string, enum: [development, staging, production]}
+        passed: {type: boolean}
+        content_hash: {type: string}
+    PipelineValidation:
+      type: object
+      required: [version_id, environment, passed, content_hash]
+      properties:
+        version_id: {type: string}
+        environment: {type: string, enum: [development, staging, production]}
+        passed: {type: boolean}
+        content_hash: {type: string}
     Release:
       type: object
       required: [id, project_id, source_version_id, target_version_id, source_environment, target_environment, action, actor, created_at]

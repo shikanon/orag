@@ -66,6 +66,20 @@ func (r *memoryRepository) Environments(_ context.Context, _ string) ([]Environm
 func (r *memoryRepository) Releases(_ context.Context, _ string) ([]Release, error) {
 	return append([]Release(nil), r.releases...), nil
 }
+func (r *memoryRepository) Versions(_ context.Context, _ string) ([]Version, error) {
+	items := make([]Version, 0, len(r.versions))
+	for _, v := range r.versions {
+		items = append(items, v)
+	}
+	return items, nil
+}
+func (r *memoryRepository) CreateVersion(_ context.Context, v Version) error {
+	if _, ok := r.versions[v.ID]; ok {
+		return ErrConflict
+	}
+	r.versions[v.ID] = v
+	return nil
+}
 
 func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{env: map[string]Environment{"development": {ID: "dev", ProjectID: "p1", Kind: Development, ActiveVersionID: "v1", Bound: true}, "staging": {ID: "stg", ProjectID: "p1", Kind: Staging, Bound: true}, "production": {ID: "prd", ProjectID: "p1", Kind: Production, Bound: true}}, versions: map[string]Version{"v1": {ID: "v1", ProjectID: "p1", ContentHash: "hash-v1"}, "v2": {ID: "v2", ProjectID: "p1", ContentHash: "hash-v2"}}, evidence: map[string]Evidence{}, validated: map[string]bool{}}
@@ -90,6 +104,11 @@ func (r *memoryRepository) Evidence(_ context.Context, _ string, id string, env 
 		return Evidence{}, nil
 	}
 	return item, nil
+}
+func (r *memoryRepository) SaveEvidence(_ context.Context, evidence Evidence) error {
+	r.evidence[evidence.VersionID+"/"+evidence.EnvironmentID] = evidence
+	r.validated[evidence.VersionID+"/"+evidence.EnvironmentID] = evidence.Passed
+	return nil
 }
 func (r *memoryRepository) PreviouslyValidated(_ context.Context, _ string, id string, env EnvironmentKind) (bool, error) {
 	return r.validated[id+"/"+string(env)], nil
