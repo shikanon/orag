@@ -74,7 +74,16 @@ func (s *Server) validatePipelineVersion(ctx context.Context, c *app.RequestCont
 	if !bindJSON(c, &req) {
 		return
 	}
-	err := s.App.Release.Validate(ctx, projectID, c.Param("version_id"), release.Evidence{EnvironmentID: strings.TrimSpace(req.Environment), Passed: req.Passed, ContentHash: strings.TrimSpace(req.ContentHash)})
+	version, err := s.App.Release.Version(ctx, projectID, c.Param("version_id"))
+	if err != nil {
+		writeReleaseError(c, err)
+		return
+	}
+	if version.PipelineID != "" {
+		writeError(c, consts.StatusUnprocessableEntity, "server_derived_evidence_required", "draft pipeline versions must be validated from a completed evaluation")
+		return
+	}
+	err = s.App.Release.Validate(ctx, projectID, c.Param("version_id"), release.Evidence{EnvironmentID: strings.TrimSpace(req.Environment), Passed: req.Passed, ContentHash: strings.TrimSpace(req.ContentHash)})
 	if err != nil {
 		writeReleaseError(c, err)
 		return

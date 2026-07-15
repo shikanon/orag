@@ -94,11 +94,11 @@ func TestProjectEvaluationEvidenceIsDerivedFromStoredRun(t *testing.T) {
 	if err := json.Unmarshal([]byte(runResponse.Body), &run); err != nil || run.ID == "" {
 		t.Fatalf("evaluation body=%s err=%v", runResponse.Body, err)
 	}
-	evidence := performJSON(h, "POST", "/v1/projects/"+projectID+"/versions/pv_evidence/evaluation-evidence", `{"policy_id":"`+policy.ID+`","evaluation_run_id":"`+run.ID+`"}`, token)
-	if evidence.Code != 201 || !strings.Contains(evidence.Body, `"passed":true`) || !strings.Contains(evidence.Body, `"pipeline_version_id":"pv_evidence"`) {
+	evidence := performJSON(h, "POST", "/v1/projects/"+projectID+"/versions/pv_evidence/evaluation-evidence", `{"policy_id":"`+policy.ID+`","evaluation_run_id":"`+run.ID+`","environment":"staging"}`, token)
+	if evidence.Code != 201 || !strings.Contains(evidence.Body, `"passed":true`) || !strings.Contains(evidence.Body, `"pipeline_version_id":"pv_evidence"`) || !strings.Contains(evidence.Body, `"environment":"staging"`) {
 		t.Fatalf("evidence status=%d body=%s", evidence.Code, evidence.Body)
 	}
-	missing := performJSON(h, "POST", "/v1/projects/"+projectID+"/versions/pv_evidence/evaluation-evidence", `{"policy_id":"`+policy.ID+`","evaluation_run_id":"eval_missing"}`, token)
+	missing := performJSON(h, "POST", "/v1/projects/"+projectID+"/versions/pv_evidence/evaluation-evidence", `{"policy_id":"`+policy.ID+`","evaluation_run_id":"eval_missing","environment":"staging"}`, token)
 	if missing.Code != 404 || !strings.Contains(missing.Body, `"code":"evaluation_not_found"`) {
 		t.Fatalf("missing evaluation status=%d body=%s", missing.Code, missing.Body)
 	}

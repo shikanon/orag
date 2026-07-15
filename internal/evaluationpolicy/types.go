@@ -73,6 +73,7 @@ type FrozenInput struct {
 	EvaluationRunID string             `json:"evaluation_run_id"`
 	PipelineVersion string             `json:"pipeline_version_id"`
 	ContentHash     string             `json:"content_hash"`
+	Environment     string             `json:"environment,omitempty"`
 	Gates           []Gate             `json:"gates"`
 	Metrics         map[string]float64 `json:"metrics"`
 }
@@ -88,6 +89,7 @@ type Evidence struct {
 	EvaluationRunID   string       `json:"evaluation_run_id"`
 	PipelineVersionID string       `json:"pipeline_version_id"`
 	ContentHash       string       `json:"content_hash"`
+	Environment       string       `json:"environment,omitempty"`
 	FrozenInput       FrozenInput  `json:"frozen_input"`
 	GateResults       []GateResult `json:"gate_results"`
 	Passed            bool         `json:"passed"`

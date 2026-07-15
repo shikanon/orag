@@ -85,6 +85,9 @@ func (s *Service) Promote(ctx context.Context, req PromoteRequest) (Release, err
 	if version.ProjectID != req.ProjectID {
 		return Release{}, ErrNotFound
 	}
+	if version.PipelineID == "" || len(version.Definition) == 0 {
+		return Release{}, fmt.Errorf("%w: a frozen pipeline definition is required", ErrGateFailed)
+	}
 	if !target.Bound {
 		return Release{}, ErrBindingMissing
 	}

@@ -10,11 +10,13 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/evaluationpolicy"
+	"github.com/shikanon/orag/internal/release"
 )
 
 type recordProjectEvaluationEvidenceRequest struct {
 	PolicyID        string `json:"policy_id"`
 	EvaluationRunID string `json:"evaluation_run_id"`
+	Environment     string `json:"environment"`
 }
 
 func (s *Server) listProjectEvaluationPolicies(ctx context.Context, c *app.RequestContext) {
@@ -59,6 +61,11 @@ func (s *Server) recordProjectEvaluationEvidence(ctx context.Context, c *app.Req
 	if !bindJSON(c, &req) {
 		return
 	}
+	environment := release.EnvironmentKind(strings.TrimSpace(req.Environment))
+	if environment != release.Development && environment != release.Staging && environment != release.Production {
+		writeError(c, consts.StatusBadRequest, "invalid_release_request", "environment must be development, staging, or production")
+		return
+	}
 	policy, err := s.App.EvaluationPolicy.Get(ctx, principal.TenantID, projectID, strings.TrimSpace(req.PolicyID))
 	if err != nil {
 		writeEvaluationPolicyError(c, err)
@@ -83,8 +90,14 @@ func (s *Server) recordProjectEvaluationEvidence(ctx context.Context, c *app.Req
 		writeEvaluationPolicyError(c, err)
 		return
 	}
+	evidence.Environment = string(environment)
+	evidence.FrozenInput.Environment = string(environment)
 	if err := s.App.EvaluationPolicy.RecordEvidence(ctx, evidence); err != nil {
 		writeEvaluationPolicyError(c, err)
+		return
+	}
+	if err := s.App.Release.Validate(ctx, projectID, version.ID, release.Evidence{EnvironmentID: string(environment), Passed: evidence.Passed, ContentHash: version.ContentHash}); err != nil {
+		writeReleaseError(c, err)
 		return
 	}
 	c.JSON(consts.StatusCreated, evidence)

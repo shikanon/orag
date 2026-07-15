@@ -1085,7 +1085,7 @@ paths:
       tags: [Evaluation]
       operationId: recordProjectEvaluationEvidence
       x-orag-maturity: experimental
-      description: Derives append-only gate evidence for a pipeline version from a completed server-side evaluation run and immutable policy revision.
+      description: Derives append-only gate evidence and the target-environment release validation for a pipeline version from a completed server-side evaluation run and immutable policy revision.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -2261,10 +2261,11 @@ components:
           items: {$ref: "#/components/schemas/EvaluationPolicy"}
     RecordEvaluationEvidenceRequest:
       type: object
-      required: [policy_id, evaluation_run_id]
+      required: [policy_id, evaluation_run_id, environment]
       properties:
         policy_id: {type: string}
         evaluation_run_id: {type: string}
+        environment: {type: string, enum: [development, staging, production]}
     EvaluationGateResult:
       type: object
       required: [metric, comparator, threshold, present, passed]
@@ -2286,6 +2287,7 @@ components:
         evaluation_run_id: {type: string}
         pipeline_version_id: {type: string}
         content_hash: {type: string}
+        environment: {type: string, enum: [development, staging, production]}
         gates:
           type: array
           items: {$ref: "#/components/schemas/EvaluationGate"}
@@ -2304,6 +2306,7 @@ components:
         evaluation_run_id: {type: string}
         pipeline_version_id: {type: string}
         content_hash: {type: string}
+        environment: {type: string, enum: [development, staging, production]}
         frozen_input: {$ref: "#/components/schemas/EvaluationFrozenInput"}
         gate_results:
           type: array

@@ -12,7 +12,7 @@ func TestReleaseRoutesEnforcePromotionEvidenceAndConcurrency(t *testing.T) {
 	h, application, closeApp := newTestHertzWithApp(t)
 	defer closeApp()
 	repo := release.NewMemoryRepository(project.LegacyDefaultID("tenant_a"))
-	repo.PutVersion(release.Version{ID: "pv_1", ProjectID: project.LegacyDefaultID("tenant_a"), ContentHash: "hash"})
+	repo.PutVersion(release.Version{ID: "pv_1", ProjectID: project.LegacyDefaultID("tenant_a"), PipelineID: "pipe_1", Definition: []byte(`{"nodes":[]}`), ContentHash: "hash"})
 	repo.PutEvidence(release.Evidence{VersionID: "pv_1", EnvironmentID: string(release.Staging), Passed: true, ContentHash: "hash"})
 	dev, _ := repo.Environment(t.Context(), project.LegacyDefaultID("tenant_a"), release.Development)
 	dev.ActiveVersionID = "pv_1"

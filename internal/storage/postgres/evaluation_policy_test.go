@@ -30,6 +30,19 @@ func TestEvaluationPolicyMigrationHasImmutablePolicyAndEvidenceTables(t *testing
 	}
 }
 
+func TestEvaluationEvidenceEnvironmentMigration(t *testing.T) {
+	body, err := os.ReadFile("../../../migrations/000024_evaluation_evidence_environment.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{"ADD COLUMN IF NOT EXISTS environment_kind TEXT", "project_evaluation_evidence_version_environment_created_idx", "DROP COLUMN IF EXISTS environment_kind"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("migration missing %q", required)
+		}
+	}
+}
+
 func TestRepositoryStoresPolicyAndFrozenEvidence(t *testing.T) {
 	queryer := &fakeKnowledgeBaseQueryer{}
 	repository := &Repository{evalQueryer: queryer}
@@ -45,7 +58,7 @@ func TestRepositoryStoresPolicyAndFrozenEvidence(t *testing.T) {
 	if err := repository.RecordEvidence(context.Background(), evidence); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(queryer.execSQL, "project_evaluation_evidence") || !strings.Contains(string(queryer.execArgs[8].([]byte)), "evaluation_run_id") || !strings.Contains(string(queryer.execArgs[9].([]byte)), "answer_accuracy") {
+	if !strings.Contains(queryer.execSQL, "project_evaluation_evidence") || !strings.Contains(string(queryer.execArgs[9].([]byte)), "evaluation_run_id") || !strings.Contains(string(queryer.execArgs[10].([]byte)), "answer_accuracy") {
 		t.Fatalf("evidence insert sql=%s args=%#v", queryer.execSQL, queryer.execArgs)
 	}
 }
