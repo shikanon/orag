@@ -166,7 +166,7 @@ For dependency boundaries, [#221](https://github.com/shikanon/orag/issues/221) u
 
 ## Phase 4: Evaluation-first control plane
 
-Current progress: the server-owned node registry, revisioned draft persistence, Compiler/Debug Runner, project-scoped draft debug API, Console API Debugger, RAG Studio draft workbench, and saving Debug Runs as evaluation cases are merged on `main` (PRs #253–#259). The golden path now covers “create a Pipeline → fill the standard chain → save a draft → debug a frozen revision → inspect node diagnostics → write an evaluation dataset case”. Real browser E2E, automatic immutable-version/evidence chaining, production active-version lineage, and Replay/result comparison for text/visual/video tutorials remain outstanding.
+Current progress: the server-owned node registry, revisioned draft persistence, Compiler/Debug Runner, project-scoped draft debug API, Console API Debugger, RAG Studio draft workbench, saving Debug Runs as evaluation cases, and Draft → content-hashed immutable PipelineVersion are merged on `main` (PRs #253–#261). The golden path now covers “create a Pipeline → fill the standard chain → save a draft → debug a frozen revision → inspect node diagnostics → write an evaluation dataset case → freeze an immutable version”. Real browser E2E, automatic evaluation-evidence chaining, production active-version lineage, and Replay/result comparison for text/visual/video tutorials remain outstanding.
 
 ### Project-to-release golden path
 
