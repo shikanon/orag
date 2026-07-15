@@ -106,7 +106,11 @@ func (e Expression) Evaluate(vars map[string]float64) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return roundFloat(value), nil
+	value = roundFloat(value)
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, validationError("expression result must be finite")
+	}
+	return value, nil
 }
 
 func defaultAllowedVariables() map[string]struct{} {
@@ -324,5 +328,9 @@ func roundFloat(value float64) float64 {
 	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return value
 	}
-	return math.Round(value*1e12) / 1e12
+	const scale = 1e12
+	if math.Abs(value) > math.MaxFloat64/scale {
+		return value
+	}
+	return math.Round(value*scale) / scale
 }

@@ -2,6 +2,7 @@ package optimizer
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -13,6 +14,7 @@ func FuzzCompileExpression(f *testing.F) {
 		"max(faithfulness, 0.8)",
 		"${metrics.faithfulness}",
 		"((((((((faithfulness))))))))",
+		"18" + strings.Repeat("0", 306),
 	} {
 		f.Add(seed)
 	}
