@@ -25,6 +25,7 @@ const (
 type Dataset struct {
 	ID        string
 	TenantID  string
+	ProjectID string
 	Name      string
 	Kind      string
 	Version   string
@@ -44,9 +45,10 @@ type DatasetItem struct {
 }
 
 type CreateDatasetRequest struct {
-	TenantID string
-	Name     string
-	Kind     string
+	TenantID  string
+	ProjectID string
+	Name      string
+	Kind      string
 }
 
 type AddDatasetItemRequest struct {
@@ -105,7 +107,14 @@ func (c *Client) CreateDataset(ctx context.Context, req CreateDatasetRequest) (D
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Kind) == "" {
 		return Dataset{}, newError(CodeInvalidArgument, "create_dataset", "dataset", "", false, errors.New("name and kind are required"))
 	}
-	item, err := c.app.Datasets.Create(ctx, c.tenant(req.TenantID), strings.TrimSpace(req.Name), strings.TrimSpace(req.Kind))
+	tenantID := c.tenant(req.TenantID)
+	projectID := strings.TrimSpace(req.ProjectID)
+	if projectID != "" {
+		if _, err := c.app.Projects.Get(ctx, tenantID, projectID); err != nil {
+			return Dataset{}, controlPlaneError("create_dataset", projectID, err)
+		}
+	}
+	item, err := c.app.Datasets.CreateInProject(ctx, tenantID, projectID, strings.TrimSpace(req.Name), strings.TrimSpace(req.Kind))
 	if err != nil {
 		return Dataset{}, wrapError("create_dataset", "dataset", "", err)
 	}
@@ -176,7 +185,7 @@ func (c *Client) GetEvaluation(ctx context.Context, req GetEvaluationRequest) (E
 }
 
 func fromDataset(item dataset.Dataset) Dataset {
-	return Dataset{ID: item.ID, TenantID: item.TenantID, Name: item.Name, Kind: item.Kind, Version: item.Version, CreatedAt: item.CreatedAt}
+	return Dataset{ID: item.ID, TenantID: item.TenantID, ProjectID: item.ProjectID, Name: item.Name, Kind: item.Kind, Version: item.Version, CreatedAt: item.CreatedAt}
 }
 
 func fromDatasetItem(item dataset.Item) DatasetItem {

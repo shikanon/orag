@@ -9,6 +9,7 @@ import (
 type KnowledgeBase struct {
 	ID          string
 	TenantID    string
+	ProjectID   string
 	Name        string
 	Description string
 	Metadata    map[string]string
@@ -18,6 +19,7 @@ type KnowledgeBase struct {
 
 type CreateKnowledgeBaseRequest struct {
 	TenantID    string
+	ProjectID   string
 	Name        string
 	Description string
 	Metadata    map[string]string

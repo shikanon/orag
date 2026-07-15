@@ -1,6 +1,6 @@
 # Public Go SDK (Beta)
 
-ORAG provides an embedded Go SDK at `github.com/shikanon/orag`. It runs the same ingestion, RAG, dataset, evaluation, readiness, and trace services used by the HTTP API, but exposes only public DTOs. No `internal/*` package appears in the caller contract.
+ORAG provides an embedded Go SDK at `github.com/shikanon/orag`. It runs the same project, API key, ingestion, RAG, dataset, evaluation, readiness, and trace services used by the HTTP API, but exposes only public DTOs. No `internal/*` package appears in the caller contract.
 
 The SDK is currently **beta**. Its core workflow is tested from a standalone downstream Go module, but pre-1.0 compatibility rules still apply. The HTTP API remains the appropriate boundary when clients are not Go programs or need process isolation and centralized authentication.
 
@@ -24,8 +24,21 @@ if err != nil {
 }
 defer client.Close()
 
+project, err := client.CreateProject(ctx, orag.CreateProjectRequest{Name: "walkthrough"})
+if err != nil {
+    return err
+}
+
+knowledgeBase, err := client.CreateKnowledgeBase(ctx, orag.CreateKnowledgeBaseRequest{
+    ProjectID: project.ID,
+    Name: "walkthrough knowledge",
+})
+if err != nil {
+    return err
+}
+
 _, err = client.IngestText(ctx, orag.IngestTextRequest{
-    KnowledgeBaseID: "kb_default",
+    KnowledgeBaseID: knowledgeBase.ID,
     Name: "hello.txt",
     Text: "ORAG is a Go-native RAG service.",
 })
@@ -34,7 +47,7 @@ if err != nil {
 }
 
 response, err := client.Query(ctx, orag.QueryRequest{
-    KnowledgeBaseID: "kb_default",
+    KnowledgeBaseID: knowledgeBase.ID,
     Query: "What is ORAG?",
 })
 ```
@@ -74,6 +87,8 @@ Credentials belong in a secret manager or process environment, never in source c
 
 The beta surface covers:
 
+- projects: `CreateProject`, `ListProjects`, `GetProject`, `UpdateProject`;
+- API keys: `CreateAPIKey`, `ListAPIKeys`, `RevokeAPIKey`, `AuthenticateAPIKey`;
 - knowledge bases: `CreateKnowledgeBase`, `ListKnowledgeBases`, `GetKnowledgeBase`, `DeleteKnowledgeBase`;
 - ingestion: `IngestText`, `IngestFile`, `GetIngestionJob`;
 - retrieval and generation: `Query`, `StreamQuery`;
@@ -81,6 +96,8 @@ The beta surface covers:
 - operations: `Readiness`, `GetTrace`, `ListTraces`.
 
 Requests use the client tenant unless `TenantID` is explicitly set on the request. Treat a client as tenant-scoped and avoid sharing it across unrelated trust boundaries.
+
+`CreateAPIKey` returns the complete secret exactly once. Store it in a secret manager immediately; do not log it. `ListAPIKeys` returns metadata only and its public type has no secret or hash field. Project-scoped keys use `RoleProjectEditor` or `RoleProjectViewer`; tenant-wide administration uses `RoleTenantAdmin`. Embedded applications can verify a presented secret with `AuthenticateAPIKey`; service deployments normally let the HTTP authentication middleware do that work.
 
 ## Typed stream semantics
 
