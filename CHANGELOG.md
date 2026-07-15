@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Upgraded the six Go dependency families behind 27 Dependabot alerts, including `kin-openapi`, `pgx/v5`, gRPC, `x/crypto`, `x/net`, and `phonenumbers`, while preserving standalone SDK, OpenAPI, PostgreSQL, and Qdrant compatibility.
 - Upgraded the project, CI, examples, and API image builder to Go 1.26.5 after `govulncheck` identified the reachable standard-library vulnerability GO-2026-5856 in Go 1.26.4.
+- Upgraded `jsonparser` to 1.1.2 and the Console runtime to the official NGINX 1.30.3 Alpine image after the container gate found CVE-2026-32285 and fixed HIGH/CRITICAL packages in the legacy runtime image.
 
 ## [0.1.0-beta.1] - 2026-07-14
 
