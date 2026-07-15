@@ -541,6 +541,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/evaluation-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Lists immutable metric-gate policies for one project. */
+        get: operations["listProjectEvaluationPolicies"];
+        put?: never;
+        /** @description Creates an immutable policy revision with server-validated metric gates and a project-owned dataset. */
+        post: operations["createProjectEvaluationPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/releases": {
         parameters: {
             query?: never;
@@ -1217,6 +1237,32 @@ export interface components {
             environment: "development" | "staging" | "production";
             passed: boolean;
             content_hash: string;
+        };
+        EvaluationGate: {
+            metric: string;
+            /** @enum {string} */
+            comparator: "gte" | "lte";
+            /** Format: double */
+            threshold: number;
+        };
+        EvaluationPolicy: {
+            id: string;
+            tenant_id: string;
+            project_id: string;
+            dataset_id: string;
+            name: string;
+            version: number;
+            gates: components["schemas"]["EvaluationGate"][];
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreateEvaluationPolicyRequest: {
+            dataset_id: string;
+            name: string;
+            gates: components["schemas"]["EvaluationGate"][];
+        };
+        EvaluationPolicyListResponse: {
+            items: components["schemas"]["EvaluationPolicy"][];
         };
         Release: {
             id: string;
@@ -3677,6 +3723,60 @@ export interface operations {
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
+        };
+    };
+    listProjectEvaluationPolicies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project evaluation policies. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationPolicyListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createProjectEvaluationPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEvaluationPolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description Immutable evaluation policy. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationPolicy"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     listProjectReleases: {
