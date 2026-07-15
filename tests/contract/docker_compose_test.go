@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-var immutableActionReference = regexp.MustCompile(`uses:\s+[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}\s+#\s+v\d`)
+var immutableActionReference = regexp.MustCompile(`uses:\s+[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)+@[0-9a-f]{40}\s+#\s+v\d`)
 
 func TestDockerComposeAPIUsesContainerNetworkDefaults(t *testing.T) {
 	compose := readRepoFile(t, "deployments/docker-compose.yml")
@@ -91,7 +91,10 @@ func TestWorkflowAndContainerInputsAreImmutable(t *testing.T) {
 	for _, path := range []string{
 		".github/workflows/ci.yml",
 		".github/workflows/docs.yml",
+		".github/workflows/fuzz.yml",
 		".github/workflows/release.yml",
+		".github/workflows/scorecard.yml",
+		".github/workflows/security.yml",
 	} {
 		workflow := readRepoFile(t, path)
 		for lineNumber, line := range strings.Split(workflow, "\n") {

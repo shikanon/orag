@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- Added native Go fuzz targets for untrusted document/Office archive parsing and optimizer expression compilation, with short pull-request gates, longer scheduled exploration, and retained crash artifacts.
 - Pinned every CI action to an immutable commit and every API/Console base image to a verified multi-architecture manifest digest; the general CI token now defaults to read-only contents access while release-specific jobs retain only their required write scopes.
 - Upgraded the six Go dependency families behind 27 Dependabot alerts, including `kin-openapi`, `pgx/v5`, gRPC, `x/crypto`, `x/net`, and `phonenumbers`, while preserving standalone SDK, OpenAPI, PostgreSQL, and Qdrant compatibility.
 - Upgraded the project, CI, examples, and API image builder to Go 1.26.5 after `govulncheck` identified the reachable standard-library vulnerability GO-2026-5856 in Go 1.26.4.
