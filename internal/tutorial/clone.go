@@ -123,6 +123,7 @@ type CloneRepository interface {
 	Fail(context.Context, string, string, CloneStage, string, time.Time) (CloneJob, bool, error)
 	EnsureExperiment(context.Context, Experiment) error
 	SetExperimentStatus(context.Context, string, string, PackStatus, time.Time) error
+	RecoverPending(context.Context, time.Time) ([]CloneJob, error)
 }
 
 type CloneProjectService interface {
@@ -250,9 +251,19 @@ func (s *CloneService) GetExperiment(ctx context.Context, subject Subject, proje
 	return experiment, nil
 }
 
+// RecoverPending returns work that was queued before process startup and
+// safely requeues work that the previous process left in an in-flight state.
+// The runner owns scheduling; this method never performs a transfer itself.
+func (s *CloneService) RecoverPending(ctx context.Context) ([]CloneJob, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("tutorial clone service is unavailable")
+	}
+	return s.repo.RecoverPending(ctx, s.now().UTC())
+}
+
 // Run advances a single durable job until it reaches a terminal state or loses
-// its compare-and-swap claim. It can therefore be safely called by a retry,
-// a startup sweep, or more than one application instance.
+// its compare-and-swap claim. Duplicate schedules from the same worker
+// lifecycle are therefore benign.
 func (s *CloneService) Run(ctx context.Context, subject Subject, jobID string) error {
 	if s == nil || s.repo == nil || s.projects == nil || s.reader == nil || s.private == nil {
 		return ErrPrivateStoreConfiguration
@@ -281,7 +292,25 @@ func (s *CloneService) Run(ctx context.Context, subject Subject, jobID string) e
 		case CloneStageDownloadPack:
 			manifest, err := s.fetchManifest(ctx, job)
 			if err == nil {
-				err = s.installPack(ctx, job, manifest)
+				err = s.downloadAndVerifyPack(ctx, job, manifest)
+			}
+			if err != nil {
+				return s.fail(ctx, job, err)
+			}
+			if _, advanced, err := s.repo.Advance(ctx, job.TenantID, job.ID, CloneStageDownloadPack, CloneStageVerifyPack, CloneStatusQueued, s.now().UTC()); err != nil || !advanced {
+				return err
+			}
+		case CloneStageVerifyPack:
+			// FetchObject verifies the content type, declared byte count and SHA-256
+			// before its temporary file is returned. Keep this durable stage explicit
+			// so a caller can distinguish acquisition from a trusted install attempt.
+			if _, advanced, err := s.repo.Advance(ctx, job.TenantID, job.ID, CloneStageVerifyPack, CloneStageWritePrivate, CloneStatusQueued, s.now().UTC()); err != nil || !advanced {
+				return err
+			}
+		case CloneStageWritePrivate:
+			manifest, err := s.fetchManifest(ctx, job)
+			if err == nil {
+				err = s.installVerifiedPack(ctx, job, manifest)
 			}
 			if err != nil {
 				return s.fail(ctx, job, err)
@@ -289,7 +318,7 @@ func (s *CloneService) Run(ctx context.Context, subject Subject, jobID string) e
 			if err := s.repo.SetExperimentStatus(ctx, job.TenantID, job.ProjectID, PackStatusInstalled, s.now().UTC()); err != nil {
 				return s.fail(ctx, job, err)
 			}
-			if _, advanced, err := s.repo.Advance(ctx, job.TenantID, job.ID, CloneStageDownloadPack, CloneStagePackInstalled, CloneStatusCompleted, s.now().UTC()); err != nil || !advanced {
+			if _, advanced, err := s.repo.Advance(ctx, job.TenantID, job.ID, CloneStageWritePrivate, CloneStagePackInstalled, CloneStatusCompleted, s.now().UTC()); err != nil || !advanced {
 				return err
 			}
 			return nil
@@ -332,7 +361,28 @@ func (s *CloneService) fetchManifest(ctx context.Context, job CloneJob) (Manifes
 	return ParseManifest(raw, template, pack)
 }
 
-func (s *CloneService) installPack(ctx context.Context, job CloneJob, manifest Manifest) error {
+func (s *CloneService) downloadAndVerifyPack(ctx context.Context, job CloneJob, manifest Manifest) error {
+	template, err := s.catalog.Get(job.TemplateID, job.TemplateVersion)
+	if err != nil {
+		return err
+	}
+	pack, ok := templatePack(template, job.Tier)
+	if !ok {
+		return ErrManifestInvalid
+	}
+	for _, item := range manifest.Objects {
+		object, err := s.reader.FetchObject(ctx, pack.ManifestPath, item)
+		if err != nil {
+			return err
+		}
+		if err := object.Remove(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *CloneService) installVerifiedPack(ctx context.Context, job CloneJob, manifest Manifest) error {
 	template, err := s.catalog.Get(job.TemplateID, job.TemplateVersion)
 	if err != nil {
 		return err
@@ -415,7 +465,7 @@ func templatePack(template Template, tier string) (PackRef, bool) {
 
 func resumeStage(stage CloneStage) CloneStage {
 	switch stage {
-	case CloneStageVerifyPack:
+	case CloneStageDownloadPack, CloneStageVerifyPack, CloneStageWritePrivate:
 		return CloneStageDownloadPack
 	case CloneStagePackInstalled:
 		return CloneStagePackInstalled

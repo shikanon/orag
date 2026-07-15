@@ -13,7 +13,7 @@
 | 接入 HTTP API 或 MCP | [`api/README.md`](./api/README.md) -> [`api/auth-and-errors.md`](./api/auth-and-errors.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) -> [`api/agent-integrations.md`](./api/agent-integrations.md) -> [`../api/openapi.yaml`](../api/openapi.yaml) | 对齐认证、请求体、响应体、错误码、主业务 API、Ralph Loop MCP 和 Skill 集成。 |
 | 理解 RAG 内部链路 | [`architecture/README.md`](./architecture/README.md) -> [`architecture/rag-pipeline.md`](./architecture/rag-pipeline.md) -> [`Go-RAG-框架技术方案.md`](./Go-RAG-框架技术方案.md) | 理解 HTTP、检索、重排、生成、引用、缓存和存储边界。 |
 | 做 RAG 质量回归 | [`evaluation/README.md`](./evaluation/README.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) | 理解数据集、评估运行、deterministic/Judge/QAG 指标和 optimizer 行为。 |
-| 学习工程模块效果 | 控制台 `/tutorials` -> [`superpowers/specs/2026-07-13-orag-tutorial-experiment-space-design.md`](./superpowers/specs/2026-07-13-orag-tutorial-experiment-space-design.md) | 使用中文文本、视觉文档和视频端到端模板理解解析、Chunking、多路召回、Rewrite 与 Rerank 的分场景效果。 |
+| 学习工程模块效果 | 控制台 `/tutorials` -> [`tutorials/clone-and-pack-install.md`](./tutorials/clone-and-pack-install.md) -> [`superpowers/specs/2026-07-13-orag-tutorial-experiment-space-design.md`](./superpowers/specs/2026-07-13-orag-tutorial-experiment-space-design.md) | 克隆不可变模板并安装经服务器校验的 Pack；Live Run、Replay 和结果对比仍明确标为未开放。 |
 | 判断能力兼容性 | [`compatibility.md`](./compatibility.md) -> [`../ROADMAP.md`](../ROADMAP.md) | 区分 `experimental`、`beta`、`stable`，理解 pre-1.0 弃用和迁移规则。 |
 | 部署或排障 | [`operations/README.md`](./operations/README.md) -> [`operations/troubleshooting.md`](./operations/troubleshooting.md) -> [`development.md`](./development.md) | 明确依赖、配置、健康检查、metrics 和常见故障处理。 |
 
@@ -52,7 +52,7 @@
 | 托管文档站 | [`https://shikanon.github.io/orag/`](https://shikanon.github.io/orag/) |
 | 交互式 API Reference | `GET /docs`（本地）或 [`https://shikanon.github.io/orag/api.html`](https://shikanon.github.io/orag/api.html)（托管） |
 | 运行时 OpenAPI | `GET /openapi.yaml` |
-| 教程实验室 | 控制台 `/tutorials`，只读目录 API 为 `GET /v1/tutorials` |
+| 教程实验室 | 控制台 `/tutorials`；目录与克隆/任务接口见 [`tutorials/clone-and-pack-install.md`](./tutorials/clone-and-pack-install.md) |
 | curl smoke | [`../examples/curl/05_health_ready.sh`](../examples/curl/05_health_ready.sh) -> [`../examples/curl/50_optimize.sh`](../examples/curl/50_optimize.sh) |
 | Ralph Loop MCP/Skill | [`api/agent-integrations.md`](./api/agent-integrations.md) -> [`../examples/mcp/README.md`](../examples/mcp/README.md) -> [`../examples/skills/README.md`](../examples/skills/README.md) |
 | 契约测试 | `make openapi-validate` |

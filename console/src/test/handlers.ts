@@ -21,6 +21,10 @@ export const tutorials = [
   { id: 'video-rag', slug: 'video-rag', title: '视频 RAG', summary: '将视频理解、时间片段证据、字幕和音频信息纳入同一检索链路。', version: '1.0.0', status: 'published', modality: 'video', difficulty: 'advanced', estimated_duration_minutes: 75, source_benchmark: 'Video-MME', source_url: 'https://video-mme.github.io/home_page.html', scenario_dimensions: ['短视频', '中视频', '长视频', '视觉信息', '字幕', '音频', '时间否定', '错误前提', '信息不足'], pipeline_stages: ['P0 基线', 'P1 视频理解与打标', 'P2 时间分段', 'P3 Contextual Retrieval', 'P4 字幕召回', 'P5 多路召回', 'P6 Rewrite', 'P7 Rerank', 'P8 组合策略'], required_capabilities: ['doubao_seed_video_understanding', 'temporal_index', 'embedding', 'rerank'], packs: packs('video-rag'), replay_available: true },
 ]
 
+const completedCloneJob = {
+  id: 'tclj_clone', tenant_id: 'tenant_a', project_id: 'prj_clone', project_name: '中文文本 RAG 实验', project_description: 'Mock clone', template_id: 'text-rag', template_version: '1.0.0', pack_tier: 'quick', stage: 'pack_installed', status: 'completed', attempt: 1, events: [{ stage: 'pack_installed', outcome: 'completed', occurred_at: '2026-07-16T00:00:00Z' }], created_at: '2026-07-16T00:00:00Z', updated_at: '2026-07-16T00:00:00Z',
+} as const
+
 export const server = setupServer(
   http.post('/v1/auth/login', async ({ request }) => {
     const input = await request.json() as { username: string; password: string }
@@ -48,4 +52,14 @@ export const server = setupServer(
     const tutorial = tutorials.find((item) => item.id === params.templateId)
     return tutorial ? HttpResponse.json(tutorial) : new HttpResponse(null, { status: 404 })
   }),
+  http.post('/v1/tutorials/:templateId/clones', async ({ params, request }) => {
+    const input = await request.json() as { project?: { name?: string } }
+    const template = tutorials.find((item) => item.id === params.templateId)
+    if (!template || !input.project?.name) return new HttpResponse(null, { status: 400 })
+    const job = { ...completedCloneJob, project_name: input.project.name, template_id: template.id, template_version: template.version }
+    return HttpResponse.json({ job_id: job.id, project_id: job.project_id, poll_url: `/v1/tutorial-clone-jobs/${job.id}`, job }, { status: 202 })
+  }),
+  http.get('/v1/tutorial-clone-jobs/:jobId', ({ params }) => params.jobId === completedCloneJob.id ? HttpResponse.json(completedCloneJob) : new HttpResponse(null, { status: 404 })),
+  http.post('/v1/tutorial-clone-jobs/:jobId:retry', ({ params }) => params.jobId === completedCloneJob.id ? HttpResponse.json(completedCloneJob, { status: 202 }) : new HttpResponse(null, { status: 404 })),
+  http.get('/v1/projects/:projectId/tutorial-experiment', ({ params }) => params.projectId === completedCloneJob.project_id ? HttpResponse.json({ id: 'texp_clone', tenant_id: 'tenant_a', project_id: completedCloneJob.project_id, template_id: 'text-rag', template_version: '1.0.0', pack_tier: 'quick', pack_status: 'pack_installed', created_at: '2026-07-16T00:00:00Z', updated_at: '2026-07-16T00:00:00Z' }) : new HttpResponse(null, { status: 404 })),
 )

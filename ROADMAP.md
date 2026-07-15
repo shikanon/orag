@@ -166,7 +166,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 ## 阶段四：评测优先控制面
 
-当前进展：Pipeline server-owned node registry、revisioned draft persistence、Compiler/Debug Runner、项目级 draft debug API、Console API Debugger、RAG Studio draft workbench、Debug Run 保存评测 case，以及 Draft → content-hashed immutable PipelineVersion 已在 `main` 合并（PR #253–#261）。[#266](https://github.com/shikanon/orag/pull/266) 加入项目级不可变评测策略；[#268](https://github.com/shikanon/orag/pull/268) 让版本保存完整冻结 DAG 与来源 pipeline；[#269](https://github.com/shikanon/orag/pull/269) 从已存储评测运行推导 append-only evidence；[#270](https://github.com/shikanon/orag/pull/270) 将该证据绑定目标环境并作为 Draft 版本晋级的唯一 validation 路径；[#272](https://github.com/shikanon/orag/pull/272) 将通过评测的冻结版本激活到 development；[#273](https://github.com/shikanon/orag/pull/273) 将项目查询解析到 production active version、执行冻结 DAG，并把 pipeline/release/评测血缘写入 trace。当前黄金路径已经覆盖“创建 Pipeline → 填充标准链路 → 保存 draft → 按 revision 调试 → 查看节点诊断 → 写入评测数据集 → 冻结不可变版本 → 由服务器生成环境门禁 → development 激活 → staging/production 晋级 → production 查询”。真实 PostgreSQL + Qdrant 的 CI 浏览器 E2E 现已覆盖显式环境绑定、不可变证据、顺序晋级、production trace 血缘与原子回滚。仍待完成文本/视觉/视频教程的 Replay/结果对比闭环。
+当前进展：Pipeline server-owned node registry、revisioned draft persistence、Compiler/Debug Runner、项目级 draft debug API、Console API Debugger、RAG Studio draft workbench、Debug Run 保存评测 case，以及 Draft → content-hashed immutable PipelineVersion 已在 `main` 合并（PR #253–#261）。[#266](https://github.com/shikanon/orag/pull/266) 加入项目级不可变评测策略；[#268](https://github.com/shikanon/orag/pull/268) 让版本保存完整冻结 DAG 与来源 pipeline；[#269](https://github.com/shikanon/orag/pull/269) 从已存储评测运行推导 append-only evidence；[#270](https://github.com/shikanon/orag/pull/270) 将该证据绑定目标环境并作为 Draft 版本晋级的唯一 validation 路径；[#272](https://github.com/shikanon/orag/pull/272) 将通过评测的冻结版本激活到 development；[#273](https://github.com/shikanon/orag/pull/273) 将项目查询解析到 production active version、执行冻结 DAG，并把 pipeline/release/评测血缘写入 trace。当前黄金路径已经覆盖“创建 Pipeline → 填充标准链路 → 保存 draft → 按 revision 调试 → 查看节点诊断 → 写入评测数据集 → 冻结不可变版本 → 由服务器生成环境门禁 → development 激活 → staging/production 晋级 → production 查询”。教程实验室现已支持持久化、幂等、可恢复的模板 clone 与 Pack 安装；浏览器只选择模板/层级并轮询红脱敏状态，真实 PostgreSQL + Qdrant E2E 使用本地匿名 fixture 验证私有写入。默认公共 OSS 在 2026-07-16 仍返回 `403 AccessDenied`，因此生产可用性仍取决于对象和匿名读 ACL 发布。文本/视觉/视频的 Live Run、Replay 与结果对比仍待完成。
 
 ### Project 到 Release 的黄金路径
 
@@ -177,7 +177,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 ### 教程实验闭环
 
-- 官方教程支持 clone、Pack 安装、Quick Run、Benchmark Run、Replay 和结果对比。
+- 已完成官方教程的 clone 与 Pack 安装（受控 fixture 真实浏览器 E2E）；待完成 Quick Run、Benchmark Run、Replay 和结果对比，且默认公共 OSS 可用性仍是外部前置条件。
 - 文本、视觉文档和视频教程均使用真实工程/evaluation 数据，不引入模型训练工作流。
 - 每个检索增强策略提供独立消融、成本、延迟、失败回退和推荐场景说明。
 

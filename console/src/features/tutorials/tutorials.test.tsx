@@ -17,11 +17,22 @@ describe('Tutorial catalog', () => {
   it('shows scenario dimensions and pack requirements', async () => {
     renderApp('/tutorials/video-rag')
     expect(await screen.findByRole('heading', { name: '视频 RAG' })).toBeVisible()
-    expect(screen.getByText('Replay 可用')).toBeVisible()
+    expect(screen.getByText('Replay 结果即将开放')).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Quick Pack' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Benchmark Pack' })).toBeVisible()
     expect(screen.getByText('时间否定')).toBeVisible()
-    expect(screen.getByRole('button', { name: '克隆教程，即将开放' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '克隆教程' })).toBeEnabled()
+  })
+
+  it('starts the chosen Quick Pack clone and shows server progress', async () => {
+    const user = userEvent.setup()
+    renderApp('/tutorials/text-rag')
+    await user.click(await screen.findByRole('button', { name: '克隆教程' }))
+    await user.click(screen.getByRole('radio', { name: /Quick Pack/ }))
+    await user.click(screen.getByRole('checkbox', { name: '我已确认数据许可' }))
+    await user.click(screen.getByRole('button', { name: '创建实验项目' }))
+    expect(await screen.findByText('Pack 已安装，Live Run 即将开放。')).toBeVisible()
+    expect(screen.queryByText(/manifest_url|access key/i)).not.toBeInTheDocument()
   })
 
   it('retries after the catalog API fails', async () => {

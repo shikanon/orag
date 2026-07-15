@@ -77,6 +77,10 @@ func (s *Server) writeTutorial(c *app.RequestContext, templateID, version string
 }
 
 func (s *Server) tutorialResponse(item tutorial.Template) (tutorialResponse, error) {
+	catalogBase, err := url.Parse(strings.TrimSpace(s.App.Config.Tutorial.CatalogBaseURL))
+	if err != nil || catalogBase.Host == "" || catalogBase.User != nil || (catalogBase.Scheme != "https" && !(s.App.Config.Tutorial.AllowInsecureCatalogHTTP && catalogBase.Scheme == "http")) {
+		return tutorialResponse{}, fmt.Errorf("tutorial catalog base URL must be an allowed absolute URL")
+	}
 	response := tutorialResponse{
 		ID:                       item.ID,
 		Slug:                     item.Slug,
@@ -113,8 +117,8 @@ func (s *Server) tutorialResponse(item tutorial.Template) (tutorialResponse, err
 
 func resolveTutorialManifestURL(baseURL, manifestPath string) (string, error) {
 	base, err := url.Parse(strings.TrimSpace(baseURL))
-	if err != nil || base.Scheme != "https" || base.Host == "" || base.User != nil {
-		return "", fmt.Errorf("tutorial catalog base URL must be an absolute HTTPS URL")
+	if err != nil || (base.Scheme != "https" && base.Scheme != "http") || base.Host == "" || base.User != nil {
+		return "", fmt.Errorf("tutorial catalog base URL must be an absolute URL")
 	}
 	if manifestPath == "" || strings.HasPrefix(manifestPath, "/") || strings.Contains(manifestPath, "\\") {
 		return "", fmt.Errorf("tutorial manifest path is invalid")

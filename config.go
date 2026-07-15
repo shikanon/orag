@@ -256,7 +256,14 @@ func (c Config) internal() (internalconfig.Config, error) {
 			Docling: internalconfig.DoclingConfig{ServerURL: c.Ingestion.DoclingServerURL, Timeout: c.Ingestion.DoclingTimeout},
 		},
 		ObjectStorage: internalconfig.ObjectStorageConfig{Provider: "local", MockUpload: true},
-		Tutorial:      internalconfig.TutorialConfig{CatalogBaseURL: "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs"},
+		Tutorial: internalconfig.TutorialConfig{
+			CatalogBaseURL:         "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs",
+			MaxManifestBytes:       4 * 1024 * 1024,
+			MaxObjectBytes:         32 * 1024 * 1024 * 1024,
+			HTTPTimeout:            2 * time.Minute,
+			PrivateOutputDirectory: "./.orag/tutorial-packs",
+			PrivateOutputPrefix:    "tutorial-experiments",
+		},
 		Observability: internalconfig.ObservabilityConfig{Trace: internalconfig.TracePrivacyConfig{StoreQuery: true, QueryMaxBytes: 2048, RetentionDays: 30}},
 		Maintenance: internalconfig.MaintenanceConfig{OfflineKnowledgeOrganizer: internalconfig.OfflineKnowledgeOrganizerConfig{
 			Schedule:                      "0 2 * * *",

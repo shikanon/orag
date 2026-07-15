@@ -164,6 +164,15 @@ func TestCloneRunCreatesProjectCopiesVerifiedPackAndMarksExperimentInstalled(t *
 	if err != nil || completed.Status != CloneStatusCompleted || completed.Stage != CloneStagePackInstalled {
 		t.Fatalf("completed job = %#v, %v", completed, err)
 	}
+	seenStages := map[CloneStage]bool{}
+	for _, event := range completed.Events {
+		seenStages[event.Stage] = true
+	}
+	for _, stage := range []CloneStage{CloneStageCreateProject, CloneStageValidateManifest, CloneStageDownloadPack, CloneStageVerifyPack, CloneStageWritePrivate, CloneStagePackInstalled} {
+		if !seenStages[stage] {
+			t.Fatalf("events did not record %q: %#v", stage, completed.Events)
+		}
+	}
 	if _, err := projects.Get(context.Background(), "tenant_a", job.ProjectID); err != nil {
 		t.Fatalf("project is absent: %v", err)
 	}
@@ -175,6 +184,28 @@ func TestCloneRunCreatesProjectCopiesVerifiedPackAndMarksExperimentInstalled(t *
 	stored, err := os.ReadFile(output)
 	if err != nil || string(stored) != string(content) {
 		t.Fatalf("stored Pack = %q, %v", stored, err)
+	}
+}
+
+func TestCloneServiceRecoveryRequeuesInterruptedJobs(t *testing.T) {
+	repo := NewMemoryCloneRepository()
+	now := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	svc := NewCloneService(catalogForCloneTest(t), repo, func() time.Time { return now })
+	job, _, err := svc.Start(context.Background(), Subject{TenantID: "tenant_a", ID: "user_a"}, CloneRequest{
+		TemplateID: "text-rag", Version: "1.0.0", Tier: "quick", ProjectName: "Text lab", IdempotencyKey: "recover_1", LicenseAccepted: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, claimed, err := repo.Acquire(context.Background(), job.TenantID, job.ID, now); err != nil || !claimed {
+		t.Fatalf("Acquire() = claimed=%v err=%v", claimed, err)
+	}
+	pending, err := svc.RecoverPending(context.Background())
+	if err != nil || len(pending) != 1 || pending[0].Status != CloneStatusQueued {
+		t.Fatalf("RecoverPending() = %#v, %v", pending, err)
+	}
+	if got := pending[0].Events[len(pending[0].Events)-1]; got.Outcome != "recovered" || got.Stage != CloneStageCreateProject {
+		t.Fatalf("recovery event = %#v", got)
 	}
 }
 

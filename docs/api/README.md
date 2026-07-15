@@ -16,7 +16,7 @@
 | --- | --- | --- |
 | 系统检查 | `GET /healthz`、`GET /readyz`、`GET /metrics`、`GET /docs` | 否 |
 | 认证 | `POST /v1/auth/login` | 否 |
-| 教程目录 | `GET /v1/tutorials`、`GET /v1/tutorials/{template_id}`、`GET /v1/tutorials/{template_id}/versions/{version}` | 是 |
+| 教程实验 | `GET /v1/tutorials`、`POST /v1/tutorials/{template_id}/clones`、`GET /v1/tutorial-clone-jobs/{job_id}`、`POST /v1/tutorial-clone-jobs/{job_id}:retry`、`GET /v1/projects/{project_id}/tutorial-experiment` | 是 |
 | 知识库 | `/v1/knowledge-bases` | 是 |
 | 文档入库 | `/v1/knowledge-bases/{id}/documents`、`/documents:import` | 是 |
 | 入库任务 | `GET /v1/ingestion-jobs/{id}` | 是 |
@@ -29,7 +29,7 @@
 
 教程目录是内嵌在服务二进制中的版本化只读资源。列表返回每个模板的最新版本，详情端点可以读取当前版本或指定的不可变语义版本。首批模板固定为 `text-rag`、`visual-document-rag` 和 `video-rag`，分别基于 CRUD-RAG、ViDoSeek 和 Video-MME 的精选子集设计。
 
-响应中的 Pack `manifest_url` 由非密钥配置 `TUTORIAL_CATALOG_BASE_URL` 和模板内的相对路径组合而成，默认位于公开 OSS。当前 API 不会下载、安装或写入对象；克隆、Live Run、数据集生成与视频入库不属于本阶段。
+响应中的 Pack `manifest_url` 由非密钥配置 `TUTORIAL_CATALOG_BASE_URL` 和模板内的相对路径组合而成。`POST /v1/tutorials/{template_id}/clones` 只接收模板版本、Pack 层级、项目元数据、幂等键和许可确认；服务端异步读取公共对象、校验 Manifest/MIME/大小/SHA-256，并写入私有输出存储。任务和实验响应不会返回 bucket、object key、签名 URL 或凭证。完整前置条件与恢复方式见 [`../tutorials/clone-and-pack-install.md`](../tutorials/clone-and-pack-install.md)。Live Run、数据集生成、Replay 和视频入库仍不属于本阶段。
 
 ## Trace 查询入口
 

@@ -273,6 +273,79 @@ func (r *TutorialCloneRepository) SetExperimentStatus(ctx context.Context, tenan
 	return nil
 }
 
+func (r *TutorialCloneRepository) RecoverPending(ctx context.Context, now time.Time) ([]tutorial.CloneJob, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	recoveredRows, err := tx.Query(ctx, `
+		UPDATE tutorial_clone_jobs SET status='queued', updated_at=$1
+		WHERE status='running'
+		RETURNING id, tenant_id, subject_id, project_id, project_name, project_description,
+		          template_id, template_version, pack_tier, idempotency_key,
+		          stage, status, attempt, last_error_code, created_at, updated_at`, now)
+	if err != nil {
+		return nil, err
+	}
+	recovered := make([]tutorial.CloneJob, 0)
+	for recoveredRows.Next() {
+		job, err := scanTutorialCloneJob(recoveredRows)
+		if err != nil {
+			recoveredRows.Close()
+			return nil, err
+		}
+		recovered = append(recovered, job)
+	}
+	if err := recoveredRows.Err(); err != nil {
+		recoveredRows.Close()
+		return nil, err
+	}
+	recoveredRows.Close()
+	for _, job := range recovered {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tutorial_clone_stage_events(job_id, stage, outcome, detail_code, occurred_at)
+			VALUES($1,$2,$3,$4,$5)`, job.ID, job.Stage, "recovered", "", now); err != nil {
+			return nil, err
+		}
+	}
+
+	rows, err := tx.Query(ctx, `
+		SELECT id, tenant_id, subject_id, project_id, project_name, project_description,
+		       template_id, template_version, pack_tier, idempotency_key,
+		       stage, status, attempt, last_error_code, created_at, updated_at
+		FROM tutorial_clone_jobs WHERE status='queued' ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]tutorial.CloneJob, 0)
+	for rows.Next() {
+		job, err := scanTutorialCloneJob(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		items = append(items, job)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	for index, job := range items {
+		events, err := tutorialCloneEvents(ctx, tx, job.ID)
+		if err != nil {
+			return nil, err
+		}
+		items[index] = cloneJobWithEvents(job, events)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 type tutorialCloneEventQuerier interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
 }
@@ -296,7 +369,11 @@ func tutorialCloneEvents(ctx context.Context, queryer tutorialCloneEventQuerier,
 	return events, rows.Err()
 }
 
-func scanTutorialCloneJob(row pgx.Row) (tutorial.CloneJob, error) {
+type tutorialCloneJobScanner interface {
+	Scan(...any) error
+}
+
+func scanTutorialCloneJob(row tutorialCloneJobScanner) (tutorial.CloneJob, error) {
 	var job tutorial.CloneJob
 	err := row.Scan(
 		&job.ID, &job.TenantID, &job.SubjectID, &job.ProjectID, &job.ProjectName, &job.ProjectDescription,

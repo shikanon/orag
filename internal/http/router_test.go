@@ -7,6 +7,8 @@ import (
 	"errors"
 	"log/slog"
 	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -68,6 +70,73 @@ func TestTutorialCatalogRoutes(t *testing.T) {
 	versioned := performJSON(h, "GET", "/v1/tutorials/text-rag/versions/1.0.0", "", token)
 	if versioned.Code != 200 || versioned.Body != current.Body {
 		t.Fatalf("versioned status = %d body=%s, current=%s", versioned.Code, versioned.Body, current.Body)
+	}
+}
+
+func TestTutorialCloneRoutesCreatePollAndExposeNoStorageDetails(t *testing.T) {
+	pack := []byte("tutorial data")
+	checksum := "00361bf3e3d0f3bf104e229dee7f524f9d3f588969930bedd7aedde3ef5c5cb6"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/packs/text-rag/1.0.0/quick/manifest.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"template_id":"text-rag","version":"1.0.0","tier":"quick","license":{"spdx":"CC-BY-4.0","source_url":"https://example.test/license","redistributable":true},"objects":[{"path":"corpus/data.txt","sha256":"` + checksum + `","bytes":13,"content_type":"text/plain"}]}`))
+		case "/packs/text-rag/1.0.0/quick/corpus/data.txt":
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write(pack)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("ORAG_TEST_MODE", "true")
+	t.Setenv("TUTORIAL_CATALOG_BASE_URL", server.URL+"/packs")
+	t.Setenv("TUTORIAL_PRIVATE_OUTPUT_DIR", t.TempDir())
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	token := issueToken(t, application, "tenant_a")
+
+	created := performJSON(h, "POST", "/v1/tutorials/text-rag/clones", `{"version":"1.0.0","pack_tier":"quick","project":{"name":"Text lab","description":"server-owned install"},"idempotency_key":"http_clone_1","license_accepted":true}`, token)
+	if created.Code != http.StatusAccepted {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body)
+	}
+	for _, forbidden := range []string{"bucket", "access_key", "object_key", "manifest_url", "tutorial data"} {
+		if strings.Contains(created.Body, forbidden) {
+			t.Fatalf("create leaked %q: %s", forbidden, created.Body)
+		}
+	}
+	var accepted tutorialCloneAcceptedResponse
+	if err := json.Unmarshal([]byte(created.Body), &accepted); err != nil {
+		t.Fatal(err)
+	}
+	if accepted.JobID == "" || accepted.ProjectID == "" || accepted.PollURL != "/v1/tutorial-clone-jobs/"+accepted.JobID {
+		t.Fatalf("accepted = %#v", accepted)
+	}
+
+	var job tutorial.CloneJob
+	for range 50 {
+		polled := performJSON(h, "GET", accepted.PollURL, "", token)
+		if polled.Code != http.StatusOK {
+			t.Fatalf("poll status=%d body=%s", polled.Code, polled.Body)
+		}
+		if err := json.Unmarshal([]byte(polled.Body), &job); err != nil {
+			t.Fatal(err)
+		}
+		if job.Status == tutorial.CloneStatusCompleted || job.Status == tutorial.CloneStatusFailed {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Status != tutorial.CloneStatusCompleted || job.Stage != tutorial.CloneStagePackInstalled {
+		t.Fatalf("clone job = %#v", job)
+	}
+	experiment := performJSON(h, "GET", "/v1/projects/"+accepted.ProjectID+"/tutorial-experiment", "", token)
+	if experiment.Code != http.StatusOK || !strings.Contains(experiment.Body, `"pack_status":"pack_installed"`) {
+		t.Fatalf("experiment status=%d body=%s", experiment.Code, experiment.Body)
+	}
+	missingRetry := performJSON(h, "POST", "/v1/tutorial-clone-jobs/missing:retry", "", token)
+	if missingRetry.Code != http.StatusNotFound {
+		t.Fatalf("retry route status=%d body=%s", missingRetry.Code, missingRetry.Body)
 	}
 }
 

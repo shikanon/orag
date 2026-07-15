@@ -37,29 +37,30 @@ import (
 )
 
 type App struct {
-	Config           config.Config
-	Logger           *slog.Logger
-	Auth             *auth.Service
-	APIKeys          *auth.APIKeyService
-	KBStore          kb.KnowledgeBaseRepository
-	Ingest           *ingest.Service
-	RAG              *rag.Service
-	Datasets         *dataset.Service
-	Projects         *project.Service
-	Tutorials        *tutorial.Catalog
-	TutorialClones   *tutorial.CloneService
-	Eval             eval.Runner
-	EvaluationPolicy *evaluationpolicy.Service
-	Optimizer        *optimizer.Service
-	OfflineKnowledge *offlineknowledge.Service
-	OfflineScheduler *offlineknowledge.Scheduler
-	Release          *release.Service
-	Pipeline         *pipeline.Service
-	PipelineCompiler *pipeline.Compiler
-	PipelineDebug    *pipeline.DebugRunner
-	ProductionQuery  rag.QueryRunner
-	Metrics          *observability.Metrics
-	Traces           TraceRepository
+	Config              config.Config
+	Logger              *slog.Logger
+	Auth                *auth.Service
+	APIKeys             *auth.APIKeyService
+	KBStore             kb.KnowledgeBaseRepository
+	Ingest              *ingest.Service
+	RAG                 *rag.Service
+	Datasets            *dataset.Service
+	Projects            *project.Service
+	Tutorials           *tutorial.Catalog
+	TutorialClones      *tutorial.CloneService
+	TutorialCloneRunner *tutorial.CloneRunner
+	Eval                eval.Runner
+	EvaluationPolicy    *evaluationpolicy.Service
+	Optimizer           *optimizer.Service
+	OfflineKnowledge    *offlineknowledge.Service
+	OfflineScheduler    *offlineknowledge.Scheduler
+	Release             *release.Service
+	Pipeline            *pipeline.Service
+	PipelineCompiler    *pipeline.Compiler
+	PipelineDebug       *pipeline.DebugRunner
+	ProductionQuery     rag.QueryRunner
+	Metrics             *observability.Metrics
+	Traces              TraceRepository
 
 	Postgres *pgxpool.Pool
 	Qdrant   *qdrantstore.Client
@@ -191,20 +192,31 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		}
 		closers = append(closers, offlineScheduler.Stop)
 	}
+	tutorialCloneRunner := tutorial.NewCloneRunner(tutorialClones)
+	if err := tutorialCloneRunner.Start(context.Background()); err != nil {
+		for i := len(closers) - 1; i >= 0; i-- {
+			if closers[i] != nil {
+				_ = closers[i]()
+			}
+		}
+		return nil, err
+	}
+	closers = append(closers, tutorialCloneRunner.Stop)
 	return &App{
-		Config:           cfg,
-		Logger:           logger,
-		Auth:             authSvc,
-		APIKeys:          apiKeys,
-		KBStore:          backend.store,
-		Ingest:           ingestSvc,
-		RAG:              ragSvc,
-		Datasets:         datasets,
-		Projects:         projects,
-		Tutorials:        tutorials,
-		TutorialClones:   tutorialClones,
-		Eval:             evalRunner,
-		EvaluationPolicy: evaluationPolicySvc,
+		Config:              cfg,
+		Logger:              logger,
+		Auth:                authSvc,
+		APIKeys:             apiKeys,
+		KBStore:             backend.store,
+		Ingest:              ingestSvc,
+		RAG:                 ragSvc,
+		Datasets:            datasets,
+		Projects:            projects,
+		Tutorials:           tutorials,
+		TutorialClones:      tutorialClones,
+		TutorialCloneRunner: tutorialCloneRunner,
+		Eval:                evalRunner,
+		EvaluationPolicy:    evaluationPolicySvc,
 		Optimizer: &optimizer.Service{
 			Repository: backend.optimizerRepo,
 			Runner:     optimizerRunner,

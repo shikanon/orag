@@ -7,6 +7,10 @@ export type APIKey = components['schemas']['APIKey']
 export type CreateAPIKeyInput = components['schemas']['CreateAPIKeyRequest']
 export type CreateAPIKeyResponse = components['schemas']['CreateAPIKeyResponse']
 export type TutorialTemplate = components['schemas']['TutorialTemplate']
+export type StartTutorialCloneInput = components['schemas']['StartTutorialCloneRequest']
+export type TutorialCloneAcceptedResponse = components['schemas']['TutorialCloneAcceptedResponse']
+export type TutorialCloneJob = components['schemas']['TutorialCloneJob']
+export type TutorialExperiment = components['schemas']['TutorialExperiment']
 export type LoginInput = components['schemas']['LoginRequest']
 export type LoginResponse = components['schemas']['LoginResponse']
 export type KnowledgeBase = components['schemas']['KnowledgeBase']
@@ -87,6 +91,12 @@ export const tutorialApi = {
   getVersion: (templateId: string, version: string) => request<TutorialTemplate>(
     `/v1/tutorials/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version)}`,
   ),
+  startClone: (templateId: string, input: StartTutorialCloneInput) => request<TutorialCloneAcceptedResponse>(
+    `/v1/tutorials/${encodeURIComponent(templateId)}/clones`, { method: 'POST', body: JSON.stringify(input) },
+  ),
+  getCloneJob: (jobId: string) => request<TutorialCloneJob>(`/v1/tutorial-clone-jobs/${encodeURIComponent(jobId)}`),
+  retryClone: (jobId: string) => request<TutorialCloneJob>(`/v1/tutorial-clone-jobs/${encodeURIComponent(jobId)}:retry`, { method: 'POST' }),
+  getExperiment: (projectId: string) => request<TutorialExperiment>(`/v1/projects/${encodeURIComponent(projectId)}/tutorial-experiment`),
 }
 
 export const knowledgeBaseApi = {

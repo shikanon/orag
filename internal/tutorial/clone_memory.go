@@ -135,6 +135,25 @@ func (r *MemoryCloneRepository) SetExperimentStatus(_ context.Context, tenantID,
 	return nil
 }
 
+func (r *MemoryCloneRepository) RecoverPending(_ context.Context, now time.Time) ([]CloneJob, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	items := make([]CloneJob, 0)
+	for id, job := range r.jobs {
+		if job.Status == CloneStatusRunning {
+			job.Status = CloneStatusQueued
+			job.UpdatedAt = now
+			job.Events = append(job.Events, StageEvent{Stage: job.Stage, Outcome: "recovered", OccurredAt: now})
+			r.jobs[id] = job
+		}
+		if job.Status == CloneStatusQueued {
+			items = append(items, cloneJob(job))
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
+}
+
 func (r *MemoryCloneRepository) Jobs() []CloneJob {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
