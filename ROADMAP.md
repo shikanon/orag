@@ -137,6 +137,8 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 持续安全探索方面，[#219](https://github.com/shikanon/orag/issues/219) 为文档/Office 解析和 optimizer 表达式增加 Go 原生 fuzz target、PR smoke 与周期性长时探索。
 
+依赖边界方面，[#221](https://github.com/shikanon/orag/issues/221) 将 Eino 升级到包含 Jinja 文件访问修复的 0.9.12，增加 `file`/`fileset` 回归，并记录 GO-2026-5932 不可达且无上游修复版本的证据。
+
 ### 数据一致性与执行安全
 
 - 入库使用 staged/active 可见性或等价事务协议，失败文档和向量不能提前进入检索结果。

@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- Upgraded Eino from 0.6.0 to 0.9.12 and added a dependency-contract regression proving Jinja `file` and `fileset` filters cannot read local files; documented why GO-2026-5932 is an unreachable module-level OpenPGP advisory with no fixed x/crypto release.
 - Added native Go fuzz targets for untrusted document/Office archive parsing and optimizer expression compilation, with short pull-request gates, longer scheduled exploration, and retained crash artifacts.
 - Pinned every CI action to an immutable commit and every API/Console base image to a verified multi-architecture manifest digest; the general CI token now defaults to read-only contents access while release-specific jobs retain only their required write scopes.
 - Upgraded the six Go dependency families behind 27 Dependabot alerts, including `kin-openapi`, `pgx/v5`, gRPC, `x/crypto`, `x/net`, and `phonenumbers`, while preserving standalone SDK, OpenAPI, PostgreSQL, and Qdrant compatibility.

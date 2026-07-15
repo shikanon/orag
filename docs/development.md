@@ -186,6 +186,12 @@ npm --prefix console audit --omit=dev --audit-level=high
 
 GitHub 原生 provider secret scanning 和 push protection 已启用。当前仓库属于个人账号；GitHub Secret Protection 才提供的 non-provider patterns 与 validity checks 不适用于该仓库，因此由 Gitleaks 全历史门禁补足 private key、generic credential 等检测，而不是把不可用设置描述为已开启。
 
+#### GO-2026-5932 评估记录
+
+Go 漏洞库将未维护且设计上不安全的 `golang.org/x/crypto/openpgp` 全版本标记为 [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932)，因此不存在可升级到的 x/crypto 修复版本。ORAG 的模块图因间接依赖仍包含 `golang.org/x/crypto`，但源码和编译依赖不导入 `openpgp`、`openpgp/packet` 等受影响包：`go mod why golang.org/x/crypto/openpgp` 返回 `(main module does not need package ...)`，使用 Go 1.26.5 的 `govulncheck ./...` 对 59 个根包和 55 个实际使用模块报告 `No vulnerabilities found`。
+
+该记录解释 Scorecard 的模块级告警，不是漏洞豁免。任何新增 OpenPGP import 都必须使安全门禁失败并改用受维护实现。Eino 已从 0.6.0 升级到 0.9.12，专门回归测试验证其 Jinja `file`/`fileset` 过滤器被禁用，不能读取 API 或 CI 文件系统。
+
 ### 模糊测试
 
 [`fuzz.yml`](../.github/workflows/fuzz.yml) 使用 Go 原生 coverage-guided fuzzing 持续探索两个直接处理不可信输入的边界：`BasicParser` 的文本、HTML、XML 与 Office ZIP 解析，以及 optimizer 表达式的 lexer、parser 和求值器。每个 Pull Request 和 `main` push 对两个 target 并行执行 20 秒；每周计划任务各执行 5 分钟。发生崩溃时，workflow 保存输入 artifact 供复现，但 corpus 与 crash 文件不提交到仓库。
