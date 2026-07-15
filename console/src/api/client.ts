@@ -1,4 +1,5 @@
 import type { components } from './schema'
+import { clearSession, getAccessToken } from '../features/auth/session'
 
 export type Project = components['schemas']['Project']
 export type CreateProjectInput = components['schemas']['CreateProjectRequest']
@@ -6,6 +7,8 @@ export type APIKey = components['schemas']['APIKey']
 export type CreateAPIKeyInput = components['schemas']['CreateAPIKeyRequest']
 export type CreateAPIKeyResponse = components['schemas']['CreateAPIKeyResponse']
 export type TutorialTemplate = components['schemas']['TutorialTemplate']
+export type LoginInput = components['schemas']['LoginRequest']
+export type LoginResponse = components['schemas']['LoginResponse']
 
 export class ApiError extends Error {
   constructor(public readonly status: number) {
@@ -13,15 +16,27 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...init, headers: { 'Content-Type': 'application/json', ...init?.headers } })
-  if (!response.ok) throw new ApiError(response.status)
+async function request<T>(path: string, init?: RequestInit, authenticated = true): Promise<T> {
+  const token = authenticated ? getAccessToken() : null
+  const response = await fetch(path, { ...init, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers } })
+  if (!response.ok) {
+    if (authenticated && response.status === 401) clearSession()
+    throw new ApiError(response.status)
+  }
   return response.json() as Promise<T>
 }
 
 async function requestVoid(path: string, init?: RequestInit): Promise<void> {
-  const response = await fetch(path, { ...init, headers: { 'Content-Type': 'application/json', ...init?.headers } })
-  if (!response.ok) throw new ApiError(response.status)
+  const token = getAccessToken()
+  const response = await fetch(path, { ...init, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers } })
+  if (!response.ok) {
+    if (response.status === 401) clearSession()
+    throw new ApiError(response.status)
+  }
+}
+
+export const authApi = {
+  login: (input: LoginInput) => request<LoginResponse>('/v1/auth/login', { method: 'POST', body: JSON.stringify(input) }, false),
 }
 
 export const projectApi = {
