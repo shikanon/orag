@@ -2,13 +2,85 @@ package http
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"strings"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/release"
 )
+
+type createPipelineVersionRequest struct {
+	ID          string `json:"id"`
+	ContentHash string `json:"content_hash"`
+}
+
+type validatePipelineVersionRequest struct {
+	Environment string `json:"environment"`
+	Passed      bool   `json:"passed"`
+	ContentHash string `json:"content_hash"`
+}
+
+func (s *Server) listPipelineVersions(ctx context.Context, c *app.RequestContext) {
+	projectID, principal, ok := releaseProjectRequest(c)
+	if !ok || !authorizeRequest(c, auth.ActionResourceRead, principal.TenantID, projectID) {
+		return
+	}
+	items, err := s.App.Release.Versions(ctx, projectID)
+	if err != nil {
+		writeReleaseError(c, err)
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) createPipelineVersion(ctx context.Context, c *app.RequestContext) {
+	projectID, principal, ok := releaseProjectRequest(c)
+	if !ok || !authorizeRequest(c, auth.ActionResourceWrite, principal.TenantID, projectID) {
+		return
+	}
+	var req createPipelineVersionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	contentHash := strings.TrimSpace(req.ContentHash)
+	if contentHash == "" {
+		writeError(c, consts.StatusBadRequest, "invalid_release_request", "content_hash is required")
+		return
+	}
+	versionID := strings.TrimSpace(req.ID)
+	if versionID == "" {
+		sum := sha256.Sum256([]byte(projectID + "\x00" + contentHash + "\x00" + time.Now().UTC().Format(time.RFC3339Nano)))
+		versionID = "pv_" + hex.EncodeToString(sum[:])[:24]
+	}
+	item := release.Version{ID: versionID, ProjectID: projectID, ContentHash: contentHash, CreatedAt: time.Now().UTC()}
+	if err := s.App.Release.CreateVersion(ctx, item); err != nil {
+		writeReleaseError(c, err)
+		return
+	}
+	c.JSON(consts.StatusCreated, item)
+}
+
+func (s *Server) validatePipelineVersion(ctx context.Context, c *app.RequestContext) {
+	projectID, principal, ok := releaseProjectRequest(c)
+	if !ok || !authorizeRequest(c, auth.ActionResourceWrite, principal.TenantID, projectID) {
+		return
+	}
+	var req validatePipelineVersionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	err := s.App.Release.Validate(ctx, projectID, c.Param("version_id"), release.Evidence{EnvironmentID: strings.TrimSpace(req.Environment), Passed: req.Passed, ContentHash: strings.TrimSpace(req.ContentHash)})
+	if err != nil {
+		writeReleaseError(c, err)
+		return
+	}
+	c.JSON(consts.StatusCreated, map[string]any{"version_id": c.Param("version_id"), "environment": req.Environment, "passed": req.Passed, "content_hash": req.ContentHash})
+}
 
 func (s *Server) listReleaseEnvironments(ctx context.Context, c *app.RequestContext) {
 	projectID, principal, ok := releaseProjectRequest(c)

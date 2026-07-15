@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/shikanon/orag/internal/release"
@@ -62,10 +63,38 @@ func (r *Repository) Releases(ctx context.Context, projectID string) ([]release.
 	return items, rows.Err()
 }
 
+func (r *Repository) Versions(ctx context.Context, projectID string) ([]release.Version, error) {
+	rows, err := r.Pool.Query(ctx, `SELECT id, project_id, content_hash, created_at FROM pipeline_versions WHERE project_id=$1 ORDER BY created_at DESC, id DESC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]release.Version, 0)
+	for rows.Next() {
+		var item release.Version
+		if err := rows.Scan(&item.ID, &item.ProjectID, &item.ContentHash, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) CreateVersion(ctx context.Context, version release.Version) error {
+	_, err := r.Pool.Exec(ctx, `INSERT INTO pipeline_versions(id, project_id, content_hash, created_at) VALUES($1,$2,$3,$4)`, version.ID, version.ProjectID, version.ContentHash, version.CreatedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return release.ErrConflict
+		}
+		return err
+	}
+	return nil
+}
+
 func (r *Repository) Version(ctx context.Context, projectID, versionID string) (release.Version, error) {
 	var item release.Version
-	err := r.Pool.QueryRow(ctx, `SELECT id, project_id, content_hash FROM pipeline_versions WHERE project_id=$1 AND id=$2`, projectID, versionID).
-		Scan(&item.ID, &item.ProjectID, &item.ContentHash)
+	err := r.Pool.QueryRow(ctx, `SELECT id, project_id, content_hash, created_at FROM pipeline_versions WHERE project_id=$1 AND id=$2`, projectID, versionID).
+		Scan(&item.ID, &item.ProjectID, &item.ContentHash, &item.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return release.Version{}, release.ErrNotFound
 	}
@@ -73,6 +102,11 @@ func (r *Repository) Version(ctx context.Context, projectID, versionID string) (
 		return release.Version{}, err
 	}
 	return item, nil
+}
+
+func (r *Repository) SaveEvidence(ctx context.Context, evidence release.Evidence) error {
+	_, err := r.Pool.Exec(ctx, `INSERT INTO project_release_validations(project_id, version_id, environment_kind, passed, content_hash, validated_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (project_id, version_id, environment_kind) DO UPDATE SET passed=EXCLUDED.passed, content_hash=EXCLUDED.content_hash, validated_at=EXCLUDED.validated_at`, evidence.ProjectID, evidence.VersionID, evidence.EnvironmentID, evidence.Passed, evidence.ContentHash, time.Now().UTC())
+	return err
 }
 
 func (r *Repository) Evidence(ctx context.Context, projectID, versionID string, environment release.EnvironmentKind) (release.Evidence, error) {

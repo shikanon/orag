@@ -46,6 +46,24 @@ func (r *MemoryRepository) Releases(_ context.Context, _ string) ([]Release, err
 	defer r.mu.RUnlock()
 	return append([]Release(nil), r.releases...), nil
 }
+func (r *MemoryRepository) Versions(_ context.Context, _ string) ([]Version, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := make([]Version, 0, len(r.versions))
+	for _, item := range r.versions {
+		items = append(items, item)
+	}
+	return items, nil
+}
+func (r *MemoryRepository) CreateVersion(_ context.Context, version Version) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.versions[version.ID]; exists {
+		return ErrConflict
+	}
+	r.versions[version.ID] = version
+	return nil
+}
 func (r *MemoryRepository) Version(_ context.Context, _ string, id string) (Version, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -59,6 +77,13 @@ func (r *MemoryRepository) Evidence(_ context.Context, _ string, id string, env 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.evidence[id+"/"+string(env)], nil
+}
+func (r *MemoryRepository) SaveEvidence(_ context.Context, evidence Evidence) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.evidence[evidence.VersionID+"/"+evidence.EnvironmentID] = evidence
+	r.validated[evidence.VersionID+"/"+evidence.EnvironmentID] = evidence.Passed
+	return nil
 }
 func (r *MemoryRepository) PreviouslyValidated(_ context.Context, _ string, id string, env EnvironmentKind) (bool, error) {
 	r.mu.RLock()
@@ -86,6 +111,7 @@ func (r *MemoryRepository) PutEvidence(evidence Evidence) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.evidence[evidence.VersionID+"/"+evidence.EnvironmentID] = evidence
+	r.validated[evidence.VersionID+"/"+evidence.EnvironmentID] = evidence.Passed
 }
 func (r *MemoryRepository) PutValidation(versionID string, environment EnvironmentKind, passed bool) {
 	r.mu.Lock()

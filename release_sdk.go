@@ -13,6 +13,9 @@ import (
 // Keeping this interface public lets downstream applications inject a mock
 // without importing ORAG internals.
 type ReleaseClient interface {
+	ListPipelineVersions(context.Context, ListPipelineVersionsRequest) ([]PipelineVersion, error)
+	CreatePipelineVersion(context.Context, CreatePipelineVersionRequest) (PipelineVersion, error)
+	ValidatePipelineVersion(context.Context, ValidatePipelineVersionRequest) (PipelineValidation, error)
 	ListEnvironments(context.Context, ListEnvironmentsRequest) ([]Environment, error)
 	ListReleases(context.Context, ListReleasesRequest) ([]Release, error)
 	Promote(context.Context, PromoteRequest) (Release, error)
@@ -36,6 +39,29 @@ type Environment struct {
 	ActiveVersionID string
 	Revision        int64
 	Bound           bool
+}
+
+type PipelineVersion struct {
+	ID          string
+	ProjectID   string
+	ContentHash string
+	CreatedAt   time.Time
+}
+
+type PipelineValidation struct {
+	VersionID   string
+	Environment EnvironmentKind
+	Passed      bool
+	ContentHash string
+}
+
+type ListPipelineVersionsRequest struct{ ProjectID string }
+type CreatePipelineVersionRequest struct{ ProjectID, ID, ContentHash string }
+type ValidatePipelineVersionRequest struct {
+	ProjectID, VersionID string
+	Environment          EnvironmentKind
+	Passed               bool
+	ContentHash          string
 }
 
 type Release struct {
@@ -70,6 +96,59 @@ type RollbackRequest struct {
 	ExpectedActiveVersionID string
 	Actor                   string
 	Reason                  string
+}
+
+func (c *Client) ListPipelineVersions(ctx context.Context, req ListPipelineVersionsRequest) ([]PipelineVersion, error) {
+	if err := c.requireOpen("list_pipeline_versions"); err != nil {
+		return nil, err
+	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	if projectID == "" {
+		return nil, newError(CodeInvalidArgument, "list_pipeline_versions", "project", "", false, errors.New("project_id is required"))
+	}
+	items, err := c.app.Release.Versions(ctx, projectID)
+	if err != nil {
+		return nil, releaseError("list_pipeline_versions", projectID, err)
+	}
+	result := make([]PipelineVersion, len(items))
+	for i := range items {
+		result[i] = fromPipelineVersion(items[i])
+	}
+	return result, nil
+}
+
+func (c *Client) CreatePipelineVersion(ctx context.Context, req CreatePipelineVersionRequest) (PipelineVersion, error) {
+	if err := c.requireOpen("create_pipeline_version"); err != nil {
+		return PipelineVersion{}, err
+	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	if projectID == "" {
+		return PipelineVersion{}, newError(CodeInvalidArgument, "create_pipeline_version", "project", "", false, errors.New("project_id is required"))
+	}
+	item := release.Version{ID: strings.TrimSpace(req.ID), ProjectID: projectID, ContentHash: strings.TrimSpace(req.ContentHash)}
+	if item.ID == "" {
+		item.ID = "pv_" + strings.TrimPrefix(item.ContentHash, "sha256:")[:minInt(24, len(strings.TrimPrefix(item.ContentHash, "sha256:")))]
+	}
+	if err := c.app.Release.CreateVersion(ctx, item); err != nil {
+		return PipelineVersion{}, releaseError("create_pipeline_version", projectID, err)
+	}
+	return fromPipelineVersion(item), nil
+}
+
+func (c *Client) ValidatePipelineVersion(ctx context.Context, req ValidatePipelineVersionRequest) (PipelineValidation, error) {
+	if err := c.requireOpen("validate_pipeline_version"); err != nil {
+		return PipelineValidation{}, err
+	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	versionID := strings.TrimSpace(req.VersionID)
+	if projectID == "" || versionID == "" {
+		return PipelineValidation{}, newError(CodeInvalidArgument, "validate_pipeline_version", "version", "", false, errors.New("project_id and version_id are required"))
+	}
+	evidence := release.Evidence{EnvironmentID: string(req.Environment), Passed: req.Passed, ContentHash: strings.TrimSpace(req.ContentHash)}
+	if err := c.app.Release.Validate(ctx, projectID, versionID, evidence); err != nil {
+		return PipelineValidation{}, releaseError("validate_pipeline_version", versionID, err)
+	}
+	return PipelineValidation{VersionID: versionID, Environment: req.Environment, Passed: req.Passed, ContentHash: evidence.ContentHash}, nil
 }
 
 func (c *Client) ListEnvironments(ctx context.Context, req ListEnvironmentsRequest) ([]Environment, error) {
@@ -148,6 +227,17 @@ func (c *Client) Rollback(ctx context.Context, req RollbackRequest) (Release, er
 
 func fromEnvironment(item release.Environment) Environment {
 	return Environment{ID: item.ID, ProjectID: item.ProjectID, Kind: EnvironmentKind(item.Kind), ActiveVersionID: item.ActiveVersionID, Revision: item.Revision, Bound: item.Bound}
+}
+
+func fromPipelineVersion(item release.Version) PipelineVersion {
+	return PipelineVersion{ID: item.ID, ProjectID: item.ProjectID, ContentHash: item.ContentHash, CreatedAt: item.CreatedAt}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func fromRelease(item release.Release) Release {
