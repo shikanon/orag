@@ -37,7 +37,7 @@ Before `v1.0.0`:
 - stored-data migrations are forward-only unless release notes explicitly provide rollback steps;
 - public Go SDK changes are recorded in the changelog and checked with an external consumer module.
 
-The root-module public Go SDK is `beta` beginning with `v0.1.0-beta.1`. Its documented core workflow receives best-effort migration guidance, while capabilities explicitly listed as SDK limitations retain their HTTP/control-plane maturity.
+The root-module public Go SDK is `beta` beginning with `v0.1.0-beta.1` and is most recently published as `v0.1.0-beta.2`. Its documented core workflow receives best-effort migration guidance, while capabilities explicitly listed as SDK limitations retain their HTTP/control-plane maturity.
 
 Deprecations identify the replacement, first deprecated version, and earliest removal version. Removal must not occur in the same prerelease that first announces the deprecation unless required for security.
 

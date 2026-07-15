@@ -7,7 +7,7 @@ The SDK is currently **beta**. Its core workflow is tested from a standalone dow
 ## Install
 
 ```bash
-go get github.com/shikanon/orag@v0.1.0-beta.1
+go get github.com/shikanon/orag@v0.1.0-beta.2
 ```
 
 The SDK currently follows the repository Go toolchain declared in `go.mod`.
@@ -127,7 +127,7 @@ if errors.As(err, &sdkErr) && sdkErr.Retryable {
 
 ## Compatibility and checks
 
-The SDK is beta in `v0.1.0-beta.1`. Breaking pre-1.0 changes are recorded in `CHANGELOG.md` with migration guidance when practical. Verify an upgrade with:
+The SDK is beta in `v0.1.0-beta.2`. Breaking pre-1.0 changes are recorded in `CHANGELOG.md` with migration guidance when practical. Verify an upgrade with:
 
 ```bash
 make sdk-check
@@ -136,7 +136,7 @@ make sdk-check
 That gate compiles external-package tests, scans exported documentation for `internal/*` type leaks, and runs tests plus `go vet` in a standalone consumer module.
 
 The standalone consumer resolves the published module directly at
-`github.com/shikanon/orag v0.1.0-beta.1`; it intentionally has no `replace`
+`github.com/shikanon/orag v0.1.0-beta.2`; it intentionally has no `replace`
 directive pointing back to this repository. This keeps the release check honest:
 it proves that a downstream module can download and use the tagged SDK without
 access to the source checkout.

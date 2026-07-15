@@ -46,8 +46,8 @@ Current baseline:
 | Offline Knowledge and MCP self-check/diagnose/ops | `experimental` | Remove fixture dependencies and validate approval and audit boundaries |
 | ORAG Console | `experimental` | Complete orchestration, API debugging, evaluation gates, promotion, and rollback |
 | Tutorial Lab | `experimental` | Support clone, Quick Run, Replay, and result comparison |
-| Public Go SDK | `beta` | Shipped in `v0.1.0-beta.1`; continue validation through the external consumer gate and compatibility policy |
-| GHCR images, full-stack Compose, hosted docs | `beta` | Shipped in `v0.1.0-beta.1`; continue validating signatures, the walkthrough, and documentation contracts |
+| Public Go SDK | `beta` | Shipped in `v0.1.0-beta.2`; continue validation through the external consumer gate and compatibility policy |
+| GHCR images, full-stack Compose, hosted docs | `beta` | Shipped in `v0.1.0-beta.2`; continue validating signatures, the walkthrough, and documentation contracts |
 
 ORAG will not label any capability `stable` before `v1.0.0`.
 

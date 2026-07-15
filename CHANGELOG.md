@@ -16,6 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added regression coverage proving RAG graph spans reach trace persistence with contiguous sequence numbers and real UTC execution windows, without relying on store-time fallback normalization.
 - Added SHA-pinned CodeQL, `govulncheck`, production npm audit, reachable-history secret scanning, API/Console container scanning, and published OpenSSF Scorecard workflows.
 
+## [0.1.0-beta.2] - 2026-07-15
+
+### Changed
+
+- Published the current authenticated project/API-key SDK surface as a reproducible Beta.2 release with dual-architecture GHCR images and the full release verification gate.
+- The standalone consumer now resolves `github.com/shikanon/orag v0.1.0-beta.2` directly, proving the current public SDK can be consumed without a repository-local module replacement.
+
 ### Changed
 
 - Qdrant points now record staged `searchable` state and `ingestion_job_id`; PostgreSQL `chunks.searchable` authorizes every dense candidate, including historical points without the new payload fields.
@@ -66,5 +73,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Deterministic mock providers are for walkthroughs and tests only. Production deployments require explicit provider and storage configuration.
 - The public Go SDK is intentionally pre-1.0 and follows the migration rules in `docs/compatibility.md`.
 
-[Unreleased]: https://github.com/shikanon/orag/compare/v0.1.0-beta.1...HEAD
+[Unreleased]: https://github.com/shikanon/orag/compare/v0.1.0-beta.2...HEAD
+[0.1.0-beta.2]: https://github.com/shikanon/orag/releases/tag/v0.1.0-beta.2
 [0.1.0-beta.1]: https://github.com/shikanon/orag/releases/tag/v0.1.0-beta.1
