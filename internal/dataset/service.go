@@ -66,6 +66,10 @@ type SplitRepository interface {
 	DatasetItemsBySplit(ctx context.Context, tenantID, datasetID string, split DatasetSplit) ([]Item, error)
 }
 
+type ProjectRepository interface {
+	GetDatasetInProject(ctx context.Context, tenantID, projectID, id string) (Dataset, bool, error)
+}
+
 type Service struct {
 	repo Repository
 }
@@ -139,6 +143,14 @@ func (s *Service) Get(ctx context.Context, tenantID, id string) (Dataset, bool, 
 	return s.repo.GetDataset(ctx, tenantID, id)
 }
 
+func (s *Service) GetInProject(ctx context.Context, tenantID, projectID, id string) (Dataset, bool, error) {
+	if repo, ok := s.repo.(ProjectRepository); ok {
+		return repo.GetDatasetInProject(ctx, tenantID, projectID, id)
+	}
+	item, found, err := s.repo.GetDataset(ctx, tenantID, id)
+	return item, found && item.ProjectID == projectID, err
+}
+
 type MemoryRepository struct {
 	mu       sync.RWMutex
 	datasets map[string]Dataset
@@ -161,6 +173,13 @@ func (r *MemoryRepository) GetDataset(_ context.Context, tenantID, id string) (D
 	defer r.mu.RUnlock()
 	ds, ok := r.datasets[id]
 	return ds, ok && ds.TenantID == tenantID, nil
+}
+
+func (r *MemoryRepository) GetDatasetInProject(_ context.Context, tenantID, projectID, id string) (Dataset, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ds, ok := r.datasets[id]
+	return ds, ok && ds.TenantID == tenantID && ds.ProjectID == projectID, nil
 }
 
 func (r *MemoryRepository) AddDatasetItem(_ context.Context, tenantID string, item Item) (Item, error) {

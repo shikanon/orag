@@ -48,7 +48,9 @@ Authorization: Bearer <access_token>
 
 Bearer 同时支持登录返回的用户 token 和 `orag_sk_` 机器 API Key。只有 `tenant_admin` 可以通过 `POST /v1/api-keys`、`GET /v1/api-keys` 和 `DELETE /v1/api-keys/{api_key_id}` 管理密钥；创建响应会返回一次完整 secret，后续列表只返回非敏感元数据。
 
-`project_editor` 和 `project_viewer` 必须绑定项目。在知识库、数据集等资源完成项目归属迁移前，项目级密钥对尚未显式支持项目策略的租户级路由会返回 `403 forbidden`，不会退化为租户全量访问。跨项目读取项目元数据返回 `404 project_not_found`，避免泄漏资源是否存在。
+`project_editor` 和 `project_viewer` 必须绑定项目。项目级密钥可以访问其项目下的知识库、上传、查询、数据集和评测；editor 可以写入这些资源，viewer 只能读取、查询和读取评测结果。创建知识库或数据集时省略 `project_id` 会自动使用密钥绑定的项目，显式指定其他项目会返回 `403 forbidden`。
+
+尚未完成 Project 归属迁移的租户级路由仍会返回 `403 forbidden`，不会退化为租户全量访问。跨项目读取 Project 返回 `404 project_not_found`，跨项目读取知识库或数据集分别按资源不存在返回 `404`，避免泄漏资源是否存在。tenant admin 在 beta 兼容期仍可访问省略 `project_id` 的旧资源；项目级密钥永远不能访问这类未归属资源。
 
 `API_KEY_PEPPER` 用于对高熵 API Key 计算 HMAC-SHA-256。它必须与数据库凭据分开管理；轮换该值会立即使所有现有 API Key 失效，因此应先创建并分发替代密钥，再执行计划内轮换。
 

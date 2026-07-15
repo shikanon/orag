@@ -31,6 +31,21 @@ func (r *Repository) GetDataset(ctx context.Context, tenantID, id string) (datas
 	return ds, true, nil
 }
 
+func (r *Repository) GetDatasetInProject(ctx context.Context, tenantID, projectID, id string) (dataset.Dataset, bool, error) {
+	row := r.datasetDB().QueryRow(ctx, `
+		SELECT id, tenant_id, COALESCE(project_id,''), name, kind, version, created_at
+		FROM datasets
+		WHERE tenant_id=$1 AND project_id=$2 AND id=$3`, tenantID, projectID, id)
+	var ds dataset.Dataset
+	if err := row.Scan(&ds.ID, &ds.TenantID, &ds.ProjectID, &ds.Name, &ds.Kind, &ds.Version, &ds.CreatedAt); err != nil {
+		if err == pgx.ErrNoRows {
+			return dataset.Dataset{}, false, nil
+		}
+		return dataset.Dataset{}, false, err
+	}
+	return ds, true, nil
+}
+
 func (r *Repository) AddDatasetItem(ctx context.Context, tenantID string, item dataset.Item) (dataset.Item, error) {
 	item = dataset.NormalizeItemMetadata(item)
 	relevantBody, err := json.Marshal(item.RelevantDocIDs)

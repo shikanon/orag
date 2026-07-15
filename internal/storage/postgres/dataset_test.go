@@ -81,6 +81,23 @@ func TestRepositoryAddDatasetItemEnforcesTenant(t *testing.T) {
 	}
 }
 
+func TestRepositoryGetDatasetInProjectUsesCompositeScope(t *testing.T) {
+	now := time.Now().UTC()
+	db := &fakeDatasetQueryer{row: fakeDatasetRow{values: []any{"ds_1", "tenant_1", "prj_1", "Golden", "golden", "v1", now}}}
+	repo := &Repository{datasetRunner: db}
+
+	got, found, err := repo.GetDatasetInProject(context.Background(), "tenant_1", "prj_1", "ds_1")
+	if err != nil || !found || got.ProjectID != "prj_1" {
+		t.Fatalf("GetDatasetInProject() = %#v, %v, %v", got, found, err)
+	}
+	if !strings.Contains(db.rowSQL, "tenant_id=$1 AND project_id=$2 AND id=$3") {
+		t.Fatalf("project-scoped get SQL = %s", db.rowSQL)
+	}
+	if len(db.rowArgs) != 3 || db.rowArgs[0] != "tenant_1" || db.rowArgs[1] != "prj_1" || db.rowArgs[2] != "ds_1" {
+		t.Fatalf("project-scoped get args = %#v", db.rowArgs)
+	}
+}
+
 func TestRepositoryDatasetItemsEnforcesTenant(t *testing.T) {
 	ctx := context.Background()
 	db := &fakeDatasetQueryer{row: fakeDatasetRow{err: pgx.ErrNoRows}}

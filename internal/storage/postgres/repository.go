@@ -224,11 +224,47 @@ func (r *Repository) ListKnowledgeBases(ctx context.Context, tenantID string) ([
 	return out, nil
 }
 
+func (r *Repository) ListKnowledgeBasesByProject(ctx context.Context, tenantID, projectID string) ([]kb.KnowledgeBase, error) {
+	rows, err := r.knowledgeBaseQueryer().Query(ctx, `
+		SELECT id, tenant_id, COALESCE(project_id,''), name, description, metadata, created_at, updated_at
+		FROM knowledge_bases
+		WHERE tenant_id=$1 AND project_id=$2
+		ORDER BY created_at`, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []kb.KnowledgeBase
+	for rows.Next() {
+		item, err := scanKnowledgeBase(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) GetKnowledgeBase(ctx context.Context, tenantID, id string) (kb.KnowledgeBase, bool, error) {
 	row := r.knowledgeBaseQueryer().QueryRow(ctx, `
 		SELECT id, tenant_id, COALESCE(project_id,''), name, description, metadata, created_at, updated_at
 		FROM knowledge_bases
 		WHERE tenant_id=$1 AND id=$2`, tenantID, id)
+	item, err := scanKnowledgeBase(row)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return kb.KnowledgeBase{}, false, nil
+		}
+		return kb.KnowledgeBase{}, false, err
+	}
+	return item, true, nil
+}
+
+func (r *Repository) GetKnowledgeBaseByProject(ctx context.Context, tenantID, projectID, id string) (kb.KnowledgeBase, bool, error) {
+	row := r.knowledgeBaseQueryer().QueryRow(ctx, `
+		SELECT id, tenant_id, COALESCE(project_id,''), name, description, metadata, created_at, updated_at
+		FROM knowledge_bases
+		WHERE tenant_id=$1 AND project_id=$2 AND id=$3`, tenantID, projectID, id)
 	item, err := scanKnowledgeBase(row)
 	if err != nil {
 		if err == pgx.ErrNoRows {

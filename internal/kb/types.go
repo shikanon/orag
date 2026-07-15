@@ -165,11 +165,31 @@ func (s *MemoryStore) ListKnowledgeBases(_ context.Context, tenantID string) ([]
 	return out, nil
 }
 
+func (s *MemoryStore) ListKnowledgeBasesByProject(_ context.Context, tenantID, projectID string) ([]KnowledgeBase, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]KnowledgeBase, 0)
+	for _, item := range s.kbs {
+		if item.TenantID == tenantID && item.ProjectID == projectID {
+			out = append(out, item)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
 func (s *MemoryStore) GetKnowledgeBase(_ context.Context, tenantID, id string) (KnowledgeBase, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	item, ok := s.kbs[id]
 	return item, ok && item.TenantID == tenantID, nil
+}
+
+func (s *MemoryStore) GetKnowledgeBaseByProject(_ context.Context, tenantID, projectID, id string) (KnowledgeBase, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.kbs[id]
+	return item, ok && item.TenantID == tenantID && item.ProjectID == projectID, nil
 }
 
 func (s *MemoryStore) DeleteKnowledgeBase(_ context.Context, tenantID, id string) (bool, error) {

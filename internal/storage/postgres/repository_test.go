@@ -114,6 +114,21 @@ func TestRepositoryListKnowledgeBasesReturnsRowsAndKeepsOrderingSQL(t *testing.T
 	}
 }
 
+func TestRepositoryListKnowledgeBasesByProjectUsesCompositeScope(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{queryRows: &fakeTraceRows{}}
+	repo := &Repository{kbQueryer: queryer}
+
+	if _, err := repo.ListKnowledgeBasesByProject(context.Background(), "tenant_1", "prj_1"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(queryer.querySQL, "tenant_id=$1 AND project_id=$2") {
+		t.Fatalf("project-scoped list SQL = %s", queryer.querySQL)
+	}
+	if !reflect.DeepEqual(queryer.queryArgs, []any{"tenant_1", "prj_1"}) {
+		t.Fatalf("project-scoped list args = %#v", queryer.queryArgs)
+	}
+}
+
 func TestRepositoryListKnowledgeBasesReturnsQueryError(t *testing.T) {
 	want := errors.New("query failed")
 	repo := &Repository{kbQueryer: &fakeKnowledgeBaseQueryer{queryErr: want}}

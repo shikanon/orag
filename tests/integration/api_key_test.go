@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,6 +85,27 @@ func TestPostgresAPIKeyLifecycleAndTenantProjectBoundary(t *testing.T) {
 	}
 	if status, body := performIntegrationJSON(h, "GET", "/v1/projects", "", created.Secret); status != 403 {
 		t.Fatalf("HTTP API key tenant enumeration status=%d body=%s", status, body)
+	}
+	if status, body := performIntegrationJSON(h, "GET", "/v1/knowledge-bases/"+knowledgeBase.ID, "", created.Secret); status != 200 {
+		t.Fatalf("HTTP project knowledge-base read status=%d body=%s", status, body)
+	}
+	if status, body := performIntegrationJSON(h, "GET", "/v1/knowledge-bases", "", created.Secret); status != 200 || !strings.Contains(body, knowledgeBase.ID) || strings.Contains(body, "kb_default") {
+		t.Fatalf("HTTP project knowledge-base list status=%d body=%s", status, body)
+	}
+	if status, body := performIntegrationJSON(h, "GET", "/v1/knowledge-bases/kb_default", "", created.Secret); status != 404 {
+		t.Fatalf("HTTP cross-project knowledge-base read status=%d body=%s", status, body)
+	}
+	if status, body := performIntegrationJSON(h, "POST", "/v1/knowledge-bases", `{"name":"Created by project key"}`, created.Secret); status != 201 || !strings.Contains(body, `"project_id":"`+ownedProject.ID+`"`) {
+		t.Fatalf("HTTP project knowledge-base create status=%d body=%s", status, body)
+	}
+	if status, body := performIntegrationJSON(h, "POST", "/v1/datasets/"+storedDataset.ID+"/items", `{"query":"hello","ground_truth":"Insufficient context."}`, created.Secret); status != 201 {
+		t.Fatalf("HTTP project dataset item status=%d body=%s", status, body)
+	}
+	if status, body := performIntegrationJSON(h, "POST", "/v1/query", `{"knowledge_base_id":"`+knowledgeBase.ID+`","query":"hello"}`, created.Secret); status != 200 {
+		t.Fatalf("HTTP project query status=%d body=%s", status, body)
+	}
+	if status, body := performIntegrationJSON(h, "GET", "/v1/traces", "", created.Secret); status != 403 {
+		t.Fatalf("HTTP unmigrated trace route status=%d body=%s", status, body)
 	}
 	if err := app.APIKeys.Revoke(ctx, "tenant_other", created.APIKey.ID); !errors.Is(err, auth.ErrAPIKeyNotFound) {
 		t.Fatalf("cross-tenant revoke error = %v", err)
