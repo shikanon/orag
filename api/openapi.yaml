@@ -8,6 +8,7 @@ servers:
 tags:
   - name: System
   - name: Auth
+  - name: APIKeys
   - name: Projects
   - name: Tutorials
   - name: KnowledgeBases
@@ -672,6 +673,82 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /v1/api-keys:
+    get:
+      tags: [APIKeys]
+      operationId: listAPIKeys
+      x-orag-maturity: experimental
+      description: Lists machine credential metadata for the current tenant. Secrets and hashes are never returned.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Tenant API key metadata ordered by newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyListResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [APIKeys]
+      operationId: createAPIKey
+      x-orag-maturity: experimental
+      description: Creates a machine credential. The full secret is returned exactly once in this response.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPIKeyRequest"
+      responses:
+        "201":
+          description: API key metadata and its one-time secret.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateAPIKeyResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/api-keys/{api_key_id}:
+    parameters:
+      - name: api_key_id
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      tags: [APIKeys]
+      operationId: revokeAPIKey
+      x-orag-maturity: experimental
+      description: Idempotently revokes an API key owned by the current tenant.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: API key revoked.
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /v1/projects:
     get:
       tags: [Projects]
@@ -687,6 +764,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProjectListResponse"
         "401":
+          $ref: "#/components/responses/Error"
+        "403":
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
@@ -712,6 +791,8 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "401":
+          $ref: "#/components/responses/Error"
+        "403":
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
@@ -740,6 +821,8 @@ paths:
                 $ref: "#/components/schemas/Project"
         "401":
           $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
         "500":
@@ -767,6 +850,8 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "401":
+          $ref: "#/components/responses/Error"
+        "403":
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
@@ -1421,7 +1506,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT
+      bearerFormat: ORAG user token or orag_sk_ API key
   responses:
     Error:
       description: |
@@ -1502,6 +1587,73 @@ components:
           example: Bearer
         expires_in:
           type: integer
+    APIKeyRole:
+      type: string
+      enum: [tenant_admin, project_editor, project_viewer]
+    CreateAPIKeyRequest:
+      type: object
+      required: [name, role]
+      properties:
+        name:
+          type: string
+        role:
+          $ref: "#/components/schemas/APIKeyRole"
+        project_id:
+          type: string
+          description: Required for project_editor and project_viewer. Optional project constraint for tenant_admin.
+        expires_at:
+          type: string
+          format: date-time
+          description: Optional future expiry instant.
+    APIKey:
+      type: object
+      required: [id, tenant_id, name, prefix, role, created_by, created_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        project_id:
+          type: string
+        name:
+          type: string
+        prefix:
+          type: string
+          description: Non-secret display prefix. It cannot authenticate a request.
+        role:
+          $ref: "#/components/schemas/APIKeyRole"
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+    CreateAPIKeyResponse:
+      type: object
+      required: [api_key, secret]
+      properties:
+        api_key:
+          $ref: "#/components/schemas/APIKey"
+        secret:
+          type: string
+          format: password
+          description: One-time API key secret. It is never available from list or get operations.
+    APIKeyListResponse:
+      type: object
+      required: [api_keys]
+      properties:
+        api_keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/APIKey"
     CreateProjectRequest:
       type: object
       required: [name]

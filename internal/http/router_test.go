@@ -15,6 +15,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/route"
 	"github.com/getkin/kin-openapi/openapi3"
 	core "github.com/shikanon/orag/internal/app"
+	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/config"
 	"github.com/shikanon/orag/internal/dataset"
 	evalpkg "github.com/shikanon/orag/internal/eval"
@@ -153,6 +154,85 @@ func TestProjectsAreTenantScoped(t *testing.T) {
 	if updated.Code != 200 || !strings.Contains(updated.Body, `"name":"Support Ops"`) {
 		t.Fatalf("update status = %d body=%s", updated.Code, updated.Body)
 	}
+}
+
+func TestAPIKeyLifecycleAndProjectAuthorization(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	adminToken := issueToken(t, application, "tenant_a")
+
+	firstProjectResponse := performJSON(h, "POST", "/v1/projects", `{"name":"First"}`, adminToken)
+	secondProjectResponse := performJSON(h, "POST", "/v1/projects", `{"name":"Second"}`, adminToken)
+	if firstProjectResponse.Code != 201 || secondProjectResponse.Code != 201 {
+		t.Fatalf("project creation failed: first=%d second=%d", firstProjectResponse.Code, secondProjectResponse.Code)
+	}
+	var firstProject, secondProject project.Project
+	if err := json.Unmarshal([]byte(firstProjectResponse.Body), &firstProject); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(secondProjectResponse.Body), &secondProject); err != nil {
+		t.Fatal(err)
+	}
+
+	viewerResponse := performJSON(h, "POST", "/v1/api-keys", `{"name":"read-only robot","role":"project_viewer","project_id":"`+firstProject.ID+`"}`, adminToken)
+	if viewerResponse.Code != 201 {
+		t.Fatalf("viewer key status = %d body=%s", viewerResponse.Code, viewerResponse.Body)
+	}
+	var viewer auth.APIKeyCreateResult
+	if err := json.Unmarshal([]byte(viewerResponse.Body), &viewer); err != nil {
+		t.Fatal(err)
+	}
+	if viewer.Secret == "" || viewer.APIKey.KeyHash != "" {
+		t.Fatalf("create response = %#v", viewer)
+	}
+
+	listed := performJSON(h, "GET", "/v1/api-keys", "", adminToken)
+	if listed.Code != 200 || strings.Contains(listed.Body, viewer.Secret) || strings.Contains(listed.Body, "key_hash") {
+		t.Fatalf("list status = %d body=%s", listed.Code, listed.Body)
+	}
+	ownProject := performJSON(h, "GET", "/v1/projects/"+firstProject.ID, "", viewer.Secret)
+	if ownProject.Code != 200 {
+		t.Fatalf("viewer own project status = %d body=%s", ownProject.Code, ownProject.Body)
+	}
+	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/projects", "", viewer.Secret, "trace_viewer_list"), 403, "forbidden", "trace_viewer_list")
+	assertErrorResponse(t, performJSONWithTrace(h, "PATCH", "/v1/projects/"+firstProject.ID, `{"name":"Changed"}`, viewer.Secret, "trace_viewer_update"), 403, "forbidden", "trace_viewer_update")
+	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/projects/"+secondProject.ID, "", viewer.Secret, "trace_cross_project"), 404, "project_not_found", "trace_cross_project")
+	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/api-keys", "", viewer.Secret, "trace_viewer_keys"), 403, "forbidden", "trace_viewer_keys")
+	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/knowledge-bases", "", viewer.Secret, "trace_viewer_legacy_resource"), 403, "forbidden", "trace_viewer_legacy_resource")
+
+	machineAdminResponse := performJSON(h, "POST", "/v1/api-keys", `{"name":"automation admin","role":"tenant_admin"}`, adminToken)
+	if machineAdminResponse.Code != 201 {
+		t.Fatalf("machine admin status = %d body=%s", machineAdminResponse.Code, machineAdminResponse.Body)
+	}
+	var machineAdmin auth.APIKeyCreateResult
+	if err := json.Unmarshal([]byte(machineAdminResponse.Body), &machineAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if response := performJSON(h, "GET", "/v1/api-keys", "", machineAdmin.Secret); response.Code != 200 {
+		t.Fatalf("machine admin list status = %d body=%s", response.Code, response.Body)
+	}
+
+	revoked := performJSON(h, "DELETE", "/v1/api-keys/"+viewer.APIKey.ID, "", adminToken)
+	if revoked.Code != 204 {
+		t.Fatalf("revoke status = %d body=%s", revoked.Code, revoked.Body)
+	}
+	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/projects/"+firstProject.ID, "", viewer.Secret, "trace_revoked_key"), 401, "invalid_bearer_token", "trace_revoked_key")
+	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/projects/"+firstProject.ID, "", "orag_sk_invalid", "trace_invalid_key"), 401, "invalid_bearer_token", "trace_invalid_key")
+}
+
+func TestAPIKeyCreateValidatesRoleAndProject(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	adminToken := issueToken(t, application, "tenant_a")
+
+	missingProject := performJSONWithTrace(h, "POST", "/v1/api-keys", `{"name":"viewer","role":"project_viewer"}`, adminToken, "trace_key_missing_project")
+	assertErrorResponse(t, missingProject, 400, "invalid_request", "trace_key_missing_project")
+	foreignProject := performJSONWithTrace(h, "POST", "/v1/api-keys", `{"name":"viewer","role":"project_viewer","project_id":"prj_missing"}`, adminToken, "trace_key_foreign_project")
+	assertErrorResponse(t, foreignProject, 404, "project_not_found", "trace_key_foreign_project")
+	unknownRole := performJSONWithTrace(h, "POST", "/v1/api-keys", `{"name":"robot","role":"owner"}`, adminToken, "trace_key_role")
+	assertErrorResponse(t, unknownRole, 400, "invalid_request", "trace_key_role")
+	missingKey := performJSONWithTrace(h, "DELETE", "/v1/api-keys/key_missing", "", adminToken, "trace_key_missing")
+	assertErrorResponse(t, missingKey, 404, "api_key_not_found", "trace_key_missing")
 }
 
 func TestProjectHandlersReturnStableErrors(t *testing.T) {

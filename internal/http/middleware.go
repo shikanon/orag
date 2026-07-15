@@ -30,16 +30,42 @@ func (s *Server) authMiddleware(ctx context.Context, c *app.RequestContext) {
 		c.Abort()
 		return
 	}
-	claims, err := s.App.Auth.ParseToken(token)
-	if err != nil {
+	var principal auth.Principal
+	var err error
+	if strings.HasPrefix(token, "orag_sk_") {
+		principal, err = s.App.APIKeys.Authenticate(ctx, token)
+	} else {
+		var claims auth.Claims
+		claims, err = s.App.Auth.ParseToken(token)
+		if err == nil {
+			principal = claims.Principal()
+		}
+	}
+	if err != nil || !principal.Valid() {
 		writeError(c, consts.StatusUnauthorized, "invalid_bearer_token", "invalid bearer token")
 		c.Abort()
 		return
 	}
-	principal := claims.Principal()
 	c.Set("principal", principal)
 	c.Set("tenant_id", principal.TenantID)
+	// Project-owned RAG resources are introduced in the next migration slice.
+	// Until a handler has an explicit project policy, constrained credentials
+	// must not fall back to tenant-wide repository access.
+	if principal.ProjectID != "" && !strings.HasPrefix(string(c.Path()), "/v1/projects/") {
+		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+		c.Abort()
+		return
+	}
 	c.Next(ctx)
+}
+
+func authorizeRequest(c *app.RequestContext, action auth.Action, resourceTenantID, resourceProjectID string) bool {
+	principal, ok := requestPrincipal(c)
+	if !ok || auth.Authorize(principal, action, resourceTenantID, resourceProjectID) != nil {
+		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+		return false
+	}
+	return true
 }
 
 func (s *Server) metricsMiddleware(ctx context.Context, c *app.RequestContext) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/shikanon/orag/internal/auth"
+	oraghttp "github.com/shikanon/orag/internal/http"
 	"github.com/shikanon/orag/internal/project"
 )
 
@@ -50,6 +51,13 @@ func TestPostgresAPIKeyLifecycleAndTenantProjectBoundary(t *testing.T) {
 	if !found {
 		t.Fatal("created key missing from tenant list")
 	}
+	h := oraghttp.NewServer(app).Hertz().Engine
+	if status, body := performIntegrationJSON(h, "GET", "/v1/projects/"+ownedProject.ID, "", created.Secret); status != 200 {
+		t.Fatalf("HTTP API key project read status=%d body=%s", status, body)
+	}
+	if status, body := performIntegrationJSON(h, "GET", "/v1/projects", "", created.Secret); status != 403 {
+		t.Fatalf("HTTP API key tenant enumeration status=%d body=%s", status, body)
+	}
 	if err := app.APIKeys.Revoke(ctx, "tenant_other", created.APIKey.ID); !errors.Is(err, auth.ErrAPIKeyNotFound) {
 		t.Fatalf("cross-tenant revoke error = %v", err)
 	}
@@ -58,5 +66,8 @@ func TestPostgresAPIKeyLifecycleAndTenantProjectBoundary(t *testing.T) {
 	}
 	if _, err := app.APIKeys.Authenticate(ctx, created.Secret); !errors.Is(err, auth.ErrAPIKeyRevoked) {
 		t.Fatalf("revoked authentication error = %v", err)
+	}
+	if status, body := performIntegrationJSON(h, "GET", "/v1/projects/"+ownedProject.ID, "", created.Secret); status != 401 {
+		t.Fatalf("revoked HTTP API key status=%d body=%s", status, body)
 	}
 }
