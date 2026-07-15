@@ -13,6 +13,7 @@ import (
 	"github.com/shikanon/orag/internal/config"
 	"github.com/shikanon/orag/internal/dataset"
 	"github.com/shikanon/orag/internal/eval"
+	"github.com/shikanon/orag/internal/evaluationpolicy"
 	raggraph "github.com/shikanon/orag/internal/graph"
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/ingest/chunker"
@@ -47,6 +48,7 @@ type App struct {
 	Projects         *project.Service
 	Tutorials        *tutorial.Catalog
 	Eval             eval.Runner
+	EvaluationPolicy *evaluationpolicy.Service
 	Optimizer        *optimizer.Service
 	OfflineKnowledge *offlineknowledge.Service
 	OfflineScheduler *offlineknowledge.Scheduler
@@ -140,6 +142,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	pipelineSvc := pipeline.NewService(backend.pipelineRepo, pipeline.BuiltinRegistry())
 	pipelineCompiler := pipeline.NewCompiler(ragSvc, pipeline.BuiltinRegistry())
 	pipelineDebug := &pipeline.DebugRunner{Drafts: pipelineSvc, Compiler: pipelineCompiler}
+	evaluationPolicySvc := evaluationpolicy.NewService(backend.evaluationPolicyRepo, datasets, eval.DefaultMetricRegistry)
 	apiKeys := auth.NewAPIKeyService(backend.apiKeyRepo, cfg.Auth.APIKeyPepper)
 	evalRunner := eval.Runner{RAG: ragSvc, Datasets: datasets, Repository: backend.evalRepo}
 	optimizerRunner := optimizer.InternalRAGRunner{
@@ -165,17 +168,18 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		closers = append(closers, offlineScheduler.Stop)
 	}
 	return &App{
-		Config:    cfg,
-		Logger:    logger,
-		Auth:      authSvc,
-		APIKeys:   apiKeys,
-		KBStore:   backend.store,
-		Ingest:    ingestSvc,
-		RAG:       ragSvc,
-		Datasets:  datasets,
-		Projects:  projects,
-		Tutorials: tutorials,
-		Eval:      evalRunner,
+		Config:           cfg,
+		Logger:           logger,
+		Auth:             authSvc,
+		APIKeys:          apiKeys,
+		KBStore:          backend.store,
+		Ingest:           ingestSvc,
+		RAG:              ragSvc,
+		Datasets:         datasets,
+		Projects:         projects,
+		Tutorials:        tutorials,
+		Eval:             evalRunner,
+		EvaluationPolicy: evaluationPolicySvc,
 		Optimizer: &optimizer.Service{
 			Repository: backend.optimizerRepo,
 			Runner:     optimizerRunner,
@@ -592,6 +596,7 @@ type knowledgeBackend struct {
 	projectRepo          project.Repository
 	apiKeyRepo           auth.APIKeyRepository
 	evalRepo             eval.Repository
+	evaluationPolicyRepo evaluationpolicy.Repository
 	optimizerRepo        optimizer.Repository
 	offlineKnowledgeRepo offlineknowledge.Repository
 	releaseRepo          release.Repository
@@ -731,6 +736,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			pipelineRepo:         pipeline.NewMemoryRepository(),
 			apiKeyRepo:           auth.NewMemoryAPIKeyRepository(),
 			evalRepo:             eval.NewMemoryRepository(),
+			evaluationPolicyRepo: evaluationpolicy.NewMemoryRepository(),
 			optimizerRepo:        optimizer.NewMemoryRepository(),
 			offlineKnowledgeRepo: offlineknowledge.NewMemoryRepository(),
 			chunkSource:          store,
@@ -790,6 +796,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 		pipelineRepo:         repo,
 		apiKeyRepo:           postgres.NewAPIKeyRepository(pool),
 		evalRepo:             repo,
+		evaluationPolicyRepo: repo,
 		optimizerRepo:        repo,
 		offlineKnowledgeRepo: repo,
 		chunkSource:          repo,
