@@ -62,7 +62,7 @@ orag_sk_<public-id>_<base64url-secret>
 
 - `public-id` is a non-secret lookup identifier included in list responses.
 - The secret contains 32 bytes from `crypto/rand`.
-- PostgreSQL stores `SHA-256(full-key)` and never stores the full key.
+- PostgreSQL stores `HMAC-SHA-256(API_KEY_PEPPER, full-key)` and never stores the full key. The separately managed server pepper adds protection if the database alone is disclosed.
 - Verification parses the public ID, fetches one tenant-independent candidate by ID, hashes the presented key, and uses constant-time comparison.
 - The full key is returned once by create and never returned by list/get.
 - HTTP logs, errors, traces, metrics labels, Console analytics, and audit payloads must not include it.
@@ -136,4 +136,3 @@ Existing login and user tokens remain tenant-admin compatible through the beta s
 - PostgreSQL migration and repository tests with real PostgreSQL integration coverage.
 - Race tests for concurrent authentication/revocation and last-used throttling.
 - OpenAPI validation, SDK external-consumer tests, Console tests, and secret scanning.
-

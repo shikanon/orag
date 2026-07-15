@@ -44,6 +44,7 @@ func (c ServerConfig) Addr() string {
 
 type AuthConfig struct {
 	JWTSecret            string
+	APIKeyPepper         string
 	TokenTTL             time.Duration
 	AdminDefaultUsername string
 	AdminDefaultPassword string
@@ -241,6 +242,7 @@ type OfflineKnowledgeOrganizerTargetConfig struct {
 }
 
 func Load() (Config, error) {
+	jwtSecret := getenv("JWT_SECRET", getenv("SECRET_KEY", "orag-dev-secret-change-me"))
 	cfg := Config{
 		Server: ServerConfig{
 			Host:          getenv("HOST", "0.0.0.0"),
@@ -252,7 +254,8 @@ func Load() (Config, error) {
 			Backend: getenv("STORAGE_BACKEND", "qdrant_postgres"),
 		},
 		Auth: AuthConfig{
-			JWTSecret:            getenv("JWT_SECRET", getenv("SECRET_KEY", "orag-dev-secret-change-me")),
+			JWTSecret:            jwtSecret,
+			APIKeyPepper:         getenv("API_KEY_PEPPER", jwtSecret),
 			TokenTTL:             getenvDuration("AUTH_TOKEN_TTL", 24*time.Hour),
 			AdminDefaultUsername: getenv("ADMIN_DEFAULT_USERNAME", "admin"),
 			AdminDefaultPassword: getenv("ADMIN_DEFAULT_PASSWORD", "admin"),
@@ -456,6 +459,9 @@ func (c Config) Validate() error {
 	if c.Auth.JWTSecret == "" {
 		missing = append(missing, "JWT_SECRET")
 	}
+	if c.Auth.APIKeyPepper == "" {
+		missing = append(missing, "API_KEY_PEPPER")
+	}
 	if err := c.validateModelProviders(&missing); err != nil {
 		return err
 	}
@@ -619,6 +625,7 @@ func (c Config) RedactedEnv() map[string]string {
 		"ARK_RERANK_MODEL":                                  c.Ark.RerankModel,
 		"ALIYUN_RERANK_API_KEY":                             redact(c.Ark.RerankAPIKey),
 		"JWT_SECRET":                                        redact(c.Auth.JWTSecret),
+		"API_KEY_PEPPER":                                    redact(c.Auth.APIKeyPepper),
 		"RAG_QUERY_REWRITE_ENABLED":                         strconv.FormatBool(c.RAG.QueryRewriteEnabled),
 		"RAG_MULTI_QUERY_COUNT":                             strconv.Itoa(c.RAG.MultiQueryCount),
 		"RAG_HYDE_ENABLED":                                  strconv.FormatBool(c.RAG.HyDEEnabled),
