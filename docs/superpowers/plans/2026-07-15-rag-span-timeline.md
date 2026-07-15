@@ -21,5 +21,5 @@
 ### Task 3: Record and publish Roadmap completion
 
 - [x] Update `CHANGELOG.md`, `ROADMAP.md`, and `ROADMAP_EN.md` with #163 and the already-verified #166 diagnostic trace closure.
-- [ ] Commit, push `codex/trace-span-timeline`, and open a ready PR containing `Closes #163`.
+- [x] Commit, push `codex/trace-span-timeline`, and open a ready PR containing `Closes #163`.
 - [ ] Wait for required checks, squash merge, sync local `main`, and remove only this worktree/branch.
