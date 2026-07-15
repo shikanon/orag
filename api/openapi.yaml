@@ -485,7 +485,9 @@ paths:
         same request trace propagated through logs and persisted PostgreSQL
         RAG trace records. Use `GET /v1/traces/{trace_id}` or
         `oragctl trace --trace-id <trace_id>` to inspect persisted trace
-        metadata and node spans.
+        metadata and node spans. For a project-owned knowledge base, execution
+        is resolved server-side from that project's active production version;
+        callers cannot select a version or pipeline definition.
       security:
         - bearerAuth: []
       requestBody:
@@ -507,6 +509,12 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+        "409":
+          description: The project has no active production version, or its frozen definition is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/Error"
   "/v1/query:stream":
@@ -540,6 +548,12 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+        "409":
+          description: SSE error event for a missing or invalid active production version.
+          content:
+            text/event-stream:
+              schema:
+                type: string
         "500":
           description: SSE error event.
           content:
@@ -2842,6 +2856,30 @@ components:
           type: string
         tenant_id:
           type: string
+        kb_id:
+          type: string
+        project_id:
+          type: string
+        pipeline_id:
+          type: string
+        pipeline_version_id:
+          type: string
+        release_id:
+          type: string
+        environment:
+          type: string
+          enum: [development, staging, production]
+        dataset_id:
+          type: string
+        evaluation_run_id:
+          type: string
+        retrieval_params:
+          type: object
+          properties:
+            top_k:
+              type: integer
+            requested_profile:
+              $ref: "#/components/schemas/Profile"
         profile:
           $ref: "#/components/schemas/Profile"
         latency_ms:

@@ -224,9 +224,9 @@ func TestAPIKeyLifecycleAndProjectAuthorization(t *testing.T) {
 	}
 	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/knowledge-bases/"+secondKB.ID, "", viewer.Secret, "trace_foreign_kb"), 404, "knowledge_base_not_found", "trace_foreign_kb")
 	assertErrorResponse(t, performJSONWithTrace(h, "DELETE", "/v1/knowledge-bases/"+firstKB.ID, "", viewer.Secret, "trace_viewer_delete_kb"), 403, "forbidden", "trace_viewer_delete_kb")
-	if response := performJSON(h, "POST", "/v1/query", `{"knowledge_base_id":"`+firstKB.ID+`","query":"hello"}`, viewer.Secret); response.Code != 200 {
-		t.Fatalf("viewer query status=%d body=%s", response.Code, response.Body)
-	}
+	// Access is authorized, but production execution needs an evaluated,
+	// activated version for this project.
+	assertErrorResponse(t, performJSONWithTrace(h, "POST", "/v1/query", `{"knowledge_base_id":"`+firstKB.ID+`","query":"hello"}`, viewer.Secret, "trace_project_version_required"), 409, "production_version_unavailable", "trace_project_version_required")
 
 	editorResponse := performJSON(h, "POST", "/v1/api-keys", `{"name":"project editor","role":"project_editor","project_id":"`+firstProject.ID+`"}`, adminToken)
 	if editorResponse.Code != 201 {
@@ -581,6 +581,66 @@ func TestQueryUsesRequestTraceID(t *testing.T) {
 	if body.TraceID != "trace_query_success" {
 		t.Fatalf("query trace_id = %q, want trace_query_success", body.TraceID)
 	}
+}
+
+func TestProjectQueryUsesServerOwnedProductionRunner(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	token := loginToken(t, h)
+
+	projectResponse := performJSON(h, "POST", "/v1/projects", `{"name":"Versioned support"}`, token)
+	if projectResponse.Code != 201 {
+		t.Fatalf("create project status=%d body=%s", projectResponse.Code, projectResponse.Body)
+	}
+	var projectItem project.Project
+	if err := json.Unmarshal([]byte(projectResponse.Body), &projectItem); err != nil {
+		t.Fatal(err)
+	}
+	kbResponse := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"Versioned docs","project_id":"`+projectItem.ID+`"}`, token)
+	if kbResponse.Code != 201 {
+		t.Fatalf("create knowledge base status=%d body=%s", kbResponse.Code, kbResponse.Body)
+	}
+	var knowledgeBase kb.KnowledgeBase
+	if err := json.Unmarshal([]byte(kbResponse.Body), &knowledgeBase); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingProductionQuery{}
+	application.ProductionQuery = runner
+
+	response := performJSONWithTrace(h, "POST", "/v1/query", `{"knowledge_base_id":"`+knowledgeBase.ID+`","query":"hello","top_k":4}`, token, "trace_project_production")
+	if response.Code != 200 {
+		t.Fatalf("project query status=%d body=%s", response.Code, response.Body)
+	}
+	if len(runner.requests) != 1 {
+		t.Fatalf("production runner calls=%d, want 1", len(runner.requests))
+	}
+	request := runner.requests[0]
+	if request.ProjectID != projectItem.ID || request.KnowledgeBaseID != knowledgeBase.ID || request.TenantID != "tenant_default" || request.TraceID != "trace_project_production" || request.TopK != 4 {
+		t.Fatalf("production runner request=%#v", request)
+	}
+}
+
+func TestProjectQueryRejectsMissingProductionVersion(t *testing.T) {
+	h, _, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	token := loginToken(t, h)
+	projectResponse := performJSON(h, "POST", "/v1/projects", `{"name":"Version required"}`, token)
+	if projectResponse.Code != 201 {
+		t.Fatalf("create project status=%d body=%s", projectResponse.Code, projectResponse.Body)
+	}
+	var projectItem project.Project
+	if err := json.Unmarshal([]byte(projectResponse.Body), &projectItem); err != nil {
+		t.Fatal(err)
+	}
+	kbResponse := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"Versioned docs","project_id":"`+projectItem.ID+`"}`, token)
+	if kbResponse.Code != 201 {
+		t.Fatalf("create knowledge base status=%d body=%s", kbResponse.Code, kbResponse.Body)
+	}
+	var knowledgeBase kb.KnowledgeBase
+	if err := json.Unmarshal([]byte(kbResponse.Body), &knowledgeBase); err != nil {
+		t.Fatal(err)
+	}
+	assertErrorResponse(t, performJSONWithTrace(h, "POST", "/v1/query", `{"knowledge_base_id":"`+knowledgeBase.ID+`","query":"hello"}`, token, "trace_missing_production_version"), 409, "production_version_unavailable", "trace_missing_production_version")
 }
 
 func TestQueryDirectRouteResponseMatchesOpenAPI(t *testing.T) {
@@ -2558,6 +2618,15 @@ func (p *recordingPipeline) Invoke(_ context.Context, req rag.QueryRequest) (rag
 		Profile:     rag.ProfileRealtime,
 		LatencyMS:   1,
 	}, nil
+}
+
+type recordingProductionQuery struct {
+	requests []rag.QueryRequest
+}
+
+func (p *recordingProductionQuery) Query(_ context.Context, request rag.QueryRequest) (rag.QueryResponse, error) {
+	p.requests = append(p.requests, request)
+	return rag.QueryResponse{Answer: "released", TraceID: request.TraceID, CacheStatus: "miss", Profile: rag.ProfileRealtime, LatencyMS: 1}, nil
 }
 
 type failingPipeline struct {

@@ -13,7 +13,7 @@ import (
 var _ release.Repository = (*Repository)(nil)
 
 func (r *Repository) Environments(ctx context.Context, projectID string) ([]release.Environment, error) {
-	rows, err := r.Pool.Query(ctx, `SELECT id, project_id, kind, COALESCE(active_version_id,''), revision, EXISTS (SELECT 1 FROM project_environment_bindings b WHERE b.project_id=e.project_id AND b.environment_kind=e.kind) FROM project_environments e WHERE project_id=$1 ORDER BY CASE kind WHEN 'development' THEN 1 WHEN 'staging' THEN 2 WHEN 'production' THEN 3 ELSE 4 END`, projectID)
+	rows, err := r.Pool.Query(ctx, `SELECT id, project_id, kind, COALESCE(active_version_id,''), COALESCE(active_release_id,''), revision, EXISTS (SELECT 1 FROM project_environment_bindings b WHERE b.project_id=e.project_id AND b.environment_kind=e.kind) FROM project_environments e WHERE project_id=$1 ORDER BY CASE kind WHEN 'development' THEN 1 WHEN 'staging' THEN 2 WHEN 'production' THEN 3 ELSE 4 END`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -21,7 +21,7 @@ func (r *Repository) Environments(ctx context.Context, projectID string) ([]rele
 	items := make([]release.Environment, 0, 3)
 	for rows.Next() {
 		var item release.Environment
-		if err := rows.Scan(&item.ID, &item.ProjectID, &item.Kind, &item.ActiveVersionID, &item.Revision, &item.Bound); err != nil {
+		if err := rows.Scan(&item.ID, &item.ProjectID, &item.Kind, &item.ActiveVersionID, &item.ActiveReleaseID, &item.Revision, &item.Bound); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -33,10 +33,10 @@ func (r *Repository) Environment(ctx context.Context, projectID string, kind rel
 	var item release.Environment
 	var bound bool
 	err := r.Pool.QueryRow(ctx, `
-		SELECT e.id, e.project_id, e.kind, COALESCE(e.active_version_id,''), e.revision,
+		SELECT e.id, e.project_id, e.kind, COALESCE(e.active_version_id,''), COALESCE(e.active_release_id,''), e.revision,
 		       EXISTS (SELECT 1 FROM project_environment_bindings b WHERE b.project_id=e.project_id AND b.environment_kind=e.kind)
 		FROM project_environments e WHERE e.project_id=$1 AND e.kind=$2`, projectID, kind).
-		Scan(&item.ID, &item.ProjectID, &item.Kind, &item.ActiveVersionID, &item.Revision, &bound)
+		Scan(&item.ID, &item.ProjectID, &item.Kind, &item.ActiveVersionID, &item.ActiveReleaseID, &item.Revision, &bound)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return release.Environment{}, release.ErrNotFound
 	}
@@ -110,14 +110,14 @@ func (r *Repository) Version(ctx context.Context, projectID, versionID string) (
 }
 
 func (r *Repository) SaveEvidence(ctx context.Context, evidence release.Evidence) error {
-	_, err := r.Pool.Exec(ctx, `INSERT INTO project_release_validations(project_id, version_id, environment_kind, passed, content_hash, validated_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (project_id, version_id, environment_kind) DO UPDATE SET passed=EXCLUDED.passed, content_hash=EXCLUDED.content_hash, validated_at=EXCLUDED.validated_at`, evidence.ProjectID, evidence.VersionID, evidence.EnvironmentID, evidence.Passed, evidence.ContentHash, time.Now().UTC())
+	_, err := r.Pool.Exec(ctx, `INSERT INTO project_release_validations(project_id, version_id, environment_kind, passed, content_hash, dataset_id, evaluation_run_id, validated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (project_id, version_id, environment_kind) DO UPDATE SET passed=EXCLUDED.passed, content_hash=EXCLUDED.content_hash, dataset_id=EXCLUDED.dataset_id, evaluation_run_id=EXCLUDED.evaluation_run_id, validated_at=EXCLUDED.validated_at`, evidence.ProjectID, evidence.VersionID, evidence.EnvironmentID, evidence.Passed, evidence.ContentHash, evidence.DatasetID, evidence.EvaluationRunID, time.Now().UTC())
 	return err
 }
 
 func (r *Repository) Evidence(ctx context.Context, projectID, versionID string, environment release.EnvironmentKind) (release.Evidence, error) {
 	var item release.Evidence
-	err := r.Pool.QueryRow(ctx, `SELECT version_id, environment_kind, passed, content_hash FROM project_release_validations WHERE project_id=$1 AND version_id=$2 AND environment_kind=$3`, projectID, versionID, environment).
-		Scan(&item.VersionID, &item.EnvironmentID, &item.Passed, &item.ContentHash)
+	err := r.Pool.QueryRow(ctx, `SELECT version_id, environment_kind, passed, content_hash, dataset_id, evaluation_run_id FROM project_release_validations WHERE project_id=$1 AND version_id=$2 AND environment_kind=$3`, projectID, versionID, environment).
+		Scan(&item.VersionID, &item.EnvironmentID, &item.Passed, &item.ContentHash, &item.DatasetID, &item.EvaluationRunID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return release.Evidence{}, nil
 	}
@@ -143,9 +143,9 @@ func (r *Repository) Commit(ctx context.Context, environment release.Environment
 	}
 	defer tx.Rollback(ctx)
 	result, err := tx.Exec(ctx, `
-		UPDATE project_environments SET active_version_id=$1, revision=$2, updated_at=$3
-		WHERE project_id=$4 AND kind=$5 AND revision=$6`,
-		environment.ActiveVersionID, environment.Revision, record.CreatedAt, environment.ProjectID, environment.Kind, environment.Revision-1)
+		UPDATE project_environments SET active_version_id=$1, active_release_id=$2, revision=$3, updated_at=$4
+		WHERE project_id=$5 AND kind=$6 AND revision=$7`,
+		environment.ActiveVersionID, environment.ActiveReleaseID, environment.Revision, record.CreatedAt, environment.ProjectID, environment.Kind, environment.Revision-1)
 	if err != nil {
 		return err
 	}

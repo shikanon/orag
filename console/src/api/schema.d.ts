@@ -257,7 +257,9 @@ export interface paths {
          *     same request trace propagated through logs and persisted PostgreSQL
          *     RAG trace records. Use `GET /v1/traces/{trace_id}` or
          *     `oragctl trace --trace-id <trace_id>` to inspect persisted trace
-         *     metadata and node spans.
+         *     metadata and node spans. For a project-owned knowledge base, execution
+         *     is resolved server-side from that project's active production version;
+         *     callers cannot select a version or pipeline definition.
          *      */
         post: operations["query"];
         delete?: never;
@@ -1671,6 +1673,19 @@ export interface components {
         TraceRecord: {
             trace_id: string;
             tenant_id: string;
+            kb_id?: string;
+            project_id?: string;
+            pipeline_id?: string;
+            pipeline_version_id?: string;
+            release_id?: string;
+            /** @enum {string} */
+            environment?: "development" | "staging" | "production";
+            dataset_id?: string;
+            evaluation_run_id?: string;
+            retrieval_params?: {
+                top_k?: number;
+                requested_profile?: components["schemas"]["Profile"];
+            };
             profile: components["schemas"]["Profile"];
             /** Format: int64 */
             latency_ms: number;
@@ -3261,6 +3276,15 @@ export interface operations {
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            /** @description The project has no active production version, or its frozen definition is invalid. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             500: components["responses"]["Error"];
         };
     };
@@ -3289,6 +3313,15 @@ export interface operations {
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            /** @description SSE error event for a missing or invalid active production version. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
             /** @description SSE error event. */
             500: {
                 headers: {

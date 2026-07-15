@@ -140,6 +140,40 @@ func TestRAGGraphInvokeUsesRequestTraceIDInPersistence(t *testing.T) {
 	}
 }
 
+func TestRAGGraphPersistsServerResolvedExecutionLineage(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+	g, err := NewRAGGraph(ctx, svc)
+	if err != nil {
+		t.Fatalf("NewRAGGraph() error = %v", err)
+	}
+	store := &capturingTraceStore{}
+	g.TraceStore = store
+
+	_, err = g.Invoke(ctx, rag.QueryRequest{
+		TenantID:          "tenant_default",
+		TraceID:           "trace_lineage",
+		KnowledgeBaseID:   "kb_default",
+		ProjectID:         "prj_1",
+		PipelineID:        "pipe_1",
+		PipelineVersionID: "pver_1",
+		ReleaseID:         "rel_1",
+		Environment:       "production",
+		DatasetID:         "ds_1",
+		EvaluationRunID:   "eval_1",
+		TopK:              9,
+		Profile:           rag.ProfileHighPrecision,
+		Query:             "qdrant vector search",
+	})
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	input := store.input
+	if input.ProjectID != "prj_1" || input.PipelineID != "pipe_1" || input.PipelineVersionID != "pver_1" || input.ReleaseID != "rel_1" || input.Environment != "production" || input.DatasetID != "ds_1" || input.EvaluationRunID != "eval_1" || input.RequestedTopK != 9 || input.RequestedProfile != rag.ProfileHighPrecision {
+		t.Fatalf("stored execution lineage = %#v", input)
+	}
+}
+
 func TestRAGGraphPersistsSpanTimelineMetadata(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestService(t)
@@ -461,6 +495,7 @@ type capturingTraceStore struct {
 	traceID         string
 	traceIDs        []string
 	kbID            string
+	input           TraceInput
 	answer          string
 	retrievedChunks []string
 	spans           []NodeSpan
@@ -468,15 +503,16 @@ type capturingTraceStore struct {
 	calls           int
 }
 
-func (s *capturingTraceStore) StoreTrace(_ context.Context, _, kbID, traceID, _ string, _ rag.Profile, _ int64, answer string, retrievedChunks []string, spans []NodeSpan) error {
+func (s *capturingTraceStore) StoreTrace(_ context.Context, input TraceInput) error {
 	s.calls++
-	s.traceID = traceID
-	s.traceIDs = append(s.traceIDs, traceID)
-	s.kbID = kbID
-	s.answer = answer
-	s.retrievedChunks = append([]string(nil), retrievedChunks...)
-	s.spans = append([]NodeSpan(nil), spans...)
-	s.spanBatches = append(s.spanBatches, append([]NodeSpan(nil), spans...))
+	s.traceID = input.TraceID
+	s.traceIDs = append(s.traceIDs, input.TraceID)
+	s.kbID = input.KnowledgeBaseID
+	s.input = input
+	s.answer = input.Answer
+	s.retrievedChunks = append([]string(nil), input.RetrievedChunks...)
+	s.spans = append([]NodeSpan(nil), input.Spans...)
+	s.spanBatches = append(s.spanBatches, append([]NodeSpan(nil), input.Spans...))
 	return nil
 }
 

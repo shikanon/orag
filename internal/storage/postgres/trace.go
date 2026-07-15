@@ -17,18 +17,33 @@ import (
 )
 
 type TraceRecord struct {
-	ID              string          `json:"trace_id"`
-	TenantID        string          `json:"tenant_id"`
-	KBID            string          `json:"kb_id,omitempty"`
-	Query           string          `json:"query"`
-	Profile         rag.Profile     `json:"profile"`
-	Answer          string          `json:"answer,omitempty"`
-	RetrievedChunks []string        `json:"retrieved_chunks,omitempty"`
-	LatencyMS       int64           `json:"latency_ms"`
-	CreatedAt       time.Time       `json:"created_at"`
-	HasError        bool            `json:"has_error"`
-	ErrorCount      int             `json:"error_count"`
-	NodeSpans       []TraceNodeSpan `json:"node_spans"`
+	ID                string               `json:"trace_id"`
+	TenantID          string               `json:"tenant_id"`
+	KBID              string               `json:"kb_id,omitempty"`
+	ProjectID         string               `json:"project_id,omitempty"`
+	PipelineID        string               `json:"pipeline_id,omitempty"`
+	PipelineVersionID string               `json:"pipeline_version_id,omitempty"`
+	ReleaseID         string               `json:"release_id,omitempty"`
+	Environment       string               `json:"environment,omitempty"`
+	DatasetID         string               `json:"dataset_id,omitempty"`
+	EvaluationRunID   string               `json:"evaluation_run_id,omitempty"`
+	RetrievalParams   TraceRetrievalParams `json:"retrieval_params,omitempty"`
+	Query             string               `json:"query"`
+	Profile           rag.Profile          `json:"profile"`
+	Answer            string               `json:"answer,omitempty"`
+	RetrievedChunks   []string             `json:"retrieved_chunks,omitempty"`
+	LatencyMS         int64                `json:"latency_ms"`
+	CreatedAt         time.Time            `json:"created_at"`
+	HasError          bool                 `json:"has_error"`
+	ErrorCount        int                  `json:"error_count"`
+	NodeSpans         []TraceNodeSpan      `json:"node_spans"`
+}
+
+// TraceRetrievalParams records client retrieval knobs alongside the immutable
+// server-resolved release lineage for audit and replay.
+type TraceRetrievalParams struct {
+	TopK             int         `json:"top_k,omitempty"`
+	RequestedProfile rag.Profile `json:"requested_profile,omitempty"`
 }
 
 type TraceNodeSpan struct {
@@ -83,38 +98,47 @@ type traceRows interface {
 	Scan(dest ...any) error
 }
 
-func (r *Repository) StoreTrace(ctx context.Context, tenantID, kbID, traceID, query string, profile rag.Profile, latencyMS int64, answer string, retrievedChunks []string, spans []raggraph.NodeSpan) error {
+func (r *Repository) StoreTrace(ctx context.Context, input raggraph.TraceInput) error {
 	tx, err := r.traceTxStarter().BeginTraceTx(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	retrievedChunksJSON, err := json.Marshal(retrievedChunks)
+	retrievedChunksJSON, err := json.Marshal(input.RetrievedChunks)
+	if err != nil {
+		return err
+	}
+	retrievalParamsJSON, err := json.Marshal(TraceRetrievalParams{TopK: input.RequestedTopK, RequestedProfile: input.RequestedProfile})
 	if err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO rag_traces(id, tenant_id, knowledge_base_id, query, profile, answer, retrieved_chunks_json, latency_ms)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+		INSERT INTO rag_traces(id, tenant_id, knowledge_base_id, project_id, pipeline_id, pipeline_version_id, release_id, environment_kind, dataset_id, evaluation_run_id, retrieval_params, query, profile, answer, retrieved_chunks_json, latency_ms)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		ON CONFLICT (id) DO UPDATE SET
 			tenant_id=EXCLUDED.tenant_id,
 			knowledge_base_id=EXCLUDED.knowledge_base_id,
-			query=EXCLUDED.query,
-			profile=EXCLUDED.profile,
-			answer=EXCLUDED.answer,
-			retrieved_chunks_json=EXCLUDED.retrieved_chunks_json,
-			latency_ms=EXCLUDED.latency_ms,
+			project_id=EXCLUDED.project_id,
+			pipeline_id=EXCLUDED.pipeline_id,
+			pipeline_version_id=EXCLUDED.pipeline_version_id,
+			release_id=EXCLUDED.release_id,
+			environment_kind=EXCLUDED.environment_kind,
+			dataset_id=EXCLUDED.dataset_id,
+			evaluation_run_id=EXCLUDED.evaluation_run_id,
+			retrieval_params=EXCLUDED.retrieval_params,
+			query=EXCLUDED.query, profile=EXCLUDED.profile, answer=EXCLUDED.answer,
+			retrieved_chunks_json=EXCLUDED.retrieved_chunks_json, latency_ms=EXCLUDED.latency_ms,
 			created_at=now()`,
-		traceID, tenantID, kbID, sanitizeTraceQuery(query), string(profile), answer, retrievedChunksJSON, latencyMS); err != nil {
+		input.TraceID, input.TenantID, input.KnowledgeBaseID, input.ProjectID, input.PipelineID, input.PipelineVersionID, input.ReleaseID, input.Environment, input.DatasetID, input.EvaluationRunID, retrievalParamsJSON, sanitizeTraceQuery(input.Query), string(input.Profile), input.Answer, retrievedChunksJSON, input.LatencyMS); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM rag_node_spans
 		WHERE trace_id=$1`,
-		traceID); err != nil {
+		input.TraceID); err != nil {
 		return err
 	}
-	for i, span := range spans {
+	for i, span := range input.Spans {
 		seq := span.Sequence
 		if seq <= 0 {
 			seq = i + 1
@@ -129,7 +153,7 @@ func (r *Repository) StoreTrace(ctx context.Context, tenantID, kbID, traceID, qu
 				error=EXCLUDED.error,
 				started_at=EXCLUDED.started_at,
 				ended_at=EXCLUDED.ended_at`,
-			stableSpanID(traceID, seq, span.NodeName), traceID, span.NodeName, seq, span.LatencyMS, span.Error, startedAt, endedAt); err != nil {
+			stableSpanID(input.TraceID, seq, span.NodeName), input.TraceID, span.NodeName, seq, span.LatencyMS, span.Error, startedAt, endedAt); err != nil {
 			return err
 		}
 	}
@@ -171,9 +195,10 @@ func (r *Repository) getTrace(ctx context.Context, traceID, tenantID string) (Tr
 	var record TraceRecord
 	var profile string
 	var retrievedChunksJSON []byte
+	var retrievalParamsJSON []byte
 	args := []any{traceID}
 	query := `
-		SELECT id, tenant_id, knowledge_base_id, query, profile, answer, retrieved_chunks_json, latency_ms, created_at
+		SELECT id, tenant_id, knowledge_base_id, project_id, pipeline_id, pipeline_version_id, release_id, environment_kind, dataset_id, evaluation_run_id, retrieval_params, query, profile, answer, retrieved_chunks_json, latency_ms, created_at
 		FROM rag_traces
 		WHERE id=$1`
 	if tenantID != "" {
@@ -181,7 +206,7 @@ func (r *Repository) getTrace(ctx context.Context, traceID, tenantID string) (Tr
 		args = append(args, tenantID)
 	}
 	err := queryer.QueryRow(ctx, query, args...).
-		Scan(&record.ID, &record.TenantID, &record.KBID, &record.Query, &profile, &record.Answer, &retrievedChunksJSON, &record.LatencyMS, &record.CreatedAt)
+		Scan(&record.ID, &record.TenantID, &record.KBID, &record.ProjectID, &record.PipelineID, &record.PipelineVersionID, &record.ReleaseID, &record.Environment, &record.DatasetID, &record.EvaluationRunID, &retrievalParamsJSON, &record.Query, &profile, &record.Answer, &retrievedChunksJSON, &record.LatencyMS, &record.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return TraceRecord{}, false, nil
@@ -190,6 +215,9 @@ func (r *Repository) getTrace(ctx context.Context, traceID, tenantID string) (Tr
 	}
 	record.Profile = rag.Profile(profile)
 	if err := json.Unmarshal(retrievedChunksJSON, &record.RetrievedChunks); err != nil {
+		return TraceRecord{}, false, err
+	}
+	if err := json.Unmarshal(retrievalParamsJSON, &record.RetrievalParams); err != nil {
 		return TraceRecord{}, false, err
 	}
 
@@ -228,6 +256,14 @@ func (r *Repository) ListTraces(ctx context.Context, filter TraceListFilter) ([]
 			t.id,
 			t.tenant_id,
 			t.knowledge_base_id,
+			t.project_id,
+			t.pipeline_id,
+			t.pipeline_version_id,
+			t.release_id,
+			t.environment_kind,
+			t.dataset_id,
+			t.evaluation_run_id,
+			t.retrieval_params,
 			t.query,
 			t.profile,
 			t.answer,
@@ -259,12 +295,16 @@ func (r *Repository) ListTraces(ctx context.Context, filter TraceListFilter) ([]
 		var record TraceRecord
 		var profile string
 		var retrievedChunksJSON []byte
+		var retrievalParamsJSON []byte
 		var errorCount int64
-		if err := rows.Scan(&record.ID, &record.TenantID, &record.KBID, &record.Query, &profile, &record.Answer, &retrievedChunksJSON, &record.LatencyMS, &record.CreatedAt, &record.HasError, &errorCount); err != nil {
+		if err := rows.Scan(&record.ID, &record.TenantID, &record.KBID, &record.ProjectID, &record.PipelineID, &record.PipelineVersionID, &record.ReleaseID, &record.Environment, &record.DatasetID, &record.EvaluationRunID, &retrievalParamsJSON, &record.Query, &profile, &record.Answer, &retrievedChunksJSON, &record.LatencyMS, &record.CreatedAt, &record.HasError, &errorCount); err != nil {
 			return nil, err
 		}
 		record.Profile = rag.Profile(profile)
 		if err := json.Unmarshal(retrievedChunksJSON, &record.RetrievedChunks); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(retrievalParamsJSON, &record.RetrievalParams); err != nil {
 			return nil, err
 		}
 		record.ErrorCount = int(errorCount)

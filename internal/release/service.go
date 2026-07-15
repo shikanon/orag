@@ -21,6 +21,9 @@ func NewService(repo Repository) *Service {
 func (s *Service) Environments(ctx context.Context, projectID string) ([]Environment, error) {
 	return s.repo.Environments(ctx, projectID)
 }
+func (s *Service) Environment(ctx context.Context, projectID string, kind EnvironmentKind) (Environment, error) {
+	return s.repo.Environment(ctx, projectID, kind)
+}
 func (s *Service) Releases(ctx context.Context, projectID string) ([]Release, error) {
 	return s.repo.Releases(ctx, projectID)
 }
@@ -29,6 +32,9 @@ func (s *Service) Versions(ctx context.Context, projectID string) ([]Version, er
 }
 func (s *Service) Version(ctx context.Context, projectID, versionID string) (Version, error) {
 	return s.repo.Version(ctx, projectID, versionID)
+}
+func (s *Service) Evidence(ctx context.Context, projectID, versionID string, environment EnvironmentKind) (Evidence, error) {
+	return s.repo.Evidence(ctx, projectID, versionID, environment)
 }
 func (s *Service) CreateVersion(ctx context.Context, version Version) error {
 	if version.ProjectID == "" || version.ID == "" || version.ContentHash == "" {
@@ -93,6 +99,7 @@ func (s *Service) ActivateDevelopment(ctx context.Context, req ActivateRequest) 
 	}
 	record := Release{ID: id.New("rel"), ProjectID: req.ProjectID, SourceVersionID: environment.ActiveVersionID, TargetVersionID: version.ID, SourceEnvironment: Development, TargetEnvironment: Development, Action: ActionActivate, Actor: req.Actor, CreatedAt: s.now()}
 	environment.ActiveVersionID = version.ID
+	environment.ActiveReleaseID = record.ID
 	environment.Revision++
 	if err := s.repo.Commit(ctx, environment, record); err != nil {
 		return Release{}, err
@@ -143,6 +150,7 @@ func (s *Service) Promote(ctx context.Context, req PromoteRequest) (Release, err
 	}
 	record := Release{ID: id.New("rel"), ProjectID: req.ProjectID, SourceVersionID: source.ActiveVersionID, TargetVersionID: version.ID, SourceEnvironment: req.SourceEnvironment, TargetEnvironment: req.TargetEnvironment, Action: ActionPromote, Actor: req.Actor, CreatedAt: s.now()}
 	target.ActiveVersionID = version.ID
+	target.ActiveReleaseID = record.ID
 	target.Revision++
 	if err := s.repo.Commit(ctx, target, record); err != nil {
 		return Release{}, err
@@ -183,6 +191,7 @@ func (s *Service) Rollback(ctx context.Context, req RollbackRequest) (Release, e
 	}
 	record := Release{ID: id.New("rel"), ProjectID: req.ProjectID, SourceVersionID: env.ActiveVersionID, TargetVersionID: version.ID, SourceEnvironment: req.Environment, TargetEnvironment: req.Environment, Action: ActionRollback, Actor: req.Actor, Reason: strings.TrimSpace(req.Reason), CreatedAt: s.now()}
 	env.ActiveVersionID = version.ID
+	env.ActiveReleaseID = record.ID
 	env.Revision++
 	if err := s.repo.Commit(ctx, env, record); err != nil {
 		return Release{}, err

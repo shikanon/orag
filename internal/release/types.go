@@ -34,6 +34,7 @@ type Environment struct {
 	ProjectID       string          `json:"project_id"`
 	Kind            EnvironmentKind `json:"kind"`
 	ActiveVersionID string          `json:"active_version_id,omitempty"`
+	ActiveReleaseID string          `json:"active_release_id,omitempty"`
 	Revision        int64           `json:"revision"`
 	Bound           bool            `json:"bound"`
 }
@@ -51,11 +52,13 @@ type Version struct {
 }
 
 type Evidence struct {
-	ProjectID     string `json:"project_id,omitempty"`
-	VersionID     string `json:"version_id"`
-	EnvironmentID string `json:"environment_id"`
-	Passed        bool   `json:"passed"`
-	ContentHash   string `json:"content_hash"`
+	ProjectID       string `json:"project_id,omitempty"`
+	VersionID       string `json:"version_id"`
+	EnvironmentID   string `json:"environment_id"`
+	Passed          bool   `json:"passed"`
+	ContentHash     string `json:"content_hash"`
+	DatasetID       string `json:"dataset_id,omitempty"`
+	EvaluationRunID string `json:"evaluation_run_id,omitempty"`
 }
 
 type Release struct {
