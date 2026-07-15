@@ -344,6 +344,8 @@ type recordingPointsClient struct {
 	upsertReq     *qdrant.UpsertPoints
 	setPayloadReq *qdrant.SetPayloadPoints
 	deleteReq     *qdrant.DeletePoints
+	searchReqs    []*qdrant.SearchPoints
+	searchFn      func(*qdrant.SearchPoints) (*qdrant.SearchResponse, error)
 }
 
 func (c *recordingPointsClient) Upsert(_ context.Context, req *qdrant.UpsertPoints, _ ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
@@ -356,7 +358,11 @@ func (c *recordingPointsClient) SetPayload(_ context.Context, req *qdrant.SetPay
 	return &qdrant.PointsOperationResponse{}, nil
 }
 
-func (c *recordingPointsClient) Search(context.Context, *qdrant.SearchPoints, ...grpc.CallOption) (*qdrant.SearchResponse, error) {
+func (c *recordingPointsClient) Search(_ context.Context, req *qdrant.SearchPoints, _ ...grpc.CallOption) (*qdrant.SearchResponse, error) {
+	c.searchReqs = append(c.searchReqs, req)
+	if c.searchFn != nil {
+		return c.searchFn(req)
+	}
 	return &qdrant.SearchResponse{}, nil
 }
 

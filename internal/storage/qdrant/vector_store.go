@@ -2,14 +2,18 @@ package qdrantstore
 
 import (
 	"context"
+	"errors"
 
 	qdrant "github.com/qdrant/go-client/qdrant"
 	"github.com/shikanon/orag/internal/kb"
 )
 
+var ErrVisibilityFilterRequired = errors.New("qdrant vector retrieval requires a searchable chunk filter")
+
 type VectorStore struct {
 	Client     *Client
 	Collection string
+	Visibility kb.SearchableChunkFilter
 }
 
 func (s VectorStore) Store(ctx context.Context, _ kb.Document, chunks []kb.Chunk) error {
@@ -103,6 +107,9 @@ func (s VectorStore) setDocumentSearchable(ctx context.Context, doc kb.Document,
 }
 
 func (s VectorStore) Retrieve(ctx context.Context, req kb.SearchRequest) ([]kb.SearchResult, error) {
+	if s.Visibility == nil {
+		return nil, ErrVisibilityFilterRequired
+	}
 	limit := req.TopK
 	if req.DenseTopK > 0 {
 		limit = req.DenseTopK
@@ -110,24 +117,57 @@ func (s VectorStore) Retrieve(ctx context.Context, req kb.SearchRequest) ([]kb.S
 	if limit <= 0 {
 		limit = 50
 	}
-	resp, err := s.Client.Points.Search(ctx, &qdrant.SearchPoints{
-		CollectionName: s.Collection,
-		Vector:         float32Vector(req.Vector),
-		Limit:          uint64(limit),
-		Filter:         knowledgeBaseFilter(req.TenantID, req.KnowledgeBaseID),
-		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
-	})
-	if err != nil {
-		return nil, err
-	}
-	results := make([]kb.SearchResult, 0, len(resp.GetResult()))
-	for i, point := range resp.GetResult() {
-		results = append(results, kb.SearchResult{
-			Chunk: chunkFromPayload(point.GetPayload()),
-			Score: float64(point.GetScore()),
-			Rank:  i + 1,
-			From:  "qdrant_dense",
+	pageSize := max(limit*2, 32)
+	scanCap := max(limit*8, 256)
+	results := make([]kb.SearchResult, 0, limit)
+	var offset uint64
+	for scanned := 0; scanned < scanCap && len(results) < limit; {
+		requestLimit := min(pageSize, scanCap-scanned)
+		requestOffset := offset
+		resp, err := s.Client.Points.Search(ctx, &qdrant.SearchPoints{
+			CollectionName: s.Collection,
+			Vector:         float32Vector(req.Vector),
+			Limit:          uint64(requestLimit),
+			Offset:         &requestOffset,
+			Filter:         knowledgeBaseFilter(req.TenantID, req.KnowledgeBaseID),
+			WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
 		})
+		if err != nil {
+			return nil, err
+		}
+		points := resp.GetResult()
+		if len(points) == 0 {
+			break
+		}
+
+		chunkIDs := make([]string, 0, len(points))
+		for _, point := range points {
+			chunkIDs = append(chunkIDs, payloadString(point.GetPayload(), "chunk_id"))
+		}
+		active, err := s.Visibility.FilterSearchableChunkIDs(ctx, req.TenantID, req.KnowledgeBaseID, chunkIDs)
+		if err != nil {
+			return nil, err
+		}
+		for idx, point := range points {
+			if _, ok := active[chunkIDs[idx]]; !ok {
+				continue
+			}
+			results = append(results, kb.SearchResult{
+				Chunk: chunkFromPayload(point.GetPayload()),
+				Score: float64(point.GetScore()),
+				Rank:  len(results) + 1,
+				From:  "qdrant_dense",
+			})
+			if len(results) == limit {
+				break
+			}
+		}
+
+		scanned += len(points)
+		offset += uint64(len(points))
+		if len(points) < requestLimit {
+			break
+		}
 	}
 	return results, nil
 }
