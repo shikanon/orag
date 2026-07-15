@@ -859,6 +859,92 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /v1/projects/{project_id}/environments:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      tags: [Releases]
+      operationId: listProjectEnvironments
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Ordered development, staging, and production environments.
+          content: {application/json: {schema: {$ref: "#/components/schemas/EnvironmentListResponse"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/releases:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      tags: [Releases]
+      operationId: listProjectReleases
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Append-only promotion and rollback history.
+          content: {application/json: {schema: {$ref: "#/components/schemas/ReleaseListResponse"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/releases:promote:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Releases]
+      operationId: promoteProjectRelease
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/PromoteReleaseRequest"}}}
+      responses:
+        "201":
+          description: Promotion audit record.
+          content: {application/json: {schema: {$ref: "#/components/schemas/Release"}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/environments/{environment}/rollback:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: environment
+        in: path
+        required: true
+        schema: {type: string, enum: [development, staging, production]}
+    post:
+      tags: [Releases]
+      operationId: rollbackProjectEnvironment
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/RollbackReleaseRequest"}}}
+      responses:
+        "201":
+          description: Rollback audit record.
+          content: {application/json: {schema: {$ref: "#/components/schemas/Release"}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
   /v1/tutorials:
     get:
       tags: [Tutorials]
@@ -1696,6 +1782,59 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Project"
+    Environment:
+      type: object
+      required: [id, project_id, kind, revision, bound]
+      properties:
+        id: {type: string}
+        project_id: {type: string}
+        kind: {type: string, enum: [development, staging, production]}
+        active_version_id: {type: string}
+        revision: {type: integer, format: int64}
+        bound: {type: boolean}
+    EnvironmentListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Environment"}
+    Release:
+      type: object
+      required: [id, project_id, source_version_id, target_version_id, source_environment, target_environment, action, actor, created_at]
+      properties:
+        id: {type: string}
+        project_id: {type: string}
+        source_version_id: {type: string}
+        target_version_id: {type: string}
+        source_environment: {type: string, enum: [development, staging, production]}
+        target_environment: {type: string, enum: [development, staging, production]}
+        action: {type: string, enum: [promote, rollback]}
+        actor: {type: string}
+        reason: {type: string}
+        created_at: {type: string, format: date-time}
+    ReleaseListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Release"}
+    PromoteReleaseRequest:
+      type: object
+      required: [source_environment, target_environment, target_version_id]
+      properties:
+        source_environment: {type: string, enum: [development, staging]}
+        target_environment: {type: string, enum: [staging, production]}
+        target_version_id: {type: string}
+        expected_active_version_id: {type: string}
+    RollbackReleaseRequest:
+      type: object
+      required: [target_version_id, reason]
+      properties:
+        target_version_id: {type: string}
+        expected_active_version_id: {type: string}
+        reason: {type: string}
     TutorialModality:
       type: string
       enum: [text, visual_document, video]

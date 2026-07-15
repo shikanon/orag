@@ -11,6 +11,7 @@ const TutorialList = lazy(() => import('../features/tutorials/tutorial-list').th
 const TutorialDetail = lazy(() => import('../features/tutorials/tutorial-detail').then((module) => ({ default: module.TutorialDetail })))
 const APIDebugger = lazy(() => import('../features/debugger/api-debugger').then((module) => ({ default: module.APIDebugger })))
 const EvaluationCenter = lazy(() => import('../features/evaluation/evaluation-center').then((module) => ({ default: module.EvaluationCenter })))
+const ReleaseCenter = lazy(() => import('../features/releases/release-center').then((module) => ({ default: module.ReleaseCenter })))
 
 function projectLoader({ params }: { params: { projectId?: string } }) {
   if (!params.projectId?.trim()) throw new Response('Project ID is required', { status: 400 })
@@ -21,7 +22,7 @@ function Shell() {
   const session = useSession()
   const location = useLocation()
   if (!session) return <Navigate to="/login" replace state={{ from: location.pathname }} />
-  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects">项目</NavLink><NavLink to="/tutorials">教程实验室</NavLink><NavLink to="/api-keys">API Keys</NavLink><span className="nav-heading">工作区</span><NavLink to="/projects/default/debug" className="debug-nav">API Debugger</NavLink><NavLink to="/projects/default/evaluations">评测中心</NavLink><span className="nav-disabled">RAG Studio</span><span className="nav-disabled">发布中心</span></nav><footer><span className="status-dot" /> API connected</footer></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><div className="topbar-actions"><span className="environment">Development</span><button type="button" onClick={clearSession}>退出</button></div></div><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></section></div>
+  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects">项目</NavLink><NavLink to="/tutorials">教程实验室</NavLink><NavLink to="/api-keys">API Keys</NavLink><span className="nav-heading">工作区</span><NavLink to="/projects/default/debug" className="debug-nav">API Debugger</NavLink><NavLink to="/projects/default/evaluations">评测中心</NavLink><NavLink to="/projects/default/releases">发布中心</NavLink><span className="nav-disabled">RAG Studio</span></nav><footer><span className="status-dot" /> API connected</footer></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><div className="topbar-actions"><span className="environment">Development</span><button type="button" onClick={clearSession}>退出</button></div></div><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></section></div>
 }
 
 function RouteSkeleton() {
@@ -41,6 +42,7 @@ export function createAppRouter(initialEntries?: string[]) {
     { path: 'projects/:projectId/overview', loader: projectLoader, element: <Overview /> },
     { path: 'projects/:projectId/debug', loader: projectLoader, element: <APIDebugger /> },
     { path: 'projects/:projectId/evaluations', loader: projectLoader, element: <EvaluationCenter /> },
+    { path: 'projects/:projectId/releases', loader: projectLoader, element: <ReleaseCenter /> },
     { path: 'api-keys', element: <APIKeyList /> },
     { path: 'tutorials', element: <TutorialList /> },
     { path: 'tutorials/:templateId', element: <TutorialDetail /> },

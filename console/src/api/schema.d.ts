@@ -411,6 +411,79 @@ export interface paths {
         patch: operations["updateProject"];
         trace?: never;
     };
+    "/v1/projects/{project_id}/environments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listProjectEnvironments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listProjectReleases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/releases:promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["promoteProjectRelease"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/environments/{environment}:rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                environment: "development" | "staging" | "production";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rollbackProjectEnvironment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tutorials": {
         parameters: {
             query?: never;
@@ -863,6 +936,51 @@ export interface components {
         };
         ProjectListResponse: {
             projects: components["schemas"]["Project"][];
+        };
+        Environment: {
+            id: string;
+            project_id: string;
+            /** @enum {string} */
+            kind: "development" | "staging" | "production";
+            active_version_id?: string;
+            /** Format: int64 */
+            revision: number;
+            bound: boolean;
+        };
+        EnvironmentListResponse: {
+            items: components["schemas"]["Environment"][];
+        };
+        Release: {
+            id: string;
+            project_id: string;
+            source_version_id: string;
+            target_version_id: string;
+            /** @enum {string} */
+            source_environment: "development" | "staging" | "production";
+            /** @enum {string} */
+            target_environment: "development" | "staging" | "production";
+            /** @enum {string} */
+            action: "promote" | "rollback";
+            actor: string;
+            reason?: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ReleaseListResponse: {
+            items: components["schemas"]["Release"][];
+        };
+        PromoteReleaseRequest: {
+            /** @enum {string} */
+            source_environment: "development" | "staging";
+            /** @enum {string} */
+            target_environment: "staging" | "production";
+            target_version_id: string;
+            expected_active_version_id?: string;
+        };
+        RollbackReleaseRequest: {
+            target_version_id: string;
+            expected_active_version_id?: string;
+            reason: string;
         };
         /** @enum {string} */
         TutorialModality: "text" | "visual_document" | "video";
@@ -3042,6 +3160,119 @@ export interface operations {
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
             500: components["responses"]["Error"];
+        };
+    };
+    listProjectEnvironments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ordered development, staging, and production environments. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listProjectReleases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Append-only promotion and rollback history. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    promoteProjectRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoteReleaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Promotion audit record. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Release"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    rollbackProjectEnvironment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                environment: "development" | "staging" | "production";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollbackReleaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Rollback audit record. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Release"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     listTutorials: {

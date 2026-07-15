@@ -18,6 +18,13 @@ func NewService(repo Repository) *Service {
 	return &Service{repo: repo, now: func() time.Time { return time.Now().UTC() }}
 }
 
+func (s *Service) Environments(ctx context.Context, projectID string) ([]Environment, error) {
+	return s.repo.Environments(ctx, projectID)
+}
+func (s *Service) Releases(ctx context.Context, projectID string) ([]Release, error) {
+	return s.repo.Releases(ctx, projectID)
+}
+
 func (s *Service) Promote(ctx context.Context, req PromoteRequest) (Release, error) {
 	if req.ProjectID == "" || req.TargetVersionID == "" || req.Actor == "" {
 		return Release{}, fmt.Errorf("%w: project, version, and actor are required", ErrInvalidTransition)

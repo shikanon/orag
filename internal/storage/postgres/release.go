@@ -10,6 +10,23 @@ import (
 
 var _ release.Repository = (*Repository)(nil)
 
+func (r *Repository) Environments(ctx context.Context, projectID string) ([]release.Environment, error) {
+	rows, err := r.Pool.Query(ctx, `SELECT id, project_id, kind, COALESCE(active_version_id,''), revision, EXISTS (SELECT 1 FROM project_environment_bindings b WHERE b.project_id=e.project_id AND b.environment_kind=e.kind) FROM project_environments e WHERE project_id=$1 ORDER BY CASE kind WHEN 'development' THEN 1 WHEN 'staging' THEN 2 WHEN 'production' THEN 3 ELSE 4 END`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]release.Environment, 0, 3)
+	for rows.Next() {
+		var item release.Environment
+		if err := rows.Scan(&item.ID, &item.ProjectID, &item.Kind, &item.ActiveVersionID, &item.Revision, &item.Bound); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (r *Repository) Environment(ctx context.Context, projectID string, kind release.EnvironmentKind) (release.Environment, error) {
 	var item release.Environment
 	var bound bool
@@ -26,6 +43,23 @@ func (r *Repository) Environment(ctx context.Context, projectID string, kind rel
 	}
 	item.Bound = bound
 	return item, nil
+}
+
+func (r *Repository) Releases(ctx context.Context, projectID string) ([]release.Release, error) {
+	rows, err := r.Pool.Query(ctx, `SELECT id, project_id, source_version_id, target_version_id, source_environment, target_environment, action, actor, reason, created_at FROM project_releases WHERE project_id=$1 ORDER BY created_at DESC, id DESC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]release.Release, 0)
+	for rows.Next() {
+		var item release.Release
+		if err := rows.Scan(&item.ID, &item.ProjectID, &item.SourceVersionID, &item.TargetVersionID, &item.SourceEnvironment, &item.TargetEnvironment, &item.Action, &item.Actor, &item.Reason, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (r *Repository) Version(ctx context.Context, projectID, versionID string) (release.Version, error) {

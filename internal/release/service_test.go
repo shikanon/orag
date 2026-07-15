@@ -60,6 +60,13 @@ type memoryRepository struct {
 	releases  []Release
 }
 
+func (r *memoryRepository) Environments(_ context.Context, _ string) ([]Environment, error) {
+	return nil, nil
+}
+func (r *memoryRepository) Releases(_ context.Context, _ string) ([]Release, error) {
+	return append([]Release(nil), r.releases...), nil
+}
+
 func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{env: map[string]Environment{"development": {ID: "dev", ProjectID: "p1", Kind: Development, ActiveVersionID: "v1", Bound: true}, "staging": {ID: "stg", ProjectID: "p1", Kind: Staging, Bound: true}, "production": {ID: "prd", ProjectID: "p1", Kind: Production, Bound: true}}, versions: map[string]Version{"v1": {ID: "v1", ProjectID: "p1", ContentHash: "hash-v1"}, "v2": {ID: "v2", ProjectID: "p1", ContentHash: "hash-v2"}}, evidence: map[string]Evidence{}, validated: map[string]bool{}}
 }
