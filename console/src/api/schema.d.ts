@@ -447,6 +447,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listProjectPipelineVersions"];
+        put?: never;
+        post: operations["createProjectPipelineVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/versions/{version_id}/validations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["validateProjectPipelineVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/releases:promote": {
         parameters: {
             query?: never;
@@ -465,7 +502,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/projects/{project_id}/environments/{environment}:rollback": {
+    "/v1/projects/{project_id}/environments/{environment}/rollback": {
         parameters: {
             query?: never;
             header?: never;
@@ -949,6 +986,33 @@ export interface components {
         };
         EnvironmentListResponse: {
             items: components["schemas"]["Environment"][];
+        };
+        PipelineVersion: {
+            id: string;
+            project_id: string;
+            content_hash: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        PipelineVersionListResponse: {
+            items: components["schemas"]["PipelineVersion"][];
+        };
+        CreatePipelineVersionRequest: {
+            id?: string;
+            content_hash: string;
+        };
+        ValidatePipelineVersionRequest: {
+            /** @enum {string} */
+            environment: "development" | "staging" | "production";
+            passed?: boolean;
+            content_hash: string;
+        };
+        PipelineValidation: {
+            version_id: string;
+            /** @enum {string} */
+            environment: "development" | "staging" | "production";
+            passed: boolean;
+            content_hash: string;
         };
         Release: {
             id: string;
@@ -3210,6 +3274,93 @@ export interface operations {
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
+        };
+    };
+    listProjectPipelineVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable pipeline versions for the project. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineVersionListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    createProjectPipelineVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePipelineVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Immutable pipeline version. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineVersion"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    validateProjectPipelineVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ValidatePipelineVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Recorded release evidence. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineValidation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     promoteProjectRelease: {
