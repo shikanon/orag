@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added a phased PostgreSQL/Qdrant ingestion protocol with real-store failure, replacement, legacy payload, cleanup-warning, and concurrency integration coverage.
+
+### Changed
+
+- Qdrant points now record staged `searchable` state and `ingestion_job_id`; PostgreSQL `chunks.searchable` authorizes every dense candidate, including historical points without the new payload fields.
+- Post-commit Qdrant cleanup failures now produce succeeded ingestion jobs with warnings instead of incorrectly reporting a committed document as failed.
+
+### Fixed
+
+- Failed or partially activated ingestions can no longer expose Qdrant vectors, and dense visibility lookup failures now fail closed.
+- Same-source PostgreSQL activation is serialized with a tenant-, knowledge-base-, and source-scoped advisory transaction lock.
+
 ## [0.1.0-beta.1] - 2026-07-14
 
 ### Added

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -399,7 +400,44 @@ func deleteDocumentSource(ctx context.Context, tx knowledgeBaseTx, tenantID, kbI
 	return err
 }
 
-func (r *Repository) Activate(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
+const searchableChunkIDsSQL = `
+	SELECT id FROM chunks
+	WHERE tenant_id=$1 AND knowledge_base_id=$2
+	  AND searchable AND id = ANY($3)`
+
+func (r *Repository) FilterSearchableChunkIDs(
+	ctx context.Context,
+	tenantID string,
+	kbID string,
+	chunkIDs []string,
+) (map[string]struct{}, error) {
+	active := make(map[string]struct{}, len(chunkIDs))
+	if len(chunkIDs) == 0 {
+		return active, nil
+	}
+	rows, err := r.knowledgeBaseQueryer().Query(ctx, searchableChunkIDsSQL, tenantID, kbID, chunkIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		active[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return active, nil
+}
+
+func (r *Repository) PrepareActivation(context.Context, kb.Document, []kb.Chunk) error {
+	return nil
+}
+
+func (r *Repository) CommitActivation(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -408,6 +446,28 @@ func (r *Repository) Activate(ctx context.Context, doc kb.Document, chunks []kb.
 		return err
 	}
 	defer tx.Rollback(ctx)
+
+	lockKey := activationLockKey(doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
+		return err
+	}
+	var candidateID string
+	err = tx.QueryRow(ctx, `
+		SELECT d.id
+		FROM documents d
+		WHERE d.tenant_id=$1 AND d.knowledge_base_id=$2 AND d.id=$3
+		  AND EXISTS (
+			SELECT 1 FROM chunks c
+			WHERE c.tenant_id=d.tenant_id
+			  AND c.knowledge_base_id=d.knowledge_base_id
+			  AND c.document_id=d.id
+		  )`, doc.TenantID, doc.KnowledgeBaseID, doc.ID).Scan(&candidateID)
+	if err == pgx.ErrNoRows {
+		return kb.ErrActivationCandidateMissing
+	}
+	if err != nil {
+		return err
+	}
 
 	if err := deleteDocumentSource(ctx, tx, doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI, doc.ContentHash); err != nil {
 		return err
@@ -421,6 +481,48 @@ func (r *Repository) Activate(ctx context.Context, doc kb.Document, chunks []kb.
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func activationLockKey(parts ...string) string {
+	var key strings.Builder
+	for _, part := range parts {
+		key.WriteString(strconv.Itoa(len(part)))
+		key.WriteByte(':')
+		key.WriteString(part)
+	}
+	return key.String()
+}
+
+func (r *Repository) AbortActivation(ctx context.Context, doc kb.Document, _ []kb.Chunk) error {
+	tx, err := r.knowledgeBaseTxBeginner().BeginKnowledgeBaseTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM chunks
+		WHERE tenant_id=$1 AND knowledge_base_id=$2
+		  AND document_id=$3 AND searchable=FALSE`,
+		doc.TenantID, doc.KnowledgeBaseID, doc.ID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM documents d
+		WHERE d.tenant_id=$1 AND d.knowledge_base_id=$2 AND d.id=$3
+		  AND NOT EXISTS (
+			SELECT 1 FROM chunks c
+			WHERE c.tenant_id=d.tenant_id
+			  AND c.knowledge_base_id=d.knowledge_base_id
+			  AND c.document_id=d.id
+		  )`, doc.TenantID, doc.KnowledgeBaseID, doc.ID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) FinalizeActivation(context.Context, kb.Document, []kb.Chunk) error {
+	return nil
 }
 
 func (r *Repository) Chunks(tenantID, kbID string) []kb.Chunk {

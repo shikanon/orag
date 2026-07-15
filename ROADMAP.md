@@ -2,7 +2,7 @@
 
 [English](./ROADMAP_EN.md) | 简体中文
 
-最后更新：2026-07-14
+最后更新：2026-07-15
 
 ## 定位
 
@@ -46,8 +46,8 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 | Offline Knowledge、MCP 自检/诊断/自运维 | `experimental` | 消除 fixture/占位依赖，完成安全边界与人工批准审计 |
 | ORAG Console | `experimental` | 完成编排、API 调试、评测门禁和发布回滚黄金路径 |
 | 教程实验室 | `experimental` | 支持 clone、Quick Run、Replay 和结果对比 |
-| 公共 Go SDK | `planned` | 在 `v0.1.0-beta.1` 以 `beta` 发布 |
-| GHCR 镜像、完整 Compose、托管文档站 | `planned` | 在 `v0.1.0-beta.1` 以 `beta` 发布 |
+| 公共 Go SDK | `beta` | 已在 `v0.1.0-beta.1` 发布；以外部 consumer gate 和兼容政策持续验证 |
+| GHCR 镜像、完整 Compose、托管文档站 | `beta` | 已在 `v0.1.0-beta.1` 发布；持续验证签名、walkthrough 和文档契约 |
 
 在 `v1.0.0` 之前，ORAG 不把任何能力标记为 `stable`。
 
@@ -132,6 +132,8 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 - Console、交互 `/docs`、托管文档站和 mock walkthrough 使用同一版本契约。
 
 ## 阶段三：生产试点基线
+
+当前进展：[#175](https://github.com/shikanon/orag/issues/175) 已按[跨存储 staged visibility 设计](./docs/superpowers/specs/2026-07-15-qdrant-staged-visibility-design.md)实现。PostgreSQL 现在统一授权 sparse/dense 可见性，失败候选不会进入检索，并已通过真实 PostgreSQL + Qdrant 的失败、替换、legacy、清理告警和并发测试。此进展只完成下方一致性条目的一部分，不代表阶段三已完成。
 
 ### 数据一致性与执行安全
 
