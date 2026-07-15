@@ -35,6 +35,21 @@ func TestServiceCreateInitializesThreeEnvironments(t *testing.T) {
 	}
 }
 
+func TestServiceCreateWithIDUsesReservedIdentifier(t *testing.T) {
+	repo := newMemoryRepository()
+	svc := project.NewService(repo, fixedClock)
+	got, err := svc.CreateWithID(context.Background(), "tenant_a", "prj_reserved", project.CreateInput{Name: "Tutorial experiment"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "prj_reserved" || len(repo.environmentKinds(got.ID)) != 3 {
+		t.Fatalf("CreateWithID() = %#v, environments=%v", got, repo.environmentKinds(got.ID))
+	}
+	if _, err := svc.CreateWithID(context.Background(), "tenant_a", " ", project.CreateInput{Name: "Tutorial experiment"}); !errors.Is(err, project.ErrConflict) {
+		t.Fatalf("blank ID error = %v, want conflict", err)
+	}
+}
+
 func TestServiceCreateRejectsMissingTenant(t *testing.T) {
 	for _, tenantID := range []string{"", " \t\n "} {
 		t.Run(tenantID, func(t *testing.T) {

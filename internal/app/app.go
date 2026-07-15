@@ -47,6 +47,7 @@ type App struct {
 	Datasets         *dataset.Service
 	Projects         *project.Service
 	Tutorials        *tutorial.Catalog
+	TutorialClones   *tutorial.CloneService
 	Eval             eval.Runner
 	EvaluationPolicy *evaluationpolicy.Service
 	Optimizer        *optimizer.Service
@@ -139,6 +140,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	}
 	datasets := dataset.NewService(backend.datasetRepo)
 	projects := project.NewService(backend.projectRepo, func() time.Time { return time.Now().UTC() })
+	tutorialClones := tutorial.NewCloneService(tutorials, backend.tutorialCloneRepo, func() time.Time { return time.Now().UTC() })
 	releaseSvc := release.NewService(backend.releaseRepo)
 	pipelineSvc := pipeline.NewService(backend.pipelineRepo, pipeline.BuiltinRegistry())
 	pipelineCompiler := pipeline.NewCompiler(ragSvc, pipeline.BuiltinRegistry())
@@ -180,6 +182,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Datasets:         datasets,
 		Projects:         projects,
 		Tutorials:        tutorials,
+		TutorialClones:   tutorialClones,
 		Eval:             evalRunner,
 		EvaluationPolicy: evaluationPolicySvc,
 		Optimizer: &optimizer.Service{
@@ -597,6 +600,7 @@ type knowledgeBackend struct {
 	traceRepo            TraceRepository
 	datasetRepo          dataset.Repository
 	projectRepo          project.Repository
+	tutorialCloneRepo    tutorial.CloneRepository
 	apiKeyRepo           auth.APIKeyRepository
 	evalRepo             eval.Repository
 	evaluationPolicyRepo evaluationpolicy.Repository
@@ -735,6 +739,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			traceRepo:            traceRepo,
 			datasetRepo:          dataset.NewMemoryRepository(),
 			projectRepo:          projectRepo,
+			tutorialCloneRepo:    tutorial.NewMemoryCloneRepository(),
 			releaseRepo:          release.NewMemoryRepository(project.LegacyDefaultID(defaultTenant)),
 			pipelineRepo:         pipeline.NewMemoryRepository(),
 			apiKeyRepo:           auth.NewMemoryAPIKeyRepository(),
@@ -795,6 +800,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 		traceRepo:            repo,
 		datasetRepo:          repo,
 		projectRepo:          postgres.NewProjectRepository(pool),
+		tutorialCloneRepo:    postgres.NewTutorialCloneRepository(pool),
 		releaseRepo:          repo,
 		pipelineRepo:         repo,
 		apiKeyRepo:           postgres.NewAPIKeyRepository(pool),
