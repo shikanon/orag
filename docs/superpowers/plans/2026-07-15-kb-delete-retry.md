@@ -168,7 +168,7 @@ git commit -m "docs: record retryable knowledge base deletion"
 
 ### Task 4: Validate, publish, merge, and clean up
 
-- [ ] **Step 1: Run focused and repository-wide gates**
+- [x] **Step 1: Run focused and repository-wide gates**
 
 ```bash
 gofmt -w internal/app tests/integration
@@ -180,7 +180,7 @@ PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/
 PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" npm --prefix console run build
 ```
 
-- [ ] **Step 2: Re-run integration without cache**
+- [x] **Step 2: Re-run integration without cache**
 
 ```bash
 go clean -testcache
