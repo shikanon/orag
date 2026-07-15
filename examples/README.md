@@ -23,7 +23,7 @@ Each scenario directory contains a focused README, sample input, expected output
 
 ## Prerequisites
 
-- Go 1.26. Use `GOTOOLCHAIN=go1.26.4` when the local default toolchain is older.
+- Go 1.26. Use `GOTOOLCHAIN=go1.26.5` when the local default toolchain is older.
 - Docker, when using `scripts/dev-up.sh` to start PostgreSQL and Qdrant.
 - `curl` on `PATH` for every service-mode script.
 - A running ORAG API service at `BASE_URL`, defaulting to `http://localhost:8080`.
@@ -61,12 +61,12 @@ Run the knowledge-base Q&A service flow in order:
 Run role-based Go scenario demos with their concrete demo data:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/customer-support
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/engineering-runbook
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/platform-team
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/product-team
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/agent-developer
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/multimodal-assets
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/customer-support
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/engineering-runbook
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/platform-team
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/product-team
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/agent-developer
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/multimodal-assets
 ```
 
 Run the streaming, trace, evaluation, and optimization support commands after the Q&A state exists:
@@ -82,25 +82,25 @@ Run the Ralph Loop MCP discovery smoke without a live downstream API:
 
 ```sh
 head -n 2 examples/mcp/ralph-loop-stdio-smoke.jsonl \
-| GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml
+| GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml
 ```
 
 Run the focused self-check MCP stdio smoke:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-check-smoke
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-check-smoke
 ```
 
 Validate generated MCP/Skill artifacts are in sync with `api/openapi.yaml`:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
 ```
 
 Run the in-process Go memory demo:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
 ```
 
 Stop local dependencies when finished:
@@ -112,7 +112,7 @@ Stop local dependencies when finished:
 Validate this examples index, script paths, and endpoint drift against `api/openapi.yaml`:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run TestExamples -v
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run TestExamples -v
 ```
 
 ## Service/Curl Examples
@@ -154,7 +154,7 @@ Scripts fail fast with actionable messages when `curl` is missing, the service i
 The public root-module SDK example at `examples/go/sdk/main.go` runs ingestion, query, trace, dataset, and deterministic evaluation without a real model key or external storage:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/sdk
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/sdk
 ```
 
 The Go memory example at `examples/go/memory/main.go` demonstrates dependency-free library-style usage through the public `pkg/memory` facade. It creates an in-memory ORAG client, ingests sample content, runs a query, and prints trace/response metadata without PostgreSQL, Qdrant, or Ark.
@@ -162,13 +162,13 @@ The Go memory example at `examples/go/memory/main.go` demonstrates dependency-fr
 Run it directly:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
 ```
 
 Or run the example package test:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./examples/go/memory -v
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./examples/go/memory -v
 ```
 
 Expected output includes `document_id=doc_`, `trace_id=trace_example_memory`, `cache_status=disabled`, trace summary fields, and citation counts. Role-based Go demos additionally print `usage_dimensions`, `expected_signals`, and `recommended_next_steps`. The multimodal assets demo prints `asset_count=7`, each remote asset URL, and `large_file_only=true` for `TestLongVideo.mp4`.

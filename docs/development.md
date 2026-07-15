@@ -157,8 +157,32 @@ make test
 直接运行原生命令时建议显式带上与 Makefile 一致的参数：
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./...
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.5 go test ./...
 ```
+
+### 安全门禁
+
+[`security.yml`](../.github/workflows/security.yml) 在 Pull Request、`main` push、手动触发和每周计划任务中执行以下门禁：
+
+- CodeQL 分别分析 Go 与 JavaScript/TypeScript，并把 SARIF 写入 GitHub code scanning；
+- 使用 Go 1.26.5 运行根模块和独立 SDK consumer 的 `govulncheck`；
+- 对 Console 执行可复现的 `npm ci` 与 production dependency audit；
+- Gitleaks 扫描可达 Git 历史，不申请 PR comment 写权限；
+- 构建 API 与 Console 镜像，并用 Trivy 阻止已有修复版本的 HIGH/CRITICAL 漏洞。
+
+[`scorecard.yml`](../.github/workflows/scorecard.yml) 独立运行 OpenSSF Scorecard，以最小权限发布签名结果并上传 SARIF。两个 workflow 中新增的 action 都固定到完整 commit SHA，版本注释放在同一行供 Dependabot 和 reviewer 审查。
+
+本地可执行的等价检查：
+
+```bash
+GOTOOLCHAIN=local go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+GOTOOLCHAIN=local govulncheck ./...
+GOTOOLCHAIN=local GOWORK=off govulncheck -C tests/consumer ./...
+npm --prefix console ci
+npm --prefix console audit --omit=dev --audit-level=high
+```
+
+GitHub 原生 provider secret scanning 和 push protection 已启用。当前仓库属于个人账号；GitHub Secret Protection 才提供的 non-provider patterns 与 validity checks 不适用于该仓库，因此由 Gitleaks 全历史门禁补足 private key、generic credential 等检测，而不是把不可用设置描述为已开启。
 
 ### 契约测试
 
@@ -171,7 +195,7 @@ make openapi-validate
 等价原生命令：
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/contract -run TestOpenAPI -v
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.5 go test ./tests/contract -run TestOpenAPI -v
 ```
 
 该测试读取 [`api/openapi.yaml`](../api/openapi.yaml)，用于验证 OpenAPI 文档结构和关键安全约束，不会启动外部服务。
@@ -200,7 +224,7 @@ make test-integration-down
 
 ```bash
 docker compose -f deployments/docker-compose.test.yml up -d
-ORAG_INTEGRATION_TESTS=1 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/integration -v
+ORAG_INTEGRATION_TESTS=1 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.5 go test ./tests/integration -v
 docker compose -f deployments/docker-compose.test.yml down -v
 ```
 
@@ -213,7 +237,7 @@ QDRANT_HOST="localhost" \
 QDRANT_GRPC_PORT="6634" \
 QDRANT_COLLECTION="orag_chunks_test" \
 QDRANT_SEMANTIC_CACHE_COLLECTION="orag_semantic_cache_test" \
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 \
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.5 \
 go test ./tests/integration -v
 ```
 
@@ -224,7 +248,7 @@ go test ./tests/integration -v
 真实 Ark smoke test 默认跳过，只在显式开启时运行：
 
 ```bash
-LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go test ./tests/live -v
+LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.5 go test ./tests/live -v
 ```
 
 当前 [`tests/live/ark_live_test.go`](../tests/live/ark_live_test.go) 仍要求已开通的模型 endpoint 配置；没有补齐真实 endpoint 时，即使设置 `LIVE_ARK_TESTS=1` 也会按测试内逻辑 skip。不要把真实 `ARK_API_KEY` 提交到仓库。
@@ -259,7 +283,7 @@ examples/curl/45_optimize.sh
 Go memory 示例展示无外部依赖的入库、查询和 trace/response 元数据读取，适合快速验证示例包可编译运行：
 
 ```bash
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
 ```
 
 ## Mac、Go 1.26 和 Hertz 构建注意事项
@@ -267,7 +291,7 @@ GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples
 本仓库使用 Hertz，间接依赖 Sonic。Mac 本地，尤其是 amd64 + Go 1.26 环境下，直接走 Sonic native/JIT 或本地 cgo 产物可能带来构建和链接问题。仓库统一约定：
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.5
 ```
 
 Makefile 已默认设置：
@@ -280,8 +304,8 @@ CGO_ENABLED ?= 0
 因此优先使用 `make run`、`make test`、`make openapi-validate`、`make test-integration` 等目标。若直接执行 `go run`、`go test` 或 `go build`，请显式带上相同参数：
 
 ```bash
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go run ./cmd/orag-api
-CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.4 go build ./cmd/orag-api
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.5 go run ./cmd/orag-api
+CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.5 go build ./cmd/orag-api
 ```
 
 Docker 构建同样使用 `CGO_ENABLED=0` 和 `GOFLAGS=-tags=stdjson,gjson`：

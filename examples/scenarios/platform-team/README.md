@@ -25,7 +25,7 @@ Choose this scenario when building an internal AI platform, offering RAG as a se
 From the repository root, run the Go scenario demo:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/platform-team
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/platform-team
 ```
 
 ## Demo Implementation

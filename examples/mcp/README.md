@@ -16,7 +16,7 @@ Run the discovery-only portion without a live ORAG API:
 
 ```sh
 head -n 2 examples/mcp/ralph-loop-stdio-smoke.jsonl \
-| GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml
+| GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml
 ```
 
 Expected output:
@@ -29,7 +29,7 @@ Expected output:
 Run a focused self-check smoke without a live downstream ORAG API. The `orag_check(scope=agent_sync)` call executes the local static drift check and returns the same runtime warning that CI remains authoritative.
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson \
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson \
 go run ./cmd/orag-mcp --openapi api/openapi.yaml < examples/mcp/self-check-stdio-smoke.jsonl
 ```
 
@@ -48,7 +48,7 @@ The third JSON-RPC line calls the downstream ORAG API, so it requires a running 
 ORAG_API_BASE_URL=http://localhost:8080 \
 ORAG_API_TOKEN=replace-with-token \
 ORAG_TENANT_ID=tenant_default \
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson \
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson \
 go run ./cmd/orag-mcp --openapi api/openapi.yaml < examples/mcp/ralph-loop-stdio-smoke.jsonl
 ```
 

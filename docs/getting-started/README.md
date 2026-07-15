@@ -77,7 +77,7 @@ STORAGE_BACKEND=memory make run
 Go memory 示例用于无外部依赖体验入库、查询和 trace/response 元数据读取，不需要启动 PostgreSQL、Qdrant 或 Ark：
 
 ```bash
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory
 ```
 
 ## 下一步

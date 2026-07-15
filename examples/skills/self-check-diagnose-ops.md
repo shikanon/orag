@@ -35,7 +35,7 @@ ls .trae/skills/orag-self-ops/SKILL.md
 Keep generated Skill files in sync with the capability manifest by running:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
 ```
 
 ## Common Environment

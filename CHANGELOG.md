@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Added a phased PostgreSQL/Qdrant ingestion protocol with real-store failure, replacement, legacy payload, cleanup-warning, and concurrency integration coverage.
 - Added regression coverage proving RAG graph spans reach trace persistence with contiguous sequence numbers and real UTC execution windows, without relying on store-time fallback normalization.
+- Added SHA-pinned CodeQL, `govulncheck`, production npm audit, reachable-history secret scanning, API/Console container scanning, and published OpenSSF Scorecard workflows.
 
 ### Changed
 
@@ -26,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Security
 
 - Upgraded the six Go dependency families behind 27 Dependabot alerts, including `kin-openapi`, `pgx/v5`, gRPC, `x/crypto`, `x/net`, and `phonenumbers`, while preserving standalone SDK, OpenAPI, PostgreSQL, and Qdrant compatibility.
+- Upgraded the project, CI, examples, and API image builder to Go 1.26.5 after `govulncheck` identified the reachable standard-library vulnerability GO-2026-5856 in Go 1.26.4.
+- Upgraded `jsonparser` to 1.1.2 and the Console runtime to the official NGINX 1.30.3 Alpine image with build-time Alpine security updates after the container gate found CVE-2026-32285 and fixed HIGH/CRITICAL packages in the legacy runtime image.
 
 ## [0.1.0-beta.1] - 2026-07-14
 

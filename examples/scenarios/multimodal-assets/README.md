@@ -25,7 +25,7 @@ Choose this scenario when validating upload handlers, document parsing, media me
 From the repository root, run the Go scenario demo:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/multimodal-assets
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/multimodal-assets
 ```
 
 ## Demo Implementation

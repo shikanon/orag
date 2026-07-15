@@ -33,8 +33,8 @@ Then run or inspect the scenario-specific commands:
 
 ```sh
 head -n 2 examples/mcp/ralph-loop-stdio-smoke.jsonl \
-| GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
+| GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
 ```
 
 For copyable client configuration, inspect `examples/mcp/stdio-client-config.json`. For generated Skill prompts, inspect `examples/skills/README.md`.

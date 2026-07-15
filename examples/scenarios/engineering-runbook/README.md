@@ -25,7 +25,7 @@ Choose this scenario for incident triage, on-call handoff, architecture lookup, 
 From the repository root, run the Go scenario demo:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/engineering-runbook
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/engineering-runbook
 ```
 
 For read-only operational checks, inspect `examples/skills/self-check-diagnose-ops.md`.

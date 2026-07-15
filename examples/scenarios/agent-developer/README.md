@@ -25,7 +25,7 @@ Choose this scenario for MCP client integration, Ralph Loop verification, read-o
 From the repository root, run the Go scenario demo:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/agent-developer
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/scenarios/agent-developer
 ```
 
 For copyable client configuration, inspect `examples/mcp/stdio-client-config.json`. For agent prompt packaging, inspect `examples/skills/README.md`.

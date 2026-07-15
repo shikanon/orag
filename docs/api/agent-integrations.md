@@ -20,13 +20,13 @@ Generated outputs include `ralph-loop`, `orag-self-check`, `orag-self-diagnose`,
 Regenerate artifacts after changing a capability, template, OpenAPI facet, or Skill behavior boundary:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync
 ```
 
 Check for drift without writing files:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
 ```
 
 `make agent-sync-check` is the authoritative CI/static drift gate. Runtime MCP probes such as `orag_check(scope=agent_sync, mode=focused)` are convenience checks for Agents and humans; a passing runtime probe does not replace the static gate in CI.
@@ -36,7 +36,7 @@ GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-c
 The MCP server uses stdio and reads JSON-RPC requests from stdin. Run it from the repository root so the OpenAPI contract and generated `agent/mcp/tools/*.json` artifacts resolve correctly:
 
 ```sh
-ORAG_API_BASE_URL=http://localhost:8080 ORAG_API_TOKEN=replace-with-token ORAG_TENANT_ID=tenant_default ORAG_MCP_TIMEOUT=30s GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml
+ORAG_API_BASE_URL=http://localhost:8080 ORAG_API_TOKEN=replace-with-token ORAG_TENANT_ID=tenant_default ORAG_MCP_TIMEOUT=30s GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml
 ```
 
 Runtime environment:
@@ -56,13 +56,13 @@ Discover generated tools without calling the downstream API:
 
 ```sh
 printf '%s
-'   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml
+'   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml
 ```
 
 Run the focused self-check stdio smoke:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-check-smoke
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-check-smoke
 ```
 
 The self-check smoke reads `examples/mcp/self-check-stdio-smoke.jsonl`, calls `orag_check(scope=agent_sync, mode=focused)`, and expects `structuredContent.verdict`, stable check IDs, evidence, `trace_id`, and `runtime_gate_warning`.
@@ -70,7 +70,7 @@ The self-check smoke reads `examples/mcp/self-check-stdio-smoke.jsonl`, calls `o
 Optional Ralph Loop live verification requires a running ORAG API that implements `POST /v1/ralph-loop`:
 
 ```sh
-ORAG_API_BASE_URL=http://localhost:8080 ORAG_API_TOKEN=replace-with-token ORAG_TENANT_ID=tenant_default GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml < examples/mcp/ralph-loop-stdio-smoke.jsonl
+ORAG_API_BASE_URL=http://localhost:8080 ORAG_API_TOKEN=replace-with-token ORAG_TENANT_ID=tenant_default GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/orag-mcp --openapi api/openapi.yaml < examples/mcp/ralph-loop-stdio-smoke.jsonl
 ```
 
 ## Operational MCP Tools
@@ -135,10 +135,10 @@ Operational Skill trigger boundaries are mutually exclusive:
 Run the focused Task 6 verification set from the repository root:
 
 ```sh
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-artifact-tests
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-check-smoke
-GOTOOLCHAIN=go1.26.4 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run 'TestOpenAPI|TestExamples' -v
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-artifact-tests
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-check-smoke
+GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go test ./tests/contract -run 'TestOpenAPI|TestExamples' -v
 ```
 
 For live failures, report the MCP JSON-RPC error code, downstream `trace_id`, command, and artifact paths instead of printing tokens, raw prompts, document content, model responses, or full request headers.
