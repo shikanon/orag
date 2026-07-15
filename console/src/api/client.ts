@@ -9,6 +9,10 @@ export type CreateAPIKeyResponse = components['schemas']['CreateAPIKeyResponse']
 export type TutorialTemplate = components['schemas']['TutorialTemplate']
 export type LoginInput = components['schemas']['LoginRequest']
 export type LoginResponse = components['schemas']['LoginResponse']
+export type KnowledgeBase = components['schemas']['KnowledgeBase']
+export type QueryRequest = components['schemas']['QueryRequest']
+export type QueryResponse = components['schemas']['QueryResponse']
+export type TraceRecord = components['schemas']['TraceRecord']
 
 export class ApiError extends Error {
   constructor(public readonly status: number) {
@@ -57,4 +61,13 @@ export const tutorialApi = {
   getVersion: (templateId: string, version: string) => request<TutorialTemplate>(
     `/v1/tutorials/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version)}`,
   ),
+}
+
+export const knowledgeBaseApi = {
+  list: () => request<{ items: KnowledgeBase[] }>('/v1/knowledge-bases'),
+}
+
+export const queryApi = {
+  run: (input: QueryRequest) => request<QueryResponse>('/v1/query', { method: 'POST', body: JSON.stringify(input) }),
+  getTrace: (traceId: string) => request<TraceRecord>(`/v1/traces/${encodeURIComponent(traceId)}`),
 }

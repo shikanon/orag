@@ -9,6 +9,7 @@ const ProjectForm = lazy(() => import('../features/projects/project-form').then(
 const APIKeyList = lazy(() => import('../features/api-keys/api-key-list').then((module) => ({ default: module.APIKeyList })))
 const TutorialList = lazy(() => import('../features/tutorials/tutorial-list').then((module) => ({ default: module.TutorialList })))
 const TutorialDetail = lazy(() => import('../features/tutorials/tutorial-detail').then((module) => ({ default: module.TutorialDetail })))
+const APIDebugger = lazy(() => import('../features/debugger/api-debugger').then((module) => ({ default: module.APIDebugger })))
 
 function projectLoader({ params }: { params: { projectId?: string } }) {
   if (!params.projectId?.trim()) throw new Response('Project ID is required', { status: 400 })
@@ -19,7 +20,7 @@ function Shell() {
   const session = useSession()
   const location = useLocation()
   if (!session) return <Navigate to="/login" replace state={{ from: location.pathname }} />
-  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects">项目</NavLink><NavLink to="/tutorials">教程实验室</NavLink><NavLink to="/api-keys">API Keys</NavLink><span className="nav-heading">工作区</span><span className="nav-disabled">RAG Studio</span><span className="nav-disabled">评测中心</span><span className="nav-disabled">发布中心</span></nav><footer><span className="status-dot" /> API connected</footer></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><div className="topbar-actions"><span className="environment">Development</span><button type="button" onClick={clearSession}>退出</button></div></div><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></section></div>
+  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects">项目</NavLink><NavLink to="/tutorials">教程实验室</NavLink><NavLink to="/api-keys">API Keys</NavLink><span className="nav-heading">工作区</span><NavLink to="/projects/default/debug" className="debug-nav">API Debugger</NavLink><span className="nav-disabled">RAG Studio</span><span className="nav-disabled">评测中心</span><span className="nav-disabled">发布中心</span></nav><footer><span className="status-dot" /> API connected</footer></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><div className="topbar-actions"><span className="environment">Development</span><button type="button" onClick={clearSession}>退出</button></div></div><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></section></div>
 }
 
 function RouteSkeleton() {
@@ -28,7 +29,7 @@ function RouteSkeleton() {
 
 function Overview() {
   const { projectId } = useParams()
-  return <main className="content"><header className="page-header"><div><h1>项目概览</h1><p>项目 <code>{projectId}</code> 的编排、评测和发布入口。</p></div><button className="primary-button">创建 Pipeline</button></header><section className="empty-state"><div className="empty-symbol">⌁</div><h2>开始构建第一条 RAG 流程</h2><p>使用内置节点组合查询链路，并在发布前通过评测门禁。</p><button className="secondary-button">打开 RAG Studio</button></section></main>
+  return <main className="content"><header className="page-header"><div><h1>项目概览</h1><p>项目 <code>{projectId}</code> 的编排、评测和发布入口。</p></div><NavLink className="primary-button" to={`/projects/${projectId}/debug`}>打开 API Debugger</NavLink></header><section className="empty-state"><div className="empty-symbol">⌁</div><h2>先验证一条真实查询</h2><p>使用 API Debugger 检查答案、引用和 trace，再开始构建完整流程。</p><NavLink className="secondary-button" to={`/projects/${projectId}/debug`}>运行第一条查询</NavLink></section></main>
 }
 
 export function createAppRouter(initialEntries?: string[]) {
@@ -37,6 +38,7 @@ export function createAppRouter(initialEntries?: string[]) {
     { path: 'projects', element: <ProjectList /> },
     { path: 'projects/new', element: <ProjectForm /> },
     { path: 'projects/:projectId/overview', loader: projectLoader, element: <Overview /> },
+    { path: 'projects/:projectId/debug', loader: projectLoader, element: <APIDebugger /> },
     { path: 'api-keys', element: <APIKeyList /> },
     { path: 'tutorials', element: <TutorialList /> },
     { path: 'tutorials/:templateId', element: <TutorialDetail /> },

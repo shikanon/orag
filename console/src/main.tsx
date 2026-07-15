@@ -8,5 +8,6 @@ import './review-fixes.css'
 import './tutorials.css'
 import './api-keys.css'
 import './auth.css'
+import './debugger.css'
 
 createRoot(document.getElementById('root')!).render(<StrictMode><AppProviders queryClient={createQueryClient()}><RouterProvider router={createAppRouter()} future={{ v7_startTransition: true }} /></AppProviders></StrictMode>)
