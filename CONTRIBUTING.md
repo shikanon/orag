@@ -101,6 +101,25 @@ Maintainers may ask for a smaller scope, an RFC, additional evaluation evidence,
 
 Look for `good first issue` or `help wanted`. Documentation corrections, missing tests, clearer examples, and small provider-independent fixes are good starting points. Comment on the Issue before substantial work so maintainers can confirm scope and avoid duplication.
 
+## Issue Triage
+
+Maintainers triage new Issues in public. We first confirm reproducibility and
+scope, then apply labels that make ownership and release risk visible:
+
+- `area/*` identifies the owning surface, such as API, Console, SDK,
+  evaluation, retrieval, operations, or documentation;
+- `maturity/*` identifies the affected public capability contract;
+- `priority/p0` through `priority/p3` states urgency, where P0 covers active
+  security, data-loss, or widespread availability impact;
+- `good first issue` and `help wanted` indicate work that is ready for an
+  external contributor after a maintainer has confirmed its scope.
+
+An Issue is not a commitment to implement it. Roadmap ordering remains driven
+by user impact, safety, reproducible evaluation evidence, and maintainer
+capacity. Use Discussions for questions and early ideas; use an RFC Issue plus
+a Discussion for cross-module contracts, compatibility, governance, or
+security-boundary changes.
+
 ## Review and Release
 
 Changes merge through pull requests into `main`. Force pushes and deletion of `main` are prohibited. Releases are created from version tags after the documented release gates pass; maintainers do not publish artifacts built from unmerged branches.
