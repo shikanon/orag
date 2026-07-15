@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	qdrant "github.com/qdrant/go-client/qdrant"
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/config"
+	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/platform/logger"
 	"github.com/shikanon/orag/internal/storage/postgres"
 	qdrantstore "github.com/shikanon/orag/internal/storage/qdrant"
@@ -32,6 +34,11 @@ func newIntegrationApp(t *testing.T) *core.App {
 	setenvDefault(t, "QDRANT_SEMANTIC_CACHE_COLLECTION", "orag_semantic_cache_test")
 	setenvDefault(t, "QDRANT_AUTO_CREATE_COLLECTIONS", "true")
 	setenvDefault(t, "REQUIRE_EXTERNAL_PROVIDERS", "false")
+	t.Setenv("ALLOW_DETERMINISTIC_MOCK", "true")
+	t.Setenv("LLM_CHAT_PROVIDER", "mock")
+	t.Setenv("LLM_EMBEDDING_PROVIDER", "mock")
+	t.Setenv("LLM_RERANK_PROVIDER", "mock")
+	t.Setenv("LLM_MULTIMODAL_PROVIDER", "mock")
 	t.Setenv("ARK_API_KEY", "")
 	t.Setenv("PORT", "0")
 
@@ -114,6 +121,87 @@ func migrate(t *testing.T, url string) {
 	}
 	defer pool.Close()
 	if err := postgres.Migrate(ctx, pool, "../../migrations"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func integrationQueryVector(t *testing.T, ctx context.Context, app *core.App, text string) []float64 {
+	t.Helper()
+	vectors, err := app.Ingest.Embedder.Embed(ctx, []string{text})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vectors) != 1 {
+		t.Fatalf("embedding count = %d, want 1", len(vectors))
+	}
+	return vectors[0]
+}
+
+func integrationVectorStore(app *core.App, repo *postgres.Repository) qdrantstore.VectorStore {
+	return qdrantstore.VectorStore{
+		Client:     app.Qdrant,
+		Collection: app.Config.Qdrant.Collection,
+		Visibility: repo,
+	}
+}
+
+func countSearchableSourceChunks(t *testing.T, ctx context.Context, app *core.App, kbID, sourceURI string) int {
+	t.Helper()
+	var count int
+	if err := app.Postgres.QueryRow(ctx, `
+		SELECT count(*) FROM chunks
+		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND source_uri=$3 AND searchable`,
+		testTenantID, kbID, sourceURI).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+func denseDocumentIDs(t *testing.T, ctx context.Context, store qdrantstore.VectorStore, req kb.SearchRequest) []string {
+	t.Helper()
+	results, err := store.Retrieve(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]string, 0, len(results))
+	for _, result := range results {
+		ids = append(ids, result.Chunk.DocumentID)
+	}
+	return ids
+}
+
+func setQdrantDocumentPayload(t *testing.T, ctx context.Context, app *core.App, kbID, documentID string, payload map[string]*qdrant.Value) {
+	t.Helper()
+	wait := true
+	_, err := app.Qdrant.Points.SetPayload(ctx, &qdrant.SetPayloadPoints{
+		CollectionName: app.Config.Qdrant.Collection,
+		Wait:           &wait,
+		Payload:        payload,
+		PointsSelector: &qdrant.PointsSelector{PointsSelectorOneOf: &qdrant.PointsSelector_Filter{Filter: &qdrant.Filter{Must: []*qdrant.Condition{
+			integrationMatchKeyword("tenant_id", testTenantID),
+			integrationMatchKeyword("knowledge_base_id", kbID),
+			integrationMatchKeyword("document_id", documentID),
+		}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func deleteQdrantDocumentPayloadKey(t *testing.T, ctx context.Context, app *core.App, kbID, documentID, key string) {
+	t.Helper()
+	wait := true
+	_, err := qdrant.NewPointsClient(app.Qdrant.Conn).DeletePayload(ctx, &qdrant.DeletePayloadPoints{
+		CollectionName: app.Config.Qdrant.Collection,
+		Wait:           &wait,
+		Keys:           []string{key},
+		PointsSelector: &qdrant.PointsSelector{PointsSelectorOneOf: &qdrant.PointsSelector_Filter{Filter: &qdrant.Filter{Must: []*qdrant.Condition{
+			integrationMatchKeyword("tenant_id", testTenantID),
+			integrationMatchKeyword("knowledge_base_id", kbID),
+			integrationMatchKeyword("document_id", documentID),
+		}}}},
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 }

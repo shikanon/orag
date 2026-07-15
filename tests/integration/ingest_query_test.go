@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,6 +24,246 @@ import (
 	qdrantstore "github.com/shikanon/orag/internal/storage/qdrant"
 	"google.golang.org/grpc"
 )
+
+type failingCommitRepository struct {
+	*postgres.Repository
+	err       error
+	storedDoc kb.Document
+}
+
+func (r *failingCommitRepository) Store(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
+	r.storedDoc = doc
+	return r.Repository.Store(ctx, doc, chunks)
+}
+
+func (r *failingCommitRepository) CommitActivation(context.Context, kb.Document, []kb.Chunk) error {
+	return r.err
+}
+
+type failingFinalizeVectorStore struct {
+	qdrantstore.VectorStore
+	err error
+}
+
+func (s failingFinalizeVectorStore) FinalizeActivation(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
+	return errors.Join(s.VectorStore.FinalizeActivation(ctx, doc, chunks), s.err)
+}
+
+func TestFailedPostgresActivationDoesNotExposePreparedQdrantVectors(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	kbID := createIntegrationKnowledgeBase(t, ctx, app, "failed-activation")
+	source := "integration://replace-failed"
+	oldContent := "old source remains authoritative after failed postgres activation"
+	old := ingestIntegrationDocument(t, ctx, app, kbID, source, oldContent)
+
+	repo := postgres.NewRepository(app.Postgres)
+	repo.StageChunks = true
+	commitErr := errors.New("forced postgres activation failure")
+	failingRepo := &failingCommitRepository{Repository: repo, err: commitErr}
+	vectors := integrationVectorStore(app, repo)
+	app.Ingest.Indexer = kb.CompositeIndexer{Indexers: []kb.Indexer{failingRepo, vectors}}
+	failedContent := "new source must remain invisible after failed postgres activation"
+	failed, err := app.Ingest.Ingest(ctx, ingest.Request{
+		TenantID: testTenantID, KnowledgeBaseID: kbID, SourceURI: source,
+		Name: "replacement.md", Content: []byte(failedContent),
+	})
+	if !errors.Is(err, commitErr) || failed.Job.Status != ingest.JobStatusFailed {
+		t.Fatalf("failed ingest = %#v, %v", failed.Job, err)
+	}
+	failedDocID := failingRepo.storedDoc.ID
+	for _, query := range []string{oldContent, failedContent} {
+		ids := denseDocumentIDs(t, ctx, vectors, kb.SearchRequest{
+			TenantID: testTenantID, KnowledgeBaseID: kbID, Vector: integrationQueryVector(t, ctx, app, query), TopK: 8,
+		})
+		if containsString(ids, failedDocID) {
+			t.Fatalf("failed document %s is dense-visible: %#v", failedDocID, ids)
+		}
+	}
+	oldIDs := denseDocumentIDs(t, ctx, vectors, kb.SearchRequest{
+		TenantID: testTenantID, KnowledgeBaseID: kbID, Vector: integrationQueryVector(t, ctx, app, oldContent), TopK: 8,
+	})
+	if !containsString(oldIDs, old.Document.ID) {
+		t.Fatalf("old document is not dense-visible: %#v", oldIDs)
+	}
+	sparse, err := postgres.NewFTSRetriever(repo).Retrieve(ctx, kb.SearchRequest{
+		TenantID: testTenantID, KnowledgeBaseID: kbID, Query: "old source remains authoritative", TopK: 8,
+	})
+	if err != nil || len(sparse) == 0 || sparse[0].Chunk.DocumentID != old.Document.ID {
+		t.Fatalf("sparse old version = %#v, %v", sparse, err)
+	}
+}
+
+func TestSuccessfulReplacementExposesOnlyPostgresAuthorizedVersion(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	kbID := createIntegrationKnowledgeBase(t, ctx, app, "successful-replacement")
+	source := "integration://replace-success"
+	old := ingestIntegrationDocument(t, ctx, app, kbID, source, "old successful replacement content")
+	current := ingestIntegrationDocument(t, ctx, app, kbID, source, "new successful replacement content")
+	repo := postgres.NewRepository(app.Postgres)
+	store := integrationVectorStore(app, repo)
+
+	ids := denseDocumentIDs(t, ctx, store, kb.SearchRequest{
+		TenantID: testTenantID, KnowledgeBaseID: kbID,
+		Vector: integrationQueryVector(t, ctx, app, "new successful replacement content"), TopK: 8,
+	})
+	if len(ids) == 0 || !containsString(ids, current.Document.ID) || containsString(ids, old.Document.ID) {
+		t.Fatalf("replacement dense IDs = %#v, old=%s current=%s", ids, old.Document.ID, current.Document.ID)
+	}
+	if got := countSearchableSourceChunks(t, ctx, app, kbID, source); got != len(current.Chunks) {
+		t.Fatalf("searchable source chunks = %d, want %d", got, len(current.Chunks))
+	}
+}
+
+func TestLegacyQdrantPointRequiresActivePostgresChunk(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	kbID := createIntegrationKnowledgeBase(t, ctx, app, "legacy-point")
+	content := "legacy qdrant payload remains postgres authorized"
+	result := ingestIntegrationDocument(t, ctx, app, kbID, "integration://legacy", content)
+	repo := postgres.NewRepository(app.Postgres)
+	store := integrationVectorStore(app, repo)
+	deleteQdrantDocumentPayloadKey(t, ctx, app, kbID, result.Document.ID, "searchable")
+	req := kb.SearchRequest{TenantID: testTenantID, KnowledgeBaseID: kbID, Vector: integrationQueryVector(t, ctx, app, content), TopK: 8}
+	if ids := denseDocumentIDs(t, ctx, store, req); !containsString(ids, result.Document.ID) {
+		t.Fatalf("legacy active point filtered: %#v", ids)
+	}
+	if _, err := app.Postgres.Exec(ctx, `UPDATE chunks SET searchable=FALSE WHERE tenant_id=$1 AND knowledge_base_id=$2 AND document_id=$3`, testTenantID, kbID, result.Document.ID); err != nil {
+		t.Fatal(err)
+	}
+	if ids := denseDocumentIDs(t, ctx, store, req); containsString(ids, result.Document.ID) {
+		t.Fatalf("legacy inactive point passed barrier: %#v", ids)
+	}
+}
+
+func TestQdrantFinalizationFailureSucceedsWithWarning(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	kbID := createIntegrationKnowledgeBase(t, ctx, app, "cleanup-warning")
+	source := "integration://cleanup-warning"
+	_ = ingestIntegrationDocument(t, ctx, app, kbID, source, "old cleanup warning content")
+	repo := postgres.NewRepository(app.Postgres)
+	repo.StageChunks = true
+	vectors := integrationVectorStore(app, repo)
+	cleanupErr := errors.New("forced qdrant finalization failure")
+	app.Ingest.Indexer = kb.CompositeIndexer{Indexers: []kb.Indexer{repo, failingFinalizeVectorStore{VectorStore: vectors, err: cleanupErr}}}
+	current, err := app.Ingest.Ingest(ctx, ingest.Request{
+		TenantID: testTenantID, KnowledgeBaseID: kbID, SourceURI: source,
+		Name: "cleanup.md", Content: []byte("new cleanup warning content"),
+	})
+	if err != nil || current.Job.Status != ingest.JobStatusSucceeded || !strings.Contains(current.Job.Error, cleanupErr.Error()) {
+		t.Fatalf("cleanup warning ingest = %#v, %v", current.Job, err)
+	}
+	ids := denseDocumentIDs(t, ctx, vectors, kb.SearchRequest{
+		TenantID: testTenantID, KnowledgeBaseID: kbID,
+		Vector: integrationQueryVector(t, ctx, app, "new cleanup warning content"), TopK: 8,
+	})
+	if len(ids) == 0 || !containsString(ids, current.Document.ID) {
+		t.Fatalf("committed document missing after cleanup warning: %#v", ids)
+	}
+}
+
+func TestConcurrentReplacementsLeaveOneDenseVisibleVersion(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	kbID := createIntegrationKnowledgeBase(t, ctx, app, "concurrent-replacement")
+	source := "integration://concurrent-replacement"
+	_ = ingestIntegrationDocument(t, ctx, app, kbID, source, "initial concurrent source content")
+	contents := []string{"concurrent replacement alpha", "concurrent replacement beta"}
+	type outcome struct {
+		result ingest.Result
+		err    error
+	}
+	outcomes := make(chan outcome, len(contents))
+	var start sync.WaitGroup
+	start.Add(1)
+	for _, content := range contents {
+		content := content
+		go func() {
+			start.Wait()
+			result, err := app.Ingest.Ingest(ctx, ingest.Request{
+				TenantID: testTenantID, KnowledgeBaseID: kbID, SourceURI: source,
+				Name: "concurrent.md", Content: []byte(content),
+			})
+			outcomes <- outcome{result: result, err: err}
+		}()
+	}
+	start.Done()
+	for range contents {
+		outcome := <-outcomes
+		if outcome.err != nil || outcome.result.Job.Status != ingest.JobStatusSucceeded {
+			t.Fatalf("concurrent ingest = %#v, %v", outcome.result.Job, outcome.err)
+		}
+	}
+	var activeDocID string
+	if err := app.Postgres.QueryRow(ctx, `
+		SELECT document_id FROM chunks
+		WHERE tenant_id=$1 AND knowledge_base_id=$2 AND source_uri=$3 AND searchable
+		GROUP BY document_id`, testTenantID, kbID, source).Scan(&activeDocID); err != nil {
+		t.Fatal(err)
+	}
+	repo := postgres.NewRepository(app.Postgres)
+	store := integrationVectorStore(app, repo)
+	visible := 0
+	for _, content := range contents {
+		ids := denseDocumentIDs(t, ctx, store, kb.SearchRequest{
+			TenantID: testTenantID, KnowledgeBaseID: kbID, Vector: integrationQueryVector(t, ctx, app, content), TopK: 8,
+		})
+		for _, id := range ids {
+			if id != activeDocID {
+				t.Fatalf("dense result %s is not active %s: %#v", id, activeDocID, ids)
+			}
+			visible++
+		}
+	}
+	if visible == 0 {
+		t.Fatalf("active document %s has no dense point after concurrent replacement", activeDocID)
+	}
+}
+
+func createIntegrationKnowledgeBase(t *testing.T, ctx context.Context, app *core.App, suffix string) string {
+	t.Helper()
+	kbID := fmt.Sprintf("kb_%s_%d", suffix, time.Now().UnixNano())
+	now := time.Now().UTC()
+	if err := app.KBStore.PutKnowledgeBase(ctx, kb.KnowledgeBase{
+		ID: kbID, TenantID: testTenantID, Name: suffix, Description: "temporary integration test",
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = app.KBStore.DeleteKnowledgeBase(context.Background(), testTenantID, kbID) })
+	return kbID
+}
+
+func ingestIntegrationDocument(t *testing.T, ctx context.Context, app *core.App, kbID, sourceURI, content string) ingest.Result {
+	t.Helper()
+	result, err := app.Ingest.Ingest(ctx, ingest.Request{
+		TenantID: testTenantID, KnowledgeBaseID: kbID, SourceURI: sourceURI,
+		Name: "integration.md", Content: []byte(content),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Job.Status != ingest.JobStatusSucceeded {
+		t.Fatalf("ingest job = %#v", result.Job)
+	}
+	return result
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
 
 func TestIngestQueryWithPostgresQdrant(t *testing.T) {
 	app := newIntegrationApp(t)
@@ -155,8 +396,8 @@ func TestFailedQdrantIngestKeepsPostgresChunksUnsearchable(t *testing.T) {
 	if job.Status != ingest.JobStatusFailed {
 		t.Fatalf("stored job status = %q", job.Status)
 	}
-	if count := countPostgresRows(t, ctx, app, "chunks", kbID); count == 0 {
-		t.Fatal("expected staged postgres chunks after qdrant failure")
+	if count := countPostgresRows(t, ctx, app, "chunks", kbID); count != 0 {
+		t.Fatalf("staged postgres chunks after qdrant rollback = %d, want 0", count)
 	}
 	if count := countSearchablePostgresChunks(t, ctx, app, kbID); count != 0 {
 		t.Fatalf("searchable postgres chunks after qdrant failure = %d", count)
@@ -187,12 +428,10 @@ func TestHTTPIngestMissingKnowledgeBaseWithPostgresQdrant(t *testing.T) {
 
 	status, body := performIntegrationJSON(h, "POST", "/v1/knowledge-bases/"+missingKB+"/documents:import", `{"name":"missing.md","source_uri":"integration://missing-http","content":"missing knowledge bases must return 404"}`, token)
 	assertMissingKBHTTPResponse(t, status, body)
-	assertNoStoredChunks(t, app.KBStore, missingKB)
 	assertNoPostgresIngestRows(t, ctx, app, missingKB)
 
 	status, body = performIntegrationUpload(t, h, "/v1/knowledge-bases/"+missingKB+"/documents", "missing.md", "missing knowledge bases must return 404", token)
 	assertMissingKBHTTPResponse(t, status, body)
-	assertNoStoredChunks(t, app.KBStore, missingKB)
 	assertNoPostgresIngestRows(t, ctx, app, missingKB)
 }
 
@@ -543,17 +782,6 @@ func assertMissingKBHTTPResponse(t *testing.T, status int, body string) {
 	}
 	if strings.Contains(body, `"code":"ingest_failed"`) {
 		t.Fatalf("missing knowledge base returned ingest_failed: %s", body)
-	}
-}
-
-func assertNoStoredChunks(t *testing.T, store any, kbID string) {
-	t.Helper()
-	chunks, ok := store.(kb.ChunkSource)
-	if !ok {
-		t.Fatalf("store does not expose chunks")
-	}
-	if got := chunks.Chunks(testTenantID, kbID); len(got) != 0 {
-		t.Fatalf("chunks created for missing knowledge base: %#v", got)
 	}
 }
 

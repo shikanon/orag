@@ -377,7 +377,7 @@ func TestRepositoryCommitActivationLocksSourceBeforeMutation(t *testing.T) {
 	if len(tx.execSQLs) == 0 || !strings.Contains(tx.execSQLs[0], "pg_advisory_xact_lock") {
 		t.Fatalf("first exec is not advisory lock: %#v", tx.execSQLs)
 	}
-	if got, want := tx.execArgs[0][0], "tenant_1\x00kb_1\x00memory://doc.md"; got != want {
+	if got, want := tx.execArgs[0][0], "8:tenant_14:kb_115:memory://doc.md"; got != want {
 		t.Fatalf("lock key = %#v, want %#v", got, want)
 	}
 }

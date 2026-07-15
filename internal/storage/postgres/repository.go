@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -446,7 +447,7 @@ func (r *Repository) CommitActivation(ctx context.Context, doc kb.Document, chun
 	}
 	defer tx.Rollback(ctx)
 
-	lockKey := doc.TenantID + "\x00" + doc.KnowledgeBaseID + "\x00" + doc.SourceURI
+	lockKey := activationLockKey(doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI)
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
 		return err
 	}
@@ -480,6 +481,16 @@ func (r *Repository) CommitActivation(ctx context.Context, doc kb.Document, chun
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func activationLockKey(parts ...string) string {
+	var key strings.Builder
+	for _, part := range parts {
+		key.WriteString(strconv.Itoa(len(part)))
+		key.WriteByte(':')
+		key.WriteString(part)
+	}
+	return key.String()
 }
 
 func (r *Repository) AbortActivation(ctx context.Context, doc kb.Document, _ []kb.Chunk) error {
