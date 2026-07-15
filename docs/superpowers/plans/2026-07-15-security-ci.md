@@ -23,4 +23,4 @@
 - [x] Record the security gates in project documentation, CHANGELOG, and both Roadmaps.
 - [x] Push `codex/security-ci`, open a ready PR with `Closes #213`, and pass every remote check.
 - [x] Add the successful PR security contexts to protected `main`.
-- [ ] Squash merge, verify the default-branch Scorecard run, sync `main`, and clean this worktree/branch.
+- [x] Squash merge, verify the default-branch Scorecard run, sync `main`, and clean this worktree/branch.
