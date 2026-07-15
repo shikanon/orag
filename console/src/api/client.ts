@@ -27,6 +27,10 @@ export type PipelineVersion = components['schemas']['PipelineVersion']
 export type CreatePipelineVersionInput = components['schemas']['CreatePipelineVersionRequest']
 export type ValidatePipelineVersionInput = components['schemas']['ValidatePipelineVersionRequest']
 export type PipelineNodeDefinition = components['schemas']['PipelineNodeDefinition']
+export type Pipeline = components['schemas']['Pipeline']
+export type PipelineDraft = components['schemas']['PipelineDraft']
+export type PipelineDebugRequest = components['schemas']['PipelineDebugRequest']
+export type PipelineDebugResponse = components['schemas']['PipelineDebugResponse']
 
 export class ApiError extends Error {
   constructor(public readonly status: number) {
@@ -105,4 +109,7 @@ export const releaseApi = {
 
 export const pipelineApi = {
   nodeDefinitions: () => request<{ items: PipelineNodeDefinition[] }>('/v1/pipeline-node-definitions'),
+  list: (projectId: string) => request<{ items: Pipeline[] }>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines`),
+  draft: (projectId: string, pipelineId: string) => request<PipelineDraft>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines/${encodeURIComponent(pipelineId)}/draft`),
+  debug: (projectId: string, input: PipelineDebugRequest) => request<PipelineDebugResponse>(`/v1/projects/${encodeURIComponent(projectId)}/query:debug`, { method: 'POST', body: JSON.stringify(input) }),
 }
