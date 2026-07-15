@@ -1,6 +1,8 @@
 import { lazy, Suspense } from 'react'
-import { createBrowserRouter, createMemoryRouter, Navigate, NavLink, Outlet, useParams } from 'react-router-dom'
+import { createBrowserRouter, createMemoryRouter, Navigate, NavLink, Outlet, useLocation, useParams } from 'react-router-dom'
 import { ProjectSwitcher } from '../features/projects/project-switcher'
+import { Login } from '../features/auth/login'
+import { clearSession, useSession } from '../features/auth/session'
 
 const ProjectList = lazy(() => import('../features/projects/project-list').then((module) => ({ default: module.ProjectList })))
 const ProjectForm = lazy(() => import('../features/projects/project-form').then((module) => ({ default: module.ProjectForm })))
@@ -14,7 +16,10 @@ function projectLoader({ params }: { params: { projectId?: string } }) {
 }
 
 function Shell() {
-  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects">项目</NavLink><NavLink to="/tutorials">教程实验室</NavLink><NavLink to="/api-keys">API Keys</NavLink><span className="nav-heading">工作区</span><span className="nav-disabled">RAG Studio</span><span className="nav-disabled">评测中心</span><span className="nav-disabled">发布中心</span></nav><footer><span className="status-dot" /> API connected</footer></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><span className="environment">Development</span></div><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></section></div>
+  const session = useSession()
+  const location = useLocation()
+  if (!session) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects">项目</NavLink><NavLink to="/tutorials">教程实验室</NavLink><NavLink to="/api-keys">API Keys</NavLink><span className="nav-heading">工作区</span><span className="nav-disabled">RAG Studio</span><span className="nav-disabled">评测中心</span><span className="nav-disabled">发布中心</span></nav><footer><span className="status-dot" /> API connected</footer></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><div className="topbar-actions"><span className="environment">Development</span><button type="button" onClick={clearSession}>退出</button></div></div><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></section></div>
 }
 
 function RouteSkeleton() {
@@ -27,7 +32,7 @@ function Overview() {
 }
 
 export function createAppRouter(initialEntries?: string[]) {
-  const routes = [{ path: '/', element: <Shell />, children: [
+  const routes = [{ path: '/login', element: <Login /> }, { path: '/', element: <Shell />, children: [
     { index: true, element: <Navigate to="/projects" replace /> },
     { path: 'projects', element: <ProjectList /> },
     { path: 'projects/new', element: <ProjectForm /> },

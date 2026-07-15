@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { authenticateConsole } from './session'
 
 const makeTutorial = (id: string, title: string, modality: 'text' | 'visual_document' | 'video', source: string) => ({
   id, slug: id, title, summary: `${title} 端到端实验。`, version: '1.0.0', status: 'published', modality,
@@ -17,6 +18,7 @@ const tutorials = [
 ]
 
 test.beforeEach(async ({ page }) => {
+  await authenticateConsole(page)
   await page.route('**/v1/projects', async (route) => route.fulfill({ json: { projects: [] } }))
   await page.route('**/v1/tutorials', async (route) => route.fulfill({ json: { tutorials } }))
   await page.route('**/v1/tutorials/*', async (route) => route.fulfill({ json: tutorials.find((item) => route.request().url().endsWith(item.id)) }))

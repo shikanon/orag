@@ -7,5 +7,6 @@ import './styles.css'
 import './review-fixes.css'
 import './tutorials.css'
 import './api-keys.css'
+import './auth.css'
 
 createRoot(document.getElementById('root')!).render(<StrictMode><AppProviders queryClient={createQueryClient()}><RouterProvider router={createAppRouter()} future={{ v7_startTransition: true }} /></AppProviders></StrictMode>)

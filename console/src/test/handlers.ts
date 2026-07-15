@@ -22,6 +22,12 @@ export const tutorials = [
 ]
 
 export const server = setupServer(
+  http.post('/v1/auth/login', async ({ request }) => {
+    const input = await request.json() as { username: string; password: string }
+    return input.username === 'admin' && input.password === 'admin'
+      ? HttpResponse.json({ access_token: 'signed-admin-token', token_type: 'Bearer', expires_in: 3600 })
+      : HttpResponse.json({ code: 'invalid_credentials', message: 'invalid username or password' }, { status: 401 })
+  }),
   http.get('/v1/projects', () => HttpResponse.json({ projects })),
   http.get('/v1/projects/:projectId', ({ params }) => HttpResponse.json(projects.find((project) => project.id === params.projectId))),
   http.get('/v1/api-keys', () => HttpResponse.json({ api_keys: apiKeys })),

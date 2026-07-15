@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { authenticateConsole } from './session'
 
 const projects = [
   { id: 'prj_a', tenant_id: 'tenant_a', name: 'Support', description: 'Customer answers', created_at: '2026-07-11T00:00:00Z', updated_at: '2026-07-11T00:00:00Z' },
@@ -7,6 +8,7 @@ const projects = [
 const activeKey = { id: 'key_active', tenant_id: 'tenant_a', project_id: 'prj_a', name: 'Evaluation runner', prefix: 'orag_sk_key_active', role: 'project_editor', created_by: 'user:admin', created_at: '2026-07-11T00:00:00Z' }
 
 test.beforeEach(async ({ page }) => {
+  await authenticateConsole(page)
   await page.route('**/v1/projects', async (route) => route.fulfill({ json: { projects } }))
   await page.route('**/v1/api-keys', async (route) => {
     if (route.request().method() === 'POST') {
