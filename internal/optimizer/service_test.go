@@ -837,6 +837,89 @@ func TestMemoryRepositoryCreateOptimizationRunWithCandidates(t *testing.T) {
 	}
 }
 
+func TestMemoryRepositoryCompareAndSwapAllowsOneWinner(t *testing.T) {
+	repo := NewMemoryRepository()
+	now := time.Date(2026, 7, 15, 4, 0, 0, 0, time.UTC)
+	run := OptimizationRun{ID: "opt_cas", TenantID: "tenant_a", Status: RunStatusQueued, CreatedAt: now, UpdatedAt: now}
+	candidate := OptimizationCandidate{
+		ID:                "cand_cas",
+		OptimizationRunID: run.ID,
+		Status:            CandidateStatusQueued,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if err := repo.CreateOptimizationRunWithCandidates(context.Background(), run, []OptimizationCandidate{candidate}); err != nil {
+		t.Fatalf("CreateOptimizationRunWithCandidates() error = %v", err)
+	}
+
+	run.Status = RunStatusRunning
+	if got := raceMemoryRunClaims(t, repo, run, 16); got != 1 {
+		t.Fatalf("successful memory run claims = %d, want 1", got)
+	}
+	candidate.Status = CandidateStatusRunning
+	if got := raceMemoryCandidateClaims(t, repo, candidate, 16); got != 1 {
+		t.Fatalf("successful memory candidate claims = %d, want 1", got)
+	}
+}
+
+func raceMemoryRunClaims(t *testing.T, repo *MemoryRepository, run OptimizationRun, count int) int {
+	t.Helper()
+	start := make(chan struct{})
+	results := make(chan bool, count)
+	var wg sync.WaitGroup
+	for range count {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			swapped, err := repo.CompareAndSwapOptimizationRun(context.Background(), run, RunStatusQueued)
+			if err != nil {
+				t.Errorf("CompareAndSwapOptimizationRun() error = %v", err)
+			}
+			results <- swapped
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	winners := 0
+	for swapped := range results {
+		if swapped {
+			winners++
+		}
+	}
+	return winners
+}
+
+func raceMemoryCandidateClaims(t *testing.T, repo *MemoryRepository, candidate OptimizationCandidate, count int) int {
+	t.Helper()
+	start := make(chan struct{})
+	results := make(chan bool, count)
+	var wg sync.WaitGroup
+	for range count {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			swapped, err := repo.CompareAndSwapOptimizationCandidate(context.Background(), candidate, CandidateStatusQueued)
+			if err != nil {
+				t.Errorf("CompareAndSwapOptimizationCandidate() error = %v", err)
+			}
+			results <- swapped
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	winners := 0
+	for swapped := range results {
+		if swapped {
+			winners++
+		}
+	}
+	return winners
+}
+
 type memoryOptimizationRepository struct {
 	mu         sync.Mutex
 	runs       map[string]OptimizationRun

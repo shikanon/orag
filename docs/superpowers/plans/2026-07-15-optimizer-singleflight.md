@@ -192,7 +192,7 @@ git commit -m "docs: record optimizer single-flight guarantees"
 
 ### Task 6: Validate, publish, merge, and clean up
 
-- [ ] **Step 1: Run repository gates**
+- [x] **Step 1: Run repository gates**
 
 ```bash
 gofmt -w internal/optimizer internal/storage/postgres internal/http tests/integration
@@ -205,7 +205,7 @@ make test-integration
 
 If Console files or generated contract consumers change, also run the Console install, unit, and production build gates required by the repository.
 
-- [ ] **Step 2: Review the final diff and commit validation state**
+- [x] **Step 2: Review the final diff and commit validation state**
 
 ```bash
 git status --short
