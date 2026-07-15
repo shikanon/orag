@@ -45,6 +45,22 @@ type failingFinalizeVectorStore struct {
 	err error
 }
 
+type failOnceKnowledgeBaseVectorDeleter struct {
+	delegate interface {
+		DeleteKnowledgeBaseVectors(context.Context, string, string) error
+	}
+	err   error
+	calls int
+}
+
+func (d *failOnceKnowledgeBaseVectorDeleter) DeleteKnowledgeBaseVectors(ctx context.Context, tenantID, kbID string) error {
+	d.calls++
+	if d.calls == 1 {
+		return d.err
+	}
+	return d.delegate.DeleteKnowledgeBaseVectors(ctx, tenantID, kbID)
+}
+
 func (s failingFinalizeVectorStore) FinalizeActivation(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
 	return errors.Join(s.VectorStore.FinalizeActivation(ctx, doc, chunks), s.err)
 }
@@ -570,6 +586,69 @@ func TestDeleteKnowledgeBaseCleansPostgresAndQdrant(t *testing.T) {
 	}
 	if count := countQdrantSemanticCachePoints(t, ctx, app, kbID); count != 0 {
 		t.Fatalf("qdrant semantic cache points after delete = %d", count)
+	}
+}
+
+func TestDeleteKnowledgeBaseRetriesFailedQdrantCleanup(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	kbID := createIntegrationKnowledgeBase(t, ctx, app, "delete-retry")
+	result := ingestIntegrationDocument(t, ctx, app, kbID, "integration://delete-retry", "retryable qdrant cleanup marker")
+
+	cacheVector := make([]float64, app.Config.Ark.EmbeddingDimensions)
+	cacheVector[0] = 0.42
+	if err := app.RAG.Cache.Store(ctx, rag.SemanticCacheEntry{
+		TenantID: testTenantID, KnowledgeBaseID: kbID, Query: "delete retry cache", Vector: cacheVector,
+		Profile: rag.ProfileRealtime, TopK: 8, CreatedAt: time.Now().UTC(),
+		Response: rag.QueryResponse{Answer: "cached", RetrievedChunks: []kb.SearchResult{{Chunk: kb.Chunk{
+			ID: "cached_" + kbID, TenantID: testTenantID, KnowledgeBaseID: kbID, DocumentID: result.Document.ID,
+		}}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if countQdrantPoints(t, ctx, app, kbID) == 0 || countQdrantSemanticCachePoints(t, ctx, app, kbID) == 0 {
+		t.Fatal("expected document and semantic-cache points before delete")
+	}
+
+	repo := postgres.NewRepository(app.Postgres)
+	vectors := integrationVectorStore(app, repo)
+	wantErr := errors.New("forced vector cleanup failure")
+	failOnce := &failOnceKnowledgeBaseVectorDeleter{delegate: vectors, err: wantErr}
+	cache := qdrantstore.SemanticCache{Client: app.Qdrant, Collection: app.Config.Qdrant.SemanticCacheCollection}
+	store := core.NewKnowledgeBaseStore(repo, failOnce, cache)
+
+	deleted, err := store.DeleteKnowledgeBase(ctx, testTenantID, kbID)
+	if deleted || !errors.Is(err, wantErr) {
+		t.Fatalf("first DeleteKnowledgeBase() = %v, %v; want false preserving %v", deleted, err, wantErr)
+	}
+	if _, ok, err := repo.GetKnowledgeBase(ctx, testTenantID, kbID); err != nil || !ok {
+		t.Fatal("metadata was removed after failed vector cleanup")
+	}
+	if count := countQdrantPoints(t, ctx, app, kbID); count == 0 {
+		t.Fatal("document vectors disappeared before the fail-once deleter retried")
+	}
+	if count := countQdrantSemanticCachePoints(t, ctx, app, kbID); count != 0 {
+		t.Fatalf("semantic-cache points after first ordered cleanup = %d, want 0", count)
+	}
+
+	deleted, err = store.DeleteKnowledgeBase(ctx, testTenantID, kbID)
+	if err != nil || !deleted {
+		t.Fatalf("retry DeleteKnowledgeBase() = %v, %v; want true, nil", deleted, err)
+	}
+	if failOnce.calls != 2 {
+		t.Fatalf("vector cleanup calls = %d, want 2", failOnce.calls)
+	}
+	for _, table := range []string{"chunks", "documents", "ingestion_jobs", "knowledge_bases"} {
+		if count := countPostgresRows(t, ctx, app, table, kbID); count != 0 {
+			t.Fatalf("%s rows after retry = %d", table, count)
+		}
+	}
+	if count := countQdrantPoints(t, ctx, app, kbID); count != 0 {
+		t.Fatalf("qdrant vectors after retry = %d", count)
+	}
+	if count := countQdrantSemanticCachePoints(t, ctx, app, kbID); count != 0 {
+		t.Fatalf("semantic-cache points after retry = %d", count)
 	}
 }
 

@@ -78,113 +78,143 @@ func TestNewWiresTutorialCatalogForMemoryBackend(t *testing.T) {
 	}
 }
 
-func TestKnowledgeBaseStoreDeleteKnowledgeBaseDeletesMetadataBeforeCleanup(t *testing.T) {
+func TestKnowledgeBaseStoreDeleteKnowledgeBaseCleansExternalIndexesBeforeMetadata(t *testing.T) {
 	calls := []string{}
-	repo := newFakeKnowledgeBaseRepo(&calls, kb.KnowledgeBase{
-		ID:        "kb_1",
-		TenantID:  "tenant_1",
-		Name:      "KB",
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	})
+	repo := newFakeKnowledgeBaseRepo(&calls, kb.KnowledgeBase{ID: "kb_1", TenantID: "tenant_1"})
 	store := knowledgeBaseStore{
 		primary:              repo,
-		vectorDeleter:        recordingVectorDeleter{name: "chunks", calls: &calls},
-		semanticCacheDeleter: recordingSemanticCacheDeleter{name: "semantic_cache", calls: &calls},
+		vectorDeleter:        recordingVectorDeleter{name: "vectors", calls: &calls},
+		semanticCacheDeleter: recordingSemanticCacheDeleter{name: "cache", calls: &calls},
 	}
 
 	deleted, err := store.DeleteKnowledgeBase(context.Background(), "tenant_1", "kb_1")
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || !deleted {
+		t.Fatalf("DeleteKnowledgeBase() = %v, %v; want true, nil", deleted, err)
 	}
-	if !deleted {
-		t.Fatal("DeleteKnowledgeBase() deleted = false, want true")
-	}
-	wantCalls := []string{"metadata:tenant_1/kb_1", "chunks:tenant_1/kb_1", "semantic_cache:tenant_1/kb_1"}
-	if !reflect.DeepEqual(calls, wantCalls) {
-		t.Fatalf("calls = %#v, want %#v", calls, wantCalls)
-	}
-	if _, ok, err := repo.GetKnowledgeBase(context.Background(), "tenant_1", "kb_1"); err != nil || ok {
-		t.Fatal("knowledge base metadata still exists")
+	want := []string{"cache:tenant_1/kb_1", "vectors:tenant_1/kb_1", "metadata:tenant_1/kb_1"}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("calls = %#v, want %#v", calls, want)
 	}
 }
 
-func TestKnowledgeBaseStoreDeleteKnowledgeBaseSkipsMissingKBAndStopsOnVectorError(t *testing.T) {
+func TestKnowledgeBaseStoreDeleteKnowledgeBaseRetriesVectorCleanup(t *testing.T) {
+	wantErr := errors.New("vector cleanup failed")
 	calls := []string{}
-	repo := newFakeKnowledgeBaseRepo(&calls, kb.KnowledgeBase{
-		ID:        "kb_1",
-		TenantID:  "tenant_1",
-		Name:      "KB",
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	})
+	repo := newFakeKnowledgeBaseRepo(&calls, kb.KnowledgeBase{ID: "kb_1", TenantID: "tenant_1"})
+	vectors := &failOnceVectorDeleter{name: "vectors", calls: &calls, err: wantErr}
 	store := knowledgeBaseStore{
 		primary:              repo,
-		vectorDeleter:        recordingVectorDeleter{name: "chunks", calls: &calls, err: errors.New("qdrant delete failed")},
-		semanticCacheDeleter: recordingSemanticCacheDeleter{name: "semantic_cache", calls: &calls},
+		vectorDeleter:        vectors,
+		semanticCacheDeleter: recordingSemanticCacheDeleter{name: "cache", calls: &calls},
 	}
 
-	deleted, err := store.DeleteKnowledgeBase(context.Background(), "tenant_other", "kb_1")
-	if err != nil {
-		t.Fatal(err)
+	deleted, err := store.DeleteKnowledgeBase(context.Background(), "tenant_1", "kb_1")
+	if deleted || !errors.Is(err, wantErr) {
+		t.Fatalf("first DeleteKnowledgeBase() = %v, %v; want false preserving %v", deleted, err, wantErr)
 	}
-	if deleted {
-		t.Fatal("wrong tenant delete unexpectedly succeeded")
-	}
-	if len(calls) != 0 {
-		t.Fatalf("calls for missing KB = %#v, want none", calls)
+	if _, ok, err := repo.GetKnowledgeBase(context.Background(), "tenant_1", "kb_1"); err != nil || !ok {
+		t.Fatal("metadata was removed after vector cleanup failure")
 	}
 
 	deleted, err = store.DeleteKnowledgeBase(context.Background(), "tenant_1", "kb_1")
-	if err == nil {
-		t.Fatal("DeleteKnowledgeBase() error = nil, want qdrant delete error")
+	if err != nil || !deleted {
+		t.Fatalf("retry DeleteKnowledgeBase() = %v, %v; want true, nil", deleted, err)
 	}
-	if !deleted {
-		t.Fatal("DeleteKnowledgeBase() deleted = false after metadata delete and point delete error")
+	wantCalls := []string{
+		"cache:tenant_1/kb_1", "vectors:tenant_1/kb_1",
+		"cache:tenant_1/kb_1", "vectors:tenant_1/kb_1", "metadata:tenant_1/kb_1",
 	}
-	wantCalls := []string{"metadata:tenant_1/kb_1", "chunks:tenant_1/kb_1"}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", calls, wantCalls)
 	}
-	if _, ok, err := repo.GetKnowledgeBase(context.Background(), "tenant_1", "kb_1"); err != nil || ok {
-		t.Fatal("metadata still exists after point delete error")
-	}
 }
 
-func TestKnowledgeBaseStoreDoesNotDeleteExternalIndexesWhenMetadataDeleteFails(t *testing.T) {
-	metadataErr := errors.New("metadata delete failed")
+func TestKnowledgeBaseStoreDeleteKnowledgeBaseRetriesSemanticCacheCleanup(t *testing.T) {
+	wantErr := errors.New("cache cleanup failed")
 	calls := []string{}
-	repo := newFakeKnowledgeBaseRepo(&calls, kb.KnowledgeBase{
-		ID:        "kb_1",
-		TenantID:  "tenant_1",
-		Name:      "KB",
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	})
-	repo.deleteErr = metadataErr
+	repo := newFakeKnowledgeBaseRepo(&calls, kb.KnowledgeBase{ID: "kb_1", TenantID: "tenant_1"})
+	cache := &failOnceSemanticCacheDeleter{name: "cache", calls: &calls, err: wantErr}
 	store := knowledgeBaseStore{
 		primary:              repo,
-		vectorDeleter:        recordingVectorDeleter{name: "chunks", calls: &calls},
-		semanticCacheDeleter: recordingSemanticCacheDeleter{name: "semantic_cache", calls: &calls},
+		vectorDeleter:        recordingVectorDeleter{name: "vectors", calls: &calls},
+		semanticCacheDeleter: cache,
 	}
 
 	deleted, err := store.DeleteKnowledgeBase(context.Background(), "tenant_1", "kb_1")
-	if !errors.Is(err, metadataErr) {
-		t.Fatalf("DeleteKnowledgeBase() error = %v, want %v", err, metadataErr)
+	if deleted || !errors.Is(err, wantErr) {
+		t.Fatalf("first DeleteKnowledgeBase() = %v, %v; want false preserving %v", deleted, err, wantErr)
 	}
-	if deleted {
-		t.Fatal("DeleteKnowledgeBase() deleted = true, want false")
+	if !reflect.DeepEqual(calls, []string{"cache:tenant_1/kb_1"}) {
+		t.Fatalf("first calls = %#v", calls)
 	}
 	if _, ok, err := repo.GetKnowledgeBase(context.Background(), "tenant_1", "kb_1"); err != nil || !ok {
-		t.Fatal("metadata was deleted after metadata delete failed")
+		t.Fatal("metadata was removed after semantic-cache cleanup failure")
 	}
-	wantCalls := []string{"metadata:tenant_1/kb_1"}
+
+	deleted, err = store.DeleteKnowledgeBase(context.Background(), "tenant_1", "kb_1")
+	if err != nil || !deleted {
+		t.Fatalf("retry DeleteKnowledgeBase() = %v, %v; want true, nil", deleted, err)
+	}
+	wantCalls := []string{"cache:tenant_1/kb_1", "cache:tenant_1/kb_1", "vectors:tenant_1/kb_1", "metadata:tenant_1/kb_1"}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", calls, wantCalls)
 	}
 }
 
-func TestKnowledgeBaseStoreDeleteKnowledgeBaseStopsWhenMetadataDeleteFails(t *testing.T) {
+func TestKnowledgeBaseStoreDeleteKnowledgeBaseRetriesAfterMetadataFailure(t *testing.T) {
+	wantErr := errors.New("metadata delete failed")
+	calls := []string{}
+	repo := newFakeKnowledgeBaseRepo(&calls, kb.KnowledgeBase{ID: "kb_1", TenantID: "tenant_1"})
+	repo.deleteErr = wantErr
+	store := knowledgeBaseStore{
+		primary:              repo,
+		vectorDeleter:        recordingVectorDeleter{name: "vectors", calls: &calls},
+		semanticCacheDeleter: recordingSemanticCacheDeleter{name: "cache", calls: &calls},
+	}
+
+	deleted, err := store.DeleteKnowledgeBase(context.Background(), "tenant_1", "kb_1")
+	if deleted || !errors.Is(err, wantErr) {
+		t.Fatalf("first DeleteKnowledgeBase() = %v, %v; want false preserving %v", deleted, err, wantErr)
+	}
+	if _, ok, err := repo.GetKnowledgeBase(context.Background(), "tenant_1", "kb_1"); err != nil || !ok {
+		t.Fatal("metadata disappeared after repository delete failure")
+	}
+	repo.deleteErr = nil
+
+	deleted, err = store.DeleteKnowledgeBase(context.Background(), "tenant_1", "kb_1")
+	if err != nil || !deleted {
+		t.Fatalf("retry DeleteKnowledgeBase() = %v, %v; want true, nil", deleted, err)
+	}
+	wantCalls := []string{
+		"cache:tenant_1/kb_1", "vectors:tenant_1/kb_1", "metadata:tenant_1/kb_1",
+		"cache:tenant_1/kb_1", "vectors:tenant_1/kb_1", "metadata:tenant_1/kb_1",
+	}
+	if !reflect.DeepEqual(calls, wantCalls) {
+		t.Fatalf("calls = %#v, want %#v", calls, wantCalls)
+	}
+}
+
+func TestKnowledgeBaseStoreDeleteKnowledgeBaseSkipsMissingOrWrongTenant(t *testing.T) {
+	calls := []string{}
+	repo := newFakeKnowledgeBaseRepo(&calls, kb.KnowledgeBase{ID: "kb_1", TenantID: "tenant_1"})
+	store := knowledgeBaseStore{
+		primary:              repo,
+		vectorDeleter:        recordingVectorDeleter{name: "vectors", calls: &calls},
+		semanticCacheDeleter: recordingSemanticCacheDeleter{name: "cache", calls: &calls},
+	}
+
+	for _, request := range []struct{ tenantID, kbID string }{{"tenant_other", "kb_1"}, {"tenant_1", "kb_missing"}} {
+		deleted, err := store.DeleteKnowledgeBase(context.Background(), request.tenantID, request.kbID)
+		if err != nil || deleted {
+			t.Fatalf("DeleteKnowledgeBase(%q, %q) = %v, %v; want false, nil", request.tenantID, request.kbID, deleted, err)
+		}
+	}
+	if len(calls) != 0 {
+		t.Fatalf("calls = %#v, want none", calls)
+	}
+}
+
+func TestKnowledgeBaseStoreDeleteKnowledgeBaseReturnsRepositoryResultAfterCleanup(t *testing.T) {
 	metadataErr := errors.New("metadata delete failed")
 	tests := []struct {
 		name    string
@@ -220,7 +250,7 @@ func TestKnowledgeBaseStoreDeleteKnowledgeBaseStopsWhenMetadataDeleteFails(t *te
 			if deleted != tt.deleted {
 				t.Fatalf("DeleteKnowledgeBase() deleted = %v, want %v", deleted, tt.deleted)
 			}
-			wantCalls := []string{"metadata:tenant_1/kb_1"}
+			wantCalls := []string{"semantic_cache:tenant_1/kb_1", "chunks:tenant_1/kb_1", "metadata:tenant_1/kb_1"}
 			if !reflect.DeepEqual(calls, wantCalls) {
 				t.Fatalf("calls = %#v, want %#v", calls, wantCalls)
 			}
@@ -228,37 +258,6 @@ func TestKnowledgeBaseStoreDeleteKnowledgeBaseStopsWhenMetadataDeleteFails(t *te
 				t.Fatal("metadata was deleted after metadata delete failed")
 			}
 		})
-	}
-}
-
-func TestKnowledgeBaseStoreDeleteKnowledgeBaseStopsOnSemanticCacheError(t *testing.T) {
-	calls := []string{}
-	repo := newFakeKnowledgeBaseRepo(&calls, kb.KnowledgeBase{
-		ID:        "kb_1",
-		TenantID:  "tenant_1",
-		Name:      "KB",
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	})
-	store := knowledgeBaseStore{
-		primary:              repo,
-		vectorDeleter:        recordingVectorDeleter{name: "chunks", calls: &calls},
-		semanticCacheDeleter: recordingSemanticCacheDeleter{name: "semantic_cache", calls: &calls, err: errors.New("semantic cache delete failed")},
-	}
-
-	deleted, err := store.DeleteKnowledgeBase(context.Background(), "tenant_1", "kb_1")
-	if err == nil {
-		t.Fatal("DeleteKnowledgeBase() error = nil, want semantic cache delete error")
-	}
-	if !deleted {
-		t.Fatal("DeleteKnowledgeBase() deleted = false after metadata delete and semantic cache delete error")
-	}
-	wantCalls := []string{"metadata:tenant_1/kb_1", "chunks:tenant_1/kb_1", "semantic_cache:tenant_1/kb_1"}
-	if !reflect.DeepEqual(calls, wantCalls) {
-		t.Fatalf("calls = %#v, want %#v", calls, wantCalls)
-	}
-	if _, ok, err := repo.GetKnowledgeBase(context.Background(), "tenant_1", "kb_1"); err != nil || ok {
-		t.Fatal("metadata still exists after semantic cache delete error")
 	}
 }
 
@@ -332,4 +331,36 @@ type recordingSemanticCacheDeleter struct {
 func (d recordingSemanticCacheDeleter) DeleteKnowledgeBaseSemanticCache(_ context.Context, tenantID, kbID string) error {
 	*d.calls = append(*d.calls, d.name+":"+tenantID+"/"+kbID)
 	return d.err
+}
+
+type failOnceVectorDeleter struct {
+	name  string
+	calls *[]string
+	err   error
+	count int
+}
+
+func (d *failOnceVectorDeleter) DeleteKnowledgeBaseVectors(_ context.Context, tenantID, kbID string) error {
+	*d.calls = append(*d.calls, d.name+":"+tenantID+"/"+kbID)
+	d.count++
+	if d.count == 1 {
+		return d.err
+	}
+	return nil
+}
+
+type failOnceSemanticCacheDeleter struct {
+	name  string
+	calls *[]string
+	err   error
+	count int
+}
+
+func (d *failOnceSemanticCacheDeleter) DeleteKnowledgeBaseSemanticCache(_ context.Context, tenantID, kbID string) error {
+	*d.calls = append(*d.calls, d.name+":"+tenantID+"/"+kbID)
+	d.count++
+	if d.count == 1 {
+		return d.err
+	}
+	return nil
 }
