@@ -18,6 +18,10 @@ export type CreateDatasetInput = components['schemas']['CreateDatasetRequest']
 export type CreateDatasetItemInput = components['schemas']['CreateDatasetItemRequest']
 export type RunEvaluationInput = components['schemas']['RunEvaluationRequest']
 export type EvaluationResult = components['schemas']['RunEvaluationResponse']
+export type EvaluationPolicy = components['schemas']['EvaluationPolicy']
+export type EvaluationEvidence = components['schemas']['EvaluationEvidence']
+export type CreateEvaluationPolicyInput = components['schemas']['CreateEvaluationPolicyRequest']
+export type RecordEvaluationEvidenceInput = components['schemas']['RecordEvaluationEvidenceRequest']
 export type Environment = components['schemas']['Environment']
 export type EnvironmentKind = Environment['kind']
 export type Release = components['schemas']['Release']
@@ -101,11 +105,18 @@ export const evaluationApi = {
   get: (evaluationId: string) => request<EvaluationResult>(`/v1/evaluations/${encodeURIComponent(evaluationId)}`),
 }
 
+export const evaluationPolicyApi = {
+  list: (projectId: string) => request<{ items: EvaluationPolicy[] }>(`/v1/projects/${encodeURIComponent(projectId)}/evaluation-policies`),
+  create: (projectId: string, input: CreateEvaluationPolicyInput) => request<EvaluationPolicy>(`/v1/projects/${encodeURIComponent(projectId)}/evaluation-policies`, { method: 'POST', body: JSON.stringify(input) }),
+  recordEvidence: (projectId: string, versionId: string, input: RecordEvaluationEvidenceInput) => request<EvaluationEvidence>(`/v1/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/evaluation-evidence`, { method: 'POST', body: JSON.stringify(input) }),
+}
+
 export const releaseApi = {
   versions: (projectId: string) => request<{ items: PipelineVersion[] }>(`/v1/projects/${encodeURIComponent(projectId)}/versions`),
   createVersion: (projectId: string, input: CreatePipelineVersionInput) => request<PipelineVersion>(`/v1/projects/${encodeURIComponent(projectId)}/versions`, { method: 'POST', body: JSON.stringify(input) }),
   validateVersion: (projectId: string, versionId: string, input: ValidatePipelineVersionInput) => request<{ version_id: string; environment: string; passed: boolean; content_hash: string }>(`/v1/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/validations`, { method: 'POST', body: JSON.stringify(input) }),
   environments: (projectId: string) => request<{ items: Environment[] }>(`/v1/projects/${encodeURIComponent(projectId)}/environments`),
+  bindEnvironment: (projectId: string, environment: EnvironmentKind, bindingRef: string) => request<Environment>(`/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environment)}/binding`, { method: 'PUT', body: JSON.stringify({ binding_ref: bindingRef }) }),
   list: (projectId: string) => request<{ items: Release[] }>(`/v1/projects/${encodeURIComponent(projectId)}/releases`),
   promote: (projectId: string, input: PromoteReleaseInput) => request<Release>(`/v1/projects/${encodeURIComponent(projectId)}/releases:promote`, { method: 'POST', body: JSON.stringify(input) }),
   activateDevelopment: (projectId: string, input: ActivateDevelopmentInput) => request<Release>(`/v1/projects/${encodeURIComponent(projectId)}/environments/development/activate`, { method: 'POST', body: JSON.stringify(input) }),

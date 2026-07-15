@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
@@ -6,6 +6,25 @@ import { server } from '../../test/handlers'
 import { renderApp } from '../../test/render-app'
 
 describe('ReleaseCenter', () => {
+  it('stores an environment binding without rendering the opaque reference', async () => {
+    let payload: unknown
+    server.use(
+      http.get('/v1/projects/prj_a/environments', () => HttpResponse.json({ items: [{ id: 'dev', project_id: 'prj_a', kind: 'development', revision: 0, bound: false }, { id: 'stg', project_id: 'prj_a', kind: 'staging', revision: 0, bound: false }, { id: 'prd', project_id: 'prj_a', kind: 'production', revision: 0, bound: false }] })),
+      http.get('/v1/projects/prj_a/releases', () => HttpResponse.json({ items: [] })),
+      http.get('/v1/projects/prj_a/versions', () => HttpResponse.json({ items: [] })),
+      http.put('/v1/projects/prj_a/environments/development/binding', async ({ request }) => { payload = await request.json(); return HttpResponse.json({ id: 'dev', project_id: 'prj_a', kind: 'development', revision: 0, bound: true }) }),
+    )
+    renderApp('/projects/prj_a/releases')
+    const heading = await screen.findByRole('heading', { name: '环境资源绑定' })
+    const card = heading.closest('section')
+    if (!card) throw new Error('environment binding card is missing')
+    await userEvent.type(within(card).getByLabelText('绑定引用'), 'deployment://production-secret')
+    await userEvent.click(within(card).getByRole('button', { name: '保存环境绑定' }))
+    await waitFor(() => expect(payload).toEqual({ binding_ref: 'deployment://production-secret' }))
+    expect(within(card).getByLabelText('绑定引用')).toHaveValue('')
+    expect(screen.queryByText('deployment://production-secret')).not.toBeInTheDocument()
+  })
+
   it('shows environment state and sends an optimistic promotion request', async () => {
     server.use(
       http.get('/v1/projects/prj_a/environments', () => HttpResponse.json({ items: [{ id: 'dev', project_id: 'prj_a', kind: 'development', active_version_id: 'pv_1', revision: 0, bound: true }, { id: 'stg', project_id: 'prj_a', kind: 'staging', revision: 0, bound: true }, { id: 'prd', project_id: 'prj_a', kind: 'production', revision: 0, bound: true }] })),
