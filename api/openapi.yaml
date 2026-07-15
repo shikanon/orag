@@ -1071,6 +1071,31 @@ paths:
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/versions/{version_id}/evaluation-evidence:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: version_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Evaluation]
+      operationId: recordProjectEvaluationEvidence
+      x-orag-maturity: experimental
+      description: Derives append-only gate evidence for a pipeline version from a completed server-side evaluation run and immutable policy revision.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/RecordEvaluationEvidenceRequest"}}}
+      responses:
+        "201": {description: Server-derived immutable evaluation evidence., content: {application/json: {schema: {$ref: "#/components/schemas/EvaluationEvidence"}}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
   /v1/projects/{project_id}/versions:
     parameters:
       - name: project_id
@@ -2234,6 +2259,57 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/EvaluationPolicy"}
+    RecordEvaluationEvidenceRequest:
+      type: object
+      required: [policy_id, evaluation_run_id]
+      properties:
+        policy_id: {type: string}
+        evaluation_run_id: {type: string}
+    EvaluationGateResult:
+      type: object
+      required: [metric, comparator, threshold, present, passed]
+      properties:
+        metric: {type: string}
+        comparator: {type: string, enum: [gte, lte]}
+        threshold: {type: number, format: double}
+        actual: {type: number, format: double}
+        present: {type: boolean}
+        passed: {type: boolean}
+    EvaluationFrozenInput:
+      type: object
+      required: [policy_id, policy_version, project_id, dataset_id, evaluation_run_id, pipeline_version_id, content_hash, gates, metrics]
+      properties:
+        policy_id: {type: string}
+        policy_version: {type: integer, minimum: 1}
+        project_id: {type: string}
+        dataset_id: {type: string}
+        evaluation_run_id: {type: string}
+        pipeline_version_id: {type: string}
+        content_hash: {type: string}
+        gates:
+          type: array
+          items: {$ref: "#/components/schemas/EvaluationGate"}
+        metrics:
+          type: object
+          additionalProperties: {type: number, format: double}
+    EvaluationEvidence:
+      type: object
+      required: [id, tenant_id, project_id, policy_id, policy_version, evaluation_run_id, pipeline_version_id, content_hash, frozen_input, gate_results, passed, created_at]
+      properties:
+        id: {type: string}
+        tenant_id: {type: string}
+        project_id: {type: string}
+        policy_id: {type: string}
+        policy_version: {type: integer, minimum: 1}
+        evaluation_run_id: {type: string}
+        pipeline_version_id: {type: string}
+        content_hash: {type: string}
+        frozen_input: {$ref: "#/components/schemas/EvaluationFrozenInput"}
+        gate_results:
+          type: array
+          items: {$ref: "#/components/schemas/EvaluationGateResult"}
+        passed: {type: boolean}
+        created_at: {type: string, format: date-time}
     Release:
       type: object
       required: [id, project_id, source_version_id, target_version_id, source_environment, target_environment, action, actor, created_at]

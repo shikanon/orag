@@ -60,7 +60,8 @@ func projectScopedRouteSupported(c *app.RequestContext) bool {
 	switch c.FullPath() {
 	case "/v1/projects/:project_id",
 		"/v1/projects/:project_id/environments", "/v1/projects/:project_id/releases", "/v1/projects/:project_id/releases:promote", "/v1/projects/:project_id/environments/:environment/rollback",
-		"/v1/projects/:project_id/versions", "/v1/projects/:project_id/versions/:version_id/validations",
+		"/v1/projects/:project_id/versions", "/v1/projects/:project_id/versions/:version_id/validations", "/v1/projects/:project_id/versions/:version_id/evaluation-evidence",
+		"/v1/projects/:project_id/evaluation-policies",
 		"/v1/projects/:project_id/pipelines", "/v1/projects/:project_id/pipelines/:pipeline_id/draft", "/v1/projects/:project_id/pipelines/:pipeline_id/versions", "/v1/projects/:project_id/query:debug", "/v1/projects/:project_id/debug-runs/:run_id/save-case",
 		"/v1/knowledge-bases", "/v1/knowledge-bases/:id",
 		"/v1/knowledge-bases/:id/documents", "/v1/knowledge-bases/:id/documents:import",
