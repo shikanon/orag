@@ -728,7 +728,7 @@ gh pr create --base main --head codex/qdrant-staged-visibility --title "fix: pre
 
 Use gh pr edit to add the actual test commands and Closes #175. Mark ready only after required checks pass.
 
-- [ ] **Step 7: Merge and prove final state**
+- [x] **Step 7: Merge and prove final state**
 
 ~~~bash
 gh pr checks --watch
