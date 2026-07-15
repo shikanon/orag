@@ -166,7 +166,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 ## 阶段四：评测优先控制面
 
-当前进展：Pipeline server-owned node registry、revisioned draft persistence、Compiler/Debug Runner、项目级 draft debug API、Console API Debugger、RAG Studio draft workbench、Debug Run 保存评测 case，以及 Draft → content-hashed immutable PipelineVersion 已在 `main` 合并（PR #253–#261）。[#266](https://github.com/shikanon/orag/pull/266) 进一步加入了项目级不可变评测策略：服务端验证的 metric gates、策略版本、冻结输入、append-only gate evidence、PostgreSQL 持久化和项目 API 已具备。当前黄金路径已经覆盖“创建 Pipeline → 填充标准链路 → 保存 draft → 按 revision 调试 → 查看节点诊断 → 写入评测数据集 → 冻结不可变版本”。仍待完成真实浏览器 E2E、由完成的评测自动生成并强制使用发布证据、生产 active version 查询 lineage，以及文本/视觉/视频教程的 Replay/结果对比闭环。
+当前进展：Pipeline server-owned node registry、revisioned draft persistence、Compiler/Debug Runner、项目级 draft debug API、Console API Debugger、RAG Studio draft workbench、Debug Run 保存评测 case，以及 Draft → content-hashed immutable PipelineVersion 已在 `main` 合并（PR #253–#261）。[#266](https://github.com/shikanon/orag/pull/266) 加入项目级不可变评测策略；[#268](https://github.com/shikanon/orag/pull/268) 让版本保存完整冻结 DAG 与来源 pipeline；[#269](https://github.com/shikanon/orag/pull/269) 从已存储评测运行推导 append-only evidence；[#270](https://github.com/shikanon/orag/pull/270) 将该证据绑定目标环境并作为 Draft 版本晋级的唯一 validation 路径。当前黄金路径已经覆盖“创建 Pipeline → 填充标准链路 → 保存 draft → 按 revision 调试 → 查看节点诊断 → 写入评测数据集 → 冻结不可变版本 → 由服务器生成环境门禁”。仍待完成首次将已评测版本激活到 development、生产 active version 的实际执行与 trace lineage、真实浏览器 E2E，以及文本/视觉/视频教程的 Replay/结果对比闭环。
 
 ### Project 到 Release 的黄金路径
 
