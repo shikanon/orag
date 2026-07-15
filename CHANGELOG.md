@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- Pinned every CI action to an immutable commit and every API/Console base image to a verified multi-architecture manifest digest; the general CI token now defaults to read-only contents access while release-specific jobs retain only their required write scopes.
 - Upgraded the six Go dependency families behind 27 Dependabot alerts, including `kin-openapi`, `pgx/v5`, gRPC, `x/crypto`, `x/net`, and `phonenumbers`, while preserving standalone SDK, OpenAPI, PostgreSQL, and Qdrant compatibility.
 - Upgraded the project, CI, examples, and API image builder to Go 1.26.5 after `govulncheck` identified the reachable standard-library vulnerability GO-2026-5856 in Go 1.26.4.
 - Upgraded `jsonparser` to 1.1.2 and the Console runtime to the official NGINX 1.30.3 Alpine image with build-time Alpine security updates after the container gate found CVE-2026-32285 and fixed HIGH/CRITICAL packages in the legacy runtime image.

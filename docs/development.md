@@ -172,6 +172,8 @@ CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson GOTOOLCHAIN=go1.26.5 go test ./...
 
 [`scorecard.yml`](../.github/workflows/scorecard.yml) 独立运行 OpenSSF Scorecard，以最小权限发布签名结果并上传 SARIF。两个 workflow 中新增的 action 都固定到完整 commit SHA，版本注释放在同一行供 Dependabot 和 reviewer 审查。
 
+仓库中的所有 GitHub Actions 都固定到完整 commit SHA，Docker 构建的基础镜像固定到多架构 manifest digest；同行保留可读版本或镜像 tag，便于 Dependabot 提交可审查的更新。常规 CI 的 `GITHUB_TOKEN` 只具备 `contents: read`，只有 Pages 部署、GHCR 发布与 attestations、以及创建 GitHub Release 的对应 job 具备所需写权限。新增 workflow 或镜像阶段时必须延续这一策略，不能使用可移动的 action tag 或未固定 digest 的基础镜像。
+
 本地可执行的等价检查：
 
 ```bash
