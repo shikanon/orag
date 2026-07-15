@@ -49,6 +49,9 @@ func TestNewWiresProjectServiceForMemoryBackend(t *testing.T) {
 	if app.Projects == nil {
 		t.Fatal("Projects service is nil")
 	}
+	if app.APIKeys == nil {
+		t.Fatal("APIKeys service is nil")
+	}
 	if _, err := app.Projects.Create(context.Background(), "tenant_a", project.CreateInput{Name: "Console"}); err != nil {
 		t.Fatal(err)
 	}

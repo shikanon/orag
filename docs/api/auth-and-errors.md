@@ -36,6 +36,7 @@ Content-Type: application/json
 | `ADMIN_DEFAULT_PASSWORD` | `admin` | 服务端校验的默认管理员密码，生产必须替换。 |
 | `AUTH_TOKEN_TTL` | `24h` | token 有效期，对应响应中的 `expires_in`。 |
 | `JWT_SECRET` | 示例值 | token 签名密钥，生产必须替换。 |
+| `API_KEY_PEPPER` | 示例值 | API Key 哈希的服务端 pepper，生产必须独立替换；轮换会使现有 API Key 失效。 |
 
 ## 鉴权请求
 

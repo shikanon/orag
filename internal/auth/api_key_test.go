@@ -1,0 +1,154 @@
+package auth
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestAPIKeyCreateAuthenticateListAndRevoke(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMemoryAPIKeyRepository()
+	service := NewAPIKeyService(repo, "test-pepper")
+	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	service.rand = func(dst []byte) (int, error) {
+		for i := range dst {
+			dst[i] = byte(i + 1)
+		}
+		return len(dst), nil
+	}
+	expires := now.Add(24 * time.Hour)
+	created, err := service.Create(ctx, APIKeyCreateInput{
+		TenantID: "tenant_1", ProjectID: "prj_1", Name: "CI deploy",
+		Role: RoleProjectEditor, CreatedBy: "user_admin", ExpiresAt: &expires,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(created.Secret, apiKeyPrefix+created.APIKey.ID+"_") {
+		t.Fatalf("secret has unexpected format")
+	}
+	if created.APIKey.KeyHash == "" || strings.Contains(created.APIKey.KeyHash, created.Secret) {
+		t.Fatal("key hash is missing or contains the secret")
+	}
+
+	principal, err := service.Authenticate(ctx, created.Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if principal.Kind != PrincipalAPIKey || principal.SubjectID != created.APIKey.ID || principal.ProjectID != "prj_1" || principal.Role != RoleProjectEditor {
+		t.Fatalf("principal = %#v", principal)
+	}
+
+	items, err := service.List(ctx, "tenant_1")
+	if err != nil || len(items) != 1 {
+		t.Fatalf("List() items=%d err=%v", len(items), err)
+	}
+	encoded, err := json.Marshal(items[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "key_hash") || strings.Contains(string(encoded), created.Secret) {
+		t.Fatalf("metadata response leaked credential material: %s", encoded)
+	}
+	otherItems, err := service.List(ctx, "tenant_2")
+	if err != nil || len(otherItems) != 0 {
+		t.Fatalf("cross-tenant list items=%d err=%v", len(otherItems), err)
+	}
+
+	if err := service.Revoke(ctx, "tenant_2", created.APIKey.ID); !errors.Is(err, ErrAPIKeyNotFound) {
+		t.Fatalf("cross-tenant revoke error = %v", err)
+	}
+	if err := service.Revoke(ctx, "tenant_1", created.APIKey.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Revoke(ctx, "tenant_1", created.APIKey.ID); err != nil {
+		t.Fatalf("idempotent revoke error = %v", err)
+	}
+	if _, err := service.Authenticate(ctx, created.Secret); !errors.Is(err, ErrAPIKeyRevoked) {
+		t.Fatalf("Authenticate() error = %v, want revoked", err)
+	}
+}
+
+func TestAPIKeyCreateValidation(t *testing.T) {
+	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	service := NewAPIKeyService(NewMemoryAPIKeyRepository(), "test-pepper")
+	service.now = func() time.Time { return now }
+	tests := []struct {
+		name  string
+		input APIKeyCreateInput
+	}{
+		{"missing fields", APIKeyCreateInput{}},
+		{"role required", APIKeyCreateInput{TenantID: "tenant_1", Name: "key", CreatedBy: "user_1"}},
+		{"unknown role", APIKeyCreateInput{TenantID: "tenant_1", Name: "key", CreatedBy: "user_1", Role: "owner"}},
+		{"project role requires project", APIKeyCreateInput{TenantID: "tenant_1", Name: "key", CreatedBy: "user_1", Role: RoleProjectViewer}},
+		{"past expiry", APIKeyCreateInput{TenantID: "tenant_1", Name: "key", CreatedBy: "user_1", Role: RoleTenantAdmin, ExpiresAt: timePointer(now)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := service.Create(context.Background(), tt.input); !errors.Is(err, ErrAPIKeyInvalid) {
+				t.Fatalf("Create() error = %v, want invalid", err)
+			}
+		})
+	}
+}
+
+func TestAPIKeyAuthenticationRejectsMalformedWrongAndExpiredSecrets(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMemoryAPIKeyRepository()
+	service := NewAPIKeyService(repo, "test-pepper")
+	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	created, err := service.Create(ctx, APIKeyCreateInput{TenantID: "tenant_1", Name: "robot", Role: RoleTenantAdmin, CreatedBy: "user_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, malformed := range []string{"", "bearer", "orag_sk_bad", created.APIKey.Prefix + "_short"} {
+		if _, err := service.Authenticate(ctx, malformed); !errors.Is(err, ErrAPIKeyInvalid) {
+			t.Fatalf("Authenticate(%q) error = %v", malformed, err)
+		}
+	}
+	replacement := "A"
+	if strings.HasSuffix(created.Secret, replacement) {
+		replacement = "B"
+	}
+	wrong := created.Secret[:len(created.Secret)-1] + replacement
+	if _, err := service.Authenticate(ctx, wrong); !errors.Is(err, ErrAPIKeyInvalid) {
+		t.Fatalf("wrong secret error = %v", err)
+	}
+
+	expires := now.Add(time.Hour)
+	expiring, err := service.Create(ctx, APIKeyCreateInput{TenantID: "tenant_1", Name: "short", Role: RoleTenantAdmin, CreatedBy: "user_1", ExpiresAt: &expires})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.now = func() time.Time { return expires }
+	if _, err := service.Authenticate(ctx, expiring.Secret); !errors.Is(err, ErrAPIKeyExpired) {
+		t.Fatalf("expired secret error = %v", err)
+	}
+}
+
+func TestAPIKeyCreateFailsClosedOnRandomSourceFailure(t *testing.T) {
+	service := NewAPIKeyService(NewMemoryAPIKeyRepository(), "test-pepper")
+	service.rand = func([]byte) (int, error) { return 0, errors.New("entropy unavailable") }
+	_, err := service.Create(context.Background(), APIKeyCreateInput{TenantID: "tenant_1", Name: "key", Role: RoleTenantAdmin, CreatedBy: "user_1"})
+	if err == nil || errors.Is(err, ErrAPIKeyInvalid) {
+		t.Fatalf("Create() error = %v, want entropy error", err)
+	}
+}
+
+func TestAPIKeyHashIsBoundToServerPepper(t *testing.T) {
+	left := NewAPIKeyService(NewMemoryAPIKeyRepository(), "pepper-a")
+	right := NewAPIKeyService(NewMemoryAPIKeyRepository(), "pepper-b")
+	secret := "synthetic-non-credential-test-input"
+	if left.hashAPIKey(secret) == right.hashAPIKey(secret) {
+		t.Fatal("different server peppers produced the same API key hash")
+	}
+}
+
+func timePointer(value time.Time) *time.Time { return &value }

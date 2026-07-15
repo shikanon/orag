@@ -341,6 +341,7 @@ func TestEnvExampleContainsDocumentedOnboardingKeys(t *testing.T) {
 		"ADMIN_DEFAULT_PASSWORD",
 		"AUTH_TOKEN_TTL",
 		"JWT_SECRET",
+		"API_KEY_PEPPER",
 		"ARK_API_KEY",
 		"REQUIRE_EXTERNAL_PROVIDERS",
 		"DATABASE_URL",
@@ -359,6 +360,7 @@ func TestRedactedEnv(t *testing.T) {
 	t.Setenv("ARK_API_KEY", "abcdefghi")
 	t.Setenv("ALIYUN_RERANK_API_KEY", "sk-test-secret")
 	t.Setenv("JWT_SECRET", "secret-jwt-value")
+	t.Setenv("API_KEY_PEPPER", "secret-api-key-pepper")
 	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/orag?sslmode=disable")
 	cfg, err := Load()
 	if err != nil {
@@ -368,8 +370,8 @@ func TestRedactedEnv(t *testing.T) {
 	if env["STORAGE_BACKEND"] != "qdrant_postgres" {
 		t.Fatalf("redacted env storage backend = %q", env["STORAGE_BACKEND"])
 	}
-	for _, key := range []string{"ARK_API_KEY", "ALIYUN_RERANK_API_KEY", "JWT_SECRET", "DATABASE_URL"} {
-		if got := env[key]; got == "" || got == "abcdefghi" || got == "sk-test-secret" || got == "secret-jwt-value" || got == "postgres://user:pass@localhost:5432/orag?sslmode=disable" {
+	for _, key := range []string{"ARK_API_KEY", "ALIYUN_RERANK_API_KEY", "JWT_SECRET", "API_KEY_PEPPER", "DATABASE_URL"} {
+		if got := env[key]; got == "" || got == "abcdefghi" || got == "sk-test-secret" || got == "secret-jwt-value" || got == "secret-api-key-pepper" || got == "postgres://user:pass@localhost:5432/orag?sslmode=disable" {
 			t.Fatalf("expected %s to be redacted, got %q", key, got)
 		}
 	}

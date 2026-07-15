@@ -37,6 +37,7 @@ type App struct {
 	Config           config.Config
 	Logger           *slog.Logger
 	Auth             *auth.Service
+	APIKeys          *auth.APIKeyService
 	KBStore          kb.KnowledgeBaseRepository
 	Ingest           *ingest.Service
 	RAG              *rag.Service
@@ -129,6 +130,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	}
 	datasets := dataset.NewService(backend.datasetRepo)
 	projects := project.NewService(backend.projectRepo, func() time.Time { return time.Now().UTC() })
+	apiKeys := auth.NewAPIKeyService(backend.apiKeyRepo, cfg.Auth.APIKeyPepper)
 	evalRunner := eval.Runner{RAG: ragSvc, Datasets: datasets, Repository: backend.evalRepo}
 	optimizerRunner := optimizer.InternalRAGRunner{
 		BaseRAG:    ragSvc,
@@ -156,6 +158,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Config:    cfg,
 		Logger:    logger,
 		Auth:      authSvc,
+		APIKeys:   apiKeys,
 		KBStore:   backend.store,
 		Ingest:    ingestSvc,
 		RAG:       ragSvc,
@@ -573,6 +576,7 @@ type knowledgeBackend struct {
 	traceRepo            TraceRepository
 	datasetRepo          dataset.Repository
 	projectRepo          project.Repository
+	apiKeyRepo           auth.APIKeyRepository
 	evalRepo             eval.Repository
 	optimizerRepo        optimizer.Repository
 	offlineKnowledgeRepo offlineknowledge.Repository
@@ -673,6 +677,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			traceRepo:            traceRepo,
 			datasetRepo:          dataset.NewMemoryRepository(),
 			projectRepo:          newMemoryProjectRepository(),
+			apiKeyRepo:           auth.NewMemoryAPIKeyRepository(),
 			evalRepo:             eval.NewMemoryRepository(),
 			optimizerRepo:        optimizer.NewMemoryRepository(),
 			offlineKnowledgeRepo: offlineknowledge.NewMemoryRepository(),
@@ -729,6 +734,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 		traceRepo:            repo,
 		datasetRepo:          repo,
 		projectRepo:          postgres.NewProjectRepository(pool),
+		apiKeyRepo:           postgres.NewAPIKeyRepository(pool),
 		evalRepo:             repo,
 		optimizerRepo:        repo,
 		offlineKnowledgeRepo: repo,

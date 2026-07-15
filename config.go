@@ -171,6 +171,7 @@ func (c Config) internal() (internalconfig.Config, error) {
 		Storage: internalconfig.StorageConfig{Backend: c.Storage.Backend},
 		Auth: internalconfig.AuthConfig{
 			JWTSecret:            "orag-embedded-sdk",
+			APIKeyPepper:         "orag-embedded-sdk",
 			TokenTTL:             24 * time.Hour,
 			AdminDefaultUsername: "admin",
 			AdminDefaultPassword: "admin",
