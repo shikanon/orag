@@ -22,6 +22,6 @@
 ### Task 3: Document, publish, and verify alerts
 
 - [x] Record dependency remediation in CHANGELOG.md and the bilingual Stage 3 Roadmap while keeping the phase incomplete.
-- [ ] Push codex/go-dependency-security and open a ready PR with Closes #211.
+- [x] Push codex/go-dependency-security and open a ready PR with Closes #211.
 - [ ] Wait for required checks, squash merge, sync main, and remove only this worktree/branch.
 - [ ] Poll Dependabot after GitHub re-evaluates main and prove the open-alert count reaches zero; otherwise continue remediation.
