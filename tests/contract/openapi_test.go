@@ -194,7 +194,7 @@ func TestOpenAPI(t *testing.T) {
 		{http.MethodPatch, "/v1/projects/{project_id}", http.StatusInternalServerError},
 	} {
 		op := doc.Paths.Find(route.path).GetOperation(route.method)
-		if op.Responses.Get(route.status) == nil {
+		if op.Responses.Status(route.status) == nil {
 			t.Fatalf("%s %s missing %d response", route.method, route.path, route.status)
 		}
 	}
@@ -203,12 +203,12 @@ func TestOpenAPI(t *testing.T) {
 		{http.MethodGet, "/v1/projects"},
 		{http.MethodGet, "/v1/projects/{project_id}"},
 	} {
-		if doc.Paths.Find(route.path).GetOperation(route.method).Responses.Get(http.StatusConflict) != nil {
+		if doc.Paths.Find(route.path).GetOperation(route.method).Responses.Status(http.StatusConflict) != nil {
 			t.Fatalf("%s %s must not advertise 409", route.method, route.path)
 		}
 	}
 
-	for path, item := range doc.Paths {
+	for path, item := range doc.Paths.Map() {
 		if path == "/v1/auth/login" || len(path) < len("/v1/") || path[:len("/v1/")] != "/v1/" {
 			continue
 		}
@@ -230,7 +230,7 @@ func TestOpenAPIOperationsDeclareMaturity(t *testing.T) {
 		"beta":         true,
 		"stable":       true,
 	}
-	for path, item := range doc.Paths {
+	for path, item := range doc.Paths.Map() {
 		for method, operation := range item.Operations() {
 			raw, ok := operation.Extensions["x-orag-maturity"]
 			if !ok {
@@ -309,7 +309,7 @@ func TestOptimizationAndJudgeSchemasExposeAsyncContract(t *testing.T) {
 	}
 
 	postOp := doc.Paths.Find("/v1/optimizations").Post
-	if got := postOp.Responses.Get(http.StatusAccepted).Value.Content.Get("application/json").Schema.Ref; got != "#/components/schemas/OptimizationAcceptedResponse" {
+	if got := postOp.Responses.Status(http.StatusAccepted).Value.Content.Get("application/json").Schema.Ref; got != "#/components/schemas/OptimizationAcceptedResponse" {
 		t.Fatalf("POST /v1/optimizations 202 schema = %q", got)
 	}
 	accepted := requireSchema(t, doc, "OptimizationAcceptedResponse")

@@ -6,10 +6,10 @@
 
 ### Task 1: Upgrade affected modules
 
-- [ ] Upgrade root direct dependencies to at least: kin-openapi v0.131.0, pgx/v5 v5.9.2, grpc v1.79.3.
-- [ ] Upgrade transitive security floors to at least: x/crypto v0.52.0, x/net v0.55.0, phonenumbers v1.2.2.
-- [ ] Run root go mod tidy and review all transitive changes.
-- [ ] Run GOWORK=off go mod tidy in tests/consumer and ensure kin-openapi is at least v0.131.0.
+- [x] Upgrade root direct dependencies to at least: kin-openapi v0.131.0, pgx/v5 v5.9.2, grpc v1.79.3.
+- [x] Upgrade transitive security floors to at least: x/crypto v0.52.0, x/net v0.55.0, phonenumbers v1.2.2.
+- [x] Run root go mod tidy and review all transitive changes.
+- [x] Run GOWORK=off go mod tidy in tests/consumer and ensure kin-openapi is at least v0.131.0.
 
 ### Task 2: Validate compatibility
 
@@ -25,4 +25,3 @@
 - [ ] Push codex/go-dependency-security and open a ready PR with Closes #211.
 - [ ] Wait for required checks, squash merge, sync main, and remove only this worktree/branch.
 - [ ] Poll Dependabot after GitHub re-evaluates main and prove the open-alert count reaches zero; otherwise continue remediation.
-
