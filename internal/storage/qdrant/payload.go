@@ -34,6 +34,8 @@ func chunkPayload(chunk kb.Chunk) map[string]*qdrant.Value {
 		"page":              integerValue(int64(chunk.Page)),
 		"section":           stringValue(chunk.Section),
 		"offset":            integerValue(int64(chunk.Offset)),
+		"ingestion_job_id":  stringValue(chunk.IngestionJobID),
+		"searchable":        boolValue(false),
 	}
 }
 
@@ -60,6 +62,10 @@ func stringValue(v string) *qdrant.Value {
 
 func integerValue(v int64) *qdrant.Value {
 	return &qdrant.Value{Kind: &qdrant.Value_IntegerValue{IntegerValue: v}}
+}
+
+func boolValue(v bool) *qdrant.Value {
+	return &qdrant.Value{Kind: &qdrant.Value_BoolValue{BoolValue: v}}
 }
 
 func payloadString(payload map[string]*qdrant.Value, key string) string {

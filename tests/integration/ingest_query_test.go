@@ -458,6 +458,10 @@ func (c failingPointsClient) Upsert(context.Context, *qdrant.UpsertPoints, ...gr
 	return nil, c.err
 }
 
+func (c failingPointsClient) SetPayload(context.Context, *qdrant.SetPayloadPoints, ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
+	return nil, c.err
+}
+
 func (c failingPointsClient) Search(context.Context, *qdrant.SearchPoints, ...grpc.CallOption) (*qdrant.SearchResponse, error) {
 	return nil, c.err
 }

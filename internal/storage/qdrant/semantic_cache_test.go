@@ -341,10 +341,18 @@ func filterHasField(filter *qdrant.Filter, key string) bool {
 }
 
 type recordingPointsClient struct {
-	deleteReq *qdrant.DeletePoints
+	upsertReq     *qdrant.UpsertPoints
+	setPayloadReq *qdrant.SetPayloadPoints
+	deleteReq     *qdrant.DeletePoints
 }
 
-func (c *recordingPointsClient) Upsert(context.Context, *qdrant.UpsertPoints, ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
+func (c *recordingPointsClient) Upsert(_ context.Context, req *qdrant.UpsertPoints, _ ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
+	c.upsertReq = req
+	return &qdrant.PointsOperationResponse{}, nil
+}
+
+func (c *recordingPointsClient) SetPayload(_ context.Context, req *qdrant.SetPayloadPoints, _ ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
+	c.setPayloadReq = req
 	return &qdrant.PointsOperationResponse{}, nil
 }
 

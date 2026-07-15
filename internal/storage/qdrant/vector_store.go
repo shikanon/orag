@@ -62,7 +62,19 @@ func (s VectorStore) DeleteDocumentSource(ctx context.Context, tenantID, kbID, s
 	return err
 }
 
-func (s VectorStore) Activate(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
+func (s VectorStore) PrepareActivation(ctx context.Context, doc kb.Document, _ []kb.Chunk) error {
+	return s.setDocumentSearchable(ctx, doc, true)
+}
+
+func (s VectorStore) CommitActivation(context.Context, kb.Document, []kb.Chunk) error {
+	return nil
+}
+
+func (s VectorStore) AbortActivation(ctx context.Context, doc kb.Document, _ []kb.Chunk) error {
+	return s.setDocumentSearchable(ctx, doc, false)
+}
+
+func (s VectorStore) FinalizeActivation(ctx context.Context, doc kb.Document, chunks []kb.Chunk) error {
 	if len(chunks) == 0 || doc.SourceURI == "" {
 		return nil
 	}
@@ -72,6 +84,19 @@ func (s VectorStore) Activate(ctx context.Context, doc kb.Document, chunks []kb.
 		Wait:           &wait,
 		Points: &qdrant.PointsSelector{PointsSelectorOneOf: &qdrant.PointsSelector_Filter{
 			Filter: documentSourceExceptDocumentFilter(doc.TenantID, doc.KnowledgeBaseID, doc.SourceURI, doc.ID),
+		}},
+	})
+	return err
+}
+
+func (s VectorStore) setDocumentSearchable(ctx context.Context, doc kb.Document, searchable bool) error {
+	wait := true
+	_, err := s.Client.Points.SetPayload(ctx, &qdrant.SetPayloadPoints{
+		CollectionName: s.Collection,
+		Wait:           &wait,
+		Payload:        map[string]*qdrant.Value{"searchable": boolValue(searchable)},
+		PointsSelector: &qdrant.PointsSelector{PointsSelectorOneOf: &qdrant.PointsSelector_Filter{
+			Filter: documentFilter(doc.TenantID, doc.KnowledgeBaseID, doc.ID),
 		}},
 	})
 	return err
@@ -119,6 +144,14 @@ func documentSourceFilter(tenantID, kbID, sourceURI string) *qdrant.Filter {
 		matchKeyword("tenant_id", tenantID),
 		matchKeyword("knowledge_base_id", kbID),
 		matchKeyword("source_uri", sourceURI),
+	}}
+}
+
+func documentFilter(tenantID, kbID, documentID string) *qdrant.Filter {
+	return &qdrant.Filter{Must: []*qdrant.Condition{
+		matchKeyword("tenant_id", tenantID),
+		matchKeyword("knowledge_base_id", kbID),
+		matchKeyword("document_id", documentID),
 	}}
 }
 

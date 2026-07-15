@@ -115,11 +115,68 @@ func TestDeleteDocumentSourceUsesTenantScopedSourceFilter(t *testing.T) {
 	}
 }
 
-func TestActivateDeletesPreviousSourcePointsButKeepsCurrentDocument(t *testing.T) {
+func TestVectorStoreStoresStagedPayload(t *testing.T) {
+	points := &recordingPointsClient{}
+	store := VectorStore{Client: &Client{Points: points}, Collection: "chunks"}
+	chunk := kb.Chunk{
+		ID: "chk_1", TenantID: "tenant_1", KnowledgeBaseID: "kb_1", DocumentID: "doc_1",
+		IngestionJobID: "job_1", Content: "hello", Vector: []float64{0.1, 0.2},
+	}
+
+	if err := store.Store(context.Background(), kb.Document{ID: "doc_1"}, []kb.Chunk{chunk}); err != nil {
+		t.Fatal(err)
+	}
+	if points.upsertReq == nil || len(points.upsertReq.GetPoints()) != 1 {
+		t.Fatalf("upsert request = %#v", points.upsertReq)
+	}
+	payload := points.upsertReq.GetPoints()[0].GetPayload()
+	if payload["searchable"].GetBoolValue() {
+		t.Fatal("staged point is searchable")
+	}
+	if got := payload["ingestion_job_id"].GetStringValue(); got != "job_1" {
+		t.Fatalf("ingestion_job_id = %q", got)
+	}
+}
+
+func TestPrepareActivationMarksDocumentSearchable(t *testing.T) {
+	points := &recordingPointsClient{}
+	store := VectorStore{Client: &Client{Points: points}, Collection: "chunks"}
+	doc := kb.Document{ID: "doc_new", TenantID: "tenant_1", KnowledgeBaseID: "kb_1"}
+
+	if err := store.PrepareActivation(context.Background(), doc, nil); err != nil {
+		t.Fatal(err)
+	}
+	assertDocumentPayloadMutation(t, points.setPayloadReq, true, doc)
+}
+
+func TestAbortActivationMarksDocumentUnsearchable(t *testing.T) {
+	points := &recordingPointsClient{}
+	store := VectorStore{Client: &Client{Points: points}, Collection: "chunks"}
+	doc := kb.Document{ID: "doc_new", TenantID: "tenant_1", KnowledgeBaseID: "kb_1"}
+
+	if err := store.AbortActivation(context.Background(), doc, nil); err != nil {
+		t.Fatal(err)
+	}
+	assertDocumentPayloadMutation(t, points.setPayloadReq, false, doc)
+}
+
+func TestCommitActivationDoesNotMutateQdrant(t *testing.T) {
 	points := &recordingPointsClient{}
 	store := VectorStore{Client: &Client{Points: points}, Collection: "chunks"}
 
-	err := store.Activate(context.Background(), kb.Document{
+	if err := store.CommitActivation(context.Background(), kb.Document{ID: "doc_new"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if points.upsertReq != nil || points.setPayloadReq != nil || points.deleteReq != nil {
+		t.Fatalf("commit mutated Qdrant: upsert=%v payload=%v delete=%v", points.upsertReq, points.setPayloadReq, points.deleteReq)
+	}
+}
+
+func TestFinalizeActivationDeletesPreviousSourcePoints(t *testing.T) {
+	points := &recordingPointsClient{}
+	store := VectorStore{Client: &Client{Points: points}, Collection: "chunks"}
+
+	err := store.FinalizeActivation(context.Background(), kb.Document{
 		ID:              "doc_new",
 		TenantID:        "tenant_1",
 		KnowledgeBaseID: "kb_1",
@@ -129,7 +186,7 @@ func TestActivateDeletesPreviousSourcePointsButKeepsCurrentDocument(t *testing.T
 		t.Fatal(err)
 	}
 	if points.deleteReq == nil {
-		t.Fatal("Activate did not call Qdrant delete")
+		t.Fatal("FinalizeActivation did not call Qdrant delete")
 	}
 	filter := points.deleteReq.GetPoints().GetFilter()
 	if got := filterKeyword(t, filter, "tenant_id"); got != "tenant_1" {
@@ -147,6 +204,26 @@ func TestActivateDeletesPreviousSourcePointsButKeepsCurrentDocument(t *testing.T
 	field := filter.GetMustNot()[0].GetField()
 	if field.GetKey() != "document_id" || field.GetMatch().GetKeyword() != "doc_new" {
 		t.Fatalf("current document exclusion = %#v", field)
+	}
+}
+
+func assertDocumentPayloadMutation(t *testing.T, req *qdrant.SetPayloadPoints, searchable bool, doc kb.Document) {
+	t.Helper()
+	if req == nil {
+		t.Fatal("SetPayload was not called")
+	}
+	if got := req.GetPayload()["searchable"].GetBoolValue(); got != searchable {
+		t.Fatalf("searchable = %v, want %v", got, searchable)
+	}
+	filter := req.GetPointsSelector().GetFilter()
+	if got := filterKeyword(t, filter, "tenant_id"); got != doc.TenantID {
+		t.Fatalf("tenant filter = %q", got)
+	}
+	if got := filterKeyword(t, filter, "knowledge_base_id"); got != doc.KnowledgeBaseID {
+		t.Fatalf("knowledge base filter = %q", got)
+	}
+	if got := filterKeyword(t, filter, "document_id"); got != doc.ID {
+		t.Fatalf("document filter = %q", got)
 	}
 }
 
