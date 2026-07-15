@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Knowledge-base deletion now cleans semantic cache and vectors before PostgreSQL metadata, so transient Qdrant failures retain a durable DELETE retry path instead of leaving unreachable orphan points.
 - Optimizer resume and execution acquisition now use PostgreSQL-backed compare-and-swap transitions, preventing duplicate run and candidate execution across concurrent API replicas and returning a documented `409` conflict to losing callers.
 
+### Security
+
+- Upgraded the six Go dependency families behind 27 Dependabot alerts, including `kin-openapi`, `pgx/v5`, gRPC, `x/crypto`, `x/net`, and `phonenumbers`, while preserving standalone SDK, OpenAPI, PostgreSQL, and Qdrant compatibility.
+
 ## [0.1.0-beta.1] - 2026-07-14
 
 ### Added
