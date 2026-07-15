@@ -20,7 +20,7 @@ x-orag-environment: &orag-environment
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     environment:
       POSTGRES_USER: orag
       POSTGRES_PASSWORD: orag
@@ -36,7 +36,7 @@ services:
       retries: 20
 
   qdrant:
-    image: qdrant/qdrant:v1.11.5
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:v1.11.5}
     ports:
       - "${QDRANT_HTTP_PORT:-6333}:6333"
       - "${QDRANT_GRPC_PORT:-6334}:6334"
