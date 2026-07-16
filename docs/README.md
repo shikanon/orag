@@ -24,6 +24,7 @@
 | [`getting-started/`](./getting-started) | 快速上手 | 本地启动、依赖说明、API smoke、状态目录和常见 smoke 失败。 |
 | [`api/`](./api) | API 集成 | 认证、错误模型、知识库、入库任务、JSON/SSE 查询、trace 查询、Ralph Loop MCP 和 Skill 集成。 |
 | [`sdk/`](./sdk) | Go SDK | 嵌入式客户端、无 Key 示例、生产配置、类型化错误与事件流。 |
+| [`extensions.md`](./extensions.md) | 扩展契约 | Parser、Chunker、Embedder、Retriever、Reranker、Generator、Storage 的公共 Beta 契约与合规套件。 |
 | [`architecture/`](./architecture) | 架构设计 | 模块地图、运行时依赖、RAG pipeline 和排查切入点。 |
 | [`evaluation/`](./evaluation) | 评估与优化 | 数据集、评估运行、rule-based metrics、LLM-as-Judge/QAG 和目标驱动 optimizer。 |
 | [`operations/`](./operations) | 运维排障 | 健康检查、metrics、部署检查清单、Docker 配置和故障排查。 |

@@ -193,7 +193,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 ### 稳定扩展点
 
-- 为 parser、chunker、embedding、retriever、reranker、model provider 和 storage adapter 定义最小稳定接口及合规测试套件。
+- 已发布依赖无关的公共 `extensions` Beta 契约与 `extensions/conformance` 套件，覆盖 parser、chunker、embedding、retriever、reranker、generator 和 storage；套件以确定性 fixture 验证最小行为。现有运行时仍使用内置装配，待真实下游需求证明后才开放动态注册。
 - 只根据真实用户需求扩大集成面；官方支持矩阵区分 certified、community 和 experimental。
 - 发布 SDK/API 兼容政策、弃用周期、升级工具和长期支持范围。
 
