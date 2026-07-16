@@ -30,6 +30,10 @@ const (
 	TutorialP2ChunkingChapter           = "p2_chunking"
 	TutorialP3ContextualCandidateID     = "p3_contextual_retrieval"
 	TutorialP3ContextualChapter         = "p3_contextual_retrieval"
+	TutorialP4SparseCandidateID         = "p4_sparse_retrieval"
+	TutorialP4SparseChapter             = "p4_sparse_retrieval"
+	TutorialRetrievalStrategyHybrid     = "hybrid"
+	TutorialRetrievalStrategySparse     = "sparse"
 	TutorialP3ContextualPromptVersion   = "tutorial_contextual_v1"
 	TutorialP3MaxDocumentChars          = 12_000
 	TutorialP3MaxChunkChars             = 2_000
@@ -101,6 +105,8 @@ type RuntimeCandidate struct {
 	ChunkSizeTokens     int    `json:"chunk_size_tokens,omitempty"`
 	ChunkOverlapTokens  int    `json:"chunk_overlap_tokens,omitempty"`
 	ContextualRetrieval bool   `json:"contextual_retrieval,omitempty"`
+	RetrievalStrategy   string `json:"retrieval_strategy,omitempty"`
+	ReuseBaselineIndex  bool   `json:"reuse_baseline_index,omitempty"`
 }
 
 type RuntimeDatasetItem struct {
@@ -236,6 +242,8 @@ func validateRuntimeCandidates(runtime RuntimeManifest, objectsByPath map[string
 			continue
 		case validP3Candidate(candidate):
 			continue
+		case validP4Candidate(candidate):
+			continue
 		default:
 			return fmt.Errorf("%w: runtime candidate %d is unsupported", ErrManifestInvalid, index)
 		}
@@ -247,7 +255,7 @@ func validP1Candidate(candidate RuntimeCandidate) bool {
 	return candidate.ID == TutorialP1StructuredJSONCandidateID &&
 		candidate.Chapter == TutorialP1DocumentParserChapter &&
 		candidate.ParserMethod == TutorialStructuredJSONParserMethod &&
-		candidate.ChunkSizeTokens == 0 && candidate.ChunkOverlapTokens == 0 && !candidate.ContextualRetrieval
+		candidate.ChunkSizeTokens == 0 && candidate.ChunkOverlapTokens == 0 && !candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex
 }
 
 func validP2Candidate(candidate RuntimeCandidate) bool {
@@ -256,7 +264,7 @@ func validP2Candidate(candidate RuntimeCandidate) bool {
 		candidate.ParserMethod == "basic" &&
 		candidate.ChunkSizeTokens == TutorialP2ChunkSizeTokens &&
 		candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens &&
-		!candidate.ContextualRetrieval
+		!candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex
 }
 
 func validP3Candidate(candidate RuntimeCandidate) bool {
@@ -265,7 +273,18 @@ func validP3Candidate(candidate RuntimeCandidate) bool {
 		candidate.ParserMethod == "basic" &&
 		candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens &&
 		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
-		candidate.ContextualRetrieval
+		candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex
+}
+
+func validP4Candidate(candidate RuntimeCandidate) bool {
+	return candidate.ID == TutorialP4SparseCandidateID &&
+		candidate.Chapter == TutorialP4SparseChapter &&
+		candidate.ParserMethod == "basic" &&
+		candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens &&
+		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
+		!candidate.ContextualRetrieval &&
+		candidate.RetrievalStrategy == TutorialRetrievalStrategySparse &&
+		candidate.ReuseBaselineIndex
 }
 
 func validLicense(license License) bool {

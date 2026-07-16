@@ -202,6 +202,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			MaxContextChars: tutorial.TutorialP3MaxContextChars, FailureMode: ingest.ContextualFailureFail,
 		}),
 	})
+	sparseTutorialRAG := *ragSvc
+	sparseTutorialRAG.Retriever = backend.sparse
+	sparseTutorialRAG.Pipeline = nil
+	sparseTutorialRAG.Cache = nil
+	tutorialRuns.ConfigureCandidateEvaluators(map[string]tutorial.RuntimeEvaluator{
+		tutorial.TutorialP4SparseCandidateID: eval.Runner{RAG: &sparseTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
+	})
 	optimizerRunner := optimizer.InternalRAGRunner{
 		BaseRAG:    ragSvc,
 		Datasets:   datasets,

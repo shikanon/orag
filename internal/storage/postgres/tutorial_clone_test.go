@@ -63,3 +63,21 @@ func TestTutorialP3ContextualCandidateMigrationPersistsAuditFields(t *testing.T)
 		}
 	}
 }
+
+func TestTutorialP4SparseCandidateMigrationPersistsAuditFields(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/000033_tutorial_p4_sparse_candidate.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(raw)
+	for _, fragment := range []string{
+		"ADD COLUMN retrieval_strategy TEXT NOT NULL DEFAULT 'hybrid'",
+		"ADD COLUMN reused_baseline_index BOOLEAN NOT NULL DEFAULT FALSE",
+		"DROP COLUMN reused_baseline_index",
+		"DROP COLUMN retrieval_strategy",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing %q", fragment)
+		}
+	}
+}

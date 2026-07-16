@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Added the experimental Pack-declared `p4_sparse_retrieval` tutorial candidate: direct P0-only lineage, pure sparse evaluator isolation, compatible P0-index reuse, durable retrieval/index-reuse audit fields, read-only API/Console output, and a controlled PostgreSQL/Qdrant/browser P0-to-P4 walkthrough.
 - Added the experimental Pack-declared `p3_contextual_retrieval` tutorial candidate: direct P0-only lineage, isolated strict-fail server-owned contextualization, durable actual context facts, read-only API/Console audit output, and a controlled PostgreSQL/Qdrant/browser P0-to-P3 walkthrough.
 - Added the experimental Pack-declared `p2_recursive_400_80` tutorial candidate: fixed P0/P1 800/120 splitters, a direct P0-only P2 parent, independent 400/80 indexes, durable measured chunk facts, generic candidate comparisons, Console P2 controls, and a real PostgreSQL/Qdrant/browser fixture that proves differing index shapes.
 - Added the experimental Pack-declared `p1_structured_json` tutorial candidate: immutable P0/P1 comparison fingerprints, a P0 parent requirement, independent candidate indexes, durable parser/lineage audit fields, a comparison API exposing only persisted standard-evaluation metric deltas, Console P0/P1 controls, and a controlled JSON Pack fixture.

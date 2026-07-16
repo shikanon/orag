@@ -60,6 +60,8 @@ type ExperimentRun struct {
 	ChunkSizeTokens            int                  `json:"chunk_size_tokens,omitempty"`
 	ChunkOverlapTokens         int                  `json:"chunk_overlap_tokens,omitempty"`
 	ContextualRetrievalEnabled bool                 `json:"contextual_retrieval_enabled"`
+	RetrievalStrategy          string               `json:"retrieval_strategy"`
+	ReusedBaselineIndex        bool                 `json:"reused_baseline_index"`
 	IndexedChunkCount          int                  `json:"indexed_chunk_count,omitempty"`
 	AverageChunkTokens         float64              `json:"average_chunk_tokens,omitempty"`
 	ContextualizedChunkCount   int                  `json:"contextualized_chunk_count,omitempty"`
@@ -103,15 +105,16 @@ type RuntimeEvaluator interface {
 }
 
 type LiveRunService struct {
-	repo               ExperimentRunRepository
-	experiments        CloneRepository
-	ingest             RuntimeIngestor
-	evaluator          RuntimeEvaluator
-	private            PrivateStore
-	candidateIngestors map[string]RuntimeIngestor
-	runtimeEnvironment RuntimeEnvironment
-	now                func() time.Time
-	newID              func(string) string
+	repo                ExperimentRunRepository
+	experiments         CloneRepository
+	ingest              RuntimeIngestor
+	evaluator           RuntimeEvaluator
+	private             PrivateStore
+	candidateIngestors  map[string]RuntimeIngestor
+	candidateEvaluators map[string]RuntimeEvaluator
+	runtimeEnvironment  RuntimeEnvironment
+	now                 func() time.Time
+	newID               func(string) string
 }
 
 func NewLiveRunService(repo ExperimentRunRepository, experiments CloneRepository, now func() time.Time) *LiveRunService {
@@ -141,6 +144,18 @@ func (s *LiveRunService) ConfigureCandidateIngestors(environment RuntimeEnvironm
 	s.candidateIngestors = make(map[string]RuntimeIngestor, len(ingestors))
 	for candidateID, ingestor := range ingestors {
 		s.candidateIngestors[candidateID] = ingestor
+	}
+}
+
+// ConfigureCandidateEvaluators installs retrievers whose behavior is scoped to
+// a tutorial candidate. Only the application may select these evaluators.
+func (s *LiveRunService) ConfigureCandidateEvaluators(evaluators map[string]RuntimeEvaluator) {
+	if s == nil {
+		return
+	}
+	s.candidateEvaluators = make(map[string]RuntimeEvaluator, len(evaluators))
+	for candidateID, evaluator := range evaluators {
+		s.candidateEvaluators[candidateID] = evaluator
 	}
 }
 
@@ -175,8 +190,10 @@ func (s *LiveRunService) StartVariant(ctx context.Context, subject Subject, proj
 		return ExperimentRun{}, false, err
 	}
 	baselineRunID := ""
+	var baseline ExperimentRun
 	if variant != "baseline" {
-		baseline, found, err := s.repo.FindCompletedBaseline(ctx, subject.TenantID, projectID, experiment.ID, definition.comparisonFingerprint)
+		var found bool
+		baseline, found, err = s.repo.FindCompletedBaseline(ctx, subject.TenantID, projectID, experiment.ID, definition.comparisonFingerprint)
 		if err != nil {
 			return ExperimentRun{}, false, err
 		}
@@ -184,8 +201,17 @@ func (s *LiveRunService) StartVariant(ctx context.Context, subject Subject, proj
 			return ExperimentRun{}, false, ErrBaselineRequired
 		}
 		baselineRunID = baseline.ID
+		if definition.reuseBaselineIndex && baseline.KnowledgeBaseID != definition.knowledgeBaseID {
+			return ExperimentRun{}, false, ErrBaselineRequired
+		}
 	}
 	now := s.now().UTC()
+	stage := ExperimentRunStageIndex
+	events := []ExperimentRunEvent{{Stage: ExperimentRunStageIndex, Outcome: "queued", OccurredAt: now}}
+	if definition.reuseBaselineIndex {
+		stage = ExperimentRunStageEvaluate
+		events = []ExperimentRunEvent{{Stage: ExperimentRunStageEvaluate, Outcome: "queued", OccurredAt: now}}
+	}
 	run := ExperimentRun{
 		ID: s.newID("terun"), TenantID: subject.TenantID, ProjectID: projectID, ExperimentID: experiment.ID,
 		Variant: variant, BaselineRunID: baselineRunID, ComparisonFingerprint: definition.comparisonFingerprint,
@@ -193,8 +219,14 @@ func (s *LiveRunService) StartVariant(ctx context.Context, subject Subject, proj
 		DatasetID: definition.datasetID, Profile: definition.profile, TopK: definition.topK, ParserMethod: definition.parserMethod,
 		ChunkSizeTokens: definition.chunkSizeTokens, ChunkOverlapTokens: definition.chunkOverlapTokens,
 		ContextualRetrievalEnabled: definition.contextualRetrievalEnabled,
-		Stage:                      ExperimentRunStageIndex, Status: ExperimentRunQueued,
-		Events:    []ExperimentRunEvent{{Stage: ExperimentRunStageIndex, Outcome: "queued", OccurredAt: now}},
+		RetrievalStrategy:          definition.retrievalStrategy,
+		ReusedBaselineIndex:        definition.reuseBaselineIndex,
+		IndexedChunkCount:          baseline.IndexedChunkCount,
+		AverageChunkTokens:         baseline.AverageChunkTokens,
+		ContextualizedChunkCount:   baseline.ContextualizedChunkCount,
+		AverageContextTokens:       baseline.AverageContextTokens,
+		Stage:                      stage, Status: ExperimentRunQueued,
+		Events:    events,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	return s.repo.CreateOrGetRun(ctx, run, idempotencyKey)
@@ -262,12 +294,12 @@ func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) er
 		if !definition.matches(run) && !run.isLegacyBaseline() {
 			return s.fail(ctx, run, ErrRuntimeUnavailable)
 		}
-		ingestor, err := s.ingestorFor(run, definition)
-		if err != nil {
-			return s.fail(ctx, run, err)
-		}
 		switch run.Stage {
 		case ExperimentRunStageIndex:
+			ingestor, err := s.ingestorFor(run, definition)
+			if err != nil {
+				return s.fail(ctx, run, err)
+			}
 			stats, err := s.index(ctx, experiment, run, ingestor)
 			if err != nil {
 				return s.fail(ctx, run, err)
@@ -285,7 +317,14 @@ func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) er
 				return s.finishCancellationIfRequested(ctx, run)
 			}
 		case ExperimentRunStageEvaluate:
-			result, err := s.evaluator.Run(ctx, eval.RunRequest{
+			evaluator := s.evaluator
+			if candidateEvaluator := s.candidateEvaluators[run.Variant]; candidateEvaluator != nil {
+				evaluator = candidateEvaluator
+			}
+			if evaluator == nil {
+				return s.fail(ctx, run, ErrRuntimeUnavailable)
+			}
+			result, err := evaluator.Run(ctx, eval.RunRequest{
 				TenantID: tenantID, ProjectID: experiment.ProjectID, DatasetID: run.DatasetID,
 				KnowledgeBaseID: run.KnowledgeBaseID, Profile: rag.Profile(run.Profile), TopK: run.TopK,
 			})
