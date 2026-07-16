@@ -64,7 +64,7 @@
 | `orag_rag_query_latency_ms` | histogram | RAG 查询耗时分桶，单位毫秒，label 为 `profile`、`cache_status`、`outcome`。 |
 | `orag_rag_query_latency_ms_sum` | counter | RAG 查询耗时累计值，单位毫秒。可与 `orag_rag_queries_total` 粗略计算平均耗时。 |
 
-这些指标是进程内 counter/histogram，服务重启后会从零开始；当前没有分位数预聚合、持久化或 OTel metrics exporter。metrics label 不包含 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本，单次请求排查请使用日志和 trace 查询。
+这些指标是进程内 counter/histogram，服务重启后会从零开始；仓库提供可导入的 [Grafana overview dashboard](operations/grafana.md) 和基础 Prometheus 告警规则；当前没有分位数预聚合、持久化或 OTel metrics exporter。metrics label 不包含 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本，单次请求排查请使用日志和 trace 查询。
 
 ## 日志、Trace 与外部观测边界
 

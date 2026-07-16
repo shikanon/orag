@@ -14,6 +14,7 @@ func TestHostedDocumentationAssets(t *testing.T) {
 			"you can measure.",
 			"make demo",
 			"api.html",
+			"grafana.html",
 			"screenshots/api-reference.png",
 			"screenshots/walkthrough.gif",
 		},
@@ -21,6 +22,11 @@ func TestHostedDocumentationAssets(t *testing.T) {
 			"SwaggerUIBundle",
 			"./openapi.yaml",
 			"Try it out",
+		},
+		"../../docs-site/grafana.html": {
+			"ORAG Grafana dashboard",
+			"orag-overview.json",
+			"Low-cardinality by design.",
 		},
 		"../../.github/workflows/docs.yml": {
 			"actions/configure-pages@",

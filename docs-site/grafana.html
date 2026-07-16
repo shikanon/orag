@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Import the ORAG Grafana dashboard for documented Prometheus metrics.">
+  <title>ORAG Grafana dashboard</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="wordmark" href="./index.html" aria-label="ORAG home">ORAG</a>
+    <nav aria-label="Primary navigation">
+      <a href="./index.html#quickstart">Quickstart</a>
+      <a href="./api.html">API Reference</a>
+      <a href="./grafana.html">Observability</a>
+      <a href="https://github.com/shikanon/orag">GitHub ↗</a>
+    </nav>
+    <a class="button button-primary header-action" href="https://github.com/shikanon/orag/blob/main/deployments/grafana/dashboards/orag-overview.json">View dashboard JSON</a>
+  </header>
+
+  <main>
+    <section class="quickstart section-grid">
+      <div>
+        <p class="eyebrow">Observability · Prometheus · Grafana</p>
+        <h1>Operate the RAG path<br>with evidence.</h1>
+        <p class="lede">Import the versioned ORAG overview dashboard to see API availability, request errors and latency, RAG outcomes, dependency readiness, and trace-store health.</p>
+        <div class="actions">
+          <a class="button button-primary" href="https://github.com/shikanon/orag/blob/main/deployments/grafana/dashboards/orag-overview.json">Download dashboard JSON</a>
+          <a class="button button-secondary" href="https://github.com/shikanon/orag/blob/main/deployments/prometheus/alerts.yml">Read alert rules</a>
+        </div>
+      </div>
+      <div class="terminal" role="img" aria-label="Grafana import steps">
+        <div class="terminal-head"><span></span><span></span><span></span><em>grafana — import</em></div>
+        <pre><span class="terminal-dim">1.</span> Configure Prometheus to scrape /metrics
+<span class="terminal-dim">2.</span> Dashboards → New → Import
+<span class="terminal-dim">3.</span> Upload orag-overview.json
+<span class="terminal-dim">4.</span> Select the Prometheus datasource
+
+<span class="terminal-blue">✓</span> Observe before changing anything</pre>
+      </div>
+    </section>
+
+    <section class="resources section-grid">
+      <article>
+        <p class="eyebrow">Availability</p>
+        <h2>Know what is reachable.</h2>
+        <p class="section-copy"><code>orag_up</code>, HTTP request/error rate, and HTTP p95 show whether the API can serve traffic. Use <code>/readyz</code> to investigate dependencies.</p>
+      </article>
+      <article>
+        <p class="eyebrow">RAG quality path</p>
+        <h2>Track outcomes and latency.</h2>
+        <p class="section-copy">RAG outcomes/cache status and RAG p95 are intentionally aggregate views. A single request remains diagnosable through its trace ID, not a metric label.</p>
+      </article>
+      <article>
+        <p class="eyebrow">Safe response</p>
+        <h2>Observe, diagnose, then approve.</h2>
+        <p class="section-copy">Dashboard and alerts are read-only. Follow the runbook, generate a dry-run plan, and require explicit human approval before any write action.</p>
+      </article>
+    </section>
+
+    <section class="proof">
+      <div><p class="eyebrow">Data boundary</p><h2>Low-cardinality by design.</h2></div>
+      <p class="section-copy">The dashboard uses only documented Prometheus series. It never includes trace IDs, tenants, user input, prompts, documents, model output, or raw errors. Metrics are process-local and reset on restart; Prometheus retention is configured by the operator. OTLP trace export is optional, while OTLP metrics export remains a planned capability.</p>
+    </section>
+  </main>
+
+  <footer>
+    <a class="wordmark" href="./index.html">ORAG</a>
+    <span>Apache-2.0</span>
+    <a href="https://github.com/shikanon/orag/blob/main/docs/operations/grafana.md">Operator guide</a>
+    <a href="https://github.com/shikanon/orag">GitHub ↗</a>
+  </footer>
+</body>
+</html>
