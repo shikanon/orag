@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Added the strict `orag.performance-baseline.v1` contract and `oragctl benchmark-report` verifier, which bind a deterministic Benchmark Pack run to its environment/build/load fingerprints and reject incomparable or internally inconsistent throughput, latency, cache, evaluation, model-call, and cost reports.
 - Added an optional OTLP/HTTP metrics exporter for core HTTP, RAG, dependency-readiness, and trace-store telemetry, with low-cardinality attribute and shutdown-flush contract tests.
 - Added a versioned, importable Grafana overview dashboard for ORAG's documented Prometheus metrics, a parser-backed dashboard contract gate, and an operator guide that preserves the low-cardinality, read-only observability boundary.
 - Added the public, immutable `text-rag/1.1.0` CRUD-RAG release: deterministic Quick and Benchmark Packs, the complete upstream `data/` archive, source provenance, `SHA256SUMS`, anonymous HTTPS verification, a guarded TOS publisher, and a hosted release guide.

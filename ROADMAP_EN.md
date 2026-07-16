@@ -156,7 +156,7 @@ For dependency boundaries, [#221](https://github.com/shikanon/orag/issues/221) u
 
 - Optional OpenTelemetry trace/metrics exporters and importable Prometheus/Grafana resources with baseline alerts are available; complete metrics persistence, sampling, and cross-service topology next.
 - Gate Go unit/vet/race, OpenAPI, Console typecheck/unit/build/E2E, PostgreSQL + Qdrant integration, and dual-architecture image smoke tests.
-- Publish performance baselines for ingestion throughput, query p50/p95, cache hit rate, evaluation duration, model calls, and cost accounting.
+- A verifiable performance-baseline report contract now fixes Benchmark Pack, mock-run, environment/build/load fingerprints, and ingestion throughput, query p50/p95, cache-hit, evaluation-duration, model-call, and cost definitions; publish comparable results next with disclosed hardware and provider conditions.
 
 ### Phase exit criteria
 
