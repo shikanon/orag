@@ -483,8 +483,8 @@ func (c Config) Validate() error {
 	if c.Qdrant.Host == "" {
 		missing = append(missing, "QDRANT_HOST")
 	}
-	if c.Server.BuildRevision == "" || len(c.Server.BuildRevision) > 200 || strings.IndexFunc(c.Server.BuildRevision, func(r rune) bool { return r <= ' ' || r == 0x7f }) >= 0 {
-		return errors.New("ORAG_BUILD_REVISION must be a non-empty identifier without whitespace or control characters")
+	if c.Server.BuildRevision != "" && (len(c.Server.BuildRevision) > 200 || strings.IndexFunc(c.Server.BuildRevision, func(r rune) bool { return r <= ' ' || r == 0x7f }) >= 0) {
+		return errors.New("ORAG_BUILD_REVISION must be an identifier without whitespace or control characters")
 	}
 	if c.Database.URL == "" {
 		missing = append(missing, "DATABASE_URL")
