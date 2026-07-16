@@ -1,0 +1,28 @@
+{
+  "template_id": "text-rag",
+  "version": "1.0.3",
+  "tier": "quick",
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "source_url": "https://example.test/tutorial-p3-contextual-retrieval-license",
+    "redistributable": true
+  },
+  "objects": [
+    {
+      "path": "corpus/service.json",
+      "sha256": "ffc3d1d3ba47e90eb82776683ffd6f162abee2366db08dd24926328d72e91a2c",
+      "bytes": 3196,
+      "content_type": "application/json"
+    }
+  ],
+  "runtime": {
+    "baseline": {"profile": "realtime", "top_k": 5},
+    "documents": [{"object_path": "corpus/service.json", "name": "教程 P3 上下文化服务配置"}],
+    "dataset": {"name": "教程 P3 Contextual Retrieval 评测集", "items": [{"query": "ORAG 服务端口是多少？", "ground_truth": "8080", "split": "eval"}]},
+    "candidates": [
+      {"id": "p1_structured_json", "chapter": "p1_document_parser", "parser_method": "structured_json"},
+      {"id": "p2_recursive_400_80", "chapter": "p2_chunking", "parser_method": "basic", "chunk_size_tokens": 400, "chunk_overlap_tokens": 80},
+      {"id": "p3_contextual_retrieval", "chapter": "p3_contextual_retrieval", "parser_method": "basic", "chunk_size_tokens": 800, "chunk_overlap_tokens": 120, "contextual_retrieval": true}
+    ]
+  }
+}

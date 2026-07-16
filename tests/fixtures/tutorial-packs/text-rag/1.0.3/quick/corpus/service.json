@@ -1,0 +1,29 @@
+{
+  "service": {
+    "name": "ORAG tutorial P3 contextual retrieval fixture",
+    "port": 8080,
+    "purpose": "This controlled corpus verifies server-owned contextual retrieval while preserving the P0 Basic parser and 800/120 recursive splitter.",
+    "components": [
+      {"id":"component-001","description":"ORAG validates requests, indexes verified documents, and records deterministic retrieval evidence for standard evaluation."},
+      {"id":"component-002","description":"The API service listens on port 8080 and exposes project-scoped retrieval operations."},
+      {"id":"component-003","description":"A private Pack is verified by checksum before any tutorial Live Run reads its content."},
+      {"id":"component-004","description":"P0 uses the Basic parser with recursive chunk size 800 and overlap 120 text units."},
+      {"id":"component-005","description":"P3 keeps the P0 parser and splitter unchanged, adding only server-owned contextual text."},
+      {"id":"component-006","description":"The contextualizer uses a fixed prompt, bounded input, and fails the run rather than silently falling back."},
+      {"id":"component-007","description":"Every candidate receives an isolated Knowledge Base derived from the immutable Pack declaration."},
+      {"id":"component-008","description":"The evaluator runs the same declared dataset and profile for a compatible P0 and candidate pair."},
+      {"id":"component-009","description":"Comparison reports measured index facts and never infers a quality improvement from contextualization alone."},
+      {"id":"component-010","description":"A contextualized chunk stores non-empty contextual text that situates its content in the verified document."},
+      {"id":"component-011","description":"The service persists the count of contextualized chunks and average deterministic context length."},
+      {"id":"component-012","description":"Browser requests can select only a Pack-declared variant and provide an idempotency key."},
+      {"id":"component-013","description":"Browser requests cannot supply prompts, model names, failure policies, storage coordinates, or context content."},
+      {"id":"component-014","description":"The runtime definition fingerprint records the P3 contextualization contract and prompt version."},
+      {"id":"component-015","description":"The comparison fingerprint contains shared environment facts but excludes the P3-only contextualization setting."},
+      {"id":"component-016","description":"A completed P0 is the only allowed parent for the P3 contextual retrieval candidate."},
+      {"id":"component-017","description":"P1 structured JSON parsing and P2 400/80 chunking remain independent tutorial candidates."},
+      {"id":"component-018","description":"P3 contextual retrieval is experimental and its walkthrough proves auditable execution, not benchmark superiority."},
+      {"id":"component-019","description":"The Console renders read-only contextualization facts returned by the API after the indexing stage."},
+      {"id":"component-020","description":"The public documentation describes the strict-fail boundary and explains why no client setting can change it."}
+    ]
+  }
+}
