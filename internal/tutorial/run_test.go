@@ -569,6 +569,14 @@ func installPrivateObject(t *testing.T, tenantID, projectID, jobID string, objec
 	return store
 }
 
+func TestPackObjectFindsPersistedVisualAsset(t *testing.T) {
+	asset := PackObject{Path: "visual/pdf/document.pdf", SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Bytes: 1, ContentType: "application/pdf"}
+	got, found := packObject(Manifest{VisualAssets: []PackObject{asset}}, asset.Path)
+	if !found || got != asset {
+		t.Fatalf("object=%#v found=%v", got, found)
+	}
+}
+
 type recordingRuntimeIngestor struct {
 	requests []ingest.Request
 	chunks   []kb.Chunk
