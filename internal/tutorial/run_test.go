@@ -61,7 +61,7 @@ func TestLiveRunIndexesPrivatePackAndDelegatesEvaluation(t *testing.T) {
 	}
 }
 
-func TestLiveRunRequiresCompatibleBaselineForP1AndUsesIndependentIndex(t *testing.T) {
+func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *testing.T) {
 	now := time.Date(2026, 7, 16, 14, 0, 0, 0, time.UTC)
 	content := []byte(`{"service":{"port":8080,"name":"ORAG"}}`)
 	hash := sha256.Sum256(content)
@@ -74,26 +74,39 @@ func TestLiveRunRequiresCompatibleBaselineForP1AndUsesIndependentIndex(t *testin
 		RuntimeStatus: "ready", KnowledgeBaseID: "tkb_baseline", DatasetID: "tds_1", BaselineProfile: "realtime", BaselineTopK: 5,
 		PackManifest: Manifest{Objects: []PackObject{object}, Runtime: &RuntimeManifest{
 			Baseline: RuntimeBaseline{Profile: "realtime", TopK: 5}, Documents: []RuntimeDocument{{ObjectPath: object.Path, Name: "服务配置"}},
-			Dataset:    RuntimeDataset{Name: "评测", Items: []RuntimeDatasetItem{{Query: "端口", GroundTruth: "8080"}}},
-			Candidates: []RuntimeCandidate{{ID: TutorialP1StructuredJSONCandidateID, Chapter: TutorialP1DocumentParserChapter, ParserMethod: TutorialStructuredJSONParserMethod}},
+			Dataset: RuntimeDataset{Name: "评测", Items: []RuntimeDatasetItem{{Query: "端口", GroundTruth: "8080"}}},
+			Candidates: []RuntimeCandidate{
+				{ID: TutorialP1StructuredJSONCandidateID, Chapter: TutorialP1DocumentParserChapter, ParserMethod: TutorialStructuredJSONParserMethod},
+				{ID: TutorialP2RecursiveChunkCandidateID, Chapter: TutorialP2ChunkingChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialP2ChunkSizeTokens, ChunkOverlapTokens: TutorialP2ChunkOverlapTokens},
+			},
 		}},
 	}
 	if err := repo.EnsureExperiment(context.Background(), experiment); err != nil {
 		t.Fatal(err)
 	}
 	baselineIngestor := &recordingRuntimeIngestor{}
-	candidateIngestor := &recordingRuntimeIngestor{}
+	p1Ingestor := &recordingRuntimeIngestor{}
+	p2Ingestor := &recordingRuntimeIngestor{}
 	evaluator := &recordingRuntimeEvaluator{}
 	service := NewLiveRunService(repo, repo, func() time.Time { return now })
 	service.Configure(baselineIngestor, evaluator, store)
-	service.ConfigureCandidateIngestors(RuntimeEnvironment{ChatModel: "chat", EmbeddingModel: "embed", RerankModel: "rerank", MultimodalModel: "vision", PromptCacheMode: "auto", EvaluatorVersion: "standard_eval_v1"}, map[string]RuntimeIngestor{TutorialStructuredJSONParserMethod: candidateIngestor})
+	service.ConfigureCandidateIngestors(RuntimeEnvironment{ChatModel: "chat", EmbeddingModel: "embed", RerankModel: "rerank", MultimodalModel: "vision", PromptCacheMode: "auto", EvaluatorVersion: "standard_eval_v1"}, map[string]RuntimeIngestor{
+		TutorialP1StructuredJSONCandidateID: p1Ingestor,
+		TutorialP2RecursiveChunkCandidateID: p2Ingestor,
+	})
 	subject := Subject{TenantID: "tenant_a", ID: "user_a"}
 	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP1StructuredJSONCandidateID, "p1-before-p0"); err != ErrBaselineRequired {
 		t.Fatalf("P1 before P0 error=%v", err)
 	}
+	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP2RecursiveChunkCandidateID, "p2-before-p0"); err != ErrBaselineRequired {
+		t.Fatalf("P2 before P0 error=%v", err)
+	}
 	baseline, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, "baseline", "p0")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if baseline.ParserMethod != "basic" || baseline.ChunkSizeTokens != TutorialBaselineChunkSizeTokens || baseline.ChunkOverlapTokens != TutorialBaselineChunkOverlapTokens {
+		t.Fatalf("baseline audit fields=%#v", baseline)
 	}
 	if err := service.Execute(context.Background(), subject.TenantID, baseline.ID); err != nil {
 		t.Fatal(err)
@@ -102,7 +115,7 @@ func TestLiveRunRequiresCompatibleBaselineForP1AndUsesIndependentIndex(t *testin
 	if err != nil || replayed {
 		t.Fatalf("candidate=%#v replayed=%v err=%v", candidate, replayed, err)
 	}
-	if candidate.BaselineRunID != baseline.ID || candidate.KnowledgeBaseID == baseline.KnowledgeBaseID || candidate.ParserMethod != TutorialStructuredJSONParserMethod || candidate.ComparisonFingerprint == "" || candidate.DefinitionFingerprint == "" {
+	if candidate.BaselineRunID != baseline.ID || candidate.KnowledgeBaseID == baseline.KnowledgeBaseID || candidate.ParserMethod != TutorialStructuredJSONParserMethod || candidate.ChunkSizeTokens != TutorialBaselineChunkSizeTokens || candidate.ChunkOverlapTokens != TutorialBaselineChunkOverlapTokens || candidate.ComparisonFingerprint == "" || candidate.DefinitionFingerprint == "" {
 		t.Fatalf("candidate audit fields=%#v", candidate)
 	}
 	if err := service.Execute(context.Background(), subject.TenantID, candidate.ID); err != nil {
@@ -111,8 +124,21 @@ func TestLiveRunRequiresCompatibleBaselineForP1AndUsesIndependentIndex(t *testin
 	if len(baselineIngestor.requests) != 1 || baselineIngestor.requests[0].KnowledgeBaseID != baseline.KnowledgeBaseID {
 		t.Fatalf("baseline ingest=%#v", baselineIngestor.requests)
 	}
-	if len(candidateIngestor.requests) != 1 || candidateIngestor.requests[0].KnowledgeBaseID != candidate.KnowledgeBaseID {
-		t.Fatalf("candidate ingest=%#v", candidateIngestor.requests)
+	if len(p1Ingestor.requests) != 1 || p1Ingestor.requests[0].KnowledgeBaseID != candidate.KnowledgeBaseID {
+		t.Fatalf("P1 ingest=%#v", p1Ingestor.requests)
+	}
+	p2, replayed, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP2RecursiveChunkCandidateID, "p2")
+	if err != nil || replayed {
+		t.Fatalf("P2=%#v replayed=%v err=%v", p2, replayed, err)
+	}
+	if p2.BaselineRunID != baseline.ID || p2.KnowledgeBaseID == baseline.KnowledgeBaseID || p2.KnowledgeBaseID == candidate.KnowledgeBaseID || p2.ParserMethod != "basic" || p2.ChunkSizeTokens != TutorialP2ChunkSizeTokens || p2.ChunkOverlapTokens != TutorialP2ChunkOverlapTokens || p2.ComparisonFingerprint != baseline.ComparisonFingerprint {
+		t.Fatalf("P2 audit fields=%#v", p2)
+	}
+	if err := service.Execute(context.Background(), subject.TenantID, p2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(p2Ingestor.requests) != 1 || p2Ingestor.requests[0].KnowledgeBaseID != p2.KnowledgeBaseID {
+		t.Fatalf("P2 ingest=%#v", p2Ingestor.requests)
 	}
 }
 
@@ -138,7 +164,7 @@ func TestLiveRunRejectsComparisonFingerprintMismatch(t *testing.T) {
 	service := NewLiveRunService(repo, repo, func() time.Time { return now })
 	service.Configure(&recordingRuntimeIngestor{}, &recordingRuntimeEvaluator{}, store)
 	subject := Subject{TenantID: "tenant_a", ID: "user_a"}
-	service.ConfigureCandidateIngestors(RuntimeEnvironment{ChatModel: "chat-a", EvaluatorVersion: "standard_eval_v1"}, map[string]RuntimeIngestor{TutorialStructuredJSONParserMethod: &recordingRuntimeIngestor{}})
+	service.ConfigureCandidateIngestors(RuntimeEnvironment{ChatModel: "chat-a", EvaluatorVersion: "standard_eval_v1"}, map[string]RuntimeIngestor{TutorialP1StructuredJSONCandidateID: &recordingRuntimeIngestor{}})
 	baseline, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, "baseline", "p0")
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +172,7 @@ func TestLiveRunRejectsComparisonFingerprintMismatch(t *testing.T) {
 	if err := service.Execute(context.Background(), subject.TenantID, baseline.ID); err != nil {
 		t.Fatal(err)
 	}
-	service.ConfigureCandidateIngestors(RuntimeEnvironment{ChatModel: "chat-b", EvaluatorVersion: "standard_eval_v1"}, map[string]RuntimeIngestor{TutorialStructuredJSONParserMethod: &recordingRuntimeIngestor{}})
+	service.ConfigureCandidateIngestors(RuntimeEnvironment{ChatModel: "chat-b", EvaluatorVersion: "standard_eval_v1"}, map[string]RuntimeIngestor{TutorialP1StructuredJSONCandidateID: &recordingRuntimeIngestor{}})
 	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP1StructuredJSONCandidateID, "p1"); err != ErrBaselineRequired {
 		t.Fatalf("mismatched P1 start error=%v", err)
 	}

@@ -56,6 +56,8 @@ type ExperimentRun struct {
 	Profile               string               `json:"profile,omitempty"`
 	TopK                  int                  `json:"top_k,omitempty"`
 	ParserMethod          string               `json:"parser_method,omitempty"`
+	ChunkSizeTokens       int                  `json:"chunk_size_tokens,omitempty"`
+	ChunkOverlapTokens    int                  `json:"chunk_overlap_tokens,omitempty"`
 	Stage                 ExperimentRunStage   `json:"stage"`
 	Status                ExperimentRunStatus  `json:"status"`
 	EvaluationRunID       string               `json:"evaluation_run_id,omitempty"`
@@ -130,8 +132,8 @@ func (s *LiveRunService) ConfigureCandidateIngestors(environment RuntimeEnvironm
 	}
 	s.runtimeEnvironment = environment
 	s.candidateIngestors = make(map[string]RuntimeIngestor, len(ingestors))
-	for method, ingestor := range ingestors {
-		s.candidateIngestors[method] = ingestor
+	for candidateID, ingestor := range ingestors {
+		s.candidateIngestors[candidateID] = ingestor
 	}
 }
 
@@ -182,6 +184,7 @@ func (s *LiveRunService) StartVariant(ctx context.Context, subject Subject, proj
 		Variant: variant, BaselineRunID: baselineRunID, ComparisonFingerprint: definition.comparisonFingerprint,
 		DefinitionFingerprint: definition.definitionFingerprint, KnowledgeBaseID: definition.knowledgeBaseID,
 		DatasetID: definition.datasetID, Profile: definition.profile, TopK: definition.topK, ParserMethod: definition.parserMethod,
+		ChunkSizeTokens: definition.chunkSizeTokens, ChunkOverlapTokens: definition.chunkOverlapTokens,
 		Stage: ExperimentRunStageIndex, Status: ExperimentRunQueued,
 		Events:    []ExperimentRunEvent{{Stage: ExperimentRunStageIndex, Outcome: "queued", OccurredAt: now}},
 		CreatedAt: now, UpdatedAt: now,
@@ -251,7 +254,7 @@ func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) er
 		if !definition.matches(run) && !run.isLegacyBaseline() {
 			return s.fail(ctx, run, ErrRuntimeUnavailable)
 		}
-		ingestor, err := s.ingestorFor(run.ParserMethod, definition.parserMethod)
+		ingestor, err := s.ingestorFor(run, definition)
 		if err != nil {
 			return s.fail(ctx, run, err)
 		}
@@ -311,14 +314,14 @@ func (s *LiveRunService) index(ctx context.Context, experiment Experiment, run E
 	return nil
 }
 
-func (s *LiveRunService) ingestorFor(storedMethod, derivedMethod string) (RuntimeIngestor, error) {
-	if storedMethod != derivedMethod {
+func (s *LiveRunService) ingestorFor(run ExperimentRun, definition runtimeDefinition) (RuntimeIngestor, error) {
+	if run.ParserMethod != definition.parserMethod || run.ChunkSizeTokens != definition.chunkSizeTokens || run.ChunkOverlapTokens != definition.chunkOverlapTokens {
 		return nil, ErrRuntimeUnavailable
 	}
-	if storedMethod == "basic" && s.ingest != nil {
+	if run.Variant == "baseline" && s.ingest != nil {
 		return s.ingest, nil
 	}
-	if ingestor := s.candidateIngestors[storedMethod]; ingestor != nil {
+	if ingestor := s.candidateIngestors[run.Variant]; ingestor != nil {
 		return ingestor, nil
 	}
 	return nil, ErrRuntimeUnavailable
