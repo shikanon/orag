@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Added the experimental Pack-declared `p8_context_pack` tutorial candidate: direct P0-only lineage, evaluator-v5 isolation, compatible P0-index reuse, durable Context Pack audit fields, read-only API/Console output, and a controlled PostgreSQL/Qdrant/browser P0-to-P8 walkthrough.
 - Added the experimental Pack-declared `p7_graph_retrieval` tutorial candidate: direct P0-only lineage, evaluator-v4 isolation from ambient graph/RAPTOR defaults, a separate graph-enabled candidate index, durable graph audit fields, read-only API/Console output, and a controlled PostgreSQL/Qdrant/browser P0-to-P7 walkthrough.
 - Added the experimental Pack-declared `p6_rerank_retrieval` tutorial candidate: direct P0-only lineage, evaluator-v3 rerank isolation, compatible P0-index reuse, durable rerank audit fields, read-only API/Console output, and a controlled PostgreSQL/Qdrant/browser P0-to-P6 walkthrough.
 - Added the experimental Pack-declared `p5_multi_query_retrieval` tutorial candidate: direct P0-only lineage, evaluator-v2 isolation from production rewrite/HyDE/cache/pipeline defaults, P0-index reuse, fixed three-query expansion audit fields, read-only API/Console output, and a controlled PostgreSQL/Qdrant/browser P0-to-P5 walkthrough.
