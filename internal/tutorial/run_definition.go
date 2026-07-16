@@ -32,6 +32,8 @@ type runtimeDefinition struct {
 	chunkOverlapTokens         int
 	contextualRetrievalEnabled bool
 	contextualPromptVersion    string
+	retrievalStrategy          string
+	reuseBaselineIndex         bool
 	comparisonFingerprint      string
 	definitionFingerprint      string
 }
@@ -48,22 +50,30 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		parserMethod:       "basic",
 		chunkSizeTokens:    TutorialBaselineChunkSizeTokens,
 		chunkOverlapTokens: TutorialBaselineChunkOverlapTokens,
+		retrievalStrategy:  TutorialRetrievalStrategyHybrid,
 	}
 	if variant != "baseline" {
 		candidate, found := runtimeCandidate(experiment.PackManifest.Runtime.Candidates, variant)
 		if !found {
 			return runtimeDefinition{}, ErrExperimentRunVariant
 		}
-		if s.candidateIngestors[candidate.ID] == nil {
+		if !candidate.ReuseBaselineIndex && s.candidateIngestors[candidate.ID] == nil {
 			return runtimeDefinition{}, ErrRuntimeUnavailable
 		}
-		definition.knowledgeBaseID = tutorialCandidateKnowledgeBaseIDFor(experiment.ProjectID, experiment.TemplateID, experiment.TemplateVersion, candidate.ID)
+		if candidate.ReuseBaselineIndex && s.candidateEvaluators[candidate.ID] == nil {
+			return runtimeDefinition{}, ErrRuntimeUnavailable
+		}
+		if !candidate.ReuseBaselineIndex {
+			definition.knowledgeBaseID = tutorialCandidateKnowledgeBaseIDFor(experiment.ProjectID, experiment.TemplateID, experiment.TemplateVersion, candidate.ID)
+		}
 		definition.parserMethod = candidate.ParserMethod
 		if candidate.ChunkSizeTokens > 0 {
 			definition.chunkSizeTokens = candidate.ChunkSizeTokens
 			definition.chunkOverlapTokens = candidate.ChunkOverlapTokens
 		}
 		definition.contextualRetrievalEnabled = candidate.ContextualRetrieval
+		definition.retrievalStrategy = candidateRetrievalStrategy(candidate)
+		definition.reuseBaselineIndex = candidate.ReuseBaselineIndex
 		if candidate.ContextualRetrieval {
 			definition.contextualPromptVersion = TutorialP3ContextualPromptVersion
 		}
@@ -91,12 +101,15 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		ChunkOverlapTokens         int    `json:"chunk_overlap_tokens"`
 		ContextualRetrievalEnabled bool   `json:"contextual_retrieval_enabled"`
 		ContextualPromptVersion    string `json:"contextual_prompt_version"`
+		RetrievalStrategy          string `json:"retrieval_strategy"`
+		ReuseBaselineIndex         bool   `json:"reuse_baseline_index"`
 		KnowledgeBaseID            string `json:"knowledge_base_id"`
 	}{
 		ComparisonFingerprint: definition.comparisonFingerprint, Variant: variant,
 		ParserMethod: definition.parserMethod, ChunkSizeTokens: definition.chunkSizeTokens,
 		ChunkOverlapTokens: definition.chunkOverlapTokens, ContextualRetrievalEnabled: definition.contextualRetrievalEnabled,
 		ContextualPromptVersion: definition.contextualPromptVersion, KnowledgeBaseID: definition.knowledgeBaseID,
+		RetrievalStrategy: definition.retrievalStrategy, ReuseBaselineIndex: definition.reuseBaselineIndex,
 	})
 	return definition, nil
 }
@@ -119,12 +132,14 @@ func (d runtimeDefinition) matches(run ExperimentRun) bool {
 		run.ChunkSizeTokens == d.chunkSizeTokens &&
 		run.ChunkOverlapTokens == d.chunkOverlapTokens &&
 		run.ContextualRetrievalEnabled == d.contextualRetrievalEnabled &&
+		run.RetrievalStrategy == d.retrievalStrategy &&
+		run.ReusedBaselineIndex == d.reuseBaselineIndex &&
 		run.ComparisonFingerprint == d.comparisonFingerprint &&
 		run.DefinitionFingerprint == d.definitionFingerprint
 }
 
 func (r ExperimentRun) isLegacyBaseline() bool {
-	return r.Variant == "baseline" && r.KnowledgeBaseID == "" && r.DatasetID == "" && r.Profile == "" && r.TopK == 0 && r.ParserMethod == "" && r.ChunkSizeTokens == 0 && r.ChunkOverlapTokens == 0 && !r.ContextualRetrievalEnabled && r.ComparisonFingerprint == "" && r.DefinitionFingerprint == ""
+	return r.Variant == "baseline" && r.KnowledgeBaseID == "" && r.DatasetID == "" && r.Profile == "" && r.TopK == 0 && r.ParserMethod == "" && r.ChunkSizeTokens == 0 && r.ChunkOverlapTokens == 0 && !r.ContextualRetrievalEnabled && (r.RetrievalStrategy == "" || r.RetrievalStrategy == TutorialRetrievalStrategyHybrid) && !r.ReusedBaselineIndex && r.ComparisonFingerprint == "" && r.DefinitionFingerprint == ""
 }
 
 func manifestSHA256(manifest Manifest) string { return jsonSHA256(manifest) }

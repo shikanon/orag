@@ -79,22 +79,32 @@ func runsComparable(baseline, candidate ExperimentRun) bool {
 		baseline.ID == candidate.BaselineRunID && baseline.EvaluationRunID != "" && candidate.EvaluationRunID != "" &&
 		baseline.ComparisonFingerprint != "" && baseline.ComparisonFingerprint == candidate.ComparisonFingerprint &&
 		baseline.DatasetID == candidate.DatasetID && baseline.Profile == candidate.Profile && baseline.TopK == candidate.TopK &&
+		(candidate.Variant != TutorialP4SparseCandidateID || baseline.KnowledgeBaseID == candidate.KnowledgeBaseID) &&
 		baseline.ParserMethod == "basic" && baseline.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && baseline.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
-		!baseline.ContextualRetrievalEnabled && baseline.ContextualizedChunkCount == 0 && baseline.AverageContextTokens == 0 &&
+		!baseline.ContextualRetrievalEnabled && runRetrievalStrategy(baseline) == TutorialRetrievalStrategyHybrid && !baseline.ReusedBaselineIndex && baseline.ContextualizedChunkCount == 0 && baseline.AverageContextTokens == 0 &&
 		baseline.IndexedChunkCount > 0 && baseline.AverageChunkTokens > 0 && candidate.IndexedChunkCount > 0 && candidate.AverageChunkTokens > 0
 }
 
 func isComparableTutorialCandidate(candidate ExperimentRun) bool {
 	switch candidate.Variant {
 	case TutorialP1StructuredJSONCandidateID:
-		return candidate.ParserMethod == TutorialStructuredJSONParserMethod && candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens && !candidate.ContextualRetrievalEnabled
+		return candidate.ParserMethod == TutorialStructuredJSONParserMethod && candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens && !candidate.ContextualRetrievalEnabled && runRetrievalStrategy(candidate) == TutorialRetrievalStrategyHybrid && !candidate.ReusedBaselineIndex
 	case TutorialP2RecursiveChunkCandidateID:
-		return candidate.ParserMethod == "basic" && candidate.ChunkSizeTokens == TutorialP2ChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens && !candidate.ContextualRetrievalEnabled
+		return candidate.ParserMethod == "basic" && candidate.ChunkSizeTokens == TutorialP2ChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens && !candidate.ContextualRetrievalEnabled && runRetrievalStrategy(candidate) == TutorialRetrievalStrategyHybrid && !candidate.ReusedBaselineIndex
 	case TutorialP3ContextualCandidateID:
-		return candidate.ParserMethod == "basic" && candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens && candidate.ContextualRetrievalEnabled && candidate.ContextualizedChunkCount > 0 && candidate.AverageContextTokens > 0
+		return candidate.ParserMethod == "basic" && candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens && candidate.ContextualRetrievalEnabled && runRetrievalStrategy(candidate) == TutorialRetrievalStrategyHybrid && !candidate.ReusedBaselineIndex && candidate.ContextualizedChunkCount > 0 && candidate.AverageContextTokens > 0
+	case TutorialP4SparseCandidateID:
+		return candidate.ParserMethod == "basic" && candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens && !candidate.ContextualRetrievalEnabled && candidate.RetrievalStrategy == TutorialRetrievalStrategySparse && candidate.ReusedBaselineIndex && candidate.KnowledgeBaseID != ""
 	default:
 		return false
 	}
+}
+
+func runRetrievalStrategy(run ExperimentRun) string {
+	if run.RetrievalStrategy == "" {
+		return TutorialRetrievalStrategyHybrid
+	}
+	return run.RetrievalStrategy
 }
 
 func indexMetricDeltas(baseline, candidate ExperimentRun) []ExperimentMetricDelta {

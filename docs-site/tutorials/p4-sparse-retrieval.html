@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ORAG P4 sparse retrieval tutorial candidate.">
+  <title>ORAG P4 sparse retrieval</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="wordmark" href="../index.html" aria-label="ORAG home">ORAG</a>
+    <nav aria-label="Primary navigation"><a href="../index.html">Documentation</a><a href="../api.html">API Reference</a><a href="https://github.com/shikanon/orag">GitHub ↗</a></nav>
+  </header>
+  <main>
+    <section class="hero section-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">Experimental tutorial · P4</p>
+        <h1>Sparse retrieval,<br>one variable at a time.</h1>
+        <p class="lede"><code>p4_sparse_retrieval</code> reuses a compatible P0 index and changes only the evaluator's retriever to sparse.</p>
+        <div class="actions"><a class="button button-primary" href="https://github.com/shikanon/orag/blob/main/docs/tutorials/p4-sparse-retrieval-candidate.md">Read the full guide</a><a class="button button-secondary" href="../api.html">Explore the API</a></div>
+      </div>
+      <div class="eval-frame"><div class="frame-head"><div><span class="status-dot"></span><strong>Auditable contract</strong></div><code>P0 → P4</code></div><div class="frame-body"><div class="frame-title"><div><p class="muted">Single-variable experiment</p><h2>Pure sparse retrieval</h2></div><span class="badge experimental">experimental</span></div><div class="metrics"><article><span>Parser</span><strong>Basic</strong><small>unchanged from P0</small></article><article><span>Chunking</span><strong>800/120</strong><small>unchanged from P0</small></article><article><span>Index</span><strong>P0 reuse</strong><small>no second ingest pass</small></article></div></div></div>
+    </section>
+    <section class="resources section-grid">
+      <article><p class="eyebrow">What changes</p><h2>Only the retriever.</h2><p class="section-copy">P4 evaluates the P0 knowledge base with a sparse retriever. Server wiring removes the pipeline and semantic cache from this evaluator.</p></article>
+      <article><p class="eyebrow">What is inherited</p><h2>The P0 index facts.</h2><p class="section-copy">No duplicate indexing occurs. Durable audit fields record the sparse strategy and that the P0 index was reused.</p></article>
+      <article><p class="eyebrow">When comparison is valid</p><h2>Only direct P0 → P4.</h2><p class="section-copy">The API requires one compatible completed P0 parent, the identical knowledge base, frozen environment, and normal evaluation records.</p></article>
+      <article><p class="eyebrow">What it does not prove</p><h2>No automatic superiority.</h2><p class="section-copy">Inherited index metrics are not a quality, cost, latency, or confidence claim. Read the declared evaluation metrics separately.</p></article>
+    </section>
+    <section class="quickstart section-grid"><div><p class="eyebrow">Reproduce it</p><h2>Run the controlled walkthrough.</h2><p class="section-copy">The real browser regression starts PostgreSQL, Qdrant, migrations, API, Console, and a controlled immutable Pack. It runs P0 then P4 and verifies sparse audit facts and P0-index reuse.</p></div><div class="terminal"><div class="terminal-head"><span></span><span></span><span></span><em>orag — tutorial P4</em></div><pre><span class="terminal-dim">$</span> make console-real-tutorial-clone-e2e
+
+<span class="terminal-blue">✓</span> P0 baseline completed
+<span class="terminal-blue">✓</span> P4 uses sparse retrieval
+<span class="terminal-blue">✓</span> P0 index facts inherited
+<span class="terminal-coral">✓</span> direct P0 → P4 comparison ready</pre></div></section>
+  </main>
+  <footer><a class="wordmark" href="../index.html">ORAG</a><span>Apache-2.0</span><a href="https://github.com/shikanon/orag/security/policy">Security</a><a href="https://github.com/shikanon/orag">GitHub ↗</a></footer>
+</body>
+</html>

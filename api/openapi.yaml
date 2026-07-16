@@ -3008,6 +3008,15 @@ components:
           type: boolean
           readOnly: true
           description: Whether this immutable Pack-declared variant uses server-owned contextual retrieval.
+        retrieval_strategy:
+          type: string
+          readOnly: true
+          enum: [hybrid, sparse]
+          description: Immutable server-owned retriever strategy for this Pack-declared variant.
+        reuse_baseline_index:
+          type: boolean
+          readOnly: true
+          description: Whether this variant evaluates the compatible P0 index without a second indexing pass.
         available:
           type: boolean
           description: Whether this installed Pack currently has a runnable runtime root.
@@ -3098,6 +3107,15 @@ components:
           type: boolean
           readOnly: true
           description: Whether the stored server-derived execution definition enabled contextual retrieval.
+        retrieval_strategy:
+          type: string
+          readOnly: true
+          enum: [hybrid, sparse]
+          description: Stored server-derived retriever strategy.
+        reused_baseline_index:
+          type: boolean
+          readOnly: true
+          description: Whether this run inherited measured index facts from its compatible P0 parent.
         indexed_chunk_count:
           type: integer
           readOnly: true

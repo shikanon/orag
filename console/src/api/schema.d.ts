@@ -1759,6 +1759,13 @@ export interface components {
             readonly chunk_overlap_tokens?: number;
             /** @description Whether this immutable Pack-declared variant uses server-owned contextual retrieval. */
             readonly contextual_retrieval?: boolean;
+            /**
+             * @description Immutable server-owned retriever strategy for this Pack-declared variant.
+             * @enum {string}
+             */
+            readonly retrieval_strategy?: "hybrid" | "sparse";
+            /** @description Whether this variant evaluates the compatible P0 index without a second indexing pass. */
+            readonly reuse_baseline_index?: boolean;
             /** @description Whether this installed Pack currently has a runnable runtime root. */
             available: boolean;
         };
@@ -1805,6 +1812,13 @@ export interface components {
             readonly chunk_overlap_tokens?: number;
             /** @description Whether the stored server-derived execution definition enabled contextual retrieval. */
             readonly contextual_retrieval_enabled?: boolean;
+            /**
+             * @description Stored server-derived retriever strategy.
+             * @enum {string}
+             */
+            readonly retrieval_strategy?: "hybrid" | "sparse";
+            /** @description Whether this run inherited measured index facts from its compatible P0 parent. */
+            readonly reused_baseline_index?: boolean;
             /** @description Measured chunks stored during this run's private-pack indexing stage. */
             readonly indexed_chunk_count?: number;
             /**

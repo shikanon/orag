@@ -50,7 +50,7 @@ export function TutorialExperimentWorkbench() {
   return <main className="content tutorial-workbench">
     <Link className="back-link" to={`/projects/${projectId}/tutorial/setup`}>← 返回安装进度</Link>
     <header className="page-header">
-      <div><p className="eyebrow">P0 → 候选 Live Run</p><h1>文本 Quick 单变量实验</h1><p>每次运行只从项目私有 Pack 读取已校验内容。候选只使用 Pack 声明的服务器配置和独立索引；模型、评测集和检索配置均由服务端固定。</p></div>
+      <div><p className="eyebrow">P0 → 候选 Live Run</p><h1>文本 Quick 单变量实验</h1><p>每次运行只从项目私有 Pack 读取已校验内容。候选只使用 Pack 声明的服务器配置；除明确标注复用 P0 索引的检索实验外，索引彼此独立。模型、评测集和检索配置均由服务端固定。</p></div>
       <span className={`tutorial-job-status ${run.data?.status ?? (ready ? 'completed' : 'failed')}`}>{run.data ? statusText(run.data.status) : ready ? '可以运行' : '不可运行'}</span>
     </header>
     <section className="tutorial-workbench-grid">
@@ -80,6 +80,7 @@ function VariantCard({ variant, disabled, pending, onStart }: { variant: Tutoria
     <p>解析器：<code>{variant.parser_method}</code></p>
     {variant.chunk_size_tokens ? <p>分块：<code>{variant.chunk_size_tokens}/{variant.chunk_overlap_tokens ?? 0}</code>（大小/重叠文本单元）</p> : null}
     <p>上下文化检索：{variant.contextual_retrieval ? '已由服务端固定启用' : '未启用'}</p>
+    <p>召回策略：<code>{variant.retrieval_strategy || 'hybrid'}</code>{variant.reuse_baseline_index ? '；复用兼容 P0 索引' : ''}</p>
     <p>{variantDescription(variant, baseline)}</p>
     <button className={baseline ? 'primary-button' : 'secondary-button'} disabled={disabled} onClick={() => onStart(variant.id)}>{pending ? '正在提交…' : variantButtonLabel(variant)}</button>
   </article>
@@ -91,7 +92,7 @@ function RunProgress({ run, active, cancelPending, onCancel }: { run?: TutorialE
     <h2>{run ? stageLabel[run.stage] : '尚未开始'}</h2>
     {run ? <>
       <p>变体：<code>{run.variant}</code> · 状态：{statusText(run.status)}</p>
-      <ol className="tutorial-stage-list"><li className={run.stage === 'index_private_pack' ? 'active' : 'done'}><span>构建独立索引</span><small>{run.stage === 'index_private_pack' ? statusText(run.status) : '完成'}</small></li><li className={run.stage === 'run_evaluation' ? 'active' : run.stage === 'completed' ? 'done' : 'pending'}><span>执行标准评测</span><small>{run.stage === 'run_evaluation' ? statusText(run.status) : run.stage === 'completed' ? '完成' : '等待'}</small></li></ol>
+      <ol className="tutorial-stage-list"><li className={run.reused_baseline_index ? 'done' : run.stage === 'index_private_pack' ? 'active' : 'done'}><span>{run.reused_baseline_index ? '复用兼容 P0 索引' : '构建独立索引'}</span><small>{run.reused_baseline_index ? '已继承' : run.stage === 'index_private_pack' ? statusText(run.status) : '完成'}</small></li><li className={run.stage === 'run_evaluation' ? 'active' : run.stage === 'completed' ? 'done' : 'pending'}><span>执行标准评测</span><small>{run.stage === 'run_evaluation' ? statusText(run.status) : run.stage === 'completed' ? '完成' : '等待'}</small></li></ol>
       {run.status === 'failed' ? <div className="tutorial-failure" role="alert">服务端失败代码：{run.failure_code || 'live_run_failed'}</div> : null}
       <RunAudit run={run} />
       {active ? <button className="secondary-button" disabled={cancelPending} onClick={onCancel}>{cancelPending ? '正在取消…' : '取消运行'}</button> : null}
@@ -107,6 +108,8 @@ function RunAudit({ run }: { run: TutorialExperimentRun }) {
     <div><dt>已索引 Chunk</dt><dd>{run.indexed_chunk_count ?? '—'}</dd></div>
     <div><dt>平均 Chunk 文本单元</dt><dd>{run.average_chunk_tokens == null ? '—' : formatMetric(run.average_chunk_tokens)}</dd></div>
     <div><dt>上下文化检索</dt><dd>{run.contextual_retrieval_enabled ? '已应用' : '未应用'}</dd></div>
+    <div><dt>召回策略</dt><dd><code>{run.retrieval_strategy || 'hybrid'}</code></dd></div>
+    {run.reused_baseline_index ? <div><dt>索引来源</dt><dd>兼容 P0 父运行</dd></div> : null}
     {run.contextual_retrieval_enabled ? <><div><dt>已上下文化 Chunk</dt><dd>{run.contextualized_chunk_count ?? '—'}</dd></div><div><dt>平均上下文文本单元</dt><dd>{run.average_context_tokens == null ? '—' : formatMetric(run.average_context_tokens)}</dd></div></> : null}
     {run.baseline_run_id ? <div><dt>P0 父运行</dt><dd><code>{run.baseline_run_id}</code></dd></div> : null}
     {run.comparison_fingerprint ? <div><dt>比较指纹</dt><dd><code>{shortFingerprint(run.comparison_fingerprint)}</code></dd></div> : null}
@@ -139,6 +142,7 @@ function variantTitle(variant: TutorialExperimentVariant) {
   if (variant.id === 'p1_structured_json') return 'Structured JSON parser · P1'
 	if (variant.id === 'p2_recursive_400_80') return 'Recursive chunking 400/80 · P2'
 	if (variant.id === 'p3_contextual_retrieval') return 'Contextual retrieval · P3'
+	if (variant.id === 'p4_sparse_retrieval') return 'Sparse retrieval · P4'
   return variant.chapter || variant.id
 }
 function variantDescription(variant: TutorialExperimentVariant, baseline: boolean) {
@@ -146,6 +150,7 @@ function variantDescription(variant: TutorialExperimentVariant, baseline: boolea
   if (variant.id === 'p1_structured_json') return '独立 Knowledge Base；仅改变 JSON 文档到 Markdown 的确定性结构化解析。'
 	if (variant.id === 'p2_recursive_400_80') return '独立 Knowledge Base；仅改变递归分块为 400/80，解析器保持 Basic。'
 	if (variant.id === 'p3_contextual_retrieval') return '独立 Knowledge Base；仅使用固定提示词和严格失败策略生成上下文，解析与分块保持 P0。'
+	if (variant.id === 'p4_sparse_retrieval') return '复用兼容 P0 索引；只将评测检索器替换为纯 sparse，解析、分块、评测集与 Top-K 保持 P0。'
   return '独立 Knowledge Base；仅使用此 Pack 声明的单变量服务器配置。'
 }
 function variantButtonLabel(variant: TutorialExperimentVariant) {
@@ -153,5 +158,6 @@ function variantButtonLabel(variant: TutorialExperimentVariant) {
   if (variant.id === 'p1_structured_json') return '运行 P1 解析候选'
 	if (variant.id === 'p2_recursive_400_80') return '运行 P2 分块候选'
 	if (variant.id === 'p3_contextual_retrieval') return '运行 P3 上下文化候选'
+	if (variant.id === 'p4_sparse_retrieval') return '运行 P4 稀疏召回候选'
   return `运行 ${variant.chapter || '候选'}`
 }

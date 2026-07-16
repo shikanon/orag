@@ -128,6 +128,8 @@ type ExperimentVariant struct {
 	ChunkSizeTokens     int    `json:"chunk_size_tokens,omitempty"`
 	ChunkOverlapTokens  int    `json:"chunk_overlap_tokens,omitempty"`
 	ContextualRetrieval bool   `json:"contextual_retrieval"`
+	RetrievalStrategy   string `json:"retrieval_strategy"`
+	ReuseBaselineIndex  bool   `json:"reuse_baseline_index"`
 	Available           bool   `json:"available"`
 }
 
@@ -299,19 +301,28 @@ func publicExperiment(experiment Experiment) Experiment {
 	experiment.Variants = []ExperimentVariant{{
 		ID: "baseline", Chapter: "p0_basic_baseline", ParserMethod: "basic",
 		ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens,
-		Available: available,
+		RetrievalStrategy: TutorialRetrievalStrategyHybrid,
+		Available:         available,
 	}}
 	if experiment.PackManifest.Runtime != nil {
 		for _, candidate := range experiment.PackManifest.Runtime.Candidates {
 			experiment.Variants = append(experiment.Variants, ExperimentVariant{
 				ID: candidate.ID, Chapter: candidate.Chapter, ParserMethod: candidate.ParserMethod,
 				ChunkSizeTokens: candidate.ChunkSizeTokens, ChunkOverlapTokens: candidate.ChunkOverlapTokens,
-				ContextualRetrieval: candidate.ContextualRetrieval, Available: available,
+				ContextualRetrieval: candidate.ContextualRetrieval, RetrievalStrategy: candidateRetrievalStrategy(candidate),
+				ReuseBaselineIndex: candidate.ReuseBaselineIndex, Available: available,
 			})
 		}
 	}
 	experiment.PackManifest = Manifest{}
 	return experiment
+}
+
+func candidateRetrievalStrategy(candidate RuntimeCandidate) string {
+	if candidate.RetrievalStrategy != "" {
+		return candidate.RetrievalStrategy
+	}
+	return TutorialRetrievalStrategyHybrid
 }
 
 // RecoverPending returns work that was queued before process startup and
