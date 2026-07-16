@@ -74,6 +74,7 @@ type Manifest struct {
 	VideoProtocol    *VideoBenchmarkProtocol `json:"video_protocol,omitempty"`
 	VideoSource      *VideoSource            `json:"video_source,omitempty"`
 	TemporalSegments []TemporalSegment       `json:"temporal_segments,omitempty"`
+	TemporalAssets   []PackObject            `json:"temporal_assets,omitempty"`
 }
 
 type License struct {
@@ -424,5 +425,6 @@ func cloneManifest(manifest Manifest) Manifest {
 		cloned.VideoSource = &source
 	}
 	cloned.TemporalSegments = slices.Clone(manifest.TemporalSegments)
+	cloned.TemporalAssets = slices.Clone(manifest.TemporalAssets)
 	return cloned
 }
