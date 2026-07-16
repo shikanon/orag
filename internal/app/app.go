@@ -51,6 +51,7 @@ type App struct {
 	TutorialCloneRunner *tutorial.CloneRunner
 	TutorialRuns        *tutorial.LiveRunService
 	TutorialRunRunner   *tutorial.ExperimentRunRunner
+	VideoImports        *tutorial.VideoImportService
 	Eval                eval.Runner
 	EvaluationPolicy    *evaluationpolicy.Service
 	Optimizer           *optimizer.Service
@@ -170,6 +171,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	tutorialClones.ConfigureInstaller(projects, publicPacks, privatePacks)
 	tutorialClones.ConfigureRecipeSource(recipeSources)
 	tutorialClones.ConfigureRuntime(tutorial.ResourceInitializer{KnowledgeBases: backend.store, Datasets: datasets})
+	videoImports := tutorial.NewVideoImportService(backend.tutorialCloneRepo, privatePacks, "")
 	releaseSvc := release.NewService(backend.releaseRepo)
 	pipelineSvc := pipeline.NewService(backend.pipelineRepo, pipeline.BuiltinRegistry())
 	pipelineCompiler := pipeline.NewCompiler(ragSvc, pipeline.BuiltinRegistry())
@@ -313,6 +315,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		TutorialCloneRunner: tutorialCloneRunner,
 		TutorialRuns:        tutorialRuns,
 		TutorialRunRunner:   tutorialRunRunner,
+		VideoImports:        videoImports,
 		Eval:                evalRunner,
 		EvaluationPolicy:    evaluationPolicySvc,
 		Optimizer: &optimizer.Service{

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -13,6 +14,40 @@ import (
 	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/tutorial"
 )
+
+func (s *Server) importTutorialVideoSource(ctx context.Context, c *app.RequestContext) {
+	principal, ok := requestPrincipal(c)
+	if !ok || !authorizeRequest(c, auth.ActionTutorialCloneCreate, tenantID(c), c.Param("project_id")) {
+		return
+	}
+	if s.App.VideoImports == nil || string(c.FormValue("license_confirmed")) != "true" {
+		writeError(c, consts.StatusBadRequest, "invalid_video_import", "license_confirmed must be true")
+		return
+	}
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		writeError(c, consts.StatusBadRequest, "invalid_video_import", "multipart field file is required")
+		return
+	}
+	duration, err := strconv.ParseInt(string(c.FormValue("duration_ms")), 10, 64)
+	if err != nil || duration <= 0 {
+		writeError(c, consts.StatusBadRequest, "invalid_video_import", "duration_ms must be positive")
+		return
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		writeError(c, consts.StatusBadRequest, "invalid_video_import", "file is unavailable")
+		return
+	}
+	defer file.Close()
+	source := tutorial.VideoSource{Alias: string(c.FormValue("alias")), SHA256: string(c.FormValue("sha256")), Bytes: fileHeader.Size, ContentType: string(c.FormValue("content_type")), DurationMS: duration}
+	_, segments, err := s.App.VideoImports.Import(ctx, tutorial.Subject{TenantID: principal.TenantID, ID: principal.SubjectID}, c.Param("project_id"), source, file)
+	if err != nil {
+		writeError(c, consts.StatusBadRequest, "invalid_video_import", "video source could not be verified")
+		return
+	}
+	c.JSON(consts.StatusCreated, map[string]any{"source_alias": source.Alias, "temporal_segment_count": len(segments)})
+}
 
 type tutorialCloneRequest struct {
 	Version  string `json:"version"`
