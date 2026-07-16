@@ -12,7 +12,7 @@ import (
 var _ tutorial.ExperimentRunRepository = (*TutorialCloneRepository)(nil)
 
 const tutorialExperimentRunColumns = `id, tenant_id, project_id, experiment_id, variant,
-	COALESCE(baseline_run_id, ''), comparison_fingerprint, definition_fingerprint,
+	COALESCE(baseline_run_id, ''), comparison_fingerprint, definition_fingerprint, pack_manifest_sha256, runtime_environment_sha256, build_revision,
 	knowledge_base_id, dataset_id, profile, top_k, parser_method,
 	chunk_size_tokens, chunk_overlap_tokens, contextual_retrieval_enabled, retrieval_strategy, reused_baseline_index, query_expansion_mode, multi_query_count, rerank_enabled, graph_retrieval_enabled, context_pack_top_n, context_pack_max_tokens, indexed_chunk_count, average_chunk_tokens,
 	contextualized_chunk_count, average_context_tokens,
@@ -26,14 +26,14 @@ func (r *TutorialCloneRepository) CreateOrGetRun(ctx context.Context, run tutori
 	defer tx.Rollback(ctx)
 	created, err := scanTutorialExperimentRun(tx.QueryRow(ctx, `
 		INSERT INTO tutorial_experiment_runs(
-			id, tenant_id, project_id, experiment_id, variant, baseline_run_id, comparison_fingerprint, definition_fingerprint,
+			id, tenant_id, project_id, experiment_id, variant, baseline_run_id, comparison_fingerprint, definition_fingerprint, pack_manifest_sha256, runtime_environment_sha256, build_revision,
 			knowledge_base_id, dataset_id, profile, top_k, parser_method, chunk_size_tokens, chunk_overlap_tokens, contextual_retrieval_enabled, retrieval_strategy, reused_baseline_index, query_expansion_mode, multi_query_count, rerank_enabled, graph_retrieval_enabled, context_pack_top_n, context_pack_max_tokens,
 			indexed_chunk_count, average_chunk_tokens, contextualized_chunk_count, average_context_tokens,
 			idempotency_key, stage, status, evaluation_run_id, failure_code, created_at, updated_at
-		) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
+		) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)
 		ON CONFLICT (tenant_id, project_id, variant, idempotency_key) DO NOTHING
 		RETURNING `+tutorialExperimentRunColumns,
-		run.ID, run.TenantID, run.ProjectID, run.ExperimentID, run.Variant, run.BaselineRunID, run.ComparisonFingerprint, run.DefinitionFingerprint,
+		run.ID, run.TenantID, run.ProjectID, run.ExperimentID, run.Variant, run.BaselineRunID, run.ComparisonFingerprint, run.DefinitionFingerprint, run.PackManifestSHA256, run.RuntimeEnvironmentSHA256, run.BuildRevision,
 		run.KnowledgeBaseID, run.DatasetID, run.Profile, run.TopK, run.ParserMethod, run.ChunkSizeTokens, run.ChunkOverlapTokens, run.ContextualRetrievalEnabled, run.RetrievalStrategy, run.ReusedBaselineIndex, run.QueryExpansionMode, run.MultiQueryCount, run.RerankEnabled, run.GraphRetrievalEnabled, run.ContextPackTopN, run.ContextPackMaxTokens,
 		run.IndexedChunkCount, run.AverageChunkTokens, run.ContextualizedChunkCount, run.AverageContextTokens,
 		idempotencyKey, run.Stage, run.Status, run.EvaluationRunID, run.FailureCode, run.CreatedAt, run.UpdatedAt,
@@ -288,7 +288,7 @@ func scanTutorialExperimentRun(row tutorialExperimentRunScanner) (tutorial.Exper
 	var run tutorial.ExperimentRun
 	err := row.Scan(
 		&run.ID, &run.TenantID, &run.ProjectID, &run.ExperimentID, &run.Variant,
-		&run.BaselineRunID, &run.ComparisonFingerprint, &run.DefinitionFingerprint,
+		&run.BaselineRunID, &run.ComparisonFingerprint, &run.DefinitionFingerprint, &run.PackManifestSHA256, &run.RuntimeEnvironmentSHA256, &run.BuildRevision,
 		&run.KnowledgeBaseID, &run.DatasetID, &run.Profile, &run.TopK, &run.ParserMethod,
 		&run.ChunkSizeTokens, &run.ChunkOverlapTokens, &run.ContextualRetrievalEnabled, &run.RetrievalStrategy, &run.ReusedBaselineIndex, &run.QueryExpansionMode, &run.MultiQueryCount, &run.RerankEnabled, &run.GraphRetrievalEnabled, &run.ContextPackTopN, &run.ContextPackMaxTokens, &run.IndexedChunkCount, &run.AverageChunkTokens,
 		&run.ContextualizedChunkCount, &run.AverageContextTokens,

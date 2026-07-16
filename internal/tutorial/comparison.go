@@ -78,12 +78,22 @@ func runsComparable(baseline, candidate ExperimentRun) bool {
 		baseline.Variant == "baseline" && isComparableTutorialCandidate(candidate) &&
 		baseline.ID == candidate.BaselineRunID && baseline.EvaluationRunID != "" && candidate.EvaluationRunID != "" &&
 		baseline.ComparisonFingerprint != "" && baseline.ComparisonFingerprint == candidate.ComparisonFingerprint &&
+		reproductionEvidenceMatches(baseline, candidate) &&
 		baseline.DatasetID == candidate.DatasetID && baseline.Profile == candidate.Profile && baseline.TopK == candidate.TopK &&
 		(candidate.Variant != TutorialP4SparseCandidateID && candidate.Variant != TutorialP5MultiQueryCandidateID && candidate.Variant != TutorialP6RerankCandidateID && candidate.Variant != TutorialP8ContextPackCandidateID || baseline.KnowledgeBaseID == candidate.KnowledgeBaseID) &&
 		(candidate.Variant != TutorialP7GraphCandidateID || baseline.KnowledgeBaseID != candidate.KnowledgeBaseID) &&
 		baseline.ParserMethod == "basic" && baseline.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && baseline.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
 		!baseline.ContextualRetrievalEnabled && runRetrievalStrategy(baseline) == TutorialRetrievalStrategyHybrid && !baseline.ReusedBaselineIndex && runQueryExpansionMode(baseline) == TutorialQueryExpansionNone && baseline.MultiQueryCount == 0 && !baseline.RerankEnabled && !baseline.GraphRetrievalEnabled && baseline.ContextPackTopN == TutorialBaselineContextPackTopN && baseline.ContextPackMaxTokens == TutorialContextPackMaxTokens && baseline.ContextualizedChunkCount == 0 && baseline.AverageContextTokens == 0 &&
 		baseline.IndexedChunkCount > 0 && baseline.AverageChunkTokens > 0 && candidate.IndexedChunkCount > 0 && candidate.AverageChunkTokens > 0
+}
+
+func reproductionEvidenceMatches(baseline, candidate ExperimentRun) bool {
+	if baseline.PackManifestSHA256 == "" && baseline.RuntimeEnvironmentSHA256 == "" && baseline.BuildRevision == "" && candidate.PackManifestSHA256 == "" && candidate.RuntimeEnvironmentSHA256 == "" && candidate.BuildRevision == "" {
+		return true
+	}
+	return baseline.PackManifestSHA256 != "" && baseline.PackManifestSHA256 == candidate.PackManifestSHA256 &&
+		baseline.RuntimeEnvironmentSHA256 != "" && baseline.RuntimeEnvironmentSHA256 == candidate.RuntimeEnvironmentSHA256 &&
+		baseline.BuildRevision != "" && baseline.BuildRevision == candidate.BuildRevision
 }
 
 func isComparableTutorialCandidate(candidate ExperimentRun) bool {

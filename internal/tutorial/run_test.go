@@ -543,11 +543,11 @@ func TestLiveRunRejectsUnavailableRuntimeAndCancelsQueuedRun(t *testing.T) {
 		t.Fatalf("cancelled=%#v err=%v", cancelled, err)
 	}
 	unsupported := experiment
-	unsupported.ID, unsupported.ProjectID, unsupported.Tier = "texp_benchmark", "prj_benchmark", "benchmark"
+	unsupported.ID, unsupported.ProjectID, unsupported.Tier = "texp_unsupported", "prj_unsupported", "unsupported"
 	if err := repo.EnsureExperiment(context.Background(), unsupported); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.Start(context.Background(), subject, unsupported.ProjectID, "benchmark"); err != ErrRuntimeUnavailable {
+	if _, _, err := service.Start(context.Background(), subject, unsupported.ProjectID, "unsupported"); err != ErrRuntimeUnavailable {
 		t.Fatalf("unsupported tier start error=%v", err)
 	}
 }

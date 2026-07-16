@@ -52,6 +52,9 @@ type ExperimentRun struct {
 	BaselineRunID              string               `json:"baseline_run_id,omitempty"`
 	ComparisonFingerprint      string               `json:"comparison_fingerprint,omitempty"`
 	DefinitionFingerprint      string               `json:"definition_fingerprint,omitempty"`
+	PackManifestSHA256         string               `json:"pack_manifest_sha256,omitempty"`
+	RuntimeEnvironmentSHA256   string               `json:"runtime_environment_sha256,omitempty"`
+	BuildRevision              string               `json:"build_revision,omitempty"`
 	KnowledgeBaseID            string               `json:"knowledge_base_id,omitempty"`
 	DatasetID                  string               `json:"dataset_id,omitempty"`
 	Profile                    string               `json:"profile,omitempty"`
@@ -222,6 +225,7 @@ func (s *LiveRunService) StartVariant(ctx context.Context, subject Subject, proj
 		ID: s.newID("terun"), TenantID: subject.TenantID, ProjectID: projectID, ExperimentID: experiment.ID,
 		Variant: variant, BaselineRunID: baselineRunID, ComparisonFingerprint: definition.comparisonFingerprint,
 		DefinitionFingerprint: definition.definitionFingerprint, KnowledgeBaseID: definition.knowledgeBaseID,
+		PackManifestSHA256: definition.packManifestSHA256, RuntimeEnvironmentSHA256: definition.runtimeEnvironmentSHA256, BuildRevision: definition.buildRevision,
 		DatasetID: definition.datasetID, Profile: definition.profile, TopK: definition.topK, ParserMethod: definition.parserMethod,
 		ChunkSizeTokens: definition.chunkSizeTokens, ChunkOverlapTokens: definition.chunkOverlapTokens,
 		ContextualRetrievalEnabled: definition.contextualRetrievalEnabled,

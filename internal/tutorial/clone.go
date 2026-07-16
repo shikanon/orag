@@ -408,7 +408,7 @@ func (s *CloneService) Run(ctx context.Context, subject Subject, jobID string) e
 				return s.fail(ctx, job, err)
 			}
 			resources := RuntimeResources{Status: "runtime_unavailable"}
-			if supportsTextQuickBaseline(job.TemplateID, job.Tier) && manifest.Runtime != nil && s.runtime != nil {
+			if supportsTextRuntime(job.TemplateID, job.Tier) && manifest.Runtime != nil && s.runtime != nil {
 				resources, err = s.runtime.Ensure(ctx, job, manifest)
 				if err != nil {
 					return s.fail(ctx, job, err)
@@ -565,8 +565,8 @@ func templatePack(template Template, tier string) (PackRef, bool) {
 	return PackRef{}, false
 }
 
-func supportsTextQuickBaseline(templateID, tier string) bool {
-	return templateID == "text-rag" && tier == "quick"
+func supportsTextRuntime(templateID, tier string) bool {
+	return templateID == "text-rag" && (tier == "quick" || tier == "benchmark")
 }
 
 func resumeStage(stage CloneStage) CloneStage {

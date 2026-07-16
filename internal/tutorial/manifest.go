@@ -196,7 +196,7 @@ func validateRuntimeManifest(runtime RuntimeManifest, template Template, objects
 	if template.Modality != ModalityText {
 		return fmt.Errorf("%w: runtime declarations are only supported for text packs", ErrManifestInvalid)
 	}
-	if runtime.Baseline.Profile != "realtime" || runtime.Baseline.TopK < 1 || runtime.Baseline.TopK > 100 {
+	if !validRuntimeProfile(runtime.Baseline.Profile) || runtime.Baseline.TopK < 1 || runtime.Baseline.TopK > 100 {
 		return fmt.Errorf("%w: runtime baseline must use bounded realtime retrieval", ErrManifestInvalid)
 	}
 	if strings.TrimSpace(runtime.Dataset.Name) == "" || len(runtime.Dataset.Items) == 0 || len(runtime.Dataset.Items) > maxManifestObjects {
@@ -235,6 +235,10 @@ func validateRuntimeManifest(runtime RuntimeManifest, template Template, objects
 		}
 	}
 	return nil
+}
+
+func validRuntimeProfile(profile string) bool {
+	return profile == "realtime" || profile == "high_precision"
 }
 
 func validateRuntimeCandidates(runtime RuntimeManifest, objectsByPath map[string]PackObject) error {
