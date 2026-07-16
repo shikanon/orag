@@ -41,7 +41,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 | HTTP API、知识库、入库、JSON/SSE 查询 | `beta` | 数据一致性问题关闭，完成版本化契约与生产试点 |
 | PostgreSQL + Qdrant 混合检索、RRF、rerank、语义缓存 | `beta` | 完成负载、故障恢复和兼容矩阵验证 |
 | 数据集、评测运行、LLM-as-Judge、optimizer | `beta` | 公开可复现 benchmark，完成预算与并发保护 |
-| 应用内 trace、Prometheus 指标、ready/health | `beta` | 接入标准 exporter，提供仪表盘、告警与数据保留说明 |
+| 应用内 trace、Prometheus 指标、ready/health | `beta` | 完成 OTel metrics exporter、持久化/采样策略与跨服务拓扑 |
 | Contextual Retrieval、RAPTOR、Query Router、Graph Retrieval | `experimental` | 每项具备独立消融结果、成本说明和回退行为 |
 | Offline Knowledge、MCP 自检/诊断/自运维 | `experimental` | 消除 fixture/占位依赖，完成安全边界与人工批准审计 |
 | ORAG Console | `experimental` | 完成编排、API 调试、评测门禁和发布回滚黄金路径 |
@@ -154,7 +154,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 ### 可观测和质量门禁
 
-- 接入 OpenTelemetry trace/metrics exporter，提供可导入的 Prometheus/Grafana 资源和基础告警规则。
+- 已接入可选 OpenTelemetry trace exporter，并提供可导入的 Prometheus/Grafana 资源和基础告警规则；待完成 OTel metrics exporter、持久化、采样与跨服务拓扑。
 - CI 覆盖 Go 单测/vet/race、OpenAPI、Console typecheck/unit/build/E2E、PostgreSQL + Qdrant 集成测试和双架构镜像 smoke。
 - 发布公开性能基线：入库吞吐、查询 p50/p95、缓存命中、评测耗时、模型调用量和成本口径。
 

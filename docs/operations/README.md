@@ -5,6 +5,7 @@
 - [Project 资源归属迁移](project-ownership-migration.md)：说明 `000018` 的默认 Project 回填、验证与安全回滚边界。
 - [Reference server deployment](server-deployment.md)：在 `orag.tensorbytes.com` 上使用 GHCR 发布镜像部署 API、Console、迁移和依赖。
 - [Backup, restore, and disaster recovery](disaster-recovery.md)：PostgreSQL 与 Qdrant 的一致性备份、隔离恢复演练、校验和回滚流程。
+- [Grafana dashboard](grafana.md)：导入 ORAG Prometheus 指标概览、关联基础告警并保持只读处置边界。
 
 ## 运行依赖
 
@@ -73,7 +74,7 @@ GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-che
 
 metrics label 只使用受控低基数字段。不要把 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本作为 Prometheus label；排查单次请求应使用日志和 trace 查询。
 
-当前指标是进程内 counter/histogram，服务重启后从零开始；当前没有分位数预聚合、持久化或 OTel metrics exporter。
+当前指标是进程内 counter/histogram，服务重启后从零开始；仓库提供可导入的 [Grafana overview dashboard](grafana.md) 和基础 Prometheus 告警规则；当前没有分位数预聚合、持久化或 OTel metrics exporter。
 
 ## 告警接入
 
