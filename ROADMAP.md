@@ -166,7 +166,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 ## 阶段四：评测优先控制面
 
-当前进展：教程实验室已支持持久化、幂等、可恢复的模板 clone 与 Pack 安装，以及 `text-rag` Quick/Benchmark 的 P0–P8 单变量运行。受控 Benchmark Pack 固定 `high_precision`/Top-K 8，持久化 Manifest SHA-256、运行环境 SHA-256、构建版本、评测输入和 evaluator v5 指纹；比较只接受直接 P0 血缘和完全一致的复现证据。`text-rag` 官方 Replay 已作为内嵌、只读、离线快照发布，包含版本化 Pack/环境/构建证据和 P0/P8 审计事实，不代表用户 Live Run。受控 fixture 覆盖真实 PostgreSQL + Qdrant/浏览器路径；官方 Pack 仍需通过独立发布流水线以匿名 HTTPS 和 SHA-256 校验发布。默认公共 OSS 在 2026-07-16 仍返回 `403 AccessDenied`，因此生产可用性仍取决于对象和匿名读 ACL 发布。视觉/视频 Replay 与 Live Run 仍待完成。
+当前进展：教程实验室已支持持久化、幂等、可恢复的模板 clone 与 Pack 安装，以及 `text-rag` Quick/Benchmark 的 P0–P8 单变量运行。受控 Benchmark Pack 固定 `high_precision`/Top-K 8，持久化 Manifest SHA-256、运行环境 SHA-256、构建版本、评测输入和 evaluator v5 指纹；比较只接受直接 P0 血缘和完全一致的复现证据。`text-rag` 官方 Replay 已作为内嵌、只读、离线快照发布，包含版本化 Pack/环境/构建证据和 P0/P8 审计事实，不代表用户 Live Run。`text-rag/1.1.0` 已从锁定的 CRUD-RAG 提交构建并公开发布到匿名 HTTPS：Quick、Benchmark、完整 `data/` 归档、`SOURCE.json` 和 `SHA256SUMS` 均已逐项下载验证。视觉/视频 Replay 与 Live Run 仍待完成。
 
 最新进展：Pack 声明的 P2 `p2_recursive_400_80`、P3 `p3_contextual_retrieval`、P4 `p4_sparse_retrieval`、P5 `p5_multi_query_retrieval`、P6 `p6_rerank_retrieval`、P7 `p7_graph_retrieval` 与 P8 `p8_context_pack` 均为 P0 的直接子实验。P7 保持 P0 的 Basic/800/120 形状、评测集、profile 与 Top-K，但使用独立知识库、固定轻量图关系构建和 GraphRetriever；P8 复用 P0 索引，只改变 Context Pack 的 Top-N（5→3）。教程 evaluator v5 对 P0–P6 强制 explicit hybrid 并关闭 graph/RAPTOR 入库，使 P7 成为唯一图检索变量；P6 仍是唯一 rerank 变量，P8 仍是唯一 Context Pack 变量。运行持久化上下文化、索引复用、查询扩展、rerank、图检索与 Context Pack 事实，比较将 `index_metrics` 与普通评测指标严格分开。受控 `1.0.8` fixture 与真实 PostgreSQL/Qdrant/浏览器 E2E 证明 P0→P8 的隔离、P0 索引复用与 Context Pack 审计；官方公开 `1.0.8` Pack 仍需独立匿名 HTTPS、MIME、长度和 SHA-256 发布流水线。
 
@@ -179,7 +179,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 ### 教程实验闭环
 
-- 已完成官方教程的 clone 与 Pack 安装、Quick P0–P8 候选、受控 `text-rag` Benchmark Run（冻结 `high_precision`/Top-K 8 输入、真实评测指标、P0→P8 复现、Manifest/环境 SHA-256 与构建版本审计），以及离线、只读的官方 text-rag Replay。待完成视觉/视频 Replay 与执行；默认公共 OSS 可用性及官方 Pack 发布仍是外部前置条件。
+- 已完成官方教程的 clone 与 Pack 安装、Quick P0–P8 候选、受控 `text-rag` Benchmark Run（冻结 `high_precision`/Top-K 8 输入、真实评测指标、P0→P8 复现、Manifest/环境 SHA-256 与构建版本审计），以及离线、只读的官方 text-rag Replay。官方 `text-rag/1.1.0` Pack 已公开并通过匿名 SHA-256 验证；待完成视觉/视频 Replay 与执行。
 - 文本、视觉文档和视频教程均使用真实工程/evaluation 数据，不引入模型训练工作流。
 - 每个检索增强策略提供独立消融、成本、延迟、失败回退和推荐场景说明。
 
