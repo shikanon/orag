@@ -74,7 +74,7 @@ visual-recipe-publish:
 
 video-protocol-verify:
 	@test -n "$(VIDEO_PROTOCOL_ROOT)" || (echo "VIDEO_PROTOCOL_ROOT must point to tutorial-protocols/video-rag/1.0.0"; exit 2)
-	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-pack-release -verify-public "$(VIDEO_PROTOCOL_ROOT)"
+	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-pack-release -verify-public "$(VIDEO_PROTOCOL_ROOT)" -public-base-url "$(VIDEO_PROTOCOL_PUBLIC_BASE_URL)"
 
 video-protocol-publish:
 	@test "$(ORAG_PACK_PUBLISH)" = "1" || (echo "set ORAG_PACK_PUBLISH=1 to publish immutable public Protocol objects"; exit 2)
