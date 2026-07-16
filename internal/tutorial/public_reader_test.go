@@ -100,6 +100,13 @@ func TestLocalPrivateStoreCopiesVerifiedContentWithoutEscapingRoot(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
+	present, err := store.HasVerified(context.Background(), PrivateObject{
+		TenantID: "tenant_a", ProjectID: "prj_a", JobID: "tclj_a",
+		Object: VerifiedObject{PackObject: PackObject{SHA256: checksum, Bytes: int64(len(content))}},
+	})
+	if err != nil || !present {
+		t.Fatalf("HasVerified() = %v, %v", present, err)
+	}
 	output := filepath.Join(temp, "output", "tutorial-experiments", "tenant_a", "prj_a", "tclj_a", checksum)
 	got, err := os.ReadFile(output)
 	if err != nil || string(got) != string(content) {

@@ -536,6 +536,14 @@ func (s *CloneService) downloadAndVerifyInstall(ctx context.Context, job CloneJo
 		return s.downloadAndVerifyPack(ctx, job, manifest)
 	}
 	for _, object := range manifest.Objects {
+		privateObject := PrivateObject{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Object: VerifiedObject{PackObject: object}}
+		present, err := s.private.HasVerified(ctx, privateObject)
+		if err != nil {
+			return err
+		}
+		if present {
+			continue
+		}
 		verified, err := s.recipe.Fetch(ctx, RecipeSourceObject{Path: object.Path, SHA256: object.SHA256, Bytes: object.Bytes})
 		if err != nil {
 			return err
@@ -582,6 +590,14 @@ func (s *CloneService) installVerified(ctx context.Context, job CloneJob, manife
 		return s.installVerifiedPack(ctx, job, manifest)
 	}
 	for _, object := range manifest.Objects {
+		privateObject := PrivateObject{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Object: VerifiedObject{PackObject: object}}
+		present, err := s.private.HasVerified(ctx, privateObject)
+		if err != nil {
+			return err
+		}
+		if present {
+			continue
+		}
 		verified, err := s.recipe.Fetch(ctx, RecipeSourceObject{Path: object.Path, SHA256: object.SHA256, Bytes: object.Bytes})
 		if err != nil {
 			return err

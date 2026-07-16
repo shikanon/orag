@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
@@ -32,6 +33,7 @@ type PrivateObject struct {
 // key, URL, or other object-storage detail from an HTTP caller.
 type PrivateStore interface {
 	PutVerified(context.Context, PrivateObject) error
+	HasVerified(context.Context, PrivateObject) (bool, error)
 	ReadVerified(context.Context, PrivateObject) ([]byte, error)
 }
 
@@ -151,6 +153,23 @@ func (s *LocalPrivateStore) ReadVerified(ctx context.Context, input PrivateObjec
 	return readPrivateObject(file, input.Object.PackObject)
 }
 
+func (s *LocalPrivateStore) HasVerified(ctx context.Context, input PrivateObject) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if s == nil || !validPrivateObject(input) {
+		return false, ErrPrivateStoreConfiguration
+	}
+	info, err := os.Stat(filepath.Join(s.destinationDir(input), input.Object.SHA256))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("%w: %v", ErrPrivateStoreRead, err)
+	}
+	return info.Mode().IsRegular() && info.Size() == input.Object.Bytes, nil
+}
+
 func (s *LocalPrivateStore) destinationDir(input PrivateObject) string {
 	return filepath.Join(s.root, s.prefix, input.TenantID, input.ProjectID, input.JobID)
 }
@@ -226,6 +245,24 @@ func (s *AliyunPrivateStore) ReadVerified(ctx context.Context, input PrivateObje
 	}
 	defer reader.Close()
 	return readPrivateObject(reader, input.Object.PackObject)
+}
+
+func (s *AliyunPrivateStore) HasVerified(ctx context.Context, input PrivateObject) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if s == nil || s.bucket == nil || !validPrivateObject(input) {
+		return false, ErrPrivateStoreConfiguration
+	}
+	meta, err := s.bucket.GetObjectMeta(s.objectKey(input))
+	if err != nil {
+		var service oss.ServiceError
+		if errors.As(err, &service) && (service.Code == "NoSuchKey" || service.StatusCode == 404) {
+			return false, nil
+		}
+		return false, fmt.Errorf("%w: %v", ErrPrivateStoreRead, err)
+	}
+	return meta.Get("Content-Length") == strconv.FormatInt(input.Object.Bytes, 10), nil
 }
 
 func (s *AliyunPrivateStore) objectKey(input PrivateObject) string {
