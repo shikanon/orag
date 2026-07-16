@@ -2,7 +2,7 @@ APP_NAME := orag-api
 GOFLAGS ?= -tags=stdjson,gjson
 CGO_ENABLED ?= 0
 
-.PHONY: run test vet fmt tidy sdk-check console-dev console-build console-test console-api-generate console-real-e2e console-real-tutorial-clone-e2e console-real-tutorial-benchmark-e2e docs-build dev-up dev-down demo demo-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-claude install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down tutorial-pack-build tutorial-pack-verify tutorial-pack-publish
+.PHONY: run test vet fmt tidy sdk-check console-dev console-build console-test console-api-generate console-real-e2e console-real-tutorial-clone-e2e console-real-tutorial-benchmark-e2e docs-build dev-up dev-down demo demo-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-claude install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down tutorial-pack-build tutorial-pack-verify tutorial-pack-publish video-protocol-verify video-protocol-publish
 
 TUTORIAL_PACK_SOURCE ?=
 TUTORIAL_PACK_OUTPUT ?= .tmp/tutorial-packs
@@ -71,6 +71,15 @@ visual-recipe-publish:
 	@test "$(ORAG_PACK_PUBLISH)" = "1" || (echo "set ORAG_PACK_PUBLISH=1 to publish immutable public Recipe objects"; exit 2)
 	@test -n "$(VISUAL_RECIPE_ROOT)" || (echo "VISUAL_RECIPE_ROOT must point to tutorial-recipes/visual-document-rag/1.0.0"; exit 2)
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-pack-release -publish "$(VISUAL_RECIPE_ROOT)"
+
+video-protocol-verify:
+	@test -n "$(VIDEO_PROTOCOL_ROOT)" || (echo "VIDEO_PROTOCOL_ROOT must point to tutorial-protocols/video-rag/1.0.0"; exit 2)
+	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-pack-release -verify-public "$(VIDEO_PROTOCOL_ROOT)"
+
+video-protocol-publish:
+	@test "$(ORAG_PACK_PUBLISH)" = "1" || (echo "set ORAG_PACK_PUBLISH=1 to publish immutable public Protocol objects"; exit 2)
+	@test -n "$(VIDEO_PROTOCOL_ROOT)" || (echo "VIDEO_PROTOCOL_ROOT must point to tutorial-protocols/video-rag/1.0.0"; exit 2)
+	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-pack-release -publish "$(VIDEO_PROTOCOL_ROOT)"
 
 dev-up:
 	docker compose -f deployments/docker-compose.yml up -d postgres qdrant
