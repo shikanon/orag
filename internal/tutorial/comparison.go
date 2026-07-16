@@ -80,25 +80,35 @@ func runsComparable(baseline, candidate ExperimentRun) bool {
 		baseline.ComparisonFingerprint != "" && baseline.ComparisonFingerprint == candidate.ComparisonFingerprint &&
 		baseline.DatasetID == candidate.DatasetID && baseline.Profile == candidate.Profile && baseline.TopK == candidate.TopK &&
 		baseline.ParserMethod == "basic" && baseline.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && baseline.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
+		!baseline.ContextualRetrievalEnabled && baseline.ContextualizedChunkCount == 0 && baseline.AverageContextTokens == 0 &&
 		baseline.IndexedChunkCount > 0 && baseline.AverageChunkTokens > 0 && candidate.IndexedChunkCount > 0 && candidate.AverageChunkTokens > 0
 }
 
 func isComparableTutorialCandidate(candidate ExperimentRun) bool {
 	switch candidate.Variant {
 	case TutorialP1StructuredJSONCandidateID:
-		return candidate.ParserMethod == TutorialStructuredJSONParserMethod && candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens
+		return candidate.ParserMethod == TutorialStructuredJSONParserMethod && candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens && !candidate.ContextualRetrievalEnabled
 	case TutorialP2RecursiveChunkCandidateID:
-		return candidate.ParserMethod == "basic" && candidate.ChunkSizeTokens == TutorialP2ChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens
+		return candidate.ParserMethod == "basic" && candidate.ChunkSizeTokens == TutorialP2ChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens && !candidate.ContextualRetrievalEnabled
+	case TutorialP3ContextualCandidateID:
+		return candidate.ParserMethod == "basic" && candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens && candidate.ContextualRetrievalEnabled && candidate.ContextualizedChunkCount > 0 && candidate.AverageContextTokens > 0
 	default:
 		return false
 	}
 }
 
 func indexMetricDeltas(baseline, candidate ExperimentRun) []ExperimentMetricDelta {
-	return []ExperimentMetricDelta{
+	metrics := []ExperimentMetricDelta{
 		metricDelta("average_chunk_tokens", baseline.AverageChunkTokens, candidate.AverageChunkTokens),
 		metricDelta("chunk_count", float64(baseline.IndexedChunkCount), float64(candidate.IndexedChunkCount)),
 	}
+	if baseline.ContextualRetrievalEnabled || candidate.ContextualRetrievalEnabled || baseline.ContextualizedChunkCount > 0 || candidate.ContextualizedChunkCount > 0 || baseline.AverageContextTokens > 0 || candidate.AverageContextTokens > 0 {
+		metrics = append(metrics,
+			metricDelta("contextualized_chunk_count", float64(baseline.ContextualizedChunkCount), float64(candidate.ContextualizedChunkCount)),
+			metricDelta("average_context_tokens", baseline.AverageContextTokens, candidate.AverageContextTokens),
+		)
+	}
+	return metrics
 }
 
 func metricDelta(name string, baseline, candidate float64) ExperimentMetricDelta {

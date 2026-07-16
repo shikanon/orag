@@ -90,15 +90,17 @@ func (r *MemoryCloneRepository) AdvanceExperimentRun(_ context.Context, tenantID
 	return cloneExperimentRun(run), true, nil
 }
 
-func (r *MemoryCloneRepository) RecordExperimentRunIndexStats(_ context.Context, tenantID, runID string, chunkCount int, averageChunkTokens float64, now time.Time) (ExperimentRun, bool, error) {
+func (r *MemoryCloneRepository) RecordExperimentRunIndexStats(_ context.Context, tenantID, runID string, stats ExperimentRunIndexStats, now time.Time) (ExperimentRun, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	run, ok := r.runs[runID]
 	if !ok || run.TenantID != tenantID || run.Status != ExperimentRunRunning || run.Stage != ExperimentRunStageIndex {
 		return ExperimentRun{}, false, nil
 	}
-	run.IndexedChunkCount = chunkCount
-	run.AverageChunkTokens = averageChunkTokens
+	run.IndexedChunkCount = stats.ChunkCount
+	run.AverageChunkTokens = stats.AverageChunkTokens
+	run.ContextualizedChunkCount = stats.ContextualizedChunkCount
+	run.AverageContextTokens = stats.AverageContextTokens
 	run.UpdatedAt = now
 	r.runs[run.ID] = run
 	return cloneExperimentRun(run), true, nil

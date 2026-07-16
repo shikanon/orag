@@ -14,7 +14,8 @@ var _ tutorial.ExperimentRunRepository = (*TutorialCloneRepository)(nil)
 const tutorialExperimentRunColumns = `id, tenant_id, project_id, experiment_id, variant,
 	COALESCE(baseline_run_id, ''), comparison_fingerprint, definition_fingerprint,
 	knowledge_base_id, dataset_id, profile, top_k, parser_method,
-	chunk_size_tokens, chunk_overlap_tokens, indexed_chunk_count, average_chunk_tokens,
+	chunk_size_tokens, chunk_overlap_tokens, contextual_retrieval_enabled, indexed_chunk_count, average_chunk_tokens,
+	contextualized_chunk_count, average_context_tokens,
 	stage, status, evaluation_run_id, failure_code, created_at, updated_at`
 
 func (r *TutorialCloneRepository) CreateOrGetRun(ctx context.Context, run tutorial.ExperimentRun, idempotencyKey string) (tutorial.ExperimentRun, bool, error) {
@@ -26,14 +27,16 @@ func (r *TutorialCloneRepository) CreateOrGetRun(ctx context.Context, run tutori
 	created, err := scanTutorialExperimentRun(tx.QueryRow(ctx, `
 		INSERT INTO tutorial_experiment_runs(
 			id, tenant_id, project_id, experiment_id, variant, baseline_run_id, comparison_fingerprint, definition_fingerprint,
-			knowledge_base_id, dataset_id, profile, top_k, parser_method, chunk_size_tokens, chunk_overlap_tokens,
-			indexed_chunk_count, average_chunk_tokens, idempotency_key, stage, status, evaluation_run_id, failure_code, created_at, updated_at
-		) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+			knowledge_base_id, dataset_id, profile, top_k, parser_method, chunk_size_tokens, chunk_overlap_tokens, contextual_retrieval_enabled,
+			indexed_chunk_count, average_chunk_tokens, contextualized_chunk_count, average_context_tokens,
+			idempotency_key, stage, status, evaluation_run_id, failure_code, created_at, updated_at
+		) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
 		ON CONFLICT (tenant_id, project_id, variant, idempotency_key) DO NOTHING
 		RETURNING `+tutorialExperimentRunColumns,
 		run.ID, run.TenantID, run.ProjectID, run.ExperimentID, run.Variant, run.BaselineRunID, run.ComparisonFingerprint, run.DefinitionFingerprint,
-		run.KnowledgeBaseID, run.DatasetID, run.Profile, run.TopK, run.ParserMethod, run.ChunkSizeTokens, run.ChunkOverlapTokens,
-		run.IndexedChunkCount, run.AverageChunkTokens, idempotencyKey, run.Stage, run.Status, run.EvaluationRunID, run.FailureCode, run.CreatedAt, run.UpdatedAt,
+		run.KnowledgeBaseID, run.DatasetID, run.Profile, run.TopK, run.ParserMethod, run.ChunkSizeTokens, run.ChunkOverlapTokens, run.ContextualRetrievalEnabled,
+		run.IndexedChunkCount, run.AverageChunkTokens, run.ContextualizedChunkCount, run.AverageContextTokens,
+		idempotencyKey, run.Stage, run.Status, run.EvaluationRunID, run.FailureCode, run.CreatedAt, run.UpdatedAt,
 	))
 	if err == nil {
 		if err := insertTutorialExperimentRunEvents(ctx, tx, created.ID, run.Events); err != nil {
@@ -115,12 +118,12 @@ func (r *TutorialCloneRepository) AdvanceExperimentRun(ctx context.Context, tena
 		RETURNING `+tutorialExperimentRunColumns, next, now, expected, "completed", "")
 }
 
-func (r *TutorialCloneRepository) RecordExperimentRunIndexStats(ctx context.Context, tenantID, runID string, chunkCount int, averageChunkTokens float64, now time.Time) (tutorial.ExperimentRun, bool, error) {
+func (r *TutorialCloneRepository) RecordExperimentRunIndexStats(ctx context.Context, tenantID, runID string, stats tutorial.ExperimentRunIndexStats, now time.Time) (tutorial.ExperimentRun, bool, error) {
 	return r.transitionExperimentRun(ctx, tenantID, runID, `
 		UPDATE tutorial_experiment_runs
-		SET indexed_chunk_count=$3, average_chunk_tokens=$4, updated_at=$5
+		SET indexed_chunk_count=$3, average_chunk_tokens=$4, contextualized_chunk_count=$5, average_context_tokens=$6, updated_at=$7
 		WHERE tenant_id=$1 AND id=$2 AND stage='index_private_pack' AND status='running'
-		RETURNING `+tutorialExperimentRunColumns, chunkCount, averageChunkTokens, now, "indexed", "")
+		RETURNING `+tutorialExperimentRunColumns, stats.ChunkCount, stats.AverageChunkTokens, stats.ContextualizedChunkCount, stats.AverageContextTokens, now, "indexed", "")
 }
 
 func (r *TutorialCloneRepository) CompleteExperimentRun(ctx context.Context, tenantID, runID, evaluationID string, now time.Time) (tutorial.ExperimentRun, bool, error) {
@@ -287,7 +290,8 @@ func scanTutorialExperimentRun(row tutorialExperimentRunScanner) (tutorial.Exper
 		&run.ID, &run.TenantID, &run.ProjectID, &run.ExperimentID, &run.Variant,
 		&run.BaselineRunID, &run.ComparisonFingerprint, &run.DefinitionFingerprint,
 		&run.KnowledgeBaseID, &run.DatasetID, &run.Profile, &run.TopK, &run.ParserMethod,
-		&run.ChunkSizeTokens, &run.ChunkOverlapTokens, &run.IndexedChunkCount, &run.AverageChunkTokens,
+		&run.ChunkSizeTokens, &run.ChunkOverlapTokens, &run.ContextualRetrievalEnabled, &run.IndexedChunkCount, &run.AverageChunkTokens,
+		&run.ContextualizedChunkCount, &run.AverageContextTokens,
 		&run.Stage, &run.Status, &run.EvaluationRunID, &run.FailureCode, &run.CreatedAt, &run.UpdatedAt,
 	)
 	return run, err
