@@ -130,6 +130,7 @@ type ExperimentVariant struct {
 	ContextualRetrieval bool   `json:"contextual_retrieval"`
 	RetrievalStrategy   string `json:"retrieval_strategy"`
 	ReuseBaselineIndex  bool   `json:"reuse_baseline_index"`
+	MultiQueryCount     int    `json:"multi_query_count"`
 	Available           bool   `json:"available"`
 }
 
@@ -311,6 +312,7 @@ func publicExperiment(experiment Experiment) Experiment {
 				ChunkSizeTokens: candidate.ChunkSizeTokens, ChunkOverlapTokens: candidate.ChunkOverlapTokens,
 				ContextualRetrieval: candidate.ContextualRetrieval, RetrievalStrategy: candidateRetrievalStrategy(candidate),
 				ReuseBaselineIndex: candidate.ReuseBaselineIndex, Available: available,
+				MultiQueryCount: candidate.MultiQueryCount,
 			})
 		}
 	}

@@ -219,6 +219,35 @@ func TestParseManifestAcceptsOnlyDeclaredP4SparseCandidate(t *testing.T) {
 	}
 }
 
+func TestParseManifestAcceptsOnlyDeclaredP5MultiQueryCandidate(t *testing.T) {
+	template, pack := testTemplateAndPack(t)
+	valid := []byte(`{
+		"template_id":"text-rag","version":"1.0.0","tier":"quick",
+		"license":{"spdx":"CC-BY-4.0","source_url":"https://example.test/license","redistributable":true},
+		"objects":[{"path":"corpus/service.json","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":2,"content_type":"application/json"}],
+		"runtime":{"baseline":{"profile":"realtime","top_k":5},"documents":[{"object_path":"corpus/service.json","name":"服务配置"}],"dataset":{"name":"评测","items":[{"query":"端口","ground_truth":"8080"}]},"candidates":[{"id":"p5_multi_query_retrieval","chapter":"p5_multi_query_retrieval","parser_method":"basic","chunk_size_tokens":800,"chunk_overlap_tokens":120,"retrieval_strategy":"hybrid","reuse_baseline_index":true,"multi_query_count":3}]}
+	}`)
+	manifest, err := ParseManifest(valid, template, pack)
+	if err != nil || manifest.Runtime == nil || len(manifest.Runtime.Candidates) != 1 {
+		t.Fatalf("manifest=%#v err=%v", manifest, err)
+	}
+	candidate := manifest.Runtime.Candidates[0]
+	if candidate.ID != TutorialP5MultiQueryCandidateID || candidate.RetrievalStrategy != TutorialRetrievalStrategyHybrid || !candidate.ReuseBaselineIndex || candidate.MultiQueryCount != 3 {
+		t.Fatalf("candidate=%#v", candidate)
+	}
+	for name, raw := range map[string][]byte{
+		"sparse":      []byte(strings.Replace(string(valid), `"retrieval_strategy":"hybrid"`, `"retrieval_strategy":"sparse"`, 1)),
+		"new_index":   []byte(strings.Replace(string(valid), `"reuse_baseline_index":true`, `"reuse_baseline_index":false`, 1)),
+		"two_queries": []byte(strings.Replace(string(valid), `"multi_query_count":3`, `"multi_query_count":2`, 1)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseManifest(raw, template, pack); !errors.Is(err, ErrManifestInvalid) {
+				t.Fatalf("ParseManifest() error=%v, want ErrManifestInvalid", err)
+			}
+		})
+	}
+}
+
 func TestValidObjectPathRejectsEscapes(t *testing.T) {
 	for _, value := range []string{"", "/root", "../root", "folder/../root", "folder\\root", "folder/%2e%2e/root"} {
 		if validObjectPath(value) {

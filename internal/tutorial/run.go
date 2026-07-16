@@ -62,6 +62,8 @@ type ExperimentRun struct {
 	ContextualRetrievalEnabled bool                 `json:"contextual_retrieval_enabled"`
 	RetrievalStrategy          string               `json:"retrieval_strategy"`
 	ReusedBaselineIndex        bool                 `json:"reused_baseline_index"`
+	QueryExpansionMode         string               `json:"query_expansion_mode"`
+	MultiQueryCount            int                  `json:"multi_query_count"`
 	IndexedChunkCount          int                  `json:"indexed_chunk_count,omitempty"`
 	AverageChunkTokens         float64              `json:"average_chunk_tokens,omitempty"`
 	ContextualizedChunkCount   int                  `json:"contextualized_chunk_count,omitempty"`
@@ -221,6 +223,8 @@ func (s *LiveRunService) StartVariant(ctx context.Context, subject Subject, proj
 		ContextualRetrievalEnabled: definition.contextualRetrievalEnabled,
 		RetrievalStrategy:          definition.retrievalStrategy,
 		ReusedBaselineIndex:        definition.reuseBaselineIndex,
+		QueryExpansionMode:         definition.queryExpansionMode,
+		MultiQueryCount:            definition.multiQueryCount,
 		IndexedChunkCount:          baseline.IndexedChunkCount,
 		AverageChunkTokens:         baseline.AverageChunkTokens,
 		ContextualizedChunkCount:   baseline.ContextualizedChunkCount,

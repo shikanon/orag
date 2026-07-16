@@ -178,15 +178,24 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		return nil, errors.New("tutorial run repository is unavailable")
 	}
 	tutorialRuns := tutorial.NewLiveRunService(tutorialRunRepo, backend.tutorialCloneRepo, func() time.Time { return time.Now().UTC() })
+	tutorialBaselineRAG := *ragSvc
+	tutorialBaselineRAG.Pipeline = nil
+	tutorialBaselineRAG.Cache = nil
+	tutorialBaselineRAG.QueryRouter = nil
+	tutorialBaselineRAG.QueryRewriteEnabled = false
+	tutorialBaselineRAG.HyDEEnabled = false
+	tutorialBaselineRAG.MultiQueryCount = 1
+	tutorialBaselineRAG.MultiQueryForRealtime = false
+	tutorialEvalRunner := eval.Runner{RAG: &tutorialBaselineRAG, Datasets: datasets, Repository: backend.evalRepo}
 	tutorialRuns.Configure(ingest.NewVariantService(ingestSvc, parser.New(parser.Config{Method: parser.MethodBasic, Multimodal: model}), chunker.Recursive{
 		SizeTokens: tutorial.TutorialBaselineChunkSizeTokens, OverlapTokens: tutorial.TutorialBaselineChunkOverlapTokens,
-	}, nil), evalRunner, privatePacks)
+	}, nil), tutorialEvalRunner, privatePacks)
 	tutorialRuns.ConfigureCandidateIngestors(tutorial.RuntimeEnvironment{
 		ChatProvider: cfg.Models.ChatProvider, ChatModel: cfg.Ark.ChatModel,
 		EmbeddingProvider: cfg.Models.EmbeddingProvider, EmbeddingModel: cfg.Ark.EmbeddingModel,
 		RerankProvider: cfg.Models.RerankProvider, RerankModel: cfg.Ark.RerankModel,
 		MultimodalProvider: cfg.Models.MultimodalProvider, MultimodalModel: cfg.Ark.MultimodalModel,
-		PromptCacheMode: cfg.RAG.PromptCacheMode, EvaluatorVersion: "standard_eval_v1",
+		PromptCacheMode: cfg.RAG.PromptCacheMode, EvaluatorVersion: "tutorial_eval_v2",
 	}, map[string]tutorial.RuntimeIngestor{
 		tutorial.TutorialP1StructuredJSONCandidateID: ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
 			Method: parser.MethodStructuredJSON, Multimodal: model,
@@ -202,12 +211,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			MaxContextChars: tutorial.TutorialP3MaxContextChars, FailureMode: ingest.ContextualFailureFail,
 		}),
 	})
-	sparseTutorialRAG := *ragSvc
+	sparseTutorialRAG := tutorialBaselineRAG
 	sparseTutorialRAG.Retriever = backend.sparse
-	sparseTutorialRAG.Pipeline = nil
-	sparseTutorialRAG.Cache = nil
+	multiQueryTutorialRAG := tutorialBaselineRAG
+	multiQueryTutorialRAG.MultiQueryCount = 3
+	multiQueryTutorialRAG.MultiQueryForRealtime = true
 	tutorialRuns.ConfigureCandidateEvaluators(map[string]tutorial.RuntimeEvaluator{
-		tutorial.TutorialP4SparseCandidateID: eval.Runner{RAG: &sparseTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
+		tutorial.TutorialP4SparseCandidateID:     eval.Runner{RAG: &sparseTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
+		tutorial.TutorialP5MultiQueryCandidateID: eval.Runner{RAG: &multiQueryTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
 	})
 	optimizerRunner := optimizer.InternalRAGRunner{
 		BaseRAG:    ragSvc,

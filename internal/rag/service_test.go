@@ -149,6 +149,30 @@ func TestExecuteHighPrecisionMultiQueryAndHyDEUseExpandedRetrieval(t *testing.T)
 	}
 }
 
+func TestBuildRetrievalQueriesAllowsServerOwnedRealtimeMultiQueryOnly(t *testing.T) {
+	model := &scriptedServiceModel{}
+	service := Service{
+		Model:                 model,
+		MultiQueryCount:       3,
+		MultiQueryForRealtime: true,
+		QueryRewriteEnabled:   false,
+		HyDEEnabled:           false,
+	}
+	queries, warnings := service.BuildRetrievalQueries(context.Background(), QueryRequest{Query: "qdrant vector search"}, ProfileRealtime, "")
+	if len(queries) != 3 {
+		t.Fatalf("queries=%#v, want three retrieval queries", queries)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings=%#v", warnings)
+	}
+	if !model.sawSystemPrompt("多查询") {
+		t.Fatalf("multi-query generation chat was not called: %#v", model.systemPrompts)
+	}
+	if model.sawSystemPrompt("HyDE") {
+		t.Fatalf("HyDE must remain disabled for realtime multi-query: %#v", model.systemPrompts)
+	}
+}
+
 func TestRetrieveExpandedUsesConfiguredRRFK(t *testing.T) {
 	ctx := context.Background()
 	retriever := &rrfKServiceRetriever{}

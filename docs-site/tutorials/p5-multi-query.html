@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ORAG P5 multi-query retrieval tutorial candidate.">
+  <title>ORAG P5 multi-query retrieval</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="site-header"><a class="wordmark" href="../index.html" aria-label="ORAG home">ORAG</a><nav aria-label="Primary navigation"><a href="../index.html">Documentation</a><a href="../api.html">API Reference</a><a href="https://github.com/shikanon/orag">GitHub ↗</a></nav></header>
+  <main>
+    <section class="hero section-grid">
+      <div class="hero-copy"><p class="eyebrow">Experimental tutorial · P5</p><h1>Multi-query retrieval,<br>one variable at a time.</h1><p class="lede"><code>p5_multi_query_retrieval</code> reuses a compatible P0 index and adds exactly three retrieval queries to the isolated evaluator.</p><div class="actions"><a class="button button-primary" href="https://github.com/shikanon/orag/blob/main/docs/tutorials/p5-multi-query-candidate.md">Read the full guide</a><a class="button button-secondary" href="../api.html">Explore the API</a></div></div>
+      <div class="eval-frame"><div class="frame-head"><div><span class="status-dot"></span><strong>Auditable contract</strong></div><code>P0 → P5</code></div><div class="frame-body"><div class="frame-title"><div><p class="muted">Single-variable experiment</p><h2>Three retrieval queries</h2></div><span class="badge experimental">experimental</span></div><div class="metrics"><article><span>Parser</span><strong>Basic</strong><small>unchanged from P0</small></article><article><span>Retriever</span><strong>Hybrid</strong><small>unchanged from P0</small></article><article><span>Expansion</span><strong>3 queries</strong><small>multi-query only</small></article></div></div></div>
+    </section>
+    <section class="resources section-grid">
+      <article><p class="eyebrow">What changes</p><h2>Only query fanout.</h2><p class="section-copy">P5 keeps P0 hybrid retrieval and fans each realtime evaluation query out to a fixed three-query candidate set.</p></article>
+      <article><p class="eyebrow">What is disabled</p><h2>No hidden production defaults.</h2><p class="section-copy">The tutorial evaluator removes the pipeline, semantic cache, and query router, and keeps rewrite and HyDE off.</p></article>
+      <article><p class="eyebrow">What is inherited</p><h2>The P0 index facts.</h2><p class="section-copy">No duplicate indexing occurs. Durable audit fields record P0-index reuse and the exact multi-query count.</p></article>
+      <article><p class="eyebrow">When comparison is valid</p><h2>Only direct P0 → P5.</h2><p class="section-copy">The API requires a compatible evaluator-v2 P0 parent, the same knowledge base and frozen evaluation inputs.</p></article>
+    </section>
+    <section class="quickstart section-grid"><div><p class="eyebrow">Reproduce it</p><h2>Run the controlled walkthrough.</h2><p class="section-copy">The real browser regression starts PostgreSQL, Qdrant, migrations, API, Console, and a controlled immutable Pack. It runs P0 then P5 and verifies multi-query audit facts and P0-index reuse.</p></div><div class="terminal"><div class="terminal-head"><span></span><span></span><span></span><em>orag — tutorial P5</em></div><pre><span class="terminal-dim">$</span> make console-real-tutorial-clone-e2e
+
+<span class="terminal-blue">✓</span> P0 baseline completed
+<span class="terminal-blue">✓</span> P5 uses multi_query/3
+<span class="terminal-blue">✓</span> P0 index facts inherited
+<span class="terminal-coral">✓</span> direct P0 → P5 comparison ready</pre></div></section>
+  </main>
+  <footer><a class="wordmark" href="../index.html">ORAG</a><span>Apache-2.0</span><a href="https://github.com/shikanon/orag/security/policy">Security</a><a href="https://github.com/shikanon/orag">GitHub ↗</a></footer>
+</body>
+</html>

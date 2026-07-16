@@ -32,8 +32,12 @@ const (
 	TutorialP3ContextualChapter         = "p3_contextual_retrieval"
 	TutorialP4SparseCandidateID         = "p4_sparse_retrieval"
 	TutorialP4SparseChapter             = "p4_sparse_retrieval"
+	TutorialP5MultiQueryCandidateID     = "p5_multi_query_retrieval"
+	TutorialP5MultiQueryChapter         = "p5_multi_query_retrieval"
 	TutorialRetrievalStrategyHybrid     = "hybrid"
 	TutorialRetrievalStrategySparse     = "sparse"
+	TutorialQueryExpansionNone          = "none"
+	TutorialQueryExpansionMultiQuery    = "multi_query"
 	TutorialP3ContextualPromptVersion   = "tutorial_contextual_v1"
 	TutorialP3MaxDocumentChars          = 12_000
 	TutorialP3MaxChunkChars             = 2_000
@@ -107,6 +111,7 @@ type RuntimeCandidate struct {
 	ContextualRetrieval bool   `json:"contextual_retrieval,omitempty"`
 	RetrievalStrategy   string `json:"retrieval_strategy,omitempty"`
 	ReuseBaselineIndex  bool   `json:"reuse_baseline_index,omitempty"`
+	MultiQueryCount     int    `json:"multi_query_count,omitempty"`
 }
 
 type RuntimeDatasetItem struct {
@@ -244,6 +249,8 @@ func validateRuntimeCandidates(runtime RuntimeManifest, objectsByPath map[string
 			continue
 		case validP4Candidate(candidate):
 			continue
+		case validP5Candidate(candidate):
+			continue
 		default:
 			return fmt.Errorf("%w: runtime candidate %d is unsupported", ErrManifestInvalid, index)
 		}
@@ -255,7 +262,7 @@ func validP1Candidate(candidate RuntimeCandidate) bool {
 	return candidate.ID == TutorialP1StructuredJSONCandidateID &&
 		candidate.Chapter == TutorialP1DocumentParserChapter &&
 		candidate.ParserMethod == TutorialStructuredJSONParserMethod &&
-		candidate.ChunkSizeTokens == 0 && candidate.ChunkOverlapTokens == 0 && !candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex
+		candidate.ChunkSizeTokens == 0 && candidate.ChunkOverlapTokens == 0 && !candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0
 }
 
 func validP2Candidate(candidate RuntimeCandidate) bool {
@@ -264,7 +271,7 @@ func validP2Candidate(candidate RuntimeCandidate) bool {
 		candidate.ParserMethod == "basic" &&
 		candidate.ChunkSizeTokens == TutorialP2ChunkSizeTokens &&
 		candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens &&
-		!candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex
+		!candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0
 }
 
 func validP3Candidate(candidate RuntimeCandidate) bool {
@@ -273,7 +280,7 @@ func validP3Candidate(candidate RuntimeCandidate) bool {
 		candidate.ParserMethod == "basic" &&
 		candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens &&
 		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
-		candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex
+		candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0
 }
 
 func validP4Candidate(candidate RuntimeCandidate) bool {
@@ -284,7 +291,18 @@ func validP4Candidate(candidate RuntimeCandidate) bool {
 		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
 		!candidate.ContextualRetrieval &&
 		candidate.RetrievalStrategy == TutorialRetrievalStrategySparse &&
-		candidate.ReuseBaselineIndex
+		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0
+}
+
+func validP5Candidate(candidate RuntimeCandidate) bool {
+	return candidate.ID == TutorialP5MultiQueryCandidateID &&
+		candidate.Chapter == TutorialP5MultiQueryChapter &&
+		candidate.ParserMethod == "basic" &&
+		candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens &&
+		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
+		!candidate.ContextualRetrieval &&
+		candidate.RetrievalStrategy == TutorialRetrievalStrategyHybrid &&
+		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 3
 }
 
 func validLicense(license License) bool {
