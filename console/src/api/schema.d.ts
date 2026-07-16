@@ -884,6 +884,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/tutorial-experiment/video-evaluation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Freezes an owner-authorized project evaluation dataset into a Video RAG experiment. Every expected evidence identifier must resolve to a private, deterministic temporal segment created by this project’s video import. */
+        post: operations["activateTutorialVideoEvaluation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs": {
         parameters: {
             query?: never;
@@ -1880,6 +1899,23 @@ export interface components {
         ImportTutorialVideoSourceResponse: {
             source_alias: string;
             temporal_segment_count: number;
+        };
+        ActivateTutorialVideoEvaluationRequest: {
+            /** @description Existing project-owned dataset containing owner-authorized evaluation items. */
+            dataset_id: string;
+            /**
+             * @description Confirms the caller is authorized to use this dataset for private evaluation.
+             * @enum {boolean}
+             */
+            license_confirmed: true;
+        };
+        ActivateTutorialVideoEvaluationResponse: {
+            /** @enum {string} */
+            runtime_status: "ready";
+            /** @description Server-derived temporal evidence knowledge-base root. */
+            knowledge_base_id: string;
+            /** @description Server-derived immutable evaluation snapshot, not the mutable source dataset. */
+            dataset_id: string;
         };
         StartTutorialExperimentRunRequest: {
             /**
@@ -4923,6 +4959,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportTutorialVideoSourceResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    activateTutorialVideoEvaluation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivateTutorialVideoEvaluationRequest"];
+            };
+        };
+        responses: {
+            /** @description Immutable evaluation snapshot and temporal P0 resource roots are ready. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivateTutorialVideoEvaluationResponse"];
                 };
             };
             400: components["responses"]["Error"];

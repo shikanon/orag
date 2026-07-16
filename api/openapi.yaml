@@ -1555,6 +1555,45 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /v1/projects/{project_id}/tutorial-experiment/video-evaluation:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Tutorials]
+      operationId: activateTutorialVideoEvaluation
+      x-orag-maturity: experimental
+      description: >-
+        Freezes an owner-authorized project evaluation dataset into a Video RAG
+        experiment. Every expected evidence identifier must resolve to a private,
+        deterministic temporal segment created by this project’s video import.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivateTutorialVideoEvaluationRequest"
+      responses:
+        "200":
+          description: Immutable evaluation snapshot and temporal P0 resource roots are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivateTutorialVideoEvaluationResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs:
     parameters:
       - name: project_id
@@ -3232,6 +3271,30 @@ components:
         temporal_segment_count:
           type: integer
           minimum: 1
+    ActivateTutorialVideoEvaluationRequest:
+      type: object
+      required: [dataset_id, license_confirmed]
+      properties:
+        dataset_id:
+          type: string
+          description: Existing project-owned dataset containing owner-authorized evaluation items.
+        license_confirmed:
+          type: boolean
+          enum: [true]
+          description: Confirms the caller is authorized to use this dataset for private evaluation.
+    ActivateTutorialVideoEvaluationResponse:
+      type: object
+      required: [runtime_status, knowledge_base_id, dataset_id]
+      properties:
+        runtime_status:
+          type: string
+          enum: [ready]
+        knowledge_base_id:
+          type: string
+          description: Server-derived temporal evidence knowledge-base root.
+        dataset_id:
+          type: string
+          description: Server-derived immutable evaluation snapshot, not the mutable source dataset.
     StartTutorialExperimentRunRequest:
       type: object
       required: [idempotency_key]
