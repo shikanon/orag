@@ -34,6 +34,7 @@ type PrivateObject struct {
 type PrivateStore interface {
 	PutVerified(context.Context, PrivateObject) error
 	HasVerified(context.Context, PrivateObject) (bool, error)
+	OpenVerified(context.Context, PrivateObject) (io.ReadCloser, error)
 	ReadVerified(context.Context, PrivateObject) ([]byte, error)
 }
 
@@ -153,6 +154,23 @@ func (s *LocalPrivateStore) ReadVerified(ctx context.Context, input PrivateObjec
 	return readPrivateObject(file, input.Object.PackObject)
 }
 
+// OpenVerified returns a stream for a SHA-addressed private object. Callers
+// that consume an archive must verify the byte count and digest while copying
+// it; this method deliberately avoids materializing large source data in RAM.
+func (s *LocalPrivateStore) OpenVerified(ctx context.Context, input PrivateObject) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if s == nil || !validPrivateObject(input) {
+		return nil, ErrPrivateStoreConfiguration
+	}
+	file, err := os.Open(filepath.Join(s.destinationDir(input), input.Object.SHA256))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrPrivateStoreRead, err)
+	}
+	return file, nil
+}
+
 func (s *LocalPrivateStore) HasVerified(ctx context.Context, input PrivateObject) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -245,6 +263,62 @@ func (s *AliyunPrivateStore) ReadVerified(ctx context.Context, input PrivateObje
 	}
 	defer reader.Close()
 	return readPrivateObject(reader, input.Object.PackObject)
+}
+
+func (s *AliyunPrivateStore) OpenVerified(ctx context.Context, input PrivateObject) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if s == nil || s.bucket == nil || !validPrivateObject(input) {
+		return nil, ErrPrivateStoreConfiguration
+	}
+	reader, err := s.bucket.GetObject(s.objectKey(input))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrPrivateStoreRead, err)
+	}
+	return reader, nil
+}
+
+// CopyVerifiedToTemp streams a private object into a new temporary file while
+// enforcing its persisted byte count and SHA-256. It is the safe bridge from
+// private object storage to file-oriented converters such as ZIP extraction.
+func CopyVerifiedToTemp(ctx context.Context, store PrivateStore, input PrivateObject, tempDir string) (string, error) {
+	if store == nil || !validPrivateObject(input) {
+		return "", ErrPrivateStoreConfiguration
+	}
+	reader, err := store.OpenVerified(ctx, input)
+	if err != nil {
+		return "", err
+	}
+	defer reader.Close()
+	file, err := os.CreateTemp(strings.TrimSpace(tempDir), "orag-private-verified-*")
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrPublicPackTempStorage, err)
+	}
+	filename := file.Name()
+	keep := false
+	defer func() {
+		_ = file.Close()
+		if !keep {
+			_ = os.Remove(filename)
+		}
+	}()
+	hash := sha256.New()
+	written, err := io.Copy(io.MultiWriter(file, hash), io.LimitReader(reader, input.Object.Bytes+1))
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrPrivateStoreRead, err)
+	}
+	if written != input.Object.Bytes || hex.EncodeToString(hash.Sum(nil)) != input.Object.SHA256 {
+		return "", ErrPrivateStoreRead
+	}
+	if err := file.Sync(); err != nil {
+		return "", fmt.Errorf("%w: %v", ErrPublicPackTempStorage, err)
+	}
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("%w: %v", ErrPublicPackTempStorage, err)
+	}
+	keep = true
+	return filename, nil
 }
 
 func (s *AliyunPrivateStore) HasVerified(ctx context.Context, input PrivateObject) (bool, error) {

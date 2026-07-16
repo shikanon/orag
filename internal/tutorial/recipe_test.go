@@ -176,6 +176,41 @@ func TestExtractRecipePDFsWritesDeterministicPrivateAssets(t *testing.T) {
 	}
 }
 
+func TestExtractPrivateRecipePDFsRevalidatesStoredArchive(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	entry, err := writer.Create("document.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := entry.Write([]byte("document")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	content := archive.Bytes()
+	hash := sha256.Sum256(content)
+	temp := t.TempDir()
+	input := filepath.Join(temp, "verified.zip")
+	if err := os.WriteFile(input, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewLocalPrivateStore(filepath.Join(temp, "output"), "tutorial-experiments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	private := PrivateObject{TenantID: "tenant", ProjectID: "project", JobID: "job", Object: VerifiedObject{PackObject: PackObject{Path: "vidoseek_pdf_document.zip", SHA256: hex.EncodeToString(hash[:]), Bytes: int64(len(content)), ContentType: "application/zip"}, TempPath: input}}
+	if err := store.PutVerified(t.Context(), private); err != nil {
+		t.Fatal(err)
+	}
+	private.Object.TempPath = ""
+	assets, err := ExtractPrivateRecipePDFs(t.Context(), store, private, filepath.Join(temp, "assets"), temp)
+	if err != nil || len(assets) != 1 || assets[0].Document != "document.pdf" {
+		t.Fatalf("assets=%#v err=%v", assets, err)
+	}
+}
+
 func TestValidateRecipeZIPRejectsTraversal(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)

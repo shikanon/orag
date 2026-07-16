@@ -2,6 +2,7 @@ package tutorial
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -24,6 +25,21 @@ type VisualDocumentAsset struct {
 	TempPath   string
 	SHA256     string
 	Bytes      int64
+}
+
+// ExtractPrivateRecipePDFs copies a verified archive from private object
+// storage to a temporary file, re-verifies it while streaming, and extracts
+// its deterministic PDF assets. The archive is removed before returning.
+func ExtractPrivateRecipePDFs(ctx context.Context, store PrivateStore, archive PrivateObject, outputDir, tempDir string) ([]VisualDocumentAsset, error) {
+	if archive.Object.Path != "vidoseek_pdf_document.zip" {
+		return nil, ErrRecipeArchiveUnsafe
+	}
+	filename, err := CopyVerifiedToTemp(ctx, store, archive, tempDir)
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(filename)
+	return ExtractRecipePDFs(filename, outputDir)
 }
 
 // ExtractRecipePDFs copies only PDF entries from an already verified archive

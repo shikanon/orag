@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -106,6 +107,29 @@ func TestLocalPrivateStoreCopiesVerifiedContentWithoutEscapingRoot(t *testing.T)
 	})
 	if err != nil || !present {
 		t.Fatalf("HasVerified() = %v, %v", present, err)
+	}
+	stream, err := store.OpenVerified(context.Background(), PrivateObject{
+		TenantID: "tenant_a", ProjectID: "prj_a", JobID: "tclj_a",
+		Object: VerifiedObject{PackObject: PackObject{SHA256: checksum, Bytes: int64(len(content))}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamed, readErr := io.ReadAll(stream)
+	closeErr := stream.Close()
+	if readErr != nil || closeErr != nil || string(streamed) != string(content) {
+		t.Fatalf("OpenVerified() = %q, %v, %v", streamed, readErr, closeErr)
+	}
+	copied, err := CopyVerifiedToTemp(context.Background(), store, PrivateObject{
+		TenantID: "tenant_a", ProjectID: "prj_a", JobID: "tclj_a",
+		Object: VerifiedObject{PackObject: PackObject{SHA256: checksum, Bytes: int64(len(content))}},
+	}, temp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(copied)
+	if got, err := os.ReadFile(copied); err != nil || string(got) != string(content) {
+		t.Fatalf("CopyVerifiedToTemp() = %q, %v", got, err)
 	}
 	output := filepath.Join(temp, "output", "tutorial-experiments", "tenant_a", "prj_a", "tclj_a", checksum)
 	got, err := os.ReadFile(output)
