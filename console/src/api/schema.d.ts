@@ -1813,6 +1813,12 @@ export interface components {
             readonly comparison_fingerprint?: string;
             /** @description SHA-256 of the variant's server-derived execution definition. */
             readonly definition_fingerprint?: string;
+            /** @description SHA-256 of the verified immutable Pack Manifest used by this run. */
+            readonly pack_manifest_sha256?: string;
+            /** @description SHA-256 of the server-owned model and evaluator environment snapshot. */
+            readonly runtime_environment_sha256?: string;
+            /** @description Non-secret immutable server build revision recorded for reproducibility. */
+            readonly build_revision?: string;
             readonly knowledge_base_id?: string;
             readonly dataset_id?: string;
             readonly profile?: string;

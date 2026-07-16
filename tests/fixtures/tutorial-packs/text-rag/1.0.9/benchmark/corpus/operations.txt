@@ -1,0 +1,15 @@
+ORAG benchmark operations fixture.
+
+The controlled Benchmark Pack uses a high_precision profile with Top-K 8.
+Every Benchmark Run records the verified Manifest SHA-256, the server runtime
+environment SHA-256, and a non-secret immutable build revision. These values
+must match between a completed P0 parent and a P1 through P8 candidate.
+
+The public API listens on port 8080. Private Pack objects are checksum-verified
+before indexing. The evaluator uses the frozen benchmark dataset only; it does
+not read credentials, signed URLs, or external public benchmark objects.
+
+P0 packs at most 5 evidence chunks in 6000 deterministic text units. P8 reuses
+the compatible P0 index and packs at most 3 evidence chunks with the same 6000
+text-unit limit. The comparison is an audit of recorded measurements and does
+not claim quality, cost, or latency improvements.
