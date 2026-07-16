@@ -15,6 +15,7 @@ import (
 
 	"github.com/shikanon/orag/internal/agentsync"
 	core "github.com/shikanon/orag/internal/app"
+	"github.com/shikanon/orag/internal/benchmark"
 	"github.com/shikanon/orag/internal/capabilities"
 	"github.com/shikanon/orag/internal/config"
 	evalpkg "github.com/shikanon/orag/internal/eval"
@@ -58,6 +59,10 @@ func main() {
 		if err := traceCmd(cfg, os.Args[2:], os.Stdout); err != nil {
 			log.Fatalf("trace: %v", err)
 		}
+	case "benchmark-report":
+		if err := benchmarkReportCmd(os.Args[2:], os.Stdout); err != nil {
+			log.Fatalf("benchmark-report: %v", err)
+		}
 	case "generate-agent-artifacts", "generate-skills":
 		if err := generateAgentArtifactsCmd(os.Args[2:], os.Stdout); err != nil {
 			log.Fatalf("%s: %v", os.Args[1], err)
@@ -65,6 +70,32 @@ func main() {
 	default:
 		usage()
 	}
+}
+
+func benchmarkReportCmd(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("benchmark-report", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	file := fs.String("file", "", "performance baseline report JSON file")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*file) == "" {
+		return fmt.Errorf("file is required")
+	}
+	raw, err := os.ReadFile(*file)
+	if err != nil {
+		return err
+	}
+	report, err := benchmark.Parse(raw)
+	if err != nil {
+		return err
+	}
+	fingerprint := benchmark.Fingerprint(report)
+	if fingerprint == "" {
+		return fmt.Errorf("fingerprint report")
+	}
+	_, err = fmt.Fprintf(out, "verified %s %s\n", report.ID, fingerprint)
+	return err
 }
 
 func mustConfig() config.Config {

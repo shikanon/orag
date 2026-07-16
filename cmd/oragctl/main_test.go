@@ -48,6 +48,29 @@ func TestRunTraceLookupFound(t *testing.T) {
 	}
 }
 
+func TestBenchmarkReportCmdVerifiesControlledReport(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "report.json")
+	report := `{
+  "schema_version":"orag.performance-baseline.v1",
+  "id":"text-rag/mock-baseline-v1",
+  "generated_at":"2026-07-17T00:00:00Z",
+  "provenance":{"workload_id":"text-rag/1.0.0/benchmark/replay-v1","pack_tier":"benchmark","deterministic_mock":true,"dataset_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","runtime_environment_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","build_revision":"test-revision"},
+  "load":{"warmup_requests":10,"measured_requests":20,"concurrency":1},
+  "metrics":{"ingestion_documents":2,"ingestion_duration_ms":500,"ingestion_throughput_docs_per_sec":4,"query_p50_ms":12,"query_p95_ms":20,"cache_hit_rate":0.5,"evaluation_duration_ms":90,"model_calls":8,"cost_usd":0}
+}`
+	if err := os.WriteFile(path, []byte(report), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := benchmarkReportCmd([]string{"--file", path}, &out); err != nil {
+		t.Fatalf("benchmarkReportCmd() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "verified text-rag/mock-baseline-v1 ") {
+		t.Fatalf("benchmarkReportCmd() output = %q", out.String())
+	}
+}
+
 func TestRunTraceLookupNotFound(t *testing.T) {
 	var out bytes.Buffer
 

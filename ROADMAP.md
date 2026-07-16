@@ -156,7 +156,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 - 已接入可选 OpenTelemetry trace/metrics exporter，并提供可导入的 Prometheus/Grafana 资源和基础告警规则；待完成指标持久化、采样与跨服务拓扑。
 - CI 覆盖 Go 单测/vet/race、OpenAPI、Console typecheck/unit/build/E2E、PostgreSQL + Qdrant 集成测试和双架构镜像 smoke。
-- 发布公开性能基线：入库吞吐、查询 p50/p95、缓存命中、评测耗时、模型调用量和成本口径。
+- 已发布可验证的性能基线报告契约：固定 Benchmark Pack、mock 运行、环境/构建/负载指纹与入库吞吐、查询 p50/p95、缓存命中、评测耗时、模型调用和成本口径；待用已披露硬件与 provider 条件的 runner 生成可比较公开结果。
 
 ### 阶段退出门槛
 
