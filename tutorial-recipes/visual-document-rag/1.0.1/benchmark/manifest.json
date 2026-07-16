@@ -1,0 +1,6 @@
+{
+  "template_id": "visual-document-rag", "version": "1.0.1", "tier": "benchmark",
+  "license": {"spdx": "Apache-2.0", "source_url": "https://huggingface.co/datasets/Qiuchen-Wang/ViDoSeek", "redistributable": true},
+  "source": {"dataset": "Qiuchen-Wang/ViDoSeek", "revision": "e91a92ba5f38690696c7e66be5c5474b54c6e791", "objects": [{"path": "vidoseek_pdf_document.zip", "sha256": "3b999a798ceab38703118e4cc7d9b852f86538d5bb7caad64eb545251ee00454", "bytes": 758769613}, {"path": "vidoseek.json", "sha256": "ca4949bfc16231d129cd7565f20e07683854ab5aa8d05f05a86a12a9b71a7fab", "bytes": 597200}]},
+  "runtime": {"baseline": {"profile": "visual_page", "top_k": 8}, "pages": [{"document": "03c7d62afbcc088cad1c810c09a71df29a29c968.pdf", "page": 4, "evidence": "03c7d62afbcc088cad1c810c09a71df29a29c968.pdf#4"}], "dataset": {"name": "ViDoSeek Benchmark", "items": [{"query": "Apply for Nordic Swan Ecolabel license, what is recommended as a web browser according to the Nordic Ecolabelling Portal instructions?", "ground_truth": "Microsoft Edge or Google Chrome.", "expected_evidence": ["03c7d62afbcc088cad1c810c09a71df29a29c968.pdf#4"], "split": "eval", "weight": 1}]}}
+}

@@ -30,7 +30,7 @@ func TestParseRecipeFitsPublishedVisualQuickTier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	template, err := catalog.Get("visual-document-rag", "1.0.0")
+	template, err := catalog.Get("visual-document-rag", "1.0.1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,8 @@ func TestParseRecipeFitsPublishedVisualQuickTier(t *testing.T) {
 	if !ok {
 		t.Fatal("quick pack is absent")
 	}
-	if _, err := ParseRecipe([]byte(validVisualRecipe), template, pack); err != nil {
+	currentRecipe := strings.Replace(validVisualRecipe, `"version":"1.0.0"`, `"version":"1.0.1"`, 1)
+	if _, err := ParseRecipe([]byte(currentRecipe), template, pack); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -48,7 +49,7 @@ func TestPublishedVisualRecipesMatchCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	template, err := catalog.Get("visual-document-rag", "1.0.0")
+	template, err := catalog.Get("visual-document-rag", "1.0.1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +58,7 @@ func TestPublishedVisualRecipesMatchCatalog(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s pack is absent", tier)
 		}
-		raw, err := os.ReadFile(filepath.Join("..", "..", "tutorial-recipes", "visual-document-rag", "1.0.0", tier, "manifest.json"))
+		raw, err := os.ReadFile(filepath.Join("..", "..", "tutorial-recipes", "visual-document-rag", "1.0.1", tier, "manifest.json"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -236,7 +237,7 @@ func TestPrepareVisualAssetsPersistsPrivatePDFSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	archiveObject := PackObject{Path: "vidoseek_pdf_document.zip", SHA256: hex.EncodeToString(hash[:]), Bytes: int64(len(content)), ContentType: "application/zip"}
-	job := CloneJob{ID: "job", TenantID: "tenant", ProjectID: "project", TemplateID: "visual-document-rag", TemplateVersion: "1.0.0", Tier: "quick"}
+	job := CloneJob{ID: "job", TenantID: "tenant", ProjectID: "project", TemplateID: "visual-document-rag", TemplateVersion: "1.0.1", Tier: "quick"}
 	if err := store.PutVerified(t.Context(), PrivateObject{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Object: VerifiedObject{PackObject: archiveObject, TempPath: input}}); err != nil {
 		t.Fatal(err)
 	}
