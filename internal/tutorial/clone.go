@@ -122,10 +122,12 @@ type Experiment struct {
 // ExperimentVariant is the safe public projection of an immutable Pack
 // candidate. It intentionally excludes resource coordinates and model input.
 type ExperimentVariant struct {
-	ID           string `json:"id"`
-	Chapter      string `json:"chapter,omitempty"`
-	ParserMethod string `json:"parser_method"`
-	Available    bool   `json:"available"`
+	ID                 string `json:"id"`
+	Chapter            string `json:"chapter,omitempty"`
+	ParserMethod       string `json:"parser_method"`
+	ChunkSizeTokens    int    `json:"chunk_size_tokens,omitempty"`
+	ChunkOverlapTokens int    `json:"chunk_overlap_tokens,omitempty"`
+	Available          bool   `json:"available"`
 }
 
 // CloneRepository persists requests before any project or remote Pack action
@@ -294,12 +296,15 @@ func (s *CloneService) GetExperiment(ctx context.Context, subject Subject, proje
 func publicExperiment(experiment Experiment) Experiment {
 	available := experiment.PackStatus == PackStatusInstalled && experiment.RuntimeStatus == "ready" && experiment.PackManifest.Runtime != nil
 	experiment.Variants = []ExperimentVariant{{
-		ID: "baseline", Chapter: "p0_basic_baseline", ParserMethod: "basic", Available: available,
+		ID: "baseline", Chapter: "p0_basic_baseline", ParserMethod: "basic",
+		ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens,
+		Available: available,
 	}}
 	if experiment.PackManifest.Runtime != nil {
 		for _, candidate := range experiment.PackManifest.Runtime.Candidates {
 			experiment.Variants = append(experiment.Variants, ExperimentVariant{
-				ID: candidate.ID, Chapter: candidate.Chapter, ParserMethod: candidate.ParserMethod, Available: available,
+				ID: candidate.ID, Chapter: candidate.Chapter, ParserMethod: candidate.ParserMethod,
+				ChunkSizeTokens: candidate.ChunkSizeTokens, ChunkOverlapTokens: candidate.ChunkOverlapTokens, Available: available,
 			})
 		}
 	}

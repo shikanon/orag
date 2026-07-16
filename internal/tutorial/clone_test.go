@@ -193,12 +193,13 @@ func TestCloneRunCreatesProjectCopiesVerifiedPackAndMarksExperimentInstalled(t *
 func TestPublicExperimentExposesDeclaredVariantsWithoutManifest(t *testing.T) {
 	experiment := Experiment{
 		ID: "texp_1", PackStatus: PackStatusInstalled, RuntimeStatus: "ready",
-		PackManifest: Manifest{Runtime: &RuntimeManifest{Candidates: []RuntimeCandidate{{
-			ID: TutorialP1StructuredJSONCandidateID, Chapter: TutorialP1DocumentParserChapter, ParserMethod: TutorialStructuredJSONParserMethod,
-		}}}},
+		PackManifest: Manifest{Runtime: &RuntimeManifest{Candidates: []RuntimeCandidate{
+			{ID: TutorialP1StructuredJSONCandidateID, Chapter: TutorialP1DocumentParserChapter, ParserMethod: TutorialStructuredJSONParserMethod},
+			{ID: TutorialP2RecursiveChunkCandidateID, Chapter: TutorialP2ChunkingChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialP2ChunkSizeTokens, ChunkOverlapTokens: TutorialP2ChunkOverlapTokens},
+		}}},
 	}
 	public := publicExperiment(experiment)
-	if len(public.Variants) != 2 || public.Variants[0].ID != "baseline" || public.Variants[1].ID != TutorialP1StructuredJSONCandidateID || !public.Variants[1].Available {
+	if len(public.Variants) != 3 || public.Variants[0].ID != "baseline" || public.Variants[0].ChunkSizeTokens != TutorialBaselineChunkSizeTokens || public.Variants[1].ID != TutorialP1StructuredJSONCandidateID || public.Variants[2].ID != TutorialP2RecursiveChunkCandidateID || public.Variants[2].ChunkSizeTokens != TutorialP2ChunkSizeTokens || public.Variants[2].ChunkOverlapTokens != TutorialP2ChunkOverlapTokens || !public.Variants[2].Available {
 		t.Fatalf("variants=%#v", public.Variants)
 	}
 	if public.PackManifest.Runtime != nil || len(public.PackManifest.Objects) != 0 {
