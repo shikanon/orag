@@ -177,8 +177,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	if !ok {
 		return nil, errors.New("tutorial run repository is unavailable")
 	}
+	tutorialGraphStore, ok := backend.store.(kb.GraphStore)
+	if !ok {
+		return nil, errors.New("tutorial graph store is unavailable")
+	}
 	tutorialRuns := tutorial.NewLiveRunService(tutorialRunRepo, backend.tutorialCloneRepo, func() time.Time { return time.Now().UTC() })
 	tutorialBaselineRAG := *ragSvc
+	tutorialBaselineRAG.Retriever = hybrid
 	tutorialBaselineRAG.Pipeline = nil
 	tutorialBaselineRAG.Cache = nil
 	tutorialBaselineRAG.QueryRouter = nil
@@ -188,29 +193,44 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	tutorialBaselineRAG.MultiQueryForRealtime = false
 	tutorialBaselineRAG.DisableRerank = true
 	tutorialEvalRunner := eval.Runner{RAG: &tutorialBaselineRAG, Datasets: datasets, Repository: backend.evalRepo}
-	tutorialRuns.Configure(ingest.NewVariantService(ingestSvc, parser.New(parser.Config{Method: parser.MethodBasic, Multimodal: model}), chunker.Recursive{
+	tutorialBaselineIngest := ingest.NewVariantService(ingestSvc, parser.New(parser.Config{Method: parser.MethodBasic, Multimodal: model}), chunker.Recursive{
 		SizeTokens: tutorial.TutorialBaselineChunkSizeTokens, OverlapTokens: tutorial.TutorialBaselineChunkOverlapTokens,
-	}, nil), tutorialEvalRunner, privatePacks)
+	}, nil)
+	tutorialBaselineIngest.RAPTORBuilder = nil
+	tutorialBaselineIngest.GraphBuilder = nil
+	tutorialRuns.Configure(tutorialBaselineIngest, tutorialEvalRunner, privatePacks)
+	p1TutorialIngest := ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
+		Method: parser.MethodStructuredJSON, Multimodal: model,
+	}), chunker.Recursive{SizeTokens: tutorial.TutorialBaselineChunkSizeTokens, OverlapTokens: tutorial.TutorialBaselineChunkOverlapTokens}, nil)
+	p2TutorialIngest := ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
+		Method: parser.MethodBasic, Multimodal: model,
+	}), chunker.Recursive{SizeTokens: tutorial.TutorialP2ChunkSizeTokens, OverlapTokens: tutorial.TutorialP2ChunkOverlapTokens}, nil)
+	p3TutorialIngest := ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
+		Method: parser.MethodBasic, Multimodal: model,
+	}), chunker.Recursive{SizeTokens: tutorial.TutorialBaselineChunkSizeTokens, OverlapTokens: tutorial.TutorialBaselineChunkOverlapTokens}, ingest.LLMContextualizer{
+		Model: model, SystemPrompt: tutorial.TutorialP3ContextualSystemPrompt,
+		MaxDocumentChars: tutorial.TutorialP3MaxDocumentChars, MaxChunkChars: tutorial.TutorialP3MaxChunkChars,
+		MaxContextChars: tutorial.TutorialP3MaxContextChars, FailureMode: ingest.ContextualFailureFail,
+	})
+	graphTutorialIngest := ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
+		Method: parser.MethodBasic, Multimodal: model,
+	}), chunker.Recursive{SizeTokens: tutorial.TutorialBaselineChunkSizeTokens, OverlapTokens: tutorial.TutorialBaselineChunkOverlapTokens}, nil)
+	for _, variant := range []*ingest.Service{p1TutorialIngest, p2TutorialIngest, p3TutorialIngest, graphTutorialIngest} {
+		variant.RAPTORBuilder = nil
+		variant.GraphBuilder = nil
+	}
+	graphTutorialIngest.GraphBuilder = ingest.LightweightGraphBuilder{MaxEntitiesPerChunk: cfg.RAG.GraphRetrieval.MaxEntitiesPerChunk}
 	tutorialRuns.ConfigureCandidateIngestors(tutorial.RuntimeEnvironment{
 		ChatProvider: cfg.Models.ChatProvider, ChatModel: cfg.Ark.ChatModel,
 		EmbeddingProvider: cfg.Models.EmbeddingProvider, EmbeddingModel: cfg.Ark.EmbeddingModel,
 		RerankProvider: cfg.Models.RerankProvider, RerankModel: cfg.Ark.RerankModel,
 		MultimodalProvider: cfg.Models.MultimodalProvider, MultimodalModel: cfg.Ark.MultimodalModel,
-		PromptCacheMode: cfg.RAG.PromptCacheMode, EvaluatorVersion: "tutorial_eval_v3",
+		PromptCacheMode: cfg.RAG.PromptCacheMode, EvaluatorVersion: "tutorial_eval_v4",
 	}, map[string]tutorial.RuntimeIngestor{
-		tutorial.TutorialP1StructuredJSONCandidateID: ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
-			Method: parser.MethodStructuredJSON, Multimodal: model,
-		}), chunker.Recursive{SizeTokens: tutorial.TutorialBaselineChunkSizeTokens, OverlapTokens: tutorial.TutorialBaselineChunkOverlapTokens}, nil),
-		tutorial.TutorialP2RecursiveChunkCandidateID: ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
-			Method: parser.MethodBasic, Multimodal: model,
-		}), chunker.Recursive{SizeTokens: tutorial.TutorialP2ChunkSizeTokens, OverlapTokens: tutorial.TutorialP2ChunkOverlapTokens}, nil),
-		tutorial.TutorialP3ContextualCandidateID: ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
-			Method: parser.MethodBasic, Multimodal: model,
-		}), chunker.Recursive{SizeTokens: tutorial.TutorialBaselineChunkSizeTokens, OverlapTokens: tutorial.TutorialBaselineChunkOverlapTokens}, ingest.LLMContextualizer{
-			Model: model, SystemPrompt: tutorial.TutorialP3ContextualSystemPrompt,
-			MaxDocumentChars: tutorial.TutorialP3MaxDocumentChars, MaxChunkChars: tutorial.TutorialP3MaxChunkChars,
-			MaxContextChars: tutorial.TutorialP3MaxContextChars, FailureMode: ingest.ContextualFailureFail,
-		}),
+		tutorial.TutorialP1StructuredJSONCandidateID: p1TutorialIngest,
+		tutorial.TutorialP2RecursiveChunkCandidateID: p2TutorialIngest,
+		tutorial.TutorialP3ContextualCandidateID:     p3TutorialIngest,
+		tutorial.TutorialP7GraphCandidateID:          graphTutorialIngest,
 	})
 	sparseTutorialRAG := tutorialBaselineRAG
 	sparseTutorialRAG.Retriever = backend.sparse
@@ -219,10 +239,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	multiQueryTutorialRAG.MultiQueryForRealtime = true
 	rerankTutorialRAG := tutorialBaselineRAG
 	rerankTutorialRAG.DisableRerank = false
+	graphTutorialRAG := tutorialBaselineRAG
+	graphTutorialRAG.Retriever = kb.GraphRetriever{Base: hybrid, Store: tutorialGraphStore, TopK: cfg.RAG.GraphRetrieval.TopK}
 	tutorialRuns.ConfigureCandidateEvaluators(map[string]tutorial.RuntimeEvaluator{
 		tutorial.TutorialP4SparseCandidateID:     eval.Runner{RAG: &sparseTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
 		tutorial.TutorialP5MultiQueryCandidateID: eval.Runner{RAG: &multiQueryTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
 		tutorial.TutorialP6RerankCandidateID:     eval.Runner{RAG: &rerankTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
+		tutorial.TutorialP7GraphCandidateID:      eval.Runner{RAG: &graphTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
 	})
 	optimizerRunner := optimizer.InternalRAGRunner{
 		BaseRAG:    ragSvc,

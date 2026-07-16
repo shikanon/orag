@@ -84,6 +84,7 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 				{ID: TutorialP4SparseCandidateID, Chapter: TutorialP4SparseChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategySparse, ReuseBaselineIndex: true},
 				{ID: TutorialP5MultiQueryCandidateID, Chapter: TutorialP5MultiQueryChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReuseBaselineIndex: true, MultiQueryCount: 3},
 				{ID: TutorialP6RerankCandidateID, Chapter: TutorialP6RerankChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReuseBaselineIndex: true, RerankEnabled: true},
+				{ID: TutorialP7GraphCandidateID, Chapter: TutorialP7GraphChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyGraph, GraphRetrievalEnabled: true},
 			},
 		}},
 	}
@@ -94,6 +95,7 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	p1Ingestor := &recordingRuntimeIngestor{}
 	p2Ingestor := &recordingRuntimeIngestor{}
 	p3Ingestor := &recordingRuntimeIngestor{chunks: []kb.Chunk{{Content: "service port configuration", ContextualText: "The document describes the ORAG service port."}}}
+	p7Ingestor := &recordingRuntimeIngestor{}
 	evaluator := &recordingRuntimeEvaluator{}
 	service := NewLiveRunService(repo, repo, func() time.Time { return now })
 	service.Configure(baselineIngestor, evaluator, store)
@@ -101,6 +103,7 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 		TutorialP1StructuredJSONCandidateID: p1Ingestor,
 		TutorialP2RecursiveChunkCandidateID: p2Ingestor,
 		TutorialP3ContextualCandidateID:     p3Ingestor,
+		TutorialP7GraphCandidateID:          p7Ingestor,
 	})
 	p4Evaluator := &recordingRuntimeEvaluator{}
 	p5Evaluator := &recordingRuntimeEvaluator{}
@@ -124,6 +127,9 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	}
 	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP6RerankCandidateID, "p6-before-p0"); err != ErrBaselineRequired {
 		t.Fatalf("P6 before P0 error=%v", err)
+	}
+	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP7GraphCandidateID, "p7-before-p0"); err != ErrBaselineRequired {
+		t.Fatalf("P7 before P0 error=%v", err)
 	}
 	baseline, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, "baseline", "p0")
 	if err != nil {
@@ -215,6 +221,17 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	completedP6, err := service.Get(context.Background(), subject, p6.ID)
 	if err != nil || completedP6.Status != ExperimentRunCompleted || p6Evaluator.request.KnowledgeBaseID != baseline.KnowledgeBaseID || len(baselineIngestor.requests) != 1 || len(p1Ingestor.requests) != 1 || len(p2Ingestor.requests) != 1 || len(p3Ingestor.requests) != 1 {
 		t.Fatalf("P6=%#v err=%v evaluator=%#v ingests=%d/%d/%d/%d", completedP6, err, p6Evaluator.request, len(baselineIngestor.requests), len(p1Ingestor.requests), len(p2Ingestor.requests), len(p3Ingestor.requests))
+	}
+	p7, replayed, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP7GraphCandidateID, "p7")
+	if err != nil || replayed || p7.Stage != ExperimentRunStageIndex || p7.ReusedBaselineIndex || p7.RetrievalStrategy != TutorialRetrievalStrategyGraph || !p7.GraphRetrievalEnabled || p7.KnowledgeBaseID == baseline.KnowledgeBaseID {
+		t.Fatalf("P7=%#v replayed=%v err=%v", p7, replayed, err)
+	}
+	if err := service.Execute(context.Background(), subject.TenantID, p7.ID); err != nil {
+		t.Fatal(err)
+	}
+	completedP7, err := service.Get(context.Background(), subject, p7.ID)
+	if err != nil || completedP7.Status != ExperimentRunCompleted || len(p7Ingestor.requests) != 1 || p7Ingestor.requests[0].KnowledgeBaseID != p7.KnowledgeBaseID {
+		t.Fatalf("P7=%#v err=%v ingest=%#v", completedP7, err, p7Ingestor.requests)
 	}
 }
 
@@ -418,6 +435,27 @@ func TestLiveRunComparisonAllowsP6OnlyWithP0IndexReuseAndRerankAudit(t *testing.
 	candidate.RerankEnabled = false
 	if runsComparable(baseline, candidate) {
 		t.Fatalf("comparison accepted disabled rerank: %#v", candidate)
+	}
+}
+
+func TestLiveRunComparisonAllowsP7OnlyWithDistinctGraphIndex(t *testing.T) {
+	now := time.Date(2026, 7, 16, 18, 0, 0, 0, time.UTC)
+	baseline := ExperimentRun{
+		ID: "terun_p0", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: "baseline",
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p0", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, QueryExpansionMode: TutorialQueryExpansionNone, IndexedChunkCount: 2, AverageChunkTokens: 600,
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p0", CreatedAt: now, UpdatedAt: now,
+	}
+	candidate := ExperimentRun{
+		ID: "terun_p7", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: TutorialP7GraphCandidateID, BaselineRunID: baseline.ID,
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p7", KnowledgeBaseID: "tkb_p7", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyGraph, QueryExpansionMode: TutorialQueryExpansionNone, GraphRetrievalEnabled: true, IndexedChunkCount: 2, AverageChunkTokens: 600,
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p7", CreatedAt: now, UpdatedAt: now.Add(time.Second),
+	}
+	if !runsComparable(baseline, candidate) {
+		t.Fatalf("comparison rejected valid P7: %#v", candidate)
+	}
+	candidate.KnowledgeBaseID = baseline.KnowledgeBaseID
+	if runsComparable(baseline, candidate) {
+		t.Fatalf("comparison accepted P0 index reuse: %#v", candidate)
 	}
 }
 

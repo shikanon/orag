@@ -115,3 +115,19 @@ func TestTutorialP6RerankCandidateMigrationPersistsAuditFields(t *testing.T) {
 		}
 	}
 }
+
+func TestTutorialP7GraphCandidateMigrationPersistsAuditFields(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/000036_tutorial_p7_graph_candidate.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(raw)
+	for _, fragment := range []string{
+		"ADD COLUMN graph_retrieval_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+		"DROP COLUMN graph_retrieval_enabled",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing %q", fragment)
+		}
+	}
+}
