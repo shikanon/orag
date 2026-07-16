@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ORAG P3 contextual retrieval tutorial candidate.">
+  <title>ORAG P3 contextual retrieval</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="wordmark" href="../index.html" aria-label="ORAG home">ORAG</a>
+    <nav aria-label="Primary navigation"><a href="../index.html">Documentation</a><a href="../api.html">API Reference</a><a href="https://github.com/shikanon/orag">GitHub ↗</a></nav>
+  </header>
+  <main>
+    <section class="hero section-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">Experimental tutorial · P3</p>
+        <h1>Contextual retrieval,<br>measured honestly.</h1>
+        <p class="lede"><code>p3_contextual_retrieval</code> is a direct P0 candidate that changes only server-owned chunk contextualization.</p>
+        <div class="actions"><a class="button button-primary" href="https://github.com/shikanon/orag/blob/main/docs/tutorials/p3-contextual-retrieval-candidate.md">Read the full guide</a><a class="button button-secondary" href="../api.html">Explore the API</a></div>
+      </div>
+      <div class="eval-frame"><div class="frame-head"><div><span class="status-dot"></span><strong>Auditable contract</strong></div><code>P0 → P3</code></div><div class="frame-body"><div class="frame-title"><div><p class="muted">Single-variable experiment</p><h2>Strict-fail context generation</h2></div><span class="badge experimental">experimental</span></div><div class="metrics"><article><span>Parser</span><strong>Basic</strong><small>unchanged from P0</small></article><article><span>Chunking</span><strong>800/120</strong><small>unchanged from P0</small></article><article><span>Context policy</span><strong>fail</strong><small>no silent fallback</small></article></div></div></div>
+    </section>
+    <section class="resources section-grid">
+      <article><p class="eyebrow">What changes</p><h2>Only contextual text.</h2><p class="section-copy">P3 uses a fixed server prompt and bounded inputs to situate each chunk within its verified document. Clients cannot supply prompts, models, limits, or context content.</p></article>
+      <article><p class="eyebrow">What is measured</p><h2>Index facts, not claims.</h2><p class="section-copy">Runs persist whether contextualization was enabled, the count of non-empty contextualized chunks, and their average deterministic text length.</p></article>
+      <article><p class="eyebrow">When comparison is valid</p><h2>Only direct P0 → P3.</h2><p class="section-copy">The API compares only a completed compatible P0 parent and a P3 run with actual contextual facts and standard evaluation records.</p></article>
+      <article><p class="eyebrow">What it does not prove</p><h2>No automatic superiority.</h2><p class="section-copy">Contextual index metrics are not a quality, cost, latency, or confidence result. Evaluate those separately with the declared dataset.</p></article>
+    </section>
+    <section class="quickstart section-grid"><div><p class="eyebrow">Reproduce it</p><h2>Run the controlled walkthrough.</h2><p class="section-copy">The real browser regression starts PostgreSQL, Qdrant, migrations, API, Console, and a controlled immutable Pack. It runs P0 then P3 and verifies the returned contextual index facts.</p></div><div class="terminal"><div class="terminal-head"><span></span><span></span><span></span><em>orag — tutorial P3</em></div><pre><span class="terminal-dim">$</span> make console-real-tutorial-clone-e2e
+
+<span class="terminal-blue">✓</span> P0 baseline completed
+<span class="terminal-blue">✓</span> P3 contextualization applied
+<span class="terminal-blue">✓</span> contextualized_chunk_count recorded
+<span class="terminal-coral">✓</span> direct P0 → P3 comparison ready</pre></div></section>
+  </main>
+  <footer><a class="wordmark" href="../index.html">ORAG</a><span>Apache-2.0</span><a href="https://github.com/shikanon/orag/security/policy">Security</a><a href="https://github.com/shikanon/orag">GitHub ↗</a></footer>
+</body>
+</html>
