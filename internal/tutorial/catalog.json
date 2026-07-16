@@ -78,8 +78,8 @@
     "pipeline_stages": ["P0 基线", "P1 视频理解与打标", "P2 时间分段", "P3 Contextual Retrieval", "P4 字幕召回", "P5 多路召回", "P6 Rewrite", "P7 Rerank", "P8 组合策略"],
     "required_capabilities": ["doubao_seed_video_understanding", "temporal_index", "embedding", "rerank"],
     "packs": [
-      {"tier": "quick", "manifest_path": "video-rag/1.0.0/quick/manifest.json", "estimated_bytes": 2147483648, "estimated_minutes": 30, "requires_license_check": true},
-      {"tier": "benchmark", "manifest_path": "video-rag/1.0.0/benchmark/manifest.json", "estimated_bytes": 21474836480, "estimated_minutes": 180, "requires_license_check": true}
+      {"tier": "quick", "manifest_path": "video-rag/1.0.0/quick/protocol.json", "estimated_bytes": 0, "estimated_minutes": 30, "requires_license_check": true},
+      {"tier": "benchmark", "manifest_path": "video-rag/1.0.0/benchmark/protocol.json", "estimated_bytes": 0, "estimated_minutes": 180, "requires_license_check": true}
     ],
     "replay_available": false
   }

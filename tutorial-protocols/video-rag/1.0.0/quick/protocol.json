@@ -1,0 +1,19 @@
+{
+  "template_id": "video-rag",
+  "version": "1.0.0",
+  "tier": "quick",
+  "benchmark": {
+    "id": "Video-MME",
+    "source_url": "https://video-mme.github.io/home_page.html",
+    "import_mode": "owner_authorized_private_import"
+  },
+  "sampling": {
+    "segment_milliseconds": 10000,
+    "max_segments": 180
+  },
+  "runtime": {
+    "profile": "temporal_page",
+    "top_k": 5,
+    "extractor_version": "temporal-v1"
+  }
+}

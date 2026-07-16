@@ -154,8 +154,8 @@ func validateTemplate(template Template) error {
 			return fmt.Errorf("duplicate pack tier %q", pack.Tier)
 		}
 		tiers[pack.Tier] = true
-		if !validManifestPath(pack.ManifestPath) {
-			return fmt.Errorf("manifest path %q must be relative and traversal-free", pack.ManifestPath)
+		if !validPackArtifactPath(pack.ManifestPath, template.Modality) {
+			return fmt.Errorf("pack artifact path %q must be relative and traversal-free", pack.ManifestPath)
 		}
 	}
 	if !tiers["quick"] || !tiers["benchmark"] {
@@ -174,6 +174,17 @@ func validManifestPath(value string) bool {
 	}
 	cleaned := path.Clean(value)
 	return cleaned == value && cleaned != "." && !strings.HasPrefix(cleaned, "../") && strings.HasSuffix(cleaned, "/manifest.json")
+}
+
+func validPackArtifactPath(value string, modality Modality) bool {
+	if modality == ModalityVideo {
+		if value == "" || strings.HasPrefix(value, "/") || strings.Contains(value, "\\") {
+			return false
+		}
+		cleaned := path.Clean(value)
+		return cleaned == value && cleaned != "." && !strings.HasPrefix(cleaned, "../") && strings.HasSuffix(cleaned, "/protocol.json")
+	}
+	return validManifestPath(value)
 }
 
 func compareVersions(a, b string) int {
