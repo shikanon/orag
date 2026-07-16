@@ -480,6 +480,21 @@ func (s *CloneService) fetchInstallManifest(ctx context.Context, job CloneJob) (
 	if err != nil {
 		return Manifest{}, err
 	}
+	if template.Modality == ModalityVideo {
+		pack, ok := templatePack(template, job.Tier)
+		if !ok {
+			return Manifest{}, ErrManifestInvalid
+		}
+		raw, err := s.reader.FetchManifest(ctx, pack.ManifestPath)
+		if err != nil {
+			return Manifest{}, err
+		}
+		protocol, err := ParseVideoProtocol(raw, template, pack)
+		if err != nil {
+			return Manifest{}, err
+		}
+		return Manifest{TemplateID: protocol.TemplateID, Version: protocol.Version, Tier: protocol.Tier, VideoProtocol: &protocol}, nil
+	}
 	if template.Modality != ModalityVisualDocument {
 		return s.fetchManifest(ctx, job)
 	}
