@@ -26,10 +26,11 @@ type ExperimentMetricDelta struct {
 // projection of the two ordinary persisted evaluation runs plus their durable
 // lineage, and Comparable is false whenever the invariant cannot be proven.
 type ExperimentRunComparison struct {
-	Baseline   ExperimentRun           `json:"baseline"`
-	Candidate  ExperimentRun           `json:"candidate"`
-	Comparable bool                    `json:"comparable"`
-	Metrics    []ExperimentMetricDelta `json:"metrics,omitempty"`
+	Baseline     ExperimentRun           `json:"baseline"`
+	Candidate    ExperimentRun           `json:"candidate"`
+	Comparable   bool                    `json:"comparable"`
+	Metrics      []ExperimentMetricDelta `json:"metrics,omitempty"`
+	IndexMetrics []ExperimentMetricDelta `json:"index_metrics,omitempty"`
 }
 
 func (s *LiveRunService) Compare(ctx context.Context, subject Subject, projectID, experimentID, candidateRunID string) (ExperimentRunComparison, error) {
@@ -68,16 +69,46 @@ func (s *LiveRunService) Compare(ctx context.Context, subject Subject, projectID
 	}
 	comparison.Comparable = true
 	comparison.Metrics = evaluationMetricDeltas(baselineResult, candidateResult)
+	comparison.IndexMetrics = indexMetricDeltas(baseline, candidate)
 	return comparison, nil
 }
 
 func runsComparable(baseline, candidate ExperimentRun) bool {
 	return baseline.Status == ExperimentRunCompleted && candidate.Status == ExperimentRunCompleted &&
-		baseline.Variant == "baseline" && candidate.Variant == TutorialP1StructuredJSONCandidateID &&
+		baseline.Variant == "baseline" && isComparableTutorialCandidate(candidate) &&
 		baseline.ID == candidate.BaselineRunID && baseline.EvaluationRunID != "" && candidate.EvaluationRunID != "" &&
 		baseline.ComparisonFingerprint != "" && baseline.ComparisonFingerprint == candidate.ComparisonFingerprint &&
 		baseline.DatasetID == candidate.DatasetID && baseline.Profile == candidate.Profile && baseline.TopK == candidate.TopK &&
-		baseline.ParserMethod == "basic" && candidate.ParserMethod == TutorialStructuredJSONParserMethod
+		baseline.ParserMethod == "basic" && baseline.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && baseline.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
+		baseline.IndexedChunkCount > 0 && baseline.AverageChunkTokens > 0 && candidate.IndexedChunkCount > 0 && candidate.AverageChunkTokens > 0
+}
+
+func isComparableTutorialCandidate(candidate ExperimentRun) bool {
+	switch candidate.Variant {
+	case TutorialP1StructuredJSONCandidateID:
+		return candidate.ParserMethod == TutorialStructuredJSONParserMethod && candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens
+	case TutorialP2RecursiveChunkCandidateID:
+		return candidate.ParserMethod == "basic" && candidate.ChunkSizeTokens == TutorialP2ChunkSizeTokens && candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens
+	default:
+		return false
+	}
+}
+
+func indexMetricDeltas(baseline, candidate ExperimentRun) []ExperimentMetricDelta {
+	return []ExperimentMetricDelta{
+		metricDelta("average_chunk_tokens", baseline.AverageChunkTokens, candidate.AverageChunkTokens),
+		metricDelta("chunk_count", float64(baseline.IndexedChunkCount), float64(candidate.IndexedChunkCount)),
+	}
+}
+
+func metricDelta(name string, baseline, candidate float64) ExperimentMetricDelta {
+	delta := candidate - baseline
+	item := ExperimentMetricDelta{Name: name, Baseline: baseline, Candidate: candidate, AbsoluteDelta: delta}
+	if baseline != 0 {
+		relative := delta / baseline
+		item.RelativeDelta = &relative
+	}
+	return item
 }
 
 func evaluationMetricDeltas(baseline, candidate eval.RunResult) []ExperimentMetricDelta {

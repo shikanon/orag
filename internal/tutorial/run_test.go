@@ -12,6 +12,7 @@ import (
 
 	"github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/ingest"
+	"github.com/shikanon/orag/internal/kb"
 )
 
 func TestLiveRunIndexesPrivatePackAndDelegatesEvaluation(t *testing.T) {
@@ -140,6 +141,10 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	if len(p2Ingestor.requests) != 1 || p2Ingestor.requests[0].KnowledgeBaseID != p2.KnowledgeBaseID {
 		t.Fatalf("P2 ingest=%#v", p2Ingestor.requests)
 	}
+	completedP2, err := service.Get(context.Background(), subject, p2.ID)
+	if err != nil || completedP2.IndexedChunkCount != 1 || completedP2.AverageChunkTokens <= 0 {
+		t.Fatalf("P2 index stats=%#v err=%v", completedP2, err)
+	}
 }
 
 func TestLiveRunRejectsComparisonFingerprintMismatch(t *testing.T) {
@@ -183,12 +188,12 @@ func TestLiveRunComparisonUsesPersistedStandardMetrics(t *testing.T) {
 	repo := NewMemoryCloneRepository()
 	baseline := ExperimentRun{
 		ID: "terun_p0", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: "baseline",
-		ComparisonFingerprint: "same", DefinitionFingerprint: "p0", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic",
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p0", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, IndexedChunkCount: 2, AverageChunkTokens: 12,
 		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p0", CreatedAt: now, UpdatedAt: now,
 	}
 	candidate := ExperimentRun{
 		ID: "terun_p1", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: TutorialP1StructuredJSONCandidateID, BaselineRunID: baseline.ID,
-		ComparisonFingerprint: "same", DefinitionFingerprint: "p1", KnowledgeBaseID: "tkb_p1", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: TutorialStructuredJSONParserMethod,
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p1", KnowledgeBaseID: "tkb_p1", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: TutorialStructuredJSONParserMethod, ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, IndexedChunkCount: 3, AverageChunkTokens: 10,
 		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p1", CreatedAt: now, UpdatedAt: now.Add(time.Second),
 	}
 	if _, _, err := repo.CreateOrGetRun(context.Background(), baseline, "p0"); err != nil {
@@ -204,11 +209,44 @@ func TestLiveRunComparisonUsesPersistedStandardMetrics(t *testing.T) {
 	service := NewLiveRunService(repo, repo, time.Now)
 	service.Configure(nil, evaluator, nil)
 	comparison, err := service.Compare(context.Background(), Subject{TenantID: "tenant_a", ID: "user_a"}, "prj_1", "texp_1", candidate.ID)
-	if err != nil || !comparison.Comparable || len(comparison.Metrics) != 2 {
+	if err != nil || !comparison.Comparable || len(comparison.Metrics) != 2 || len(comparison.IndexMetrics) != 2 {
 		t.Fatalf("comparison=%#v err=%v", comparison, err)
 	}
 	if got := comparison.Metrics[0]; got.Name != "accuracy" || got.AbsoluteDelta != 0.25 || got.RelativeDelta == nil || *got.RelativeDelta != 0.5 {
 		t.Fatalf("accuracy delta=%#v", got)
+	}
+}
+
+func TestLiveRunComparisonAllowsP2AndReportsIndexMetrics(t *testing.T) {
+	now := time.Date(2026, 7, 16, 16, 30, 0, 0, time.UTC)
+	repo := NewMemoryCloneRepository()
+	baseline := ExperimentRun{
+		ID: "terun_p0", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: "baseline",
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p0", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, IndexedChunkCount: 2, AverageChunkTokens: 600,
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p0", CreatedAt: now, UpdatedAt: now,
+	}
+	candidate := ExperimentRun{
+		ID: "terun_p2", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: TutorialP2RecursiveChunkCandidateID, BaselineRunID: baseline.ID,
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p2", KnowledgeBaseID: "tkb_p2", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialP2ChunkSizeTokens, ChunkOverlapTokens: TutorialP2ChunkOverlapTokens, IndexedChunkCount: 4, AverageChunkTokens: 320,
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p2", CreatedAt: now, UpdatedAt: now.Add(time.Second),
+	}
+	if _, _, err := repo.CreateOrGetRun(context.Background(), baseline, "p0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := repo.CreateOrGetRun(context.Background(), candidate, "p2"); err != nil {
+		t.Fatal(err)
+	}
+	service := NewLiveRunService(repo, repo, time.Now)
+	service.Configure(nil, &comparisonRuntimeEvaluator{runs: map[string]eval.RunResult{
+		"eval_p0": {ID: "eval_p0", ProjectID: "prj_1", Metrics: map[string]float64{"accuracy": 0.5}},
+		"eval_p2": {ID: "eval_p2", ProjectID: "prj_1", Metrics: map[string]float64{"accuracy": 0.75}},
+	}}, nil)
+	comparison, err := service.Compare(context.Background(), Subject{TenantID: "tenant_a", ID: "user_a"}, "prj_1", "texp_1", candidate.ID)
+	if err != nil || !comparison.Comparable || len(comparison.IndexMetrics) != 2 {
+		t.Fatalf("comparison=%#v err=%v", comparison, err)
+	}
+	if got := comparison.IndexMetrics[1]; got.Name != "chunk_count" || got.Baseline != 2 || got.Candidate != 4 || got.AbsoluteDelta != 2 {
+		t.Fatalf("chunk count delta=%#v", got)
 	}
 }
 
@@ -266,7 +304,7 @@ type recordingRuntimeIngestor struct{ requests []ingest.Request }
 
 func (r *recordingRuntimeIngestor) Ingest(_ context.Context, request ingest.Request) (ingest.Result, error) {
 	r.requests = append(r.requests, request)
-	return ingest.Result{}, nil
+	return ingest.Result{Chunks: []kb.Chunk{{Content: string(request.Content)}}}, nil
 }
 
 type recordingRuntimeEvaluator struct {

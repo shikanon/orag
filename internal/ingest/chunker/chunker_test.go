@@ -29,6 +29,12 @@ func TestRecursiveSplitCountsCJKText(t *testing.T) {
 	}
 }
 
+func TestTokenCountMatchesRecursiveTextUnits(t *testing.T) {
+	if got := TokenCount("alpha beta, 你好 世界"); got != 6 {
+		t.Fatalf("token count = %d", got)
+	}
+}
+
 func TestRecursiveSplitLongParagraph(t *testing.T) {
 	splitter := Recursive{SizeTokens: 5, OverlapTokens: 1}
 	chunks := splitter.Split(strings.Join([]string{

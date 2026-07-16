@@ -26,3 +26,22 @@ func TestTutorialCloneMigrationDefinesDurableIdempotentState(t *testing.T) {
 		}
 	}
 }
+
+func TestTutorialP2ChunkCandidateMigrationPersistsAuditFields(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/000031_tutorial_p2_chunk_candidate.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(raw)
+	for _, fragment := range []string{
+		"ADD COLUMN chunk_size_tokens INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN chunk_overlap_tokens INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN indexed_chunk_count INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN average_chunk_tokens DOUBLE PRECISION NOT NULL DEFAULT 0",
+		"DROP COLUMN average_chunk_tokens",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing %q", fragment)
+		}
+	}
+}
