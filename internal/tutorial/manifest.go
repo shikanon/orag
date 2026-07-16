@@ -38,6 +38,8 @@ const (
 	TutorialP6RerankChapter             = "p6_rerank_retrieval"
 	TutorialP7GraphCandidateID          = "p7_graph_retrieval"
 	TutorialP7GraphChapter              = "p7_graph_retrieval"
+	TutorialP8ContextPackCandidateID    = "p8_context_pack"
+	TutorialP8ContextPackChapter        = "p8_context_pack"
 	TutorialRetrievalStrategyHybrid     = "hybrid"
 	TutorialRetrievalStrategySparse     = "sparse"
 	TutorialRetrievalStrategyGraph      = "graph"
@@ -51,6 +53,9 @@ const (
 	TutorialBaselineChunkOverlapTokens  = 120
 	TutorialP2ChunkSizeTokens           = 400
 	TutorialP2ChunkOverlapTokens        = 80
+	TutorialBaselineContextPackTopN     = 5
+	TutorialContextPackMaxTokens        = 6000
+	TutorialP8ContextPackTopN           = 3
 )
 
 const TutorialP3ContextualSystemPrompt = "You are preparing a retrieval chunk for a controlled RAG experiment. Return concise factual context that situates the chunk within the supplied document. Do not answer questions, add facts, or use markdown."
@@ -119,6 +124,8 @@ type RuntimeCandidate struct {
 	MultiQueryCount       int    `json:"multi_query_count,omitempty"`
 	RerankEnabled         bool   `json:"rerank_enabled,omitempty"`
 	GraphRetrievalEnabled bool   `json:"graph_retrieval_enabled,omitempty"`
+	ContextPackTopN       int    `json:"context_pack_top_n,omitempty"`
+	ContextPackMaxTokens  int    `json:"context_pack_max_tokens,omitempty"`
 }
 
 type RuntimeDatasetItem struct {
@@ -262,6 +269,8 @@ func validateRuntimeCandidates(runtime RuntimeManifest, objectsByPath map[string
 			continue
 		case validP7Candidate(candidate):
 			continue
+		case validP8Candidate(candidate):
+			continue
 		default:
 			return fmt.Errorf("%w: runtime candidate %d is unsupported", ErrManifestInvalid, index)
 		}
@@ -273,7 +282,7 @@ func validP1Candidate(candidate RuntimeCandidate) bool {
 	return candidate.ID == TutorialP1StructuredJSONCandidateID &&
 		candidate.Chapter == TutorialP1DocumentParserChapter &&
 		candidate.ParserMethod == TutorialStructuredJSONParserMethod &&
-		candidate.ChunkSizeTokens == 0 && candidate.ChunkOverlapTokens == 0 && !candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled && !candidate.GraphRetrievalEnabled
+		candidate.ChunkSizeTokens == 0 && candidate.ChunkOverlapTokens == 0 && !candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled && !candidate.GraphRetrievalEnabled && candidate.ContextPackTopN == 0 && candidate.ContextPackMaxTokens == 0
 }
 
 func validP2Candidate(candidate RuntimeCandidate) bool {
@@ -282,7 +291,7 @@ func validP2Candidate(candidate RuntimeCandidate) bool {
 		candidate.ParserMethod == "basic" &&
 		candidate.ChunkSizeTokens == TutorialP2ChunkSizeTokens &&
 		candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens &&
-		!candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled && !candidate.GraphRetrievalEnabled
+		!candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled && !candidate.GraphRetrievalEnabled && candidate.ContextPackTopN == 0 && candidate.ContextPackMaxTokens == 0
 }
 
 func validP3Candidate(candidate RuntimeCandidate) bool {
@@ -291,7 +300,7 @@ func validP3Candidate(candidate RuntimeCandidate) bool {
 		candidate.ParserMethod == "basic" &&
 		candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens &&
 		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
-		candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled && !candidate.GraphRetrievalEnabled
+		candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled && !candidate.GraphRetrievalEnabled && candidate.ContextPackTopN == 0 && candidate.ContextPackMaxTokens == 0
 }
 
 func validP4Candidate(candidate RuntimeCandidate) bool {
@@ -302,7 +311,7 @@ func validP4Candidate(candidate RuntimeCandidate) bool {
 		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
 		!candidate.ContextualRetrieval &&
 		candidate.RetrievalStrategy == TutorialRetrievalStrategySparse &&
-		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled && !candidate.GraphRetrievalEnabled
+		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled && !candidate.GraphRetrievalEnabled && candidate.ContextPackTopN == 0 && candidate.ContextPackMaxTokens == 0
 }
 
 func validP5Candidate(candidate RuntimeCandidate) bool {
@@ -313,7 +322,7 @@ func validP5Candidate(candidate RuntimeCandidate) bool {
 		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
 		!candidate.ContextualRetrieval &&
 		candidate.RetrievalStrategy == TutorialRetrievalStrategyHybrid &&
-		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 3 && !candidate.RerankEnabled && !candidate.GraphRetrievalEnabled
+		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 3 && !candidate.RerankEnabled && !candidate.GraphRetrievalEnabled && candidate.ContextPackTopN == 0 && candidate.ContextPackMaxTokens == 0
 }
 
 func validP6Candidate(candidate RuntimeCandidate) bool {
@@ -324,7 +333,7 @@ func validP6Candidate(candidate RuntimeCandidate) bool {
 		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
 		!candidate.ContextualRetrieval &&
 		candidate.RetrievalStrategy == TutorialRetrievalStrategyHybrid &&
-		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && candidate.RerankEnabled && !candidate.GraphRetrievalEnabled
+		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && candidate.RerankEnabled && !candidate.GraphRetrievalEnabled && candidate.ContextPackTopN == 0 && candidate.ContextPackMaxTokens == 0
 }
 
 func validP7Candidate(candidate RuntimeCandidate) bool {
@@ -332,7 +341,16 @@ func validP7Candidate(candidate RuntimeCandidate) bool {
 		candidate.ParserMethod == "basic" && candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens &&
 		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens && !candidate.ContextualRetrieval &&
 		candidate.RetrievalStrategy == TutorialRetrievalStrategyGraph && !candidate.ReuseBaselineIndex &&
-		candidate.MultiQueryCount == 0 && !candidate.RerankEnabled && candidate.GraphRetrievalEnabled
+		candidate.MultiQueryCount == 0 && !candidate.RerankEnabled && candidate.GraphRetrievalEnabled && candidate.ContextPackTopN == 0 && candidate.ContextPackMaxTokens == 0
+}
+
+func validP8Candidate(candidate RuntimeCandidate) bool {
+	return candidate.ID == TutorialP8ContextPackCandidateID && candidate.Chapter == TutorialP8ContextPackChapter &&
+		candidate.ParserMethod == "basic" && candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens &&
+		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens && !candidate.ContextualRetrieval &&
+		candidate.RetrievalStrategy == TutorialRetrievalStrategyHybrid && candidate.ReuseBaselineIndex &&
+		candidate.MultiQueryCount == 0 && !candidate.RerankEnabled && !candidate.GraphRetrievalEnabled &&
+		candidate.ContextPackTopN == TutorialP8ContextPackTopN && candidate.ContextPackMaxTokens == TutorialContextPackMaxTokens
 }
 
 func validLicense(license License) bool {

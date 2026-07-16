@@ -131,3 +131,21 @@ func TestTutorialP7GraphCandidateMigrationPersistsAuditFields(t *testing.T) {
 		}
 	}
 }
+
+func TestTutorialP8ContextPackCandidateMigrationPersistsAuditFields(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/000037_tutorial_p8_context_pack_candidate.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(raw)
+	for _, fragment := range []string{
+		"ADD COLUMN context_pack_top_n INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN context_pack_max_tokens INTEGER NOT NULL DEFAULT 0",
+		"DROP COLUMN context_pack_max_tokens",
+		"DROP COLUMN context_pack_top_n",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing %q", fragment)
+		}
+	}
+}

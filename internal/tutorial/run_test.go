@@ -85,6 +85,7 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 				{ID: TutorialP5MultiQueryCandidateID, Chapter: TutorialP5MultiQueryChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReuseBaselineIndex: true, MultiQueryCount: 3},
 				{ID: TutorialP6RerankCandidateID, Chapter: TutorialP6RerankChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReuseBaselineIndex: true, RerankEnabled: true},
 				{ID: TutorialP7GraphCandidateID, Chapter: TutorialP7GraphChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyGraph, GraphRetrievalEnabled: true},
+				{ID: TutorialP8ContextPackCandidateID, Chapter: TutorialP8ContextPackChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReuseBaselineIndex: true, ContextPackTopN: TutorialP8ContextPackTopN, ContextPackMaxTokens: TutorialContextPackMaxTokens},
 			},
 		}},
 	}
@@ -108,7 +109,8 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	p4Evaluator := &recordingRuntimeEvaluator{}
 	p5Evaluator := &recordingRuntimeEvaluator{}
 	p6Evaluator := &recordingRuntimeEvaluator{}
-	service.ConfigureCandidateEvaluators(map[string]RuntimeEvaluator{TutorialP4SparseCandidateID: p4Evaluator, TutorialP5MultiQueryCandidateID: p5Evaluator, TutorialP6RerankCandidateID: p6Evaluator})
+	p8Evaluator := &recordingRuntimeEvaluator{}
+	service.ConfigureCandidateEvaluators(map[string]RuntimeEvaluator{TutorialP4SparseCandidateID: p4Evaluator, TutorialP5MultiQueryCandidateID: p5Evaluator, TutorialP6RerankCandidateID: p6Evaluator, TutorialP8ContextPackCandidateID: p8Evaluator})
 	subject := Subject{TenantID: "tenant_a", ID: "user_a"}
 	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP1StructuredJSONCandidateID, "p1-before-p0"); err != ErrBaselineRequired {
 		t.Fatalf("P1 before P0 error=%v", err)
@@ -131,11 +133,14 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP7GraphCandidateID, "p7-before-p0"); err != ErrBaselineRequired {
 		t.Fatalf("P7 before P0 error=%v", err)
 	}
+	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP8ContextPackCandidateID, "p8-before-p0"); err != ErrBaselineRequired {
+		t.Fatalf("P8 before P0 error=%v", err)
+	}
 	baseline, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, "baseline", "p0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if baseline.ParserMethod != "basic" || baseline.ChunkSizeTokens != TutorialBaselineChunkSizeTokens || baseline.ChunkOverlapTokens != TutorialBaselineChunkOverlapTokens {
+	if baseline.ParserMethod != "basic" || baseline.ChunkSizeTokens != TutorialBaselineChunkSizeTokens || baseline.ChunkOverlapTokens != TutorialBaselineChunkOverlapTokens || baseline.ContextPackTopN != TutorialBaselineContextPackTopN || baseline.ContextPackMaxTokens != TutorialContextPackMaxTokens {
 		t.Fatalf("baseline audit fields=%#v", baseline)
 	}
 	if err := service.Execute(context.Background(), subject.TenantID, baseline.ID); err != nil {
@@ -233,6 +238,17 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	if err != nil || completedP7.Status != ExperimentRunCompleted || len(p7Ingestor.requests) != 1 || p7Ingestor.requests[0].KnowledgeBaseID != p7.KnowledgeBaseID {
 		t.Fatalf("P7=%#v err=%v ingest=%#v", completedP7, err, p7Ingestor.requests)
 	}
+	p8, replayed, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP8ContextPackCandidateID, "p8")
+	if err != nil || replayed || p8.Stage != ExperimentRunStageEvaluate || !p8.ReusedBaselineIndex || p8.RetrievalStrategy != TutorialRetrievalStrategyHybrid || p8.ContextPackTopN != TutorialP8ContextPackTopN || p8.ContextPackMaxTokens != TutorialContextPackMaxTokens || p8.KnowledgeBaseID != baseline.KnowledgeBaseID || p8.IndexedChunkCount != baseline.IndexedChunkCount || p8.AverageChunkTokens != baseline.AverageChunkTokens {
+		t.Fatalf("P8=%#v replayed=%v err=%v", p8, replayed, err)
+	}
+	if err := service.Execute(context.Background(), subject.TenantID, p8.ID); err != nil {
+		t.Fatal(err)
+	}
+	completedP8, err := service.Get(context.Background(), subject, p8.ID)
+	if err != nil || completedP8.Status != ExperimentRunCompleted || p8Evaluator.request.KnowledgeBaseID != baseline.KnowledgeBaseID || len(baselineIngestor.requests) != 1 || len(p7Ingestor.requests) != 1 {
+		t.Fatalf("P8=%#v err=%v evaluator=%#v ingests=%d/%d", completedP8, err, p8Evaluator.request, len(baselineIngestor.requests), len(p7Ingestor.requests))
+	}
 }
 
 func TestLiveRunRejectsComparisonFingerprintMismatch(t *testing.T) {
@@ -284,6 +300,7 @@ func TestLiveRunComparisonUsesPersistedStandardMetrics(t *testing.T) {
 		ComparisonFingerprint: "same", DefinitionFingerprint: "p1", KnowledgeBaseID: "tkb_p1", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: TutorialStructuredJSONParserMethod, ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, IndexedChunkCount: 3, AverageChunkTokens: 10,
 		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p1", CreatedAt: now, UpdatedAt: now.Add(time.Second),
 	}
+	baseline, candidate = standardContextPack(baseline), standardContextPack(candidate)
 	if _, _, err := repo.CreateOrGetRun(context.Background(), baseline, "p0"); err != nil {
 		t.Fatal(err)
 	}
@@ -318,6 +335,7 @@ func TestLiveRunComparisonAllowsP2AndReportsIndexMetrics(t *testing.T) {
 		ComparisonFingerprint: "same", DefinitionFingerprint: "p2", KnowledgeBaseID: "tkb_p2", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialP2ChunkSizeTokens, ChunkOverlapTokens: TutorialP2ChunkOverlapTokens, IndexedChunkCount: 4, AverageChunkTokens: 320,
 		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p2", CreatedAt: now, UpdatedAt: now.Add(time.Second),
 	}
+	baseline, candidate = standardContextPack(baseline), standardContextPack(candidate)
 	if _, _, err := repo.CreateOrGetRun(context.Background(), baseline, "p0"); err != nil {
 		t.Fatal(err)
 	}
@@ -351,6 +369,7 @@ func TestLiveRunComparisonAllowsP3OnlyWithMeasuredContext(t *testing.T) {
 		ComparisonFingerprint: "same", DefinitionFingerprint: "p3", KnowledgeBaseID: "tkb_p3", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, ContextualRetrievalEnabled: true, IndexedChunkCount: 2, AverageChunkTokens: 600, ContextualizedChunkCount: 2, AverageContextTokens: 14,
 		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p3", CreatedAt: now, UpdatedAt: now.Add(time.Second),
 	}
+	baseline, candidate = standardContextPack(baseline), standardContextPack(candidate)
 	if _, _, err := repo.CreateOrGetRun(context.Background(), baseline, "p0"); err != nil {
 		t.Fatal(err)
 	}
@@ -387,6 +406,7 @@ func TestLiveRunComparisonAllowsP4OnlyWithP0IndexReuse(t *testing.T) {
 		ComparisonFingerprint: "same", DefinitionFingerprint: "p4", KnowledgeBaseID: baseline.KnowledgeBaseID, DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategySparse, ReusedBaselineIndex: true, IndexedChunkCount: 2, AverageChunkTokens: 600,
 		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p4", CreatedAt: now, UpdatedAt: now.Add(time.Second),
 	}
+	baseline, candidate = standardContextPack(baseline), standardContextPack(candidate)
 	if !runsComparable(baseline, candidate) {
 		t.Fatalf("comparison rejected valid P4: %#v", candidate)
 	}
@@ -408,6 +428,7 @@ func TestLiveRunComparisonAllowsP5OnlyWithP0IndexReuseAndMultiQueryAudit(t *test
 		ComparisonFingerprint: "same", DefinitionFingerprint: "p5", KnowledgeBaseID: baseline.KnowledgeBaseID, DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReusedBaselineIndex: true, QueryExpansionMode: TutorialQueryExpansionMultiQuery, MultiQueryCount: 3, IndexedChunkCount: 2, AverageChunkTokens: 600,
 		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p5", CreatedAt: now, UpdatedAt: now.Add(time.Second),
 	}
+	baseline, candidate = standardContextPack(baseline), standardContextPack(candidate)
 	if !runsComparable(baseline, candidate) {
 		t.Fatalf("comparison rejected valid P5: %#v", candidate)
 	}
@@ -429,6 +450,7 @@ func TestLiveRunComparisonAllowsP6OnlyWithP0IndexReuseAndRerankAudit(t *testing.
 		ComparisonFingerprint: "same", DefinitionFingerprint: "p6", KnowledgeBaseID: baseline.KnowledgeBaseID, DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReusedBaselineIndex: true, QueryExpansionMode: TutorialQueryExpansionNone, RerankEnabled: true, IndexedChunkCount: 2, AverageChunkTokens: 600,
 		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p6", CreatedAt: now, UpdatedAt: now.Add(time.Second),
 	}
+	baseline, candidate = standardContextPack(baseline), standardContextPack(candidate)
 	if !runsComparable(baseline, candidate) {
 		t.Fatalf("comparison rejected valid P6: %#v", candidate)
 	}
@@ -450,6 +472,7 @@ func TestLiveRunComparisonAllowsP7OnlyWithDistinctGraphIndex(t *testing.T) {
 		ComparisonFingerprint: "same", DefinitionFingerprint: "p7", KnowledgeBaseID: "tkb_p7", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyGraph, QueryExpansionMode: TutorialQueryExpansionNone, GraphRetrievalEnabled: true, IndexedChunkCount: 2, AverageChunkTokens: 600,
 		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p7", CreatedAt: now, UpdatedAt: now.Add(time.Second),
 	}
+	baseline, candidate = standardContextPack(baseline), standardContextPack(candidate)
 	if !runsComparable(baseline, candidate) {
 		t.Fatalf("comparison rejected valid P7: %#v", candidate)
 	}
@@ -457,6 +480,43 @@ func TestLiveRunComparisonAllowsP7OnlyWithDistinctGraphIndex(t *testing.T) {
 	if runsComparable(baseline, candidate) {
 		t.Fatalf("comparison accepted P0 index reuse: %#v", candidate)
 	}
+}
+
+func TestLiveRunComparisonAllowsP8OnlyWithP0IndexReuseAndContextPackAudit(t *testing.T) {
+	now := time.Date(2026, 7, 16, 18, 15, 0, 0, time.UTC)
+	baseline := standardContextPack(ExperimentRun{
+		ID: "terun_p0", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: "baseline",
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p0", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, QueryExpansionMode: TutorialQueryExpansionNone, IndexedChunkCount: 2, AverageChunkTokens: 600,
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p0", CreatedAt: now, UpdatedAt: now,
+	})
+	candidate := ExperimentRun{
+		ID: "terun_p8", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: TutorialP8ContextPackCandidateID, BaselineRunID: baseline.ID,
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p8", KnowledgeBaseID: baseline.KnowledgeBaseID, DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReusedBaselineIndex: true, QueryExpansionMode: TutorialQueryExpansionNone, ContextPackTopN: TutorialP8ContextPackTopN, ContextPackMaxTokens: TutorialContextPackMaxTokens, IndexedChunkCount: 2, AverageChunkTokens: 600,
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p8", CreatedAt: now, UpdatedAt: now.Add(time.Second),
+	}
+	if !runsComparable(baseline, candidate) {
+		t.Fatalf("comparison rejected valid P8: %#v", candidate)
+	}
+	candidate.ContextPackTopN = TutorialBaselineContextPackTopN
+	if runsComparable(baseline, candidate) {
+		t.Fatalf("comparison accepted unchanged Context Pack: %#v", candidate)
+	}
+	candidate.ContextPackTopN = TutorialP8ContextPackTopN
+	candidate.ContextPackMaxTokens = 4000
+	if runsComparable(baseline, candidate) {
+		t.Fatalf("comparison accepted changed Context Pack budget: %#v", candidate)
+	}
+	candidate.ContextPackMaxTokens = TutorialContextPackMaxTokens
+	candidate.ReusedBaselineIndex = false
+	if runsComparable(baseline, candidate) {
+		t.Fatalf("comparison accepted P8 without P0 index reuse: %#v", candidate)
+	}
+}
+
+func standardContextPack(run ExperimentRun) ExperimentRun {
+	run.ContextPackTopN = TutorialBaselineContextPackTopN
+	run.ContextPackMaxTokens = TutorialContextPackMaxTokens
+	return run
 }
 
 func TestLiveRunRejectsUnavailableRuntimeAndCancelsQueuedRun(t *testing.T) {

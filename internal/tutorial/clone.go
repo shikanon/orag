@@ -133,6 +133,8 @@ type ExperimentVariant struct {
 	MultiQueryCount       int    `json:"multi_query_count"`
 	RerankEnabled         bool   `json:"rerank_enabled"`
 	GraphRetrievalEnabled bool   `json:"graph_retrieval_enabled"`
+	ContextPackTopN       int    `json:"context_pack_top_n"`
+	ContextPackMaxTokens  int    `json:"context_pack_max_tokens"`
 	Available             bool   `json:"available"`
 }
 
@@ -317,6 +319,8 @@ func publicExperiment(experiment Experiment) Experiment {
 				MultiQueryCount:       candidate.MultiQueryCount,
 				RerankEnabled:         candidate.RerankEnabled,
 				GraphRetrievalEnabled: candidate.GraphRetrievalEnabled,
+				ContextPackTopN:       candidate.ContextPackTopN,
+				ContextPackMaxTokens:  candidate.ContextPackMaxTokens,
 			})
 		}
 	}

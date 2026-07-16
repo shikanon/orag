@@ -130,3 +130,29 @@ func TestRuntimeDefinitionBindsP7GraphContract(t *testing.T) {
 		t.Fatalf("baseline=%#v P7=%#v", baseline, p7)
 	}
 }
+
+func TestRuntimeDefinitionBindsP8ContextPackReuseContract(t *testing.T) {
+	service := NewLiveRunService(nil, nil, nil)
+	service.ConfigureCandidateEvaluators(map[string]RuntimeEvaluator{TutorialP8ContextPackCandidateID: &recordingRuntimeEvaluator{}})
+	experiment := Experiment{
+		ProjectID: "prj_1", CloneJobID: "tclj_1", TemplateID: "text-rag", TemplateVersion: "1.0.8", Tier: "quick",
+		RuntimeStatus: "ready", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", BaselineProfile: "realtime", BaselineTopK: 5,
+		PackManifest: Manifest{Runtime: &RuntimeManifest{Candidates: []RuntimeCandidate{{
+			ID: TutorialP8ContextPackCandidateID, Chapter: TutorialP8ContextPackChapter, ParserMethod: "basic",
+			ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens,
+			RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReuseBaselineIndex: true,
+			ContextPackTopN: TutorialP8ContextPackTopN, ContextPackMaxTokens: TutorialContextPackMaxTokens,
+		}}}},
+	}
+	baseline, err := service.runtimeDefinition(experiment, "baseline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p8, err := service.runtimeDefinition(experiment, TutorialP8ContextPackCandidateID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline.contextPackTopN != TutorialBaselineContextPackTopN || baseline.contextPackMaxTokens != TutorialContextPackMaxTokens || p8.contextPackTopN != TutorialP8ContextPackTopN || p8.contextPackMaxTokens != TutorialContextPackMaxTokens || !p8.reuseBaselineIndex || p8.knowledgeBaseID != baseline.knowledgeBaseID || p8.definitionFingerprint == baseline.definitionFingerprint || p8.comparisonFingerprint != baseline.comparisonFingerprint {
+		t.Fatalf("baseline=%#v P8=%#v", baseline, p8)
+	}
+}
