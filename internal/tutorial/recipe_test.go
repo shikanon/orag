@@ -211,6 +211,52 @@ func TestExtractPrivateRecipePDFsRevalidatesStoredArchive(t *testing.T) {
 	}
 }
 
+func TestPrepareVisualAssetsPersistsPrivatePDFSnapshot(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	entry, err := writer.Create("document.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := entry.Write([]byte("document")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	content := archive.Bytes()
+	hash := sha256.Sum256(content)
+	temp := t.TempDir()
+	input := filepath.Join(temp, "verified.zip")
+	if err := os.WriteFile(input, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewLocalPrivateStore(filepath.Join(temp, "output"), "tutorial-experiments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archiveObject := PackObject{Path: "vidoseek_pdf_document.zip", SHA256: hex.EncodeToString(hash[:]), Bytes: int64(len(content)), ContentType: "application/zip"}
+	job := CloneJob{ID: "job", TenantID: "tenant", ProjectID: "project", TemplateID: "visual-document-rag", TemplateVersion: "1.0.0", Tier: "quick"}
+	if err := store.PutVerified(t.Context(), PrivateObject{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Object: VerifiedObject{PackObject: archiveObject, TempPath: input}}); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := NewCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewCloneService(catalog, NewMemoryCloneRepository(), nil)
+	service.private = store
+	visual := VisualRuntimeManifest{Baseline: VisualRuntimeBaseline{Profile: "visual_page", TopK: 5}}
+	prepared, err := service.prepareVisualAssets(t.Context(), job, Manifest{TemplateID: job.TemplateID, Version: job.TemplateVersion, Tier: job.Tier, Objects: []PackObject{archiveObject}, VisualRuntime: &visual})
+	if err != nil || len(prepared.VisualAssets) != 1 || prepared.VisualAssets[0].Path != "visual/pdf/document.pdf" {
+		t.Fatalf("manifest=%#v err=%v", prepared, err)
+	}
+	present, err := store.HasVerified(t.Context(), PrivateObject{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Object: VerifiedObject{PackObject: prepared.VisualAssets[0]}})
+	if err != nil || !present {
+		t.Fatalf("asset present=%v err=%v", present, err)
+	}
+}
+
 func TestValidateRecipeZIPRejectsTraversal(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)

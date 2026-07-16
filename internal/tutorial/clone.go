@@ -416,6 +416,9 @@ func (s *CloneService) Run(ctx context.Context, subject Subject, jobID string) e
 			if err != nil {
 				return s.fail(ctx, job, err)
 			}
+			if manifest, err = s.prepareVisualAssets(ctx, job, manifest); err != nil {
+				return s.fail(ctx, job, err)
+			}
 			resources := RuntimeResources{Status: "runtime_unavailable"}
 			if supportsTextRuntime(job.TemplateID, job.Tier) && manifest.Runtime != nil && s.runtime != nil {
 				resources, err = s.runtime.Ensure(ctx, job, manifest)
@@ -503,7 +506,8 @@ func installManifestFromRecipe(recipe RecipeManifest) Manifest {
 	for _, object := range recipe.Source.Objects {
 		objects = append(objects, PackObject{Path: object.Path, SHA256: object.SHA256, Bytes: object.Bytes, ContentType: recipeContentType(object.Path)})
 	}
-	return Manifest{TemplateID: recipe.TemplateID, Version: recipe.Version, Tier: recipe.Tier, License: recipe.License, Objects: objects}
+	visual := recipe.Runtime
+	return Manifest{TemplateID: recipe.TemplateID, Version: recipe.Version, Tier: recipe.Tier, License: recipe.License, Objects: objects, VisualRuntime: &visual}
 }
 
 func (s *CloneService) downloadAndVerifyPack(ctx context.Context, job CloneJob, manifest Manifest) error {
