@@ -82,7 +82,7 @@ func TestParseManifestValidatesRuntimeDeclaration(t *testing.T) {
 
 	for name, raw := range map[string][]byte{
 		"outside_object": []byte(strings.Replace(string(valid), `"corpus/data.txt","name":"数据"`, `"other.txt","name":"数据"`, 1)),
-		"wrong_profile":  []byte(strings.Replace(string(valid), `"profile":"realtime"`, `"profile":"high_precision"`, 1)),
+		"wrong_profile":  []byte(strings.Replace(string(valid), `"profile":"realtime"`, `"profile":"unsupported"`, 1)),
 		"wrong_split":    []byte(strings.Replace(string(valid), `"split":"eval"`, `"split":"mystery"`, 1)),
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -37,6 +37,7 @@ type ServerConfig struct {
 	Port          int
 	PublicBaseURL string
 	Debug         bool
+	BuildRevision string
 }
 
 func (c ServerConfig) Addr() string {
@@ -256,6 +257,7 @@ func Load() (Config, error) {
 			Port:          getenvInt("PORT", 8080),
 			PublicBaseURL: getenv("PUBLIC_BASE_URL", "http://localhost:8080"),
 			Debug:         getenvBool("DEBUG", false),
+			BuildRevision: strings.TrimSpace(getenv("ORAG_BUILD_REVISION", "dev")),
 		},
 		Storage: StorageConfig{
 			Backend: getenv("STORAGE_BACKEND", "qdrant_postgres"),
@@ -480,6 +482,9 @@ func (c Config) Validate() error {
 	}
 	if c.Qdrant.Host == "" {
 		missing = append(missing, "QDRANT_HOST")
+	}
+	if c.Server.BuildRevision != "" && (len(c.Server.BuildRevision) > 200 || strings.IndexFunc(c.Server.BuildRevision, func(r rune) bool { return r <= ' ' || r == 0x7f }) >= 0) {
+		return errors.New("ORAG_BUILD_REVISION must be an identifier without whitespace or control characters")
 	}
 	if c.Database.URL == "" {
 		missing = append(missing, "DATABASE_URL")

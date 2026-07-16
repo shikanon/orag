@@ -20,6 +20,7 @@ type RuntimeEnvironment struct {
 	MultimodalModel    string `json:"multimodal_model"`
 	PromptCacheMode    string `json:"prompt_cache_mode"`
 	EvaluatorVersion   string `json:"evaluator_version"`
+	BuildRevision      string `json:"build_revision"`
 }
 
 type runtimeDefinition struct {
@@ -40,26 +41,32 @@ type runtimeDefinition struct {
 	graphRetrievalEnabled      bool
 	contextPackTopN            int
 	contextPackMaxTokens       int
+	packManifestSHA256         string
+	runtimeEnvironmentSHA256   string
+	buildRevision              string
 	comparisonFingerprint      string
 	definitionFingerprint      string
 }
 
 func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string) (runtimeDefinition, error) {
-	if !supportsTextQuickBaseline(experiment.TemplateID, experiment.Tier) || experiment.RuntimeStatus != "ready" || experiment.KnowledgeBaseID == "" || experiment.DatasetID == "" || experiment.CloneJobID == "" || experiment.PackManifest.Runtime == nil {
+	if !supportsTextRuntime(experiment.TemplateID, experiment.Tier) || experiment.RuntimeStatus != "ready" || experiment.KnowledgeBaseID == "" || experiment.DatasetID == "" || experiment.CloneJobID == "" || experiment.PackManifest.Runtime == nil {
 		return runtimeDefinition{}, ErrRuntimeUnavailable
 	}
 	definition := runtimeDefinition{
-		knowledgeBaseID:      experiment.KnowledgeBaseID,
-		datasetID:            experiment.DatasetID,
-		profile:              experiment.BaselineProfile,
-		topK:                 experiment.BaselineTopK,
-		parserMethod:         "basic",
-		chunkSizeTokens:      TutorialBaselineChunkSizeTokens,
-		chunkOverlapTokens:   TutorialBaselineChunkOverlapTokens,
-		retrievalStrategy:    TutorialRetrievalStrategyHybrid,
-		queryExpansionMode:   TutorialQueryExpansionNone,
-		contextPackTopN:      TutorialBaselineContextPackTopN,
-		contextPackMaxTokens: TutorialContextPackMaxTokens,
+		knowledgeBaseID:          experiment.KnowledgeBaseID,
+		datasetID:                experiment.DatasetID,
+		profile:                  experiment.BaselineProfile,
+		topK:                     experiment.BaselineTopK,
+		parserMethod:             "basic",
+		chunkSizeTokens:          TutorialBaselineChunkSizeTokens,
+		chunkOverlapTokens:       TutorialBaselineChunkOverlapTokens,
+		retrievalStrategy:        TutorialRetrievalStrategyHybrid,
+		queryExpansionMode:       TutorialQueryExpansionNone,
+		contextPackTopN:          TutorialBaselineContextPackTopN,
+		contextPackMaxTokens:     TutorialContextPackMaxTokens,
+		packManifestSHA256:       manifestSHA256(experiment.PackManifest),
+		runtimeEnvironmentSHA256: jsonSHA256(s.runtimeEnvironment),
+		buildRevision:            s.runtimeEnvironment.BuildRevision,
 	}
 	if variant != "baseline" {
 		candidate, found := runtimeCandidate(experiment.PackManifest.Runtime.Candidates, variant)
@@ -100,17 +107,19 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		}
 	}
 	comparisonInput := struct {
-		TemplateID      string             `json:"template_id"`
-		TemplateVersion string             `json:"template_version"`
-		Tier            string             `json:"tier"`
-		ManifestSHA256  string             `json:"manifest_sha256"`
-		DatasetID       string             `json:"dataset_id"`
-		Profile         string             `json:"profile"`
-		TopK            int                `json:"top_k"`
-		Environment     RuntimeEnvironment `json:"environment"`
+		TemplateID               string             `json:"template_id"`
+		TemplateVersion          string             `json:"template_version"`
+		Tier                     string             `json:"tier"`
+		ManifestSHA256           string             `json:"manifest_sha256"`
+		RuntimeEnvironmentSHA256 string             `json:"runtime_environment_sha256"`
+		BuildRevision            string             `json:"build_revision"`
+		DatasetID                string             `json:"dataset_id"`
+		Profile                  string             `json:"profile"`
+		TopK                     int                `json:"top_k"`
+		Environment              RuntimeEnvironment `json:"environment"`
 	}{
 		TemplateID: experiment.TemplateID, TemplateVersion: experiment.TemplateVersion, Tier: experiment.Tier,
-		ManifestSHA256: manifestSHA256(experiment.PackManifest), DatasetID: definition.datasetID,
+		ManifestSHA256: definition.packManifestSHA256, RuntimeEnvironmentSHA256: definition.runtimeEnvironmentSHA256, BuildRevision: definition.buildRevision, DatasetID: definition.datasetID,
 		Profile: definition.profile, TopK: definition.topK, Environment: s.runtimeEnvironment,
 	}
 	definition.comparisonFingerprint = jsonSHA256(comparisonInput)
@@ -130,6 +139,9 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		GraphRetrievalEnabled      bool   `json:"graph_retrieval_enabled"`
 		ContextPackTopN            int    `json:"context_pack_top_n"`
 		ContextPackMaxTokens       int    `json:"context_pack_max_tokens"`
+		PackManifestSHA256         string `json:"pack_manifest_sha256"`
+		RuntimeEnvironmentSHA256   string `json:"runtime_environment_sha256"`
+		BuildRevision              string `json:"build_revision"`
 		KnowledgeBaseID            string `json:"knowledge_base_id"`
 	}{
 		ComparisonFingerprint: definition.comparisonFingerprint, Variant: variant,
@@ -138,10 +150,13 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		ContextualPromptVersion: definition.contextualPromptVersion, KnowledgeBaseID: definition.knowledgeBaseID,
 		RetrievalStrategy: definition.retrievalStrategy, ReuseBaselineIndex: definition.reuseBaselineIndex,
 		QueryExpansionMode: definition.queryExpansionMode, MultiQueryCount: definition.multiQueryCount,
-		RerankEnabled:         definition.rerankEnabled,
-		GraphRetrievalEnabled: definition.graphRetrievalEnabled,
-		ContextPackTopN:       definition.contextPackTopN,
-		ContextPackMaxTokens:  definition.contextPackMaxTokens,
+		RerankEnabled:            definition.rerankEnabled,
+		GraphRetrievalEnabled:    definition.graphRetrievalEnabled,
+		ContextPackTopN:          definition.contextPackTopN,
+		ContextPackMaxTokens:     definition.contextPackMaxTokens,
+		PackManifestSHA256:       definition.packManifestSHA256,
+		RuntimeEnvironmentSHA256: definition.runtimeEnvironmentSHA256,
+		BuildRevision:            definition.buildRevision,
 	})
 	return definition, nil
 }
@@ -172,6 +187,9 @@ func (d runtimeDefinition) matches(run ExperimentRun) bool {
 		run.GraphRetrievalEnabled == d.graphRetrievalEnabled &&
 		run.ContextPackTopN == d.contextPackTopN &&
 		run.ContextPackMaxTokens == d.contextPackMaxTokens &&
+		run.PackManifestSHA256 == d.packManifestSHA256 &&
+		run.RuntimeEnvironmentSHA256 == d.runtimeEnvironmentSHA256 &&
+		run.BuildRevision == d.buildRevision &&
 		run.ComparisonFingerprint == d.comparisonFingerprint &&
 		run.DefinitionFingerprint == d.definitionFingerprint
 }

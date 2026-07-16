@@ -2,7 +2,7 @@
 
 教程目录中的模板是全局、只读且版本化的资源。克隆动作会创建一个普通的 tenant 项目，并通过持久化任务把指定的 Quick Pack 或 Benchmark Pack 校验后写入该项目的私有输出存储。
 
-此能力仍是 `experimental`。具有受支持 `runtime` 声明的 `text-rag` Quick Pack 可以创建项目知识库/数据集，并执行固定 `realtime` P0 基线 Live Run。声明候选的 Pack 可运行 P1–P8 单变量实验；它们都是完成 P0 的直接子实验，读取项目私有 Pack 的已校验文本，并复用标准入库和评测引擎。P1–P3 与 P7 使用独立候选索引，P4/P5/P6/P8 复用兼容 P0 索引。Benchmark Run、官方 Replay，以及视觉文档/视频 Live Run 仍未开放。
+此能力仍是 `experimental`。具有受支持 `runtime` 声明的 `text-rag` Quick 与 Benchmark Pack 都能创建项目知识库/数据集并运行 P0–P8 单变量实验。Quick 固定 `realtime`/Top-K 5；受控 Benchmark Pack 固定 `high_precision`/Top-K 8，并持久化 Manifest SHA-256、运行环境 SHA-256 和构建版本。P1–P3 与 P7 使用独立候选索引，P4/P5/P6/P8 复用兼容 P0 索引。官方 Replay，以及视觉文档/视频 Live Run 仍未开放。
 
 ## 使用流程
 
@@ -10,7 +10,7 @@
 2. 打开教程，选择 Quick Pack 或 Benchmark Pack，确认上游许可。
 3. 填写项目名称并创建。响应立即返回 `202 Accepted` 和轮询地址，不会等待下载完成。
 4. Console 轮询任务，展示创建项目、清单校验、下载、校验、写入私有存储、基线资源创建和完成状态。
-5. 对声明了文本运行时的 Quick Pack，安装完成后打开“文本 Quick 单变量实验”，提交 P0 baseline 评测。浏览器只提交 variant 与幂等键；知识库、数据集、检索 profile、Top-K、对象路径和模型配置全部由服务端从不可变 Manifest 推导。
+5. 对声明了文本运行时的 Quick 或 Benchmark Pack，安装完成后打开实验页并提交 P0 baseline。浏览器只提交 variant 与幂等键；知识库、数据集、检索 profile、Top-K、对象路径、模型配置和复现证据全部由服务端从不可变 Manifest 推导。
 6. 仅当 Pack 声明候选且匹配的 P0 已完成，才可启动 P1–P8。每个候选只改变其 Pack 声明的单一变量；服务端冻结相同 Pack、模型、评测器、数据集、profile 和 Top-K，并按候选契约复用 P0 或建立独立知识库；比较端点返回持久化的标准评测指标，以及实际索引和运行时审计事实，不会推测成本、延迟或质量。
 7. 任务或运行失败时页面仅显示稳定的失败代码；修复外部条件后可以从安全检查点重试。
 
@@ -55,6 +55,7 @@ sha256sum /tmp/orag-text-rag-manifest.json
 
 ```bash
 make console-real-tutorial-clone-e2e
+make console-real-tutorial-benchmark-e2e
 ```
 
-该命令启动临时 PostgreSQL、Qdrant、API、Console 和只读本地 Pack fixture，运行真实浏览器流程：克隆、私有 SHA-256 校验写入、项目资源创建、P0/P8 评测、P0 索引复用与 Context Pack 审计对比。它不验证外部 OSS ACL；发布前仍须执行上面的匿名读取检查。
+两个命令均启动临时 PostgreSQL、Qdrant、API、Console 和只读本地 Pack fixture。Benchmark 命令运行 `high_precision`/Top-K 8 的 P0/P8，验证 P0 索引复用、Context Pack 审计、Manifest/环境 SHA-256 与构建版本。它们不验证外部 OSS ACL；发布前仍须执行上面的匿名读取检查。

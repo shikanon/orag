@@ -3105,6 +3105,18 @@ components:
           type: string
           readOnly: true
           description: SHA-256 of the variant's server-derived execution definition.
+        pack_manifest_sha256:
+          type: string
+          readOnly: true
+          description: SHA-256 of the verified immutable Pack Manifest used by this run.
+        runtime_environment_sha256:
+          type: string
+          readOnly: true
+          description: SHA-256 of the server-owned model and evaluator environment snapshot.
+        build_revision:
+          type: string
+          readOnly: true
+          description: Non-secret immutable server build revision recorded for reproducibility.
         knowledge_base_id:
           type: string
           readOnly: true

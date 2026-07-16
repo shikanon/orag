@@ -50,7 +50,7 @@ export function TutorialExperimentWorkbench() {
   return <main className="content tutorial-workbench">
     <Link className="back-link" to={`/projects/${projectId}/tutorial/setup`}>← 返回安装进度</Link>
     <header className="page-header">
-      <div><p className="eyebrow">P0 → 候选 Live Run</p><h1>文本 Quick 单变量实验</h1><p>每次运行只从项目私有 Pack 读取已校验内容。候选只使用 Pack 声明的服务器配置；除明确标注复用 P0 索引的检索实验外，索引彼此独立。模型、评测集和检索配置均由服务端固定。</p></div>
+      <div><p className="eyebrow">P0 → 候选 Live Run</p><h1>{experiment.data.pack_tier === 'benchmark' ? '文本 Benchmark 可复现实验' : '文本 Quick 单变量实验'}</h1><p>{experiment.data.pack_tier === 'benchmark' ? 'Benchmark Pack 固定评测输入、运行环境与构建版本；只有服务器生成的复现证据完全一致时，P0 与候选才可比较。' : '每次运行只从项目私有 Pack 读取已校验内容。候选只使用 Pack 声明的服务器配置；除明确标注复用 P0 索引的检索实验外，索引彼此独立。模型、评测集和检索配置均由服务端固定。'}</p></div>
       <span className={`tutorial-job-status ${run.data?.status ?? (ready ? 'completed' : 'failed')}`}>{run.data ? statusText(run.data.status) : ready ? '可以运行' : '不可运行'}</span>
     </header>
     <section className="tutorial-workbench-grid">
@@ -65,7 +65,7 @@ export function TutorialExperimentWorkbench() {
         </>}
         {start.isError ? <p className="debugger-error" role="alert">{startError?.status === 409 && start.variables !== 'baseline' ? '候选需要已完成且兼容的 P0 基线；请先运行基线或保持运行环境不变。' : '运行未被接受。请确认 Pack、项目权限和模型运行环境。'}</p> : null}
       </section>
-      <RunProgress run={run.data} active={active} cancelPending={cancel.isPending} onCancel={cancel.mutate} />
+      <RunProgress run={run.data} packTier={experiment.data.pack_tier} active={active} cancelPending={cancel.isPending} onCancel={cancel.mutate} />
     </section>
     {comparison.isSuccess ? <ComparisonPanel comparison={comparison.data} /> : null}
     {comparison.isError ? <section className="tutorial-progress-card tutorial-comparison" role="alert"><h2>暂时无法形成可比结果</h2><p>该候选缺少服务端可验证的 P0 父运行或标准评测记录，因此不会显示推断出的提升。</p></section> : null}
@@ -90,7 +90,7 @@ function VariantCard({ variant, disabled, pending, onStart }: { variant: Tutoria
   </article>
 }
 
-function RunProgress({ run, active, cancelPending, onCancel }: { run?: TutorialExperimentRun; active: boolean; cancelPending: boolean; onCancel: () => void }) {
+function RunProgress({ run, packTier, active, cancelPending, onCancel }: { run?: TutorialExperimentRun; packTier: 'quick' | 'benchmark'; active: boolean; cancelPending: boolean; onCancel: () => void }) {
   return <section className="tutorial-progress-card">
     <p className="eyebrow">运行进度</p>
     <h2>{run ? stageLabel[run.stage] : '尚未开始'}</h2>
@@ -98,15 +98,19 @@ function RunProgress({ run, active, cancelPending, onCancel }: { run?: TutorialE
       <p>变体：<code>{run.variant}</code> · 状态：{statusText(run.status)}</p>
       <ol className="tutorial-stage-list"><li className={run.reused_baseline_index ? 'done' : run.stage === 'index_private_pack' ? 'active' : 'done'}><span>{run.reused_baseline_index ? '复用兼容 P0 索引' : '构建独立索引'}</span><small>{run.reused_baseline_index ? '已继承' : run.stage === 'index_private_pack' ? statusText(run.status) : '完成'}</small></li><li className={run.stage === 'run_evaluation' ? 'active' : run.stage === 'completed' ? 'done' : 'pending'}><span>执行标准评测</span><small>{run.stage === 'run_evaluation' ? statusText(run.status) : run.stage === 'completed' ? '完成' : '等待'}</small></li></ol>
       {run.status === 'failed' ? <div className="tutorial-failure" role="alert">服务端失败代码：{run.failure_code || 'live_run_failed'}</div> : null}
-      <RunAudit run={run} />
+      <RunAudit run={run} packTier={packTier} />
       {active ? <button className="secondary-button" disabled={cancelPending} onClick={onCancel}>{cancelPending ? '正在取消…' : '取消运行'}</button> : null}
     </> : <p className="muted">选择 P0 或由 Pack 声明的候选后，会显示私有 Pack 索引和标准评测阶段。</p>}
   </section>
 }
 
-function RunAudit({ run }: { run: TutorialExperimentRun }) {
+function RunAudit({ run, packTier }: { run: TutorialExperimentRun; packTier: 'quick' | 'benchmark' }) {
   return <dl className="tutorial-run-facts tutorial-run-audit">
     <div><dt>标准评测 Run</dt><dd><code>{run.evaluation_run_id || '—'}</code></dd></div>
+    <div><dt>Pack tier</dt><dd><code>{packTier}</code></dd></div>
+    <div><dt>Manifest SHA</dt><dd><code>{run.pack_manifest_sha256 ? shortFingerprint(run.pack_manifest_sha256) : '—'}</code></dd></div>
+    <div><dt>运行环境 SHA</dt><dd><code>{run.runtime_environment_sha256 ? shortFingerprint(run.runtime_environment_sha256) : '—'}</code></dd></div>
+    <div><dt>构建版本</dt><dd><code>{run.build_revision || '—'}</code></dd></div>
     <div><dt>解析器</dt><dd><code>{run.parser_method || '—'}</code></dd></div>
     <div><dt>分块</dt><dd>{run.chunk_size_tokens ? <code>{run.chunk_size_tokens}/{run.chunk_overlap_tokens ?? 0}</code> : '—'}</dd></div>
     <div><dt>已索引 Chunk</dt><dd>{run.indexed_chunk_count ?? '—'}</dd></div>

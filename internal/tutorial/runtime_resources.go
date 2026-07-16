@@ -52,9 +52,13 @@ func (r ResourceInitializer) Ensure(ctx context.Context, job CloneJob, manifest 
 	}
 
 	datasetID := tutorialResourceID("tds", job.ProjectID, job.TemplateID, job.TemplateVersion)
+	datasetKind := "tutorial_baseline"
+	if job.Tier == "benchmark" {
+		datasetKind = "tutorial_benchmark"
+	}
 	if _, err := r.Datasets.EnsureInProject(ctx, job.TenantID, dataset.Dataset{
 		ID: datasetID, TenantID: job.TenantID, ProjectID: job.ProjectID,
-		Name: manifest.Runtime.Dataset.Name, Kind: "tutorial_baseline", Version: job.TemplateVersion, CreatedAt: now,
+		Name: manifest.Runtime.Dataset.Name, Kind: datasetKind, Version: job.TemplateVersion, CreatedAt: now,
 	}); err != nil {
 		return RuntimeResources{}, err
 	}
