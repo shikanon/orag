@@ -3,9 +3,15 @@ package tutorial
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
+	"net/http"
+	"os"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseRecipeAcceptsPinnedVisualRecipe(t *testing.T) {
@@ -15,6 +21,24 @@ func TestParseRecipeAcceptsPinnedVisualRecipe(t *testing.T) {
 	}
 	if recipe.Source.Dataset != ViDoSeekDataset || len(recipe.Source.Objects) != 2 {
 		t.Fatalf("recipe = %#v", recipe)
+	}
+}
+
+func TestParseRecipeFitsPublishedVisualQuickTier(t *testing.T) {
+	catalog, err := NewCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, err := catalog.Get("visual-document-rag", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack, ok := templatePack(template, "quick")
+	if !ok {
+		t.Fatal("quick pack is absent")
+	}
+	if _, err := ParseRecipe([]byte(validVisualRecipe), template, pack); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -42,6 +66,54 @@ func TestVerifyRecipeSourceChecksSizeAndChecksum(t *testing.T) {
 	}
 }
 
+func TestRecipeSourceReaderFetchesOnlyPinnedSource(t *testing.T) {
+	content := "abc"
+	reader, err := NewRecipeSourceReader(time.Second, t.TempDir(), &http.Client{Transport: recipeRoundTripper(func(request *http.Request) (*http.Response, error) {
+		if request.URL.String() != "https://huggingface.co/datasets/Qiuchen-Wang/ViDoSeek/resolve/e91a92ba5f38690696c7e66be5c5474b54c6e791/vidoseek.json?download=true" {
+			t.Fatalf("source URL = %q", request.URL)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(content)), ContentLength: int64(len(content))}, nil
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	object, err := reader.Fetch(t.Context(), RecipeSourceObject{Path: "vidoseek.json", Bytes: 3, SHA256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer object.Remove()
+	stored, err := os.ReadFile(object.TempPath)
+	if err != nil || string(stored) != content {
+		t.Fatalf("stored=%q err=%v", stored, err)
+	}
+}
+
+func TestRecipeSourceReaderRejectsUnsafeZIP(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	entry, err := writer.Create("../escape.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := entry.Write([]byte("unsafe")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(archive.Bytes())
+	reader, err := NewRecipeSourceReader(time.Second, t.TempDir(), &http.Client{Transport: recipeRoundTripper(func(_ *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(archive.Bytes())), ContentLength: int64(archive.Len())}, nil
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = reader.Fetch(t.Context(), RecipeSourceObject{Path: "vidoseek_pdf_document.zip", Bytes: int64(archive.Len()), SHA256: hex.EncodeToString(hash[:])})
+	if !errors.Is(err, ErrRecipeArchiveUnsafe) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestValidateRecipeZIPRejectsTraversal(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
@@ -62,6 +134,12 @@ func TestValidateRecipeZIPRejectsTraversal(t *testing.T) {
 	if err := ValidateRecipeZIP(reader); !errors.Is(err, ErrRecipeArchiveUnsafe) {
 		t.Fatalf("err = %v", err)
 	}
+}
+
+type recipeRoundTripper func(*http.Request) (*http.Response, error)
+
+func (fn recipeRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
 }
 
 func visualRecipeTemplate() Template {

@@ -155,6 +155,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	if err != nil {
 		return nil, err
 	}
+	recipeSources, err := tutorial.NewRecipeSourceReader(cfg.Tutorial.HTTPTimeout, "", httpclient.New(cfg.Tutorial.HTTPTimeout))
+	if err != nil {
+		return nil, err
+	}
 	privatePacks, err := tutorial.NewPrivateStore(tutorial.PrivateStoreConfig{
 		Provider: cfg.ObjectStorage.Provider, Endpoint: cfg.ObjectStorage.Endpoint, Bucket: cfg.ObjectStorage.Bucket,
 		AccessKeyID: cfg.ObjectStorage.AccessKeyID, AccessKeySecret: cfg.ObjectStorage.AccessKeySecret,
@@ -164,6 +168,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		return nil, err
 	}
 	tutorialClones.ConfigureInstaller(projects, publicPacks, privatePacks)
+	tutorialClones.ConfigureRecipeSource(recipeSources)
 	tutorialClones.ConfigureRuntime(tutorial.ResourceInitializer{KnowledgeBases: backend.store, Datasets: datasets})
 	releaseSvc := release.NewService(backend.releaseRepo)
 	pipelineSvc := pipeline.NewService(backend.pipelineRepo, pipeline.BuiltinRegistry())

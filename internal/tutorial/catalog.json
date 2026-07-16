@@ -57,7 +57,7 @@
     "pipeline_stages": ["P0 基线", "P1 文档解析", "P2 Chunking", "P3 Contextual Retrieval", "P4 稀疏召回", "P5 多路召回", "P6 Rewrite", "P7 Rerank", "P8 组合策略"],
     "required_capabilities": ["visual_parser", "embedding", "multimodal_retrieval", "rerank"],
     "packs": [
-      {"tier": "quick", "manifest_path": "visual-document-rag/1.0.0/quick/manifest.json", "estimated_bytes": 536870912, "estimated_minutes": 20, "requires_license_check": true},
+      {"tier": "quick", "manifest_path": "visual-document-rag/1.0.0/quick/manifest.json", "estimated_bytes": 805306368, "estimated_minutes": 20, "requires_license_check": true},
       {"tier": "benchmark", "manifest_path": "visual-document-rag/1.0.0/benchmark/manifest.json", "estimated_bytes": 4294967296, "estimated_minutes": 90, "requires_license_check": true}
     ],
     "replay_available": false
