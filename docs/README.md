@@ -2,7 +2,7 @@
 
 这里是 ORAG 的文档导航页。仓库根 README 负责快速理解项目定位和启动路径，本目录按“快速上手、API、架构、评估、运维”拆分为子目录，顶层长文继续保留为兼容入口和完整参考。
 
-对外托管入口为 [`https://shikanon.github.io/orag/`](https://shikanon.github.io/orag/)；社区镜像位于 [`https://www.tensorbytes.com/orag/`](https://www.tensorbytes.com/orag/)。两者的 API Reference 都直接使用仓库 `api/openapi.yaml` 构建，并支持授权、筛选与 Try it out。本地启动 API 后，等价入口为 [`http://localhost:8080/docs`](http://localhost:8080/docs)，原始规范位于 [`http://localhost:8080/openapi.yaml`](http://localhost:8080/openapi.yaml)。
+对外托管入口为 [`https://www.tensorbytes.com/orag/`](https://www.tensorbytes.com/orag/)；[`https://shikanon.github.io/orag/`](https://shikanon.github.io/orag/) 保留为镜像。两者的 API Reference 都直接使用仓库 `api/openapi.yaml` 构建，并支持授权、筛选与 Try it out。本地启动 API 后，等价入口为 [`http://localhost:8080/docs`](http://localhost:8080/docs)，原始规范位于 [`http://localhost:8080/openapi.yaml`](http://localhost:8080/openapi.yaml)。
 
 ## 推荐阅读路径
 
@@ -49,8 +49,8 @@
 | 健康检查 | `curl -fsS http://localhost:8080/healthz` |
 | 就绪检查 | `curl -fsS http://localhost:8080/readyz` |
 | OpenAPI 源文件 | [`../api/openapi.yaml`](../api/openapi.yaml) |
-| 托管文档站 | [`https://shikanon.github.io/orag/`](https://shikanon.github.io/orag/)；社区镜像 [`https://www.tensorbytes.com/orag/`](https://www.tensorbytes.com/orag/) |
-| 交互式 API Reference | `GET /docs`（本地）或 [`https://shikanon.github.io/orag/api.html`](https://shikanon.github.io/orag/api.html)（托管）/ [`https://www.tensorbytes.com/orag/api.html`](https://www.tensorbytes.com/orag/api.html)（镜像） |
+| 托管文档站 | [`https://www.tensorbytes.com/orag/`](https://www.tensorbytes.com/orag/)；GitHub Pages 镜像 [`https://shikanon.github.io/orag/`](https://shikanon.github.io/orag/) |
+| 交互式 API Reference | `GET /docs`（本地）或 [`https://www.tensorbytes.com/orag/api.html`](https://www.tensorbytes.com/orag/api.html)（托管）/ [`https://shikanon.github.io/orag/api.html`](https://shikanon.github.io/orag/api.html)（镜像） |
 | 运行时 OpenAPI | `GET /openapi.yaml` |
 | 教程实验室 | 控制台 `/tutorials`；目录与克隆/任务接口见 [`tutorials/clone-and-pack-install.md`](./tutorials/clone-and-pack-install.md) |
 | curl smoke | [`../examples/curl/05_health_ready.sh`](../examples/curl/05_health_ready.sh) -> [`../examples/curl/50_optimize.sh`](../examples/curl/50_optimize.sh) |

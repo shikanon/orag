@@ -11,7 +11,7 @@
   <a href="https://github.com/shikanon/orag/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/shikanon/orag/ci.yml?branch=main&label=CI"></a>
   <a href="https://github.com/shikanon/orag/actions/workflows/security.yml"><img alt="Security" src="https://img.shields.io/github/actions/workflow/status/shikanon/orag/security.yml?branch=main&label=Security"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/shikanon/orag"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/shikanon/orag/badge"></a>
-  <a href="https://shikanon.github.io/orag/"><img alt="Documentation" src="https://img.shields.io/badge/docs-GitHub%20Pages-0B51E5"></a>
+  <a href="https://www.tensorbytes.com/orag/"><img alt="Documentation" src="https://img.shields.io/badge/docs-tensorbytes.com-0B51E5"></a>
   <a href="./go.mod"><img alt="Go Version" src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white"></a>
   <a href="./api/openapi.yaml"><img alt="OpenAPI" src="https://img.shields.io/badge/OpenAPI-3.x-6BA539?logo=openapiinitiative&logoColor=white"></a>
 </p>
@@ -20,7 +20,7 @@
   <a href="#quick-start">Quick Start</a> ·
   <a href="#core-features">Core Features</a> ·
   <a href="#architecture">Architecture</a> ·
-  <a href="https://shikanon.github.io/orag/">Hosted Docs</a> ·
+  <a href="https://www.tensorbytes.com/orag/">Hosted Docs</a> ·
   <a href="./docs/README.md">Docs</a> ·
   <a href="./ROADMAP_EN.md">Roadmap</a> ·
   <a href="./api/openapi.yaml">OpenAPI</a>
@@ -121,7 +121,7 @@ The default `STORAGE_BACKEND=qdrant_postgres` requires PostgreSQL and Qdrant. `S
 make demo
 ```
 
-This explicitly enables deterministic mocks, builds and starts PostgreSQL, Qdrant, migration, API, and Console, then completes ingestion, a cited query, trace lookup, and evaluation. The machine-readable result is written to `.orag-demo/walkthrough.json`. Open the Console at `http://localhost:3000` and the interactive API docs at `http://localhost:8080/docs`. Without a local service, browse the [hosted documentation](https://shikanon.github.io/orag/) and [hosted API reference](https://shikanon.github.io/orag/api.html).
+This explicitly enables deterministic mocks, builds and starts PostgreSQL, Qdrant, migration, API, and Console, then completes ingestion, a cited query, trace lookup, and evaluation. The machine-readable result is written to `.orag-demo/walkthrough.json`. Open the Console at `http://localhost:3000` and the interactive API docs at `http://localhost:8080/docs`. Without a local service, browse the [hosted documentation](https://www.tensorbytes.com/orag/) and [hosted API reference](https://www.tensorbytes.com/orag/api.html); [GitHub Pages](https://shikanon.github.io/orag/) remains a mirror.
 
 This path is for local exploration and regression checks, not a production credential template. Stop it with:
 

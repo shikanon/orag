@@ -11,7 +11,7 @@
   <a href="https://github.com/shikanon/orag/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/shikanon/orag/ci.yml?branch=main&label=CI"></a>
   <a href="https://github.com/shikanon/orag/actions/workflows/security.yml"><img alt="Security" src="https://img.shields.io/github/actions/workflow/status/shikanon/orag/security.yml?branch=main&label=Security"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/shikanon/orag"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/shikanon/orag/badge"></a>
-  <a href="https://shikanon.github.io/orag/"><img alt="Documentation" src="https://img.shields.io/badge/docs-GitHub%20Pages-0B51E5"></a>
+  <a href="https://www.tensorbytes.com/orag/"><img alt="Documentation" src="https://img.shields.io/badge/docs-tensorbytes.com-0B51E5"></a>
   <a href="./go.mod"><img alt="Go Version" src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white"></a>
   <a href="./api/openapi.yaml"><img alt="OpenAPI" src="https://img.shields.io/badge/OpenAPI-3.x-6BA539?logo=openapiinitiative&logoColor=white"></a>
 </p>
@@ -20,7 +20,7 @@
   <a href="#快速开始">快速开始</a> ·
   <a href="#核心能力">核心能力</a> ·
   <a href="#架构概览">架构概览</a> ·
-  <a href="https://shikanon.github.io/orag/">托管文档</a> ·
+  <a href="https://www.tensorbytes.com/orag/">托管文档</a> ·
   <a href="./docs/README.md">文档中心</a> ·
   <a href="./ROADMAP.md">Roadmap</a> ·
   <a href="./api/openapi.yaml">OpenAPI</a>
@@ -122,7 +122,7 @@ Answer + Citations + Trace + Metrics
 make demo
 ```
 
-该命令显式启用 deterministic mock，构建并启动 PostgreSQL、Qdrant、迁移、API 和 Console，然后完成入库、带引用查询、trace 查询和评测。结果写入 `.orag-demo/walkthrough.json`。打开 Console：`http://localhost:3000`；交互式 API 文档：`http://localhost:8080/docs`。无需本地服务也可浏览 [GitHub Pages 文档站](https://shikanon.github.io/orag/)、[托管 API Reference](https://shikanon.github.io/orag/api.html) 或 [社区文档镜像](https://www.tensorbytes.com/orag/)。
+该命令显式启用 deterministic mock，构建并启动 PostgreSQL、Qdrant、迁移、API 和 Console，然后完成入库、带引用查询、trace 查询和评测。结果写入 `.orag-demo/walkthrough.json`。打开 Console：`http://localhost:3000`；交互式 API 文档：`http://localhost:8080/docs`。无需本地服务也可浏览[托管文档站](https://www.tensorbytes.com/orag/)和 [API Reference](https://www.tensorbytes.com/orag/api.html)；[GitHub Pages](https://shikanon.github.io/orag/) 仍保留为镜像。
 
 这条路径只用于本地体验和回归验证，不是生产凭据模板。停止栈：
 
