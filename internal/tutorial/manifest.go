@@ -63,12 +63,14 @@ const TutorialP3ContextualSystemPrompt = "You are preparing a retrieval chunk fo
 // Manifest describes one immutable, redistributable tutorial pack. It is
 // validated against the selected catalog entry before any object is fetched.
 type Manifest struct {
-	TemplateID string           `json:"template_id"`
-	Version    string           `json:"version"`
-	Tier       string           `json:"tier"`
-	License    License          `json:"license"`
-	Objects    []PackObject     `json:"objects"`
-	Runtime    *RuntimeManifest `json:"runtime,omitempty"`
+	TemplateID    string                 `json:"template_id"`
+	Version       string                 `json:"version"`
+	Tier          string                 `json:"tier"`
+	License       License                `json:"license"`
+	Objects       []PackObject           `json:"objects"`
+	Runtime       *RuntimeManifest       `json:"runtime,omitempty"`
+	VisualRuntime *VisualRuntimeManifest `json:"visual_runtime,omitempty"`
+	VisualAssets  []PackObject           `json:"visual_assets,omitempty"`
 }
 
 type License struct {
@@ -399,5 +401,15 @@ func cloneManifest(manifest Manifest) Manifest {
 		}
 		cloned.Runtime = &runtime
 	}
+	if manifest.VisualRuntime != nil {
+		visual := *manifest.VisualRuntime
+		visual.Pages = slices.Clone(manifest.VisualRuntime.Pages)
+		visual.Dataset.Items = slices.Clone(manifest.VisualRuntime.Dataset.Items)
+		for index := range visual.Dataset.Items {
+			visual.Dataset.Items[index].ExpectedEvidence = slices.Clone(manifest.VisualRuntime.Dataset.Items[index].ExpectedEvidence)
+		}
+		cloned.VisualRuntime = &visual
+	}
+	cloned.VisualAssets = slices.Clone(manifest.VisualAssets)
 	return cloned
 }

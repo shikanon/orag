@@ -49,7 +49,10 @@ type runtimeDefinition struct {
 }
 
 func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string) (runtimeDefinition, error) {
-	if !supportsTextRuntime(experiment.TemplateID, experiment.Tier) || experiment.RuntimeStatus != "ready" || experiment.KnowledgeBaseID == "" || experiment.DatasetID == "" || experiment.CloneJobID == "" || experiment.PackManifest.Runtime == nil {
+	if !supportsTutorialRuntime(experiment.TemplateID, experiment.Tier) || experiment.RuntimeStatus != "ready" || experiment.KnowledgeBaseID == "" || experiment.DatasetID == "" || experiment.CloneJobID == "" || experiment.PackManifest.Runtime == nil {
+		return runtimeDefinition{}, ErrRuntimeUnavailable
+	}
+	if supportsVisualRuntime(experiment.TemplateID, experiment.Tier) && (experiment.PackManifest.VisualRuntime == nil || experiment.BaselineProfile != "visual_page" || len(experiment.PackManifest.VisualAssets) == 0) {
 		return runtimeDefinition{}, ErrRuntimeUnavailable
 	}
 	definition := runtimeDefinition{

@@ -179,6 +179,7 @@ type CloneService struct {
 	repo     CloneRepository
 	projects CloneProjectService
 	reader   *PublicPackReader
+	recipe   *RecipeSourceReader
 	private  PrivateStore
 	runtime  RuntimeInitializer
 	now      func() time.Time
@@ -198,6 +199,14 @@ func (s *CloneService) ConfigureInstaller(projects CloneProjectService, reader *
 	s.projects = projects
 	s.reader = reader
 	s.private = private
+}
+
+// ConfigureRecipeSource configures the fixed, pinned upstream reader used by
+// visual-document recipes. It is deliberately separate from public Pack I/O.
+func (s *CloneService) ConfigureRecipeSource(reader *RecipeSourceReader) {
+	if s != nil {
+		s.recipe = reader
+	}
 }
 
 func NewCloneService(catalog *Catalog, repo CloneRepository, now func() time.Time) *CloneService {
@@ -367,16 +376,16 @@ func (s *CloneService) Run(ctx context.Context, subject Subject, jobID string) e
 				return err
 			}
 		case CloneStageValidateManifest:
-			if _, err := s.fetchManifest(ctx, job); err != nil {
+			if _, err := s.fetchInstallManifest(ctx, job); err != nil {
 				return s.fail(ctx, job, err)
 			}
 			if _, advanced, err := s.repo.Advance(ctx, job.TenantID, job.ID, CloneStageValidateManifest, CloneStageDownloadPack, CloneStatusQueued, s.now().UTC()); err != nil || !advanced {
 				return err
 			}
 		case CloneStageDownloadPack:
-			manifest, err := s.fetchManifest(ctx, job)
+			manifest, err := s.fetchInstallManifest(ctx, job)
 			if err == nil {
-				err = s.downloadAndVerifyPack(ctx, job, manifest)
+				err = s.downloadAndVerifyInstall(ctx, job, manifest)
 			}
 			if err != nil {
 				return s.fail(ctx, job, err)
@@ -392,9 +401,9 @@ func (s *CloneService) Run(ctx context.Context, subject Subject, jobID string) e
 				return err
 			}
 		case CloneStageWritePrivate:
-			manifest, err := s.fetchManifest(ctx, job)
+			manifest, err := s.fetchInstallManifest(ctx, job)
 			if err == nil {
-				err = s.installVerifiedPack(ctx, job, manifest)
+				err = s.installVerified(ctx, job, manifest)
 			}
 			if err != nil {
 				return s.fail(ctx, job, err)
@@ -403,12 +412,15 @@ func (s *CloneService) Run(ctx context.Context, subject Subject, jobID string) e
 				return err
 			}
 		case CloneStageCreateResources:
-			manifest, err := s.fetchManifest(ctx, job)
+			manifest, err := s.fetchInstallManifest(ctx, job)
 			if err != nil {
 				return s.fail(ctx, job, err)
 			}
+			if manifest, err = s.prepareVisualAssets(ctx, job, manifest); err != nil {
+				return s.fail(ctx, job, err)
+			}
 			resources := RuntimeResources{Status: "runtime_unavailable"}
-			if supportsTextRuntime(job.TemplateID, job.Tier) && manifest.Runtime != nil && s.runtime != nil {
+			if supportsTutorialRuntime(job.TemplateID, job.Tier) && manifest.Runtime != nil && s.runtime != nil {
 				resources, err = s.runtime.Ensure(ctx, job, manifest)
 				if err != nil {
 					return s.fail(ctx, job, err)
@@ -463,6 +475,41 @@ func (s *CloneService) fetchManifest(ctx context.Context, job CloneJob) (Manifes
 	return ParseManifest(raw, template, pack)
 }
 
+func (s *CloneService) fetchInstallManifest(ctx context.Context, job CloneJob) (Manifest, error) {
+	template, err := s.catalog.Get(job.TemplateID, job.TemplateVersion)
+	if err != nil {
+		return Manifest{}, err
+	}
+	if template.Modality != ModalityVisualDocument {
+		return s.fetchManifest(ctx, job)
+	}
+	if s.recipe == nil {
+		return Manifest{}, ErrRecipeSourceOrigin
+	}
+	pack, ok := templatePack(template, job.Tier)
+	if !ok {
+		return Manifest{}, ErrManifestInvalid
+	}
+	raw, err := s.reader.FetchManifest(ctx, pack.ManifestPath)
+	if err != nil {
+		return Manifest{}, err
+	}
+	recipe, err := ParseRecipe(raw, template, pack)
+	if err != nil {
+		return Manifest{}, err
+	}
+	return installManifestFromRecipe(recipe), nil
+}
+
+func installManifestFromRecipe(recipe RecipeManifest) Manifest {
+	objects := make([]PackObject, 0, len(recipe.Source.Objects))
+	for _, object := range recipe.Source.Objects {
+		objects = append(objects, PackObject{Path: object.Path, SHA256: object.SHA256, Bytes: object.Bytes, ContentType: recipeContentType(object.Path)})
+	}
+	visual := recipe.Runtime
+	return Manifest{TemplateID: recipe.TemplateID, Version: recipe.Version, Tier: recipe.Tier, License: recipe.License, Objects: objects, VisualRuntime: &visual}
+}
+
 func (s *CloneService) downloadAndVerifyPack(ctx context.Context, job CloneJob, manifest Manifest) error {
 	template, err := s.catalog.Get(job.TemplateID, job.TemplateVersion)
 	if err != nil {
@@ -478,6 +525,34 @@ func (s *CloneService) downloadAndVerifyPack(ctx context.Context, job CloneJob, 
 			return err
 		}
 		if err := object.Remove(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *CloneService) downloadAndVerifyInstall(ctx context.Context, job CloneJob, manifest Manifest) error {
+	template, err := s.catalog.Get(job.TemplateID, job.TemplateVersion)
+	if err != nil {
+		return err
+	}
+	if template.Modality != ModalityVisualDocument {
+		return s.downloadAndVerifyPack(ctx, job, manifest)
+	}
+	for _, object := range manifest.Objects {
+		privateObject := PrivateObject{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Object: VerifiedObject{PackObject: object}}
+		present, err := s.private.HasVerified(ctx, privateObject)
+		if err != nil {
+			return err
+		}
+		if present {
+			continue
+		}
+		verified, err := s.recipe.Fetch(ctx, RecipeSourceObject{Path: object.Path, SHA256: object.SHA256, Bytes: object.Bytes})
+		if err != nil {
+			return err
+		}
+		if err := verified.Remove(); err != nil {
 			return err
 		}
 	}
@@ -500,6 +575,39 @@ func (s *CloneService) installVerifiedPack(ctx context.Context, job CloneJob, ma
 		}
 		err = s.private.PutVerified(ctx, PrivateObject{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Object: object})
 		removeErr := object.Remove()
+		if err != nil {
+			return err
+		}
+		if removeErr != nil {
+			return removeErr
+		}
+	}
+	return nil
+}
+
+func (s *CloneService) installVerified(ctx context.Context, job CloneJob, manifest Manifest) error {
+	template, err := s.catalog.Get(job.TemplateID, job.TemplateVersion)
+	if err != nil {
+		return err
+	}
+	if template.Modality != ModalityVisualDocument {
+		return s.installVerifiedPack(ctx, job, manifest)
+	}
+	for _, object := range manifest.Objects {
+		privateObject := PrivateObject{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Object: VerifiedObject{PackObject: object}}
+		present, err := s.private.HasVerified(ctx, privateObject)
+		if err != nil {
+			return err
+		}
+		if present {
+			continue
+		}
+		verified, err := s.recipe.Fetch(ctx, RecipeSourceObject{Path: object.Path, SHA256: object.SHA256, Bytes: object.Bytes})
+		if err != nil {
+			return err
+		}
+		err = s.private.PutVerified(ctx, PrivateObject{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Object: verified})
+		removeErr := verified.Remove()
 		if err != nil {
 			return err
 		}
@@ -535,6 +643,14 @@ func cloneFailureCode(err error) string {
 		return "private_storage_write_failed"
 	case errors.Is(err, ErrManifestInvalid):
 		return "manifest_invalid"
+	case errors.Is(err, ErrRecipeInvalid):
+		return "recipe_invalid"
+	case errors.Is(err, ErrRecipeSourceChecksum):
+		return "object_checksum_mismatch"
+	case errors.Is(err, ErrRecipeSourceSize):
+		return "object_size_invalid"
+	case errors.Is(err, ErrRecipeSourceOrigin), errors.Is(err, ErrRecipeSourceResponse):
+		return "recipe_source_unavailable"
 	default:
 		return "clone_failed"
 	}
@@ -567,6 +683,14 @@ func templatePack(template Template, tier string) (PackRef, bool) {
 
 func supportsTextRuntime(templateID, tier string) bool {
 	return templateID == "text-rag" && (tier == "quick" || tier == "benchmark")
+}
+
+func supportsVisualRuntime(templateID, tier string) bool {
+	return templateID == "visual-document-rag" && (tier == "quick" || tier == "benchmark")
+}
+
+func supportsTutorialRuntime(templateID, tier string) bool {
+	return supportsTextRuntime(templateID, tier) || supportsVisualRuntime(templateID, tier)
 }
 
 func resumeStage(stage CloneStage) CloneStage {
