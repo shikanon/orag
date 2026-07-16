@@ -189,12 +189,13 @@ type TutorialConfig struct {
 }
 
 type ObservabilityConfig struct {
-	OTLPEndpoint      string
-	LangFuseHost      string
-	LangFusePublicKey string
-	LangFuseSecretKey string
-	RecordPrompts     bool
-	Trace             TracePrivacyConfig
+	OTLPEndpoint        string
+	OTLPMetricsEndpoint string
+	LangFuseHost        string
+	LangFusePublicKey   string
+	LangFuseSecretKey   string
+	RecordPrompts       bool
+	Trace               TracePrivacyConfig
 }
 
 type TracePrivacyConfig struct {
@@ -377,11 +378,12 @@ func Load() (Config, error) {
 			AllowInsecureCatalogHTTP: getenvBool("ORAG_TEST_MODE", false),
 		},
 		Observability: ObservabilityConfig{
-			OTLPEndpoint:      getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
-			LangFuseHost:      getenv("LANGFUSE_HOST", ""),
-			LangFusePublicKey: getenv("LANGFUSE_PUBLIC_KEY", ""),
-			LangFuseSecretKey: getenv("LANGFUSE_SECRET_KEY", ""),
-			RecordPrompts:     getenvBool("OBSERVABILITY_RECORD_PROMPTS", false),
+			OTLPEndpoint:        getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+			OTLPMetricsEndpoint: getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
+			LangFuseHost:        getenv("LANGFUSE_HOST", ""),
+			LangFusePublicKey:   getenv("LANGFUSE_PUBLIC_KEY", ""),
+			LangFuseSecretKey:   getenv("LANGFUSE_SECRET_KEY", ""),
+			RecordPrompts:       getenvBool("OBSERVABILITY_RECORD_PROMPTS", false),
 			Trace: TracePrivacyConfig{
 				StoreQuery:    getenvBool("TRACE_STORE_QUERY", true),
 				QueryMaxBytes: getenvInt("TRACE_QUERY_MAX_BYTES", 2048),

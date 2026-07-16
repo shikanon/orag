@@ -44,6 +44,7 @@ type Metrics struct {
 	optimizationAnswerQualityLift float64
 	optimizationCitationLift      float64
 	optimizationHallucinationRisk map[hallucinationRiskMetricLabels]int64
+	otlpSink                      metricSink
 }
 
 type httpMetricLabels struct {
@@ -156,12 +157,16 @@ func (m *Metrics) ObserveHTTP(method, route string, status int, latencyMS int64)
 	m.httpRequests.Add(1)
 	labels := newHTTPMetricLabels(method, route, status)
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.httpByLabel[labels]++
 	if status >= 400 {
 		m.httpErrors[labels]++
 	}
 	observeHistogram(m.httpLatencyByLabel, labels, httpLatencyBucketsMS, latencyMS)
+	sink := m.otlpSink
+	m.mu.Unlock()
+	if sink != nil {
+		sink.ObserveHTTP(labels, latencyMS)
+	}
 }
 
 func newHTTPMetricLabels(method, route string, status int) httpMetricLabels {
@@ -179,9 +184,13 @@ func (m *Metrics) ObserveDependencyCheck(dependency, status string, latencyMS in
 		Status:     normalizeDependencyStatus(status),
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.dependencyChecks[labels]++
 	observeHistogram(m.dependencyLatencyLB, labels, dependencyLatencyBucketsMS, latencyMS)
+	sink := m.otlpSink
+	m.mu.Unlock()
+	if sink != nil {
+		sink.ObserveDependencyCheck(labels, latencyMS)
+	}
 }
 
 func (m *Metrics) RecordDependencyCheck(dependency, status string, latencyMS int64) {
@@ -191,9 +200,13 @@ func (m *Metrics) RecordDependencyCheck(dependency, status string, latencyMS int
 func (m *Metrics) ObserveTraceStore(outcome string, latencyMS int64) {
 	labels := traceStoreMetricLabels{Outcome: normalizeOutcome(outcome)}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.traceStoreByOutcome[labels]++
 	observeHistogram(m.traceStoreLatencyLB, labels, traceStoreLatencyBucketsMS, latencyMS)
+	sink := m.otlpSink
+	m.mu.Unlock()
+	if sink != nil {
+		sink.ObserveTraceStore(labels, latencyMS)
+	}
 }
 
 func (m *Metrics) ObserveOfflineKnowledgeRun(status string) {
@@ -332,7 +345,6 @@ func (m *Metrics) ObserveRAGQuery(profile, cacheStatus, outcome string, latencyM
 	}
 	m.ragLatencyMS.Add(latencyMS)
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.ragByLabel[labels]++
 	hist := m.ragLatencyByLB[labels]
 	if hist == nil {
@@ -346,6 +358,11 @@ func (m *Metrics) ObserveRAGQuery(profile, cacheStatus, outcome string, latencyM
 			hist.Buckets[upper]++
 		}
 	}
+	sink := m.otlpSink
+	m.mu.Unlock()
+	if sink != nil {
+		sink.ObserveRAGQuery(labels, latencyMS)
+	}
 }
 
 func (m *Metrics) IncRAGError(profile, errorCode string) {
@@ -354,8 +371,12 @@ func (m *Metrics) IncRAGError(profile, errorCode string) {
 		ErrorCode: normalizeErrorCode(errorCode),
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.ragErrors[labels]++
+	sink := m.otlpSink
+	m.mu.Unlock()
+	if sink != nil {
+		sink.ObserveRAGError(labels)
+	}
 }
 
 func (m *Metrics) Render() string {

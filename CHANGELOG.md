@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Added an optional OTLP/HTTP metrics exporter for core HTTP, RAG, dependency-readiness, and trace-store telemetry, with low-cardinality attribute and shutdown-flush contract tests.
 - Added a versioned, importable Grafana overview dashboard for ORAG's documented Prometheus metrics, a parser-backed dashboard contract gate, and an operator guide that preserves the low-cardinality, read-only observability boundary.
 - Added the public, immutable `text-rag/1.1.0` CRUD-RAG release: deterministic Quick and Benchmark Packs, the complete upstream `data/` archive, source provenance, `SHA256SUMS`, anonymous HTTPS verification, a guarded TOS publisher, and a hosted release guide.
 - Added a reproducible experimental `text-rag` Benchmark Pack Run: verified Manifest/environment/build evidence, fixed high-precision inputs, P0–P8 contracts, read-only API/Console audit fields, and a controlled PostgreSQL/Qdrant/browser walkthrough.

@@ -43,7 +43,7 @@ orag-api
 
 - 系统默认不依赖 ES/Neo4j。
 - `/readyz` 不主动调用外部模型接口，只根据 provider 配置状态报告 `model_provider=mock` 或 `model_provider=configured`。
-- 当前 metrics 是进程内 Prometheus 文本指标，已包含 HTTP/RAG counter、受控低基数 label、cache hit/miss 和 RAG latency histogram；仓库提供可导入的 Grafana overview dashboard 与基础告警规则，仍不提供指标持久化、分位数预聚合或 OTel metrics exporter。
+- 当前 metrics 是进程内 Prometheus 文本指标，已包含 HTTP/RAG counter、受控低基数 label、cache hit/miss 和 RAG latency histogram；仓库提供可导入的 Grafana overview dashboard 与基础告警规则，设置 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 后会导出核心 HTTP/RAG/依赖/trace-store metrics。仍不提供指标持久化、分位数预聚合、采样策略或跨服务拓扑。
 - metrics label 不包含 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本；单次请求排查应使用结构化日志和 `oragctl trace --trace-id <trace_id>`。
 - 当前持久化应用 RAG trace 是查询权威；设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 时会额外导出受限 OpenTelemetry span，`LANGFUSE_*` 仍只保留配置边界。
 - 当前评估默认执行 deterministic rule-based metrics；请求携带 `judge`/`qag` 配置时会启用 LLM-as-Judge、QAG claim verification、pairwise 明细和 token/cost 记录。

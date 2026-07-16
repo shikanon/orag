@@ -41,7 +41,7 @@ Current baseline:
 | HTTP API, knowledge bases, ingestion, JSON/SSE query | `beta` | Close consistency gaps and validate versioned contracts in production pilots |
 | PostgreSQL + Qdrant hybrid retrieval, RRF, rerank, semantic cache | `beta` | Complete load, recovery, and compatibility validation |
 | Datasets, evaluations, LLM-as-Judge, optimizer | `beta` | Publish reproducible benchmarks and enforce budget/concurrency limits |
-| Application traces, Prometheus metrics, readiness and health | `beta` | Complete OTEL metrics export, persistence/sampling policy, and cross-service topology |
+| Application traces, Prometheus metrics, readiness and health | `beta` | Complete metrics persistence/sampling policy and cross-service topology |
 | Contextual Retrieval, RAPTOR, Query Router, Graph Retrieval | `experimental` | Publish ablations, cost, fallback behavior, and recommended use cases |
 | Offline Knowledge and MCP self-check/diagnose/ops | `experimental` | Remove fixture dependencies and validate approval and audit boundaries |
 | ORAG Console | `experimental` | Complete orchestration, API debugging, evaluation gates, promotion, and rollback |
@@ -154,7 +154,7 @@ For dependency boundaries, [#221](https://github.com/shikanon/orag/issues/221) u
 
 ### Observability and quality gates
 
-- The optional OpenTelemetry trace exporter and importable Prometheus/Grafana resources with baseline alerts are available; complete OTEL metrics export, persistence, sampling, and cross-service topology next.
+- Optional OpenTelemetry trace/metrics exporters and importable Prometheus/Grafana resources with baseline alerts are available; complete metrics persistence, sampling, and cross-service topology next.
 - Gate Go unit/vet/race, OpenAPI, Console typecheck/unit/build/E2E, PostgreSQL + Qdrant integration, and dual-architecture image smoke tests.
 - Publish performance baselines for ingestion throughput, query p50/p95, cache hit rate, evaluation duration, model calls, and cost accounting.
 

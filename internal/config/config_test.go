@@ -19,6 +19,18 @@ func TestLoadTutorialCatalogBaseURL(t *testing.T) {
 	}
 }
 
+func TestLoadOTLPMetricsEndpoint(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "test-key")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "https://collector.example.test/v1/metrics")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := cfg.Observability.OTLPMetricsEndpoint, "https://collector.example.test/v1/metrics"; got != want {
+		t.Fatalf("OTLP metrics endpoint = %q, want %q", got, want)
+	}
+}
+
 func TestLoadTutorialCatalogBaseURLOverride(t *testing.T) {
 	t.Setenv("ARK_API_KEY", "test-key")
 	t.Setenv("TUTORIAL_CATALOG_BASE_URL", "https://example.test/packs")

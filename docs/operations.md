@@ -13,7 +13,7 @@
 - Provider Endpoint：大多数 provider 内置默认 endpoint；Azure OpenAI 和 Google Cloud 需分别配置 `AZURE_OPENAI_BASE_URL`、`GOOGLE_CLOUD_BASE_URL`。其它 provider 如走代理、私有网关或不同区域，可用 `<PROVIDER>_BASE_URL` 覆盖默认值。
 - Rerank 接口：由 `LLM_RERANK_PROVIDER` 或兼容变量 `RERANK_PROVIDER` 选择 provider。火山/方舟使用 `ARK_RERANK_BASE_URL`、`ARK_RERANK_MODEL`；阿里云百炼/通义可使用 `ALIYUN_RERANK_API_KEY`、`ALIYUN_RERANK_BASE_URL`、`ALIYUN_RERANK_MODEL`。未配置所选 provider 的 key 时默认启动失败；deterministic mock 只允许显式测试模式启用。
 - 文档解析：默认 `INGEST_PARSER_METHOD=basic` 不依赖额外解析服务；PDF、图片和 DOCX 内嵌图片会通过 Ark 多模态模型生成描述。`INGEST_CONTEXTUAL_RETRIEVAL_ENABLED=true` 会额外为每个 chunk 生成 contextual text，用于 embedding 和 FTS/BM25 表示，默认失败降级为原始 chunk。`INGEST_RAPTOR_ENABLED=true` 会生成递归摘要 chunk，`RAG_GRAPH_RETRIEVAL_ENABLED=true` 会抽取轻量实体关系并在查询时扩展相关 chunk。`mineru` 需要 `MINERU_APISERVER`，可选 `MINERU_SERVER_URL` 用于 VLM HTTP backend；`docling` 需要 `DOCLING_SERVER_URL`。
-- 对象存储和观测平台：默认 `OBJECT_STORAGE_PROVIDER=local`、`OBJECT_STORAGE_MOCK_UPLOAD=true`，`OTEL_EXPORTER_OTLP_ENDPOINT`、`LANGFUSE_*` 为空时不启用外部 exporter 或 LangFuse。
+- 对象存储和观测平台：默认 `OBJECT_STORAGE_PROVIDER=local`、`OBJECT_STORAGE_MOCK_UPLOAD=true`。`OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 和 `LANGFUSE_*` 为空时不启用对应外部 exporter 或 LangFuse。
 
 系统默认不依赖 ES/Neo4j。`STORAGE_BACKEND=memory` 仅用于本地无依赖调试或单元测试，不作为生产配置。
 
@@ -64,7 +64,7 @@
 | `orag_rag_query_latency_ms` | histogram | RAG 查询耗时分桶，单位毫秒，label 为 `profile`、`cache_status`、`outcome`。 |
 | `orag_rag_query_latency_ms_sum` | counter | RAG 查询耗时累计值，单位毫秒。可与 `orag_rag_queries_total` 粗略计算平均耗时。 |
 
-这些指标是进程内 counter/histogram，服务重启后会从零开始；仓库提供可导入的 [Grafana overview dashboard](operations/grafana.md) 和基础 Prometheus 告警规则；当前没有分位数预聚合、持久化或 OTel metrics exporter。metrics label 不包含 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本，单次请求排查请使用日志和 trace 查询。
+这些指标是进程内 counter/histogram，服务重启后会从零开始；仓库提供可导入的 [Grafana overview dashboard](operations/grafana.md) 和基础 Prometheus 告警规则。设置 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 后，核心 HTTP、RAG、依赖就绪和 trace-store metrics 会以 OTLP/HTTP 导出；当前仍没有分位数预聚合、指标持久化、采样策略或跨服务拓扑。metrics label 不包含 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本，单次请求排查请使用日志和 trace 查询。
 
 ## 日志、Trace 与外部观测边界
 
@@ -86,7 +86,7 @@ oragctl trace --trace-id trace_xxx
 
 命中时输出 `trace` 对象，包含 `tenant_id`、`profile`、`latency_ms`、`has_error`、`error_count` 和按时间排序的 `node_spans`；未命中时输出 `404 trace_not_found` 或 CLI 的 `found=false`。当前支持 HTTP 列表/详情和 CLI 单条/列表/统计查询；仍不提供跨租户聚合、采样、跨服务拓扑或外部 APM 跳转。
 
-设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 为绝对 OTLP/HTTP endpoint（例如 `http://otel-collector:4318/v1/traces`）后，服务会批量导出应用 RAG/Graph span。导出的属性仅包含 span 名、时间、错误类型和 `orag.trace_id`，不会导出 query、prompt、文档、模型输出、tenant 或原始错误文本；Prometheus metrics 仍只通过 `/metrics` 暴露。`LANGFUSE_*` 仍只是配置边界：服务不会创建 LangFuse client，也不会上传 prompt、completion、score 或 trace。接入外部平台前仍应明确脱敏、采样、留存和 `OBSERVABILITY_RECORD_PROMPTS` 策略。
+设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 为绝对 OTLP/HTTP traces endpoint（例如 `http://otel-collector:4318/v1/traces`）后，服务会批量导出应用 RAG/Graph span。设置 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 为绝对 OTLP/HTTP metrics endpoint（例如 `http://otel-collector:4318/v1/metrics`）后，服务会导出核心 HTTP、RAG、依赖就绪和 trace-store counters/histograms。metric 属性与 Prometheus 语义一致且仅使用受控低基数字段；不会导出 query、prompt、文档、模型输出、tenant、trace ID 或原始错误文本。Prometheus `/metrics` 仍保留完整的本地指标集合。`LANGFUSE_*` 仍只是配置边界：服务不会创建 LangFuse client，也不会上传 prompt、completion、score 或 trace。接入外部平台前仍应明确脱敏、采样、留存和 `OBSERVABILITY_RECORD_PROMPTS` 策略。
 
 ## 本地部署检查
 
