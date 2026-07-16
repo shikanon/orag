@@ -858,7 +858,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Starts an idempotent baseline Live Run for a text Pack whose verified runtime declaration has created project-owned resource roots. The server reads only private Pack copies and derives all evaluation inputs. */
+        /** @description Starts an idempotent server-declared Live Run for a text Pack whose verified runtime declaration has created project-owned resource roots. Candidate variants require a compatible completed baseline. The server reads only private Pack copies and derives all parser, resource, model, and evaluation inputs. */
         post: operations["startTutorialExperimentRun"];
         delete?: never;
         options?: never;
@@ -879,6 +879,27 @@ export interface paths {
         };
         /** @description Returns durable Live Run progress and redacted failure codes. */
         get: operations["getTutorialExperimentRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs/{run_id}/comparison": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                experiment_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Returns the server-verified P0/P1 comparison for a completed candidate. The response contains only persisted standard evaluation metrics and audit lineage. */
+        get: operations["getTutorialExperimentRunComparison"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1719,13 +1740,29 @@ export interface components {
             /** @enum {string} */
             baseline_profile?: "realtime";
             baseline_top_k?: number;
+            /** @description Immutable tutorial variants declared by the installed Pack. Variant configuration remains server-owned. */
+            variants: components["schemas"]["TutorialExperimentVariant"][];
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             updated_at: string;
         };
+        TutorialExperimentVariant: {
+            /** @description Server-declared immutable variant identifier. */
+            id: string;
+            chapter?: string;
+            /** @description Parser method selected by the server for this declared variant. */
+            parser_method: string;
+            /** @description Whether this installed Pack currently has a runnable runtime root. */
+            available: boolean;
+        };
         StartTutorialExperimentRunRequest: {
-            /** @description Reuse the same value to safely resume the same baseline request. */
+            /**
+             * @description Immutable variant identifier from TutorialExperiment.variants. The server rejects undeclared values and never accepts parser or model configuration.
+             * @default baseline
+             */
+            variant: string;
+            /** @description Reuse the same value to safely resume the same immutable variant request. */
             idempotency_key: string;
         };
         /** @enum {string} */
@@ -1745,8 +1782,19 @@ export interface components {
             tenant_id: string;
             project_id: string;
             experiment_id: string;
-            /** @enum {string} */
-            variant: "baseline";
+            /** @description Immutable Pack-declared variant identifier. */
+            variant: string;
+            /** @description Server-selected compatible P0 parent for a candidate run. */
+            readonly baseline_run_id?: string;
+            /** @description SHA-256 of redacted inputs that must match between P0 and P1. */
+            readonly comparison_fingerprint?: string;
+            /** @description SHA-256 of the variant's server-derived execution definition. */
+            readonly definition_fingerprint?: string;
+            readonly knowledge_base_id?: string;
+            readonly dataset_id?: string;
+            readonly profile?: string;
+            readonly top_k?: number;
+            readonly parser_method?: string;
             stage: components["schemas"]["TutorialExperimentRunStage"];
             status: components["schemas"]["TutorialExperimentRunStatus"];
             evaluation_run_id?: string;
@@ -1762,6 +1810,23 @@ export interface components {
             /** @description Relative ORAG API path to poll the durable experiment run. */
             poll_url: string;
             run: components["schemas"]["TutorialExperimentRun"];
+        };
+        TutorialExperimentMetricDelta: {
+            name: string;
+            /** Format: double */
+            baseline: number;
+            /** Format: double */
+            candidate: number;
+            /** Format: double */
+            absolute_delta: number;
+            /** Format: double */
+            relative_delta?: number | null;
+        };
+        TutorialExperimentRunComparison: {
+            baseline: components["schemas"]["TutorialExperimentRun"];
+            candidate: components["schemas"]["TutorialExperimentRun"];
+            comparable: boolean;
+            metrics?: components["schemas"]["TutorialExperimentMetricDelta"][];
         };
         ReadinessResponse: {
             /** @enum {string} */
@@ -4696,6 +4761,35 @@ export interface operations {
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    getTutorialExperimentRunComparison: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                experiment_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Auditable tutorial experiment comparison. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialExperimentRunComparison"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };
     };

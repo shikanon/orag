@@ -182,7 +182,7 @@ git commit -m "feat: declare tutorial parser candidates"
 - Modify: `internal/app/app.go`
 
 **Interfaces:**
-- `Start(ctx, subject, projectID, variant, idempotencyKey)`.
+- Keep `Start(ctx, subject, projectID, idempotencyKey)` for P0 compatibility and add `StartVariant(ctx, subject, projectID, variant, idempotencyKey)`.
 - `ExperimentRun` persists `baseline_run_id`, `comparison_fingerprint`, `definition_fingerprint`, `knowledge_base_id`, `dataset_id`, `profile`, `top_k`, and `parser_method`.
 - `FindCompletedBaseline(ctx, tenantID, projectID, experimentID, fingerprint)`.
 - `Compare(ctx, subject, projectID, experimentID, candidateRunID)` returns standard metric absolute/delta values.
@@ -213,7 +213,7 @@ Expected: FAIL because P0 only accepts baseline and stores no lineage.
 ALTER TABLE tutorial_experiment_runs DROP CONSTRAINT tutorial_experiment_runs_variant_check;
 ALTER TABLE tutorial_experiment_runs
   ADD CONSTRAINT tutorial_experiment_runs_variant_check CHECK (variant ~ '^[a-z][a-z0-9_]{0,63}$'),
-  ADD COLUMN baseline_run_id TEXT NOT NULL DEFAULT '' REFERENCES tutorial_experiment_runs(id),
+  ADD COLUMN baseline_run_id TEXT REFERENCES tutorial_experiment_runs(id),
   ADD COLUMN comparison_fingerprint TEXT NOT NULL DEFAULT '',
   ADD COLUMN definition_fingerprint TEXT NOT NULL DEFAULT '',
   ADD COLUMN knowledge_base_id TEXT NOT NULL DEFAULT '',
@@ -335,4 +335,3 @@ git commit -m "feat: add tutorial P1 parser workbench"
 ## Execution Mode
 
 The owner has already authorized direct Roadmap iteration. Execute inline in the isolated `codex/tutorial-p1-parser-candidate` worktree, using the task-level test gates and commits before publishing a PR.
-

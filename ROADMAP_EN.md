@@ -2,7 +2,7 @@
 
 English | [简体中文](./ROADMAP.md)
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 ## Positioning
 
@@ -166,7 +166,7 @@ For dependency boundaries, [#221](https://github.com/shikanon/orag/issues/221) u
 
 ## Phase 4: Evaluation-first control plane
 
-Current progress: the server-owned node registry, revisioned draft persistence, Compiler/Debug Runner, project-scoped draft debug API, Console API Debugger, RAG Studio draft workbench, saving Debug Runs as evaluation cases, and Draft → content-hashed immutable PipelineVersion are merged on `main` (PRs #253–#261). [#266](https://github.com/shikanon/orag/pull/266) adds immutable project evaluation policies; [#268](https://github.com/shikanon/orag/pull/268) persists the complete frozen DAG and source pipeline; [#269](https://github.com/shikanon/orag/pull/269) derives append-only evidence from stored evaluation runs; [#270](https://github.com/shikanon/orag/pull/270) binds that evidence to a target environment as the only validation path for draft-originated versions; [#272](https://github.com/shikanon/orag/pull/272) activates evaluated frozen versions into development; and [#273](https://github.com/shikanon/orag/pull/273) resolves project queries through the production active version, executes the frozen DAG, and persists pipeline/release/evaluation lineage in traces. Tutorial Lab now supports durable, idempotent, resumable template cloning and Pack installation. A `text-rag` Quick Pack with a runtime declaration can also derive project KB/dataset roots from its verified Manifest snapshot, read its private Pack, run a fixed `realtime` baseline, and link an ordinary evaluation run. A real PostgreSQL + Qdrant browser E2E covers that loop using a local anonymous fixture. The default public OSS returned `403 AccessDenied` on 2026-07-16, so production availability still depends on publishing objects with anonymous-read ACLs. P0–P8 candidate/Benchmark Runs, official Replay, result comparison, and visual-document/video Live Runs remain outstanding.
+Current progress: the server-owned node registry, revisioned draft persistence, Compiler/Debug Runner, project-scoped draft debug API, Console API Debugger, RAG Studio draft workbench, saving Debug Runs as evaluation cases, and Draft → content-hashed immutable PipelineVersion are merged on `main` (PRs #253–#261). [#266](https://github.com/shikanon/orag/pull/266) adds immutable project evaluation policies; [#268](https://github.com/shikanon/orag/pull/268) persists the complete frozen DAG and source pipeline; [#269](https://github.com/shikanon/orag/pull/269) derives append-only evidence from stored evaluation runs; [#270](https://github.com/shikanon/orag/pull/270) binds that evidence to a target environment as the only validation path for draft-originated versions; [#272](https://github.com/shikanon/orag/pull/272) activates evaluated frozen versions into development; and [#273](https://github.com/shikanon/orag/pull/273) resolves project queries through the production active version, executes the frozen DAG, and persists pipeline/release/evaluation lineage in traces. Tutorial Lab now supports durable, idempotent, resumable template cloning and Pack installation. A `text-rag` Quick Pack with a runtime declaration can also derive project KB/dataset roots from its verified Manifest snapshot, read its private Pack, run a fixed `realtime` P0 baseline, and link an ordinary evaluation run. The P1 `p1_structured_json` candidate limits the sole variable to JSON document parsing: the server freezes Pack/model/dataset/profile/Top-K/evaluator fingerprints, creates an independent index, and reports P0/P1 metric deltas only from persisted standard evaluation results. A controlled fixture covers the real PostgreSQL + Qdrant/browser path; the official public `text-rag/1.0.1` Pack still requires a separate release pipeline with anonymous HTTPS and SHA-256 verification. The default public OSS returned `403 AccessDenied` on 2026-07-16, so production availability still depends on publishing objects with anonymous-read ACLs. P2–P8 candidate/Benchmark Runs, official Replay, and visual-document/video Live Runs remain outstanding.
 
 ### Project-to-release golden path
 
@@ -177,7 +177,7 @@ Current progress: the server-owned node registry, revisioned draft persistence, 
 
 ### Tutorial experimentation loop
 
-- Clone and Pack installation plus a fixed baseline Live Run for runtime-declared `text-rag` Quick Packs are complete with a controlled-fixture real browser E2E. P0–P8 candidate/Benchmark Runs, official Replay, result comparison, and visual-document/video execution remain pending; default public OSS availability remains an external prerequisite.
+- Clone and Pack installation, a fixed P0 baseline Live Run for runtime-declared `text-rag` Quick Packs, and the Pack-declared P1 structured-JSON parser candidate are complete with frozen inputs, independent indexes, and actual evaluation-metric comparison. P2–P8 candidate/Benchmark Runs, official Replay, and visual-document/video execution remain pending; default public OSS availability and official `1.0.1` Pack publication remain external prerequisites.
 - Keep text, visual-document, and video tutorials focused on engineering and evaluation; model training is out of scope.
 - Document per-strategy ablations, cost, latency, failure fallback, and recommended scenarios.
 

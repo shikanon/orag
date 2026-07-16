@@ -2,7 +2,7 @@
 
 [English](./ROADMAP_EN.md) | 简体中文
 
-最后更新：2026-07-15
+最后更新：2026-07-16
 
 ## 定位
 
@@ -166,7 +166,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 ## 阶段四：评测优先控制面
 
-当前进展：Pipeline server-owned node registry、revisioned draft persistence、Compiler/Debug Runner、项目级 draft debug API、Console API Debugger、RAG Studio draft workbench、Debug Run 保存评测 case，以及 Draft → content-hashed immutable PipelineVersion 已在 `main` 合并（PR #253–#261）。[#266](https://github.com/shikanon/orag/pull/266) 加入项目级不可变评测策略；[#268](https://github.com/shikanon/orag/pull/268) 让版本保存完整冻结 DAG 与来源 pipeline；[#269](https://github.com/shikanon/orag/pull/269) 从已存储评测运行推导 append-only evidence；[#270](https://github.com/shikanon/orag/pull/270) 将该证据绑定目标环境并作为 Draft 版本晋级的唯一 validation 路径；[#272](https://github.com/shikanon/orag/pull/272) 将通过评测的冻结版本激活到 development；[#273](https://github.com/shikanon/orag/pull/273) 将项目查询解析到 production active version、执行冻结 DAG，并把 pipeline/release/评测血缘写入 trace。当前黄金路径已经覆盖“创建 Pipeline → 填充标准链路 → 保存 draft → 按 revision 调试 → 查看节点诊断 → 写入评测数据集 → 冻结不可变版本 → 由服务器生成环境门禁 → development 激活 → staging/production 晋级 → production 查询”。教程实验室现已支持持久化、幂等、可恢复的模板 clone 与 Pack 安装；带运行时声明的 `text-rag` Quick Pack 还可在服务端从已保存的校验后 Manifest 派生项目知识库/数据集、读取私有 Pack、运行固定 `realtime` 基线，并关联普通评测 Run。真实 PostgreSQL + Qdrant 浏览器 E2E 使用本地匿名 fixture 覆盖该闭环。默认公共 OSS 在 2026-07-16 仍返回 `403 AccessDenied`，因此生产可用性仍取决于对象和匿名读 ACL 发布。P0–P8 候选/Benchmark Run、官方 Replay、结果对比以及视觉/视频 Live Run 仍待完成。
+当前进展：Pipeline server-owned node registry、revisioned draft persistence、Compiler/Debug Runner、项目级 draft debug API、Console API Debugger、RAG Studio draft workbench、Debug Run 保存评测 case，以及 Draft → content-hashed immutable PipelineVersion 已在 `main` 合并（PR #253–#261）。[#266](https://github.com/shikanon/orag/pull/266) 加入项目级不可变评测策略；[#268](https://github.com/shikanon/orag/pull/268) 让版本保存完整冻结 DAG 与来源 pipeline；[#269](https://github.com/shikanon/orag/pull/269) 从已存储评测运行推导 append-only evidence；[#270](https://github.com/shikanon/orag/pull/270) 将该证据绑定目标环境并作为 Draft 版本晋级的唯一 validation 路径；[#272](https://github.com/shikanon/orag/pull/272) 将通过评测的冻结版本激活到 development；[#273](https://github.com/shikanon/orag/pull/273) 将项目查询解析到 production active version、执行冻结 DAG，并把 pipeline/release/评测血缘写入 trace。当前黄金路径已经覆盖“创建 Pipeline → 填充标准链路 → 保存 draft → 按 revision 调试 → 查看节点诊断 → 写入评测数据集 → 冻结不可变版本 → 由服务器生成环境门禁 → development 激活 → staging/production 晋级 → production 查询”。教程实验室现已支持持久化、幂等、可恢复的模板 clone 与 Pack 安装；带运行时声明的 `text-rag` Quick Pack 还可在服务端从已保存的校验后 Manifest 派生项目知识库/数据集、读取私有 Pack、运行固定 `realtime` P0 基线，并关联普通评测 Run。P1 `p1_structured_json` 候选将唯一变量限制为 JSON 文档解析器：服务端冻结 Pack/模型/数据集/profile/Top-K/评测器 fingerprint，为候选创建独立索引，并只从持久化的标准评测结果返回 P0/P1 指标差异。受控 fixture 覆盖真实 PostgreSQL + Qdrant/浏览器路径；官方 `text-rag/1.0.1` 公共 Pack 仍需通过独立发布流水线以匿名 HTTPS 和 SHA-256 校验发布。默认公共 OSS 在 2026-07-16 仍返回 `403 AccessDenied`，因此生产可用性仍取决于对象和匿名读 ACL 发布。P2–P8 候选/Benchmark Run、官方 Replay，以及视觉/视频 Live Run 仍待完成。
 
 ### Project 到 Release 的黄金路径
 
@@ -177,7 +177,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 ### 教程实验闭环
 
-- 已完成官方教程的 clone 与 Pack 安装，以及声明运行时的 `text-rag` Quick Pack 固定基线 Live Run（受控 fixture 真实浏览器 E2E）。待完成 P0–P8 候选/Benchmark Run、官方 Replay、结果对比和视觉/视频执行；默认公共 OSS 可用性仍是外部前置条件。
+- 已完成官方教程的 clone 与 Pack 安装、声明运行时的 `text-rag` Quick Pack 固定 P0 基线，以及 Pack 声明的 P1 结构化 JSON 解析候选（冻结输入、独立索引和真实评测指标对比）。待完成 P2–P8 候选/Benchmark Run、官方 Replay 和视觉/视频执行；默认公共 OSS 可用性及官方 `1.0.1` Pack 发布仍是外部前置条件。
 - 文本、视觉文档和视频教程均使用真实工程/evaluation 数据，不引入模型训练工作流。
 - 每个检索增强策略提供独立消融、成本、延迟、失败回退和推荐场景说明。
 

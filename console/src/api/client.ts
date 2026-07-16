@@ -11,9 +11,11 @@ export type StartTutorialCloneInput = components['schemas']['StartTutorialCloneR
 export type TutorialCloneAcceptedResponse = components['schemas']['TutorialCloneAcceptedResponse']
 export type TutorialCloneJob = components['schemas']['TutorialCloneJob']
 export type TutorialExperiment = components['schemas']['TutorialExperiment']
+export type TutorialExperimentVariant = components['schemas']['TutorialExperimentVariant']
 export type StartTutorialExperimentRunInput = components['schemas']['StartTutorialExperimentRunRequest']
 export type TutorialExperimentRun = components['schemas']['TutorialExperimentRun']
 export type TutorialExperimentRunAcceptedResponse = components['schemas']['TutorialExperimentRunAcceptedResponse']
+export type TutorialExperimentRunComparison = components['schemas']['TutorialExperimentRunComparison']
 export type LoginInput = components['schemas']['LoginRequest']
 export type LoginResponse = components['schemas']['LoginResponse']
 export type KnowledgeBase = components['schemas']['KnowledgeBase']
@@ -105,6 +107,9 @@ export const tutorialApi = {
   ),
   getLiveRun: (projectId: string, experimentId: string, runId: string) => request<TutorialExperimentRun>(
     `/v1/projects/${encodeURIComponent(projectId)}/tutorial-experiments/${encodeURIComponent(experimentId)}/runs/${encodeURIComponent(runId)}`,
+  ),
+  getLiveRunComparison: (projectId: string, experimentId: string, runId: string) => request<TutorialExperimentRunComparison>(
+    `/v1/projects/${encodeURIComponent(projectId)}/tutorial-experiments/${encodeURIComponent(experimentId)}/runs/${encodeURIComponent(runId)}/comparison`,
   ),
   cancelLiveRun: (projectId: string, experimentId: string, runId: string) => request<TutorialExperimentRun>(
     `/v1/projects/${encodeURIComponent(projectId)}/tutorial-experiments/${encodeURIComponent(experimentId)}/runs/${encodeURIComponent(runId)}:cancel`, { method: 'POST' },
