@@ -17,11 +17,20 @@ describe('Tutorial catalog', () => {
   it('shows scenario dimensions and pack requirements', async () => {
     renderApp('/tutorials/video-rag')
     expect(await screen.findByRole('heading', { name: '视频 RAG' })).toBeVisible()
-    expect(screen.getByText('Replay 结果即将开放')).toBeVisible()
+    expect(screen.getByText('仅 Live Run')).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Quick Pack' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Benchmark Pack' })).toBeVisible()
     expect(screen.getByText('时间否定')).toBeVisible()
     expect(screen.getByRole('button', { name: '克隆教程' })).toBeEnabled()
+  })
+
+  it('shows the offline official text Replay without pretending it is a Live Run', async () => {
+    renderApp('/tutorials/text-rag')
+    expect(await screen.findByText('官方 Replay 可用')).toBeVisible()
+    expect(await screen.findByRole('heading', { name: '固定环境的官方复现' })).toBeVisible()
+    expect(screen.getByText('P8 Context Pack')).toBeVisible()
+    expect(screen.getByText('official-replay-v1')).toBeVisible()
+    expect(screen.queryByText(/access key|object key|manifest_url/i)).not.toBeInTheDocument()
   })
 
   it('starts the chosen Quick Pack clone and shows server progress', async () => {

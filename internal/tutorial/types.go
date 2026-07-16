@@ -37,7 +37,42 @@ type Template struct {
 	ReplayAvailable          bool      `json:"replay_available"`
 }
 
+// ReplaySnapshot is an immutable, public summary of an official controlled
+// tutorial run. It intentionally contains aggregate facts only: no user data,
+// queries, answers, storage coordinates, or credentials are part of this API.
+type ReplaySnapshot struct {
+	ID                       string        `json:"id"`
+	TemplateID               string        `json:"template_id"`
+	TemplateVersion          string        `json:"template_version"`
+	PackTier                 string        `json:"pack_tier"`
+	PackManifestSHA256       string        `json:"pack_manifest_sha256"`
+	RuntimeEnvironmentSHA256 string        `json:"runtime_environment_sha256"`
+	BuildRevision            string        `json:"build_revision"`
+	EvaluatorVersion         string        `json:"evaluator_version"`
+	GeneratedAt              string        `json:"generated_at"`
+	Summary                  string        `json:"summary"`
+	Baseline                 ReplayVariant `json:"baseline"`
+	Candidate                ReplayVariant `json:"candidate"`
+	Fingerprint              string        `json:"fingerprint"`
+}
+
+type ReplayVariant struct {
+	Variant              string         `json:"variant"`
+	Profile              string         `json:"profile"`
+	TopK                 int            `json:"top_k"`
+	ContextPackTopN      int            `json:"context_pack_top_n"`
+	ContextPackMaxTokens int            `json:"context_pack_max_tokens"`
+	Metrics              []ReplayMetric `json:"metrics"`
+	IndexMetrics         []ReplayMetric `json:"index_metrics"`
+}
+
+type ReplayMetric struct {
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+}
+
 var (
 	ErrTemplateNotFound = errors.New("tutorial template not found")
 	ErrVersionNotFound  = errors.New("tutorial template version not found")
+	ErrReplayNotFound   = errors.New("tutorial replay not found")
 )

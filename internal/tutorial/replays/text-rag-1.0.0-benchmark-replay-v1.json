@@ -1,0 +1,42 @@
+{
+  "id": "text-rag/1.0.0/benchmark/replay-v1",
+  "template_id": "text-rag",
+  "template_version": "1.0.0",
+  "pack_tier": "benchmark",
+  "pack_manifest_sha256": "d3b293d5478d03ec7cc37bd0fbc837c1a9a017764c457c4a1001ece25d890e26",
+  "runtime_environment_sha256": "7f0c9da0fedc8246fe5cb2c74ddc0a6f3e4c5f5b1f9fe2671c54d6472cb947a1",
+  "build_revision": "official-replay-v1",
+  "evaluator_version": "tutorial_eval_v5",
+  "generated_at": "2026-07-16T00:00:00Z",
+  "summary": "受控 Benchmark Pack 的离线官方复现摘要；展示运行定义与聚合审计事实，不代表当前用户环境的 Live Run。",
+  "baseline": {
+    "variant": "baseline",
+    "profile": "high_precision",
+    "top_k": 8,
+    "context_pack_top_n": 5,
+    "context_pack_max_tokens": 6000,
+    "metrics": [
+      {"name": "evaluation_items", "value": 4},
+      {"name": "retrieval_top_k", "value": 8}
+    ],
+    "index_metrics": [
+      {"name": "source_documents", "value": 2},
+      {"name": "reused_baseline_index", "value": 0}
+    ]
+  },
+  "candidate": {
+    "variant": "p8_context_pack",
+    "profile": "high_precision",
+    "top_k": 8,
+    "context_pack_top_n": 3,
+    "context_pack_max_tokens": 6000,
+    "metrics": [
+      {"name": "evaluation_items", "value": 4},
+      {"name": "retrieval_top_k", "value": 8}
+    ],
+    "index_metrics": [
+      {"name": "source_documents", "value": 2},
+      {"name": "reused_baseline_index", "value": 1}
+    ]
+  }
+}

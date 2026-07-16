@@ -235,6 +235,72 @@
   grid-template-columns: 1fr 1fr;
   gap: 18px;
 }
+.replay-card {
+  padding: 26px;
+  border: 1px solid #d9dbd4;
+  background: #fbfcf9;
+}
+.replay-card > p {
+  max-width: 760px;
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.replay-provenance,
+.replay-variants article dl {
+  margin: 0;
+}
+.replay-provenance {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.replay-provenance div,
+.replay-variants article dl > div {
+  min-width: 0;
+}
+.replay-provenance dt,
+.replay-variants dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.replay-provenance dd,
+.replay-variants dd {
+  margin: 5px 0 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+}
+.replay-variants {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 24px;
+}
+.replay-variants article {
+  padding: 20px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.replay-variants h3 {
+  margin: 0 0 8px;
+  font-family: Georgia, serif;
+  font-size: 21px;
+  font-weight: 500;
+}
+.replay-variants article > p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.replay-variants article dl > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-top: 1px solid #eff0ec;
+}
 .tutorial-pack {
   padding: 27px;
   border: 1px solid #d9dbd4;
@@ -552,6 +618,10 @@
     grid-template-columns: repeat(2, 1fr);
   }
   .tutorial-pack-grid {
+    grid-template-columns: 1fr;
+  }
+  .replay-provenance,
+  .replay-variants {
     grid-template-columns: 1fr;
   }
   .tutorial-workbench-grid {

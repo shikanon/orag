@@ -93,6 +93,7 @@ func (s *Server) Hertz() *server.Hertz {
 	v1.POST("/projects/:project_id/environments/development/activate", s.activateDevelopmentRelease)
 	v1.POST("/projects/:project_id/environments/:environment/rollback", s.rollbackRelease)
 	v1.GET("/tutorials", s.listTutorials)
+	v1.GET("/tutorials/:template_id/replay", s.getTutorialReplay)
 	v1.GET("/tutorials/:template_id", s.getTutorial)
 	v1.GET("/tutorials/:template_id/versions/:version", s.getTutorialVersion)
 	v1.POST("/tutorials/:template_id/clones", s.createTutorialClone)

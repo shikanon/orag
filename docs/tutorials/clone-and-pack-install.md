@@ -2,7 +2,7 @@
 
 教程目录中的模板是全局、只读且版本化的资源。克隆动作会创建一个普通的 tenant 项目，并通过持久化任务把指定的 Quick Pack 或 Benchmark Pack 校验后写入该项目的私有输出存储。
 
-此能力仍是 `experimental`。具有受支持 `runtime` 声明的 `text-rag` Quick 与 Benchmark Pack 都能创建项目知识库/数据集并运行 P0–P8 单变量实验。Quick 固定 `realtime`/Top-K 5；受控 Benchmark Pack 固定 `high_precision`/Top-K 8，并持久化 Manifest SHA-256、运行环境 SHA-256 和构建版本。P1–P3 与 P7 使用独立候选索引，P4/P5/P6/P8 复用兼容 P0 索引。官方 Replay，以及视觉文档/视频 Live Run 仍未开放。
+此能力仍是 `experimental`。具有受支持 `runtime` 声明的 `text-rag` Quick 与 Benchmark Pack 都能创建项目知识库/数据集并运行 P0–P8 单变量实验。Quick 固定 `realtime`/Top-K 5；受控 Benchmark Pack 固定 `high_precision`/Top-K 8，并持久化 Manifest SHA-256、运行环境 SHA-256 和构建版本。P1–P3 与 P7 使用独立候选索引，P4/P5/P6/P8 复用兼容 P0 索引。`text-rag` 另提供固定环境的只读官方 Replay；视觉文档/视频 Replay 与 Live Run 仍未开放。
 
 ## 使用流程
 

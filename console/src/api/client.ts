@@ -7,6 +7,7 @@ export type APIKey = components['schemas']['APIKey']
 export type CreateAPIKeyInput = components['schemas']['CreateAPIKeyRequest']
 export type CreateAPIKeyResponse = components['schemas']['CreateAPIKeyResponse']
 export type TutorialTemplate = components['schemas']['TutorialTemplate']
+export type TutorialReplaySnapshot = components['schemas']['TutorialReplaySnapshot']
 export type StartTutorialCloneInput = components['schemas']['StartTutorialCloneRequest']
 export type TutorialCloneAcceptedResponse = components['schemas']['TutorialCloneAcceptedResponse']
 export type TutorialCloneJob = components['schemas']['TutorialCloneJob']
@@ -96,6 +97,7 @@ export const tutorialApi = {
   getVersion: (templateId: string, version: string) => request<TutorialTemplate>(
     `/v1/tutorials/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version)}`,
   ),
+  getReplay: (templateId: string) => request<TutorialReplaySnapshot>(`/v1/tutorials/${encodeURIComponent(templateId)}/replay`),
   startClone: (templateId: string, input: StartTutorialCloneInput) => request<TutorialCloneAcceptedResponse>(
     `/v1/tutorials/${encodeURIComponent(templateId)}/clones`, { method: 'POST', body: JSON.stringify(input) },
   ),

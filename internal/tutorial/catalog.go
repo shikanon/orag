@@ -19,7 +19,8 @@ var embeddedCatalog []byte
 var semanticVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
 type Catalog struct {
-	byID map[string]map[string]Template
+	byID    map[string]map[string]Template
+	replays map[string]ReplaySnapshot
 }
 
 func NewCatalog() (*Catalog, error) {
@@ -29,11 +30,18 @@ func NewCatalog() (*Catalog, error) {
 	if err := decoder.Decode(&templates); err != nil {
 		return nil, fmt.Errorf("decode tutorial catalog: %w", err)
 	}
-	return newCatalog(templates)
+	catalog, err := newCatalog(templates)
+	if err != nil {
+		return nil, err
+	}
+	if err := catalog.loadOfficialReplays(); err != nil {
+		return nil, err
+	}
+	return catalog, nil
 }
 
 func newCatalog(templates []Template) (*Catalog, error) {
-	catalog := &Catalog{byID: make(map[string]map[string]Template)}
+	catalog := &Catalog{byID: make(map[string]map[string]Template), replays: make(map[string]ReplaySnapshot)}
 	for index, template := range templates {
 		if err := validateTemplate(template); err != nil {
 			return nil, fmt.Errorf("tutorial catalog entry %d: %w", index, err)
@@ -49,6 +57,23 @@ func newCatalog(templates []Template) (*Catalog, error) {
 		versions[template.Version] = cloneTemplate(template)
 	}
 	return catalog, nil
+}
+
+// Replay returns the immutable official snapshot for the latest available
+// version of a template. A catalog entry is not enough to make Replay
+// available; the separately validated snapshot must exist as well.
+func (c *Catalog) Replay(id string) (ReplaySnapshot, error) {
+	if c == nil {
+		return ReplaySnapshot{}, ErrTemplateNotFound
+	}
+	if _, err := c.Get(id, ""); err != nil {
+		return ReplaySnapshot{}, err
+	}
+	replay, ok := c.replays[id]
+	if !ok {
+		return ReplaySnapshot{}, ErrReplayNotFound
+	}
+	return cloneReplay(replay), nil
 }
 
 func (c *Catalog) List() []Template {
