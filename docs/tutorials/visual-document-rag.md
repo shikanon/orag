@@ -1,6 +1,6 @@
 # Visual-document RAG Recipe
 
-`visual-document-rag/1.0.0` is a reproducible **Recipe**, rather than a
+`visual-document-rag/1.0.1` is a reproducible **Recipe**, rather than a
 redistributed data Pack. ORAG does not mirror ViDoSeek documents, annotations,
 page renders, or derived corpora.
 
@@ -44,7 +44,7 @@ upstream source bytes.
 After release, retrieve the Recipe through anonymous HTTPS:
 
 ```sh
-base=https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs/visual-document-rag/1.0.0
+base=https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs/visual-document-rag/1.0.1
 curl -fsSLO "$base/SHA256SUMS"
 shasum -a 256 -c SHA256SUMS
 ```
@@ -55,9 +55,9 @@ the command never reads credentials from the Recipe.
 
 ```sh
 make visual-recipe-publish ORAG_PACK_PUBLISH=1 \
-  VISUAL_RECIPE_ROOT=tutorial-recipes/visual-document-rag/1.0.0
+  VISUAL_RECIPE_ROOT=tutorial-recipes/visual-document-rag/1.0.1
 make visual-recipe-verify \
-  VISUAL_RECIPE_ROOT=tutorial-recipes/visual-document-rag/1.0.0
+  VISUAL_RECIPE_ROOT=tutorial-recipes/visual-document-rag/1.0.1
 ```
 
 This verifies the Recipe declaration—not a mirror of ViDoSeek. A later

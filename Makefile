@@ -64,12 +64,12 @@ tutorial-pack-publish:
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-pack-release -publish "$(TUTORIAL_PACK_ROOT)"
 
 visual-recipe-verify:
-	@test -n "$(VISUAL_RECIPE_ROOT)" || (echo "VISUAL_RECIPE_ROOT must point to tutorial-recipes/visual-document-rag/1.0.0"; exit 2)
+	@test -n "$(VISUAL_RECIPE_ROOT)" || (echo "VISUAL_RECIPE_ROOT must point to a visual-document-rag Recipe version"; exit 2)
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-pack-release -verify-public "$(VISUAL_RECIPE_ROOT)"
 
 visual-recipe-publish:
 	@test "$(ORAG_PACK_PUBLISH)" = "1" || (echo "set ORAG_PACK_PUBLISH=1 to publish immutable public Recipe objects"; exit 2)
-	@test -n "$(VISUAL_RECIPE_ROOT)" || (echo "VISUAL_RECIPE_ROOT must point to tutorial-recipes/visual-document-rag/1.0.0"; exit 2)
+	@test -n "$(VISUAL_RECIPE_ROOT)" || (echo "VISUAL_RECIPE_ROOT must point to a visual-document-rag Recipe version"; exit 2)
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-pack-release -publish "$(VISUAL_RECIPE_ROOT)"
 
 video-protocol-verify:
