@@ -15,6 +15,7 @@ import (
 
 	"github.com/shikanon/orag/internal/agentsync"
 	core "github.com/shikanon/orag/internal/app"
+	"github.com/shikanon/orag/internal/backup"
 	"github.com/shikanon/orag/internal/benchmark"
 	"github.com/shikanon/orag/internal/capabilities"
 	"github.com/shikanon/orag/internal/config"
@@ -63,6 +64,10 @@ func main() {
 		if err := benchmarkReportCmd(os.Args[2:], os.Stdout); err != nil {
 			log.Fatalf("benchmark-report: %v", err)
 		}
+	case "backup-verify":
+		if err := backupVerifyCmd(os.Args[2:], os.Stdout); err != nil {
+			log.Fatalf("backup-verify: %v", err)
+		}
 	case "generate-agent-artifacts", "generate-skills":
 		if err := generateAgentArtifactsCmd(os.Args[2:], os.Stdout); err != nil {
 			log.Fatalf("%s: %v", os.Args[1], err)
@@ -70,6 +75,24 @@ func main() {
 	default:
 		usage()
 	}
+}
+
+func backupVerifyCmd(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("backup-verify", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	dir := fs.String("dir", "", "backup directory")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*dir) == "" {
+		return fmt.Errorf("dir is required")
+	}
+	m, err := backup.Verify(*dir)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "verified backup %s migrations=%d\n", m.CreatedAt, len(m.Migrations))
+	return err
 }
 
 func benchmarkReportCmd(args []string, out io.Writer) error {
