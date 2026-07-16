@@ -54,10 +54,22 @@ func (s *VideoImportService) Import(ctx context.Context, subject Subject, projec
 	if err := s.private.PutVerified(ctx, PrivateObject{TenantID: experiment.TenantID, ProjectID: experiment.ProjectID, JobID: experiment.CloneJobID, Object: object}); err != nil {
 		return VideoSource{}, nil, err
 	}
+	temporalObject, temporalPath, err := WriteTemporalIndex(s.tempDir, segments)
+	if err != nil {
+		return VideoSource{}, nil, err
+	}
+	defer os.Remove(temporalPath)
+	if err := s.private.PutVerified(ctx, PrivateObject{TenantID: experiment.TenantID, ProjectID: experiment.ProjectID, JobID: experiment.CloneJobID, Object: VerifiedObject{PackObject: temporalObject, TempPath: temporalPath}}); err != nil {
+		return VideoSource{}, nil, err
+	}
 	manifest := cloneManifest(experiment.PackManifest)
 	manifest.VideoSource = &source
 	manifest.TemporalSegments = segments
-	resources := RuntimeResources{Status: "runtime_unavailable", KnowledgeBaseID: experiment.KnowledgeBaseID, DatasetID: experiment.DatasetID, BaselineProfile: experiment.BaselineProfile, BaselineTopK: experiment.BaselineTopK}
+	manifest.TemporalAssets = []PackObject{temporalObject}
+	// A video import makes deterministic retrieval input available, but never
+	// fabricates benchmark questions or answers. Evaluation becomes runnable only
+	// after the owner supplies an authorized private evaluation set.
+	resources := RuntimeResources{Status: "temporal_index_pending_evaluation", KnowledgeBaseID: experiment.KnowledgeBaseID, DatasetID: experiment.DatasetID, BaselineProfile: experiment.PackManifest.VideoProtocol.Runtime.Profile, BaselineTopK: experiment.PackManifest.VideoProtocol.Runtime.TopK}
 	if err := s.repo.SetExperimentRuntime(ctx, experiment.TenantID, experiment.ProjectID, resources, manifest, experiment.UpdatedAt); err != nil {
 		return VideoSource{}, nil, err
 	}

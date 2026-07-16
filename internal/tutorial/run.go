@@ -477,6 +477,11 @@ func packObject(manifest Manifest, path string) (PackObject, bool) {
 			return object, true
 		}
 	}
+	for _, object := range manifest.TemporalAssets {
+		if object.Path == path {
+			return object, true
+		}
+	}
 	return PackObject{}, false
 }
 

@@ -30,7 +30,17 @@ func TestVideoImportPersistsVerifiedPrivateSourceAndSegments(t *testing.T) {
 		t.Fatalf("segments=%#v err=%v", segments, err)
 	}
 	got, found, err := repo.GetExperiment(context.Background(), "t", "p")
-	if err != nil || !found || got.PackManifest.VideoSource == nil || len(got.PackManifest.TemporalSegments) != 1 {
+	if err != nil || !found || got.PackManifest.VideoSource == nil || len(got.PackManifest.TemporalSegments) != 1 || len(got.PackManifest.TemporalAssets) != 1 || got.RuntimeStatus != "temporal_index_pending_evaluation" {
 		t.Fatalf("experiment=%#v err=%v", got, err)
+	}
+	privateIndex := PrivateObject{
+		TenantID:  "t",
+		ProjectID: "p",
+		JobID:     "j",
+		Object:    VerifiedObject{PackObject: got.PackManifest.TemporalAssets[0]},
+	}
+	index, err := store.ReadVerified(context.Background(), privateIndex)
+	if err != nil || string(index) != "evidence=clip@0-10000\nstart_ms=0\nend_ms=10000\nsubtitle=\n" || bytes.Contains(index, []byte("authorized video")) {
+		t.Fatalf("temporal index=%q err=%v", index, err)
 	}
 }
