@@ -100,6 +100,7 @@ func (s *Server) Hertz() *server.Hertz {
 	v1.GET("/tutorial-clone-jobs/:job_id", s.getTutorialCloneJob)
 	v1.POST("/tutorial-clone-jobs/*action", s.retryTutorialClone)
 	v1.GET("/projects/:project_id/tutorial-experiment", s.getProjectTutorialExperiment)
+	v1.POST("/projects/:project_id/tutorial-experiment/video-source", s.importTutorialVideoSource)
 	v1.POST("/projects/:project_id/tutorial-experiments/:experiment_id/runs", s.startTutorialExperimentRun)
 	v1.GET("/projects/:project_id/tutorial-experiments/:experiment_id/runs/:run_id/comparison", s.getTutorialExperimentRunComparison)
 	v1.GET("/projects/:project_id/tutorial-experiments/:experiment_id/runs/:run_id", s.getTutorialExperimentRun)
