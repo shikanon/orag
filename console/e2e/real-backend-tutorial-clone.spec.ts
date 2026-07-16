@@ -29,7 +29,7 @@ test.describe('real PostgreSQL + Qdrant tutorial Pack installation', () => {
     await expect(page.getByRole('definition').filter({ hasText: 'structured_json' }).getByRole('code')).toBeVisible()
     await page.getByRole('button', { name: '运行 P2 分块候选' }).click()
     await expect(page.getByText('chunk_count')).toBeVisible({ timeout: 60_000 })
-    await expect(page.getByText('400/80')).toBeVisible()
+    await expect(page.getByRole('definition').filter({ hasText: /^400\/80$/ })).toBeVisible()
     await expect(page.getByText(/access key|manifest_url|object_key/i)).toHaveCount(0)
   })
 })
