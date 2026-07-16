@@ -99,3 +99,19 @@ func TestTutorialP5MultiQueryCandidateMigrationPersistsAuditFields(t *testing.T)
 		}
 	}
 }
+
+func TestTutorialP6RerankCandidateMigrationPersistsAuditFields(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/000035_tutorial_p6_rerank_candidate.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(raw)
+	for _, fragment := range []string{
+		"ADD COLUMN rerank_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+		"DROP COLUMN rerank_enabled",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing %q", fragment)
+		}
+	}
+}

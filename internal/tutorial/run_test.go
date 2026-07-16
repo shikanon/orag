@@ -83,6 +83,7 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 				{ID: TutorialP3ContextualCandidateID, Chapter: TutorialP3ContextualChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, ContextualRetrieval: true},
 				{ID: TutorialP4SparseCandidateID, Chapter: TutorialP4SparseChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategySparse, ReuseBaselineIndex: true},
 				{ID: TutorialP5MultiQueryCandidateID, Chapter: TutorialP5MultiQueryChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReuseBaselineIndex: true, MultiQueryCount: 3},
+				{ID: TutorialP6RerankCandidateID, Chapter: TutorialP6RerankChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReuseBaselineIndex: true, RerankEnabled: true},
 			},
 		}},
 	}
@@ -103,7 +104,8 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	})
 	p4Evaluator := &recordingRuntimeEvaluator{}
 	p5Evaluator := &recordingRuntimeEvaluator{}
-	service.ConfigureCandidateEvaluators(map[string]RuntimeEvaluator{TutorialP4SparseCandidateID: p4Evaluator, TutorialP5MultiQueryCandidateID: p5Evaluator})
+	p6Evaluator := &recordingRuntimeEvaluator{}
+	service.ConfigureCandidateEvaluators(map[string]RuntimeEvaluator{TutorialP4SparseCandidateID: p4Evaluator, TutorialP5MultiQueryCandidateID: p5Evaluator, TutorialP6RerankCandidateID: p6Evaluator})
 	subject := Subject{TenantID: "tenant_a", ID: "user_a"}
 	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP1StructuredJSONCandidateID, "p1-before-p0"); err != ErrBaselineRequired {
 		t.Fatalf("P1 before P0 error=%v", err)
@@ -119,6 +121,9 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	}
 	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP5MultiQueryCandidateID, "p5-before-p0"); err != ErrBaselineRequired {
 		t.Fatalf("P5 before P0 error=%v", err)
+	}
+	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP6RerankCandidateID, "p6-before-p0"); err != ErrBaselineRequired {
+		t.Fatalf("P6 before P0 error=%v", err)
 	}
 	baseline, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, "baseline", "p0")
 	if err != nil {
@@ -199,6 +204,17 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	completedP5, err := service.Get(context.Background(), subject, p5.ID)
 	if err != nil || completedP5.Status != ExperimentRunCompleted || p5Evaluator.request.KnowledgeBaseID != baseline.KnowledgeBaseID || len(baselineIngestor.requests) != 1 || len(p1Ingestor.requests) != 1 || len(p2Ingestor.requests) != 1 || len(p3Ingestor.requests) != 1 {
 		t.Fatalf("P5=%#v err=%v evaluator=%#v ingests=%d/%d/%d/%d", completedP5, err, p5Evaluator.request, len(baselineIngestor.requests), len(p1Ingestor.requests), len(p2Ingestor.requests), len(p3Ingestor.requests))
+	}
+	p6, replayed, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP6RerankCandidateID, "p6")
+	if err != nil || replayed || p6.Stage != ExperimentRunStageEvaluate || !p6.ReusedBaselineIndex || p6.RetrievalStrategy != TutorialRetrievalStrategyHybrid || p6.QueryExpansionMode != TutorialQueryExpansionNone || p6.MultiQueryCount != 0 || !p6.RerankEnabled || p6.KnowledgeBaseID != baseline.KnowledgeBaseID || p6.IndexedChunkCount != baseline.IndexedChunkCount || p6.AverageChunkTokens != baseline.AverageChunkTokens {
+		t.Fatalf("P6=%#v replayed=%v err=%v", p6, replayed, err)
+	}
+	if err := service.Execute(context.Background(), subject.TenantID, p6.ID); err != nil {
+		t.Fatal(err)
+	}
+	completedP6, err := service.Get(context.Background(), subject, p6.ID)
+	if err != nil || completedP6.Status != ExperimentRunCompleted || p6Evaluator.request.KnowledgeBaseID != baseline.KnowledgeBaseID || len(baselineIngestor.requests) != 1 || len(p1Ingestor.requests) != 1 || len(p2Ingestor.requests) != 1 || len(p3Ingestor.requests) != 1 {
+		t.Fatalf("P6=%#v err=%v evaluator=%#v ingests=%d/%d/%d/%d", completedP6, err, p6Evaluator.request, len(baselineIngestor.requests), len(p1Ingestor.requests), len(p2Ingestor.requests), len(p3Ingestor.requests))
 	}
 }
 
@@ -381,6 +397,27 @@ func TestLiveRunComparisonAllowsP5OnlyWithP0IndexReuseAndMultiQueryAudit(t *test
 	candidate.MultiQueryCount = 2
 	if runsComparable(baseline, candidate) {
 		t.Fatalf("comparison accepted invalid multi-query count: %#v", candidate)
+	}
+}
+
+func TestLiveRunComparisonAllowsP6OnlyWithP0IndexReuseAndRerankAudit(t *testing.T) {
+	now := time.Date(2026, 7, 16, 17, 30, 0, 0, time.UTC)
+	baseline := ExperimentRun{
+		ID: "terun_p0", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: "baseline",
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p0", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, QueryExpansionMode: TutorialQueryExpansionNone, IndexedChunkCount: 2, AverageChunkTokens: 600,
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p0", CreatedAt: now, UpdatedAt: now,
+	}
+	candidate := ExperimentRun{
+		ID: "terun_p6", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: TutorialP6RerankCandidateID, BaselineRunID: baseline.ID,
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p6", KnowledgeBaseID: baseline.KnowledgeBaseID, DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReusedBaselineIndex: true, QueryExpansionMode: TutorialQueryExpansionNone, RerankEnabled: true, IndexedChunkCount: 2, AverageChunkTokens: 600,
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p6", CreatedAt: now, UpdatedAt: now.Add(time.Second),
+	}
+	if !runsComparable(baseline, candidate) {
+		t.Fatalf("comparison rejected valid P6: %#v", candidate)
+	}
+	candidate.RerankEnabled = false
+	if runsComparable(baseline, candidate) {
+		t.Fatalf("comparison accepted disabled rerank: %#v", candidate)
 	}
 }
 

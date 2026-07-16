@@ -34,6 +34,8 @@ const (
 	TutorialP4SparseChapter             = "p4_sparse_retrieval"
 	TutorialP5MultiQueryCandidateID     = "p5_multi_query_retrieval"
 	TutorialP5MultiQueryChapter         = "p5_multi_query_retrieval"
+	TutorialP6RerankCandidateID         = "p6_rerank_retrieval"
+	TutorialP6RerankChapter             = "p6_rerank_retrieval"
 	TutorialRetrievalStrategyHybrid     = "hybrid"
 	TutorialRetrievalStrategySparse     = "sparse"
 	TutorialQueryExpansionNone          = "none"
@@ -112,6 +114,7 @@ type RuntimeCandidate struct {
 	RetrievalStrategy   string `json:"retrieval_strategy,omitempty"`
 	ReuseBaselineIndex  bool   `json:"reuse_baseline_index,omitempty"`
 	MultiQueryCount     int    `json:"multi_query_count,omitempty"`
+	RerankEnabled       bool   `json:"rerank_enabled,omitempty"`
 }
 
 type RuntimeDatasetItem struct {
@@ -251,6 +254,8 @@ func validateRuntimeCandidates(runtime RuntimeManifest, objectsByPath map[string
 			continue
 		case validP5Candidate(candidate):
 			continue
+		case validP6Candidate(candidate):
+			continue
 		default:
 			return fmt.Errorf("%w: runtime candidate %d is unsupported", ErrManifestInvalid, index)
 		}
@@ -262,7 +267,7 @@ func validP1Candidate(candidate RuntimeCandidate) bool {
 	return candidate.ID == TutorialP1StructuredJSONCandidateID &&
 		candidate.Chapter == TutorialP1DocumentParserChapter &&
 		candidate.ParserMethod == TutorialStructuredJSONParserMethod &&
-		candidate.ChunkSizeTokens == 0 && candidate.ChunkOverlapTokens == 0 && !candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0
+		candidate.ChunkSizeTokens == 0 && candidate.ChunkOverlapTokens == 0 && !candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled
 }
 
 func validP2Candidate(candidate RuntimeCandidate) bool {
@@ -271,7 +276,7 @@ func validP2Candidate(candidate RuntimeCandidate) bool {
 		candidate.ParserMethod == "basic" &&
 		candidate.ChunkSizeTokens == TutorialP2ChunkSizeTokens &&
 		candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens &&
-		!candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0
+		!candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled
 }
 
 func validP3Candidate(candidate RuntimeCandidate) bool {
@@ -280,7 +285,7 @@ func validP3Candidate(candidate RuntimeCandidate) bool {
 		candidate.ParserMethod == "basic" &&
 		candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens &&
 		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
-		candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0
+		candidate.ContextualRetrieval && candidate.RetrievalStrategy == "" && !candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled
 }
 
 func validP4Candidate(candidate RuntimeCandidate) bool {
@@ -291,7 +296,7 @@ func validP4Candidate(candidate RuntimeCandidate) bool {
 		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
 		!candidate.ContextualRetrieval &&
 		candidate.RetrievalStrategy == TutorialRetrievalStrategySparse &&
-		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0
+		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && !candidate.RerankEnabled
 }
 
 func validP5Candidate(candidate RuntimeCandidate) bool {
@@ -302,7 +307,18 @@ func validP5Candidate(candidate RuntimeCandidate) bool {
 		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
 		!candidate.ContextualRetrieval &&
 		candidate.RetrievalStrategy == TutorialRetrievalStrategyHybrid &&
-		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 3
+		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 3 && !candidate.RerankEnabled
+}
+
+func validP6Candidate(candidate RuntimeCandidate) bool {
+	return candidate.ID == TutorialP6RerankCandidateID &&
+		candidate.Chapter == TutorialP6RerankChapter &&
+		candidate.ParserMethod == "basic" &&
+		candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens &&
+		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
+		!candidate.ContextualRetrieval &&
+		candidate.RetrievalStrategy == TutorialRetrievalStrategyHybrid &&
+		candidate.ReuseBaselineIndex && candidate.MultiQueryCount == 0 && candidate.RerankEnabled
 }
 
 func validLicense(license License) bool {

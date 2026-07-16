@@ -131,6 +131,7 @@ type ExperimentVariant struct {
 	RetrievalStrategy   string `json:"retrieval_strategy"`
 	ReuseBaselineIndex  bool   `json:"reuse_baseline_index"`
 	MultiQueryCount     int    `json:"multi_query_count"`
+	RerankEnabled       bool   `json:"rerank_enabled"`
 	Available           bool   `json:"available"`
 }
 
@@ -313,6 +314,7 @@ func publicExperiment(experiment Experiment) Experiment {
 				ContextualRetrieval: candidate.ContextualRetrieval, RetrievalStrategy: candidateRetrievalStrategy(candidate),
 				ReuseBaselineIndex: candidate.ReuseBaselineIndex, Available: available,
 				MultiQueryCount: candidate.MultiQueryCount,
+				RerankEnabled:   candidate.RerankEnabled,
 			})
 		}
 	}

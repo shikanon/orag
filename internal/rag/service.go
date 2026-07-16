@@ -43,6 +43,7 @@ type Service struct {
 	QueryRewriteEnabled   bool
 	MultiQueryCount       int
 	MultiQueryForRealtime bool
+	DisableRerank         bool
 	HyDEEnabled           bool
 	QueryRouter           QueryRouter
 	Logger                *slog.Logger
@@ -308,6 +309,9 @@ func cacheProfile(profile Profile) Profile {
 }
 
 func (s *Service) ApplyRerank(ctx context.Context, query string, results []kb.SearchResult, topK int) []kb.SearchResult {
+	if s.DisableRerank {
+		return results
+	}
 	docs := make([]ark.RerankDocument, len(results))
 	for i, result := range results {
 		docs[i] = ark.RerankDocument{ID: result.Chunk.ID, Content: result.Chunk.Content}

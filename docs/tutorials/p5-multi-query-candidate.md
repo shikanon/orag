@@ -4,7 +4,7 @@
 
 P5 保持 P0 的 `basic` parser、800/120 分块、hybrid 检索器、评测集、`realtime` profile 与 Top-K，并复用同一个已完成 P0 知识库及其索引事实。唯一变化是在教程专用 evaluator 中固定生成三条检索查询：原始查询和最多两条模型生成的去重查询。
 
-浏览器只能提交 `variant=p5_multi_query_retrieval` 与幂等键，不能提交查询数量、rewrite、HyDE、检索器、模型、profile、Top-K、缓存或知识库坐标。P5 evaluator 会清空 Pipeline、语义缓存和 Query Router，关闭 query rewrite 与 HyDE；这避免生产默认开关和缓存响应改变候选含义。
+浏览器只能提交 `variant=p5_multi_query_retrieval` 与幂等键，不能提交查询数量、rewrite、HyDE、rerank、检索器、模型、profile、Top-K、缓存或知识库坐标。P5 evaluator v3 会清空 Pipeline、语义缓存和 Query Router，并关闭 query rewrite、HyDE 与 rerank；这避免生产默认开关和缓存响应改变候选含义。
 
 运行记录 `retrieval_strategy=hybrid`、`reused_baseline_index=true`、`query_expansion_mode=multi_query` 与 `multi_query_count=3`。这些字段描述执行定义与索引复用，不构成质量、成本或延迟结论。若模型无法生成足够的去重查询，评测的普通 warnings 会保留该事实。
 

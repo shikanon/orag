@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -170,6 +171,22 @@ func TestBuildRetrievalQueriesAllowsServerOwnedRealtimeMultiQueryOnly(t *testing
 	}
 	if model.sawSystemPrompt("HyDE") {
 		t.Fatalf("HyDE must remain disabled for realtime multi-query: %#v", model.systemPrompts)
+	}
+}
+
+func TestApplyRerankCanBeDisabledForTutorialIsolation(t *testing.T) {
+	model := &scriptedServiceModel{}
+	results := []kb.SearchResult{
+		{Chunk: kb.Chunk{ID: "chk_first"}, Score: 0.9, Rank: 1, From: "hybrid"},
+		{Chunk: kb.Chunk{ID: "chk_second"}, Score: 0.8, Rank: 2, From: "hybrid"},
+	}
+	service := Service{Model: model, DisableRerank: true, TopK: 2}
+	got := service.ApplyRerank(context.Background(), "qdrant vector search", results, 2)
+	if len(model.rerankTopNs) != 0 {
+		t.Fatalf("rerank calls=%#v, want none", model.rerankTopNs)
+	}
+	if !reflect.DeepEqual(got, results) {
+		t.Fatalf("results=%#v, want original=%#v", got, results)
 	}
 }
 
