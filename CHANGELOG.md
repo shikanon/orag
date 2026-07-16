@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Added `oragctl backup-verify`, a read-only verifier for versioned PostgreSQL/Qdrant backup manifests, required artifacts, SHA-256 integrity, migration provenance, and credential-leakage boundaries before a restore drill.
 - Added independent fail-fast execution budgets for synchronous ingestion, query, evaluation, and release writes. Each class now has configured concurrency and a propagated deadline; saturation returns retryable `429` rather than an unbounded in-memory queue, and expired work returns `504`.
 - Added the strict `orag.performance-baseline.v1` contract and `oragctl benchmark-report` verifier, which bind a deterministic Benchmark Pack run to its environment/build/load fingerprints and reject incomparable or internally inconsistent throughput, latency, cache, evaluation, model-call, and cost reports.
 - Added an optional OTLP/HTTP metrics exporter for core HTTP, RAG, dependency-readiness, and trace-store telemetry, with low-cardinality attribute and shutdown-flush contract tests.

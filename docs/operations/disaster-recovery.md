@@ -60,6 +60,19 @@ sha256sum "/backup/orag/$stamp/postgres.dump" \
 Copy the dump and its checksum to an independent encrypted location. A local
 file alone is not a backup if the host and its disk are lost together.
 
+After both artifacts and `manifest.json` are present, verify the restore
+preconditions before touching a restore target:
+
+```bash
+oragctl backup-verify --dir "/backup/orag/$stamp"
+```
+
+The manifest uses `orag.backup.v1`, records only release/migration provenance
+and artifact names, and must list `postgres.dump` and
+`qdrant-snapshots.tgz`. The verifier checks both files against `SHA256SUMS`
+and rejects unknown manifest fields or credential-shaped fields. It is
+read-only and is not a substitute for the isolated restore drill below.
+
 ## Qdrant backup
 
 For a named collection, request a Qdrant snapshot and copy the resulting file
