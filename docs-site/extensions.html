@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ORAG public extension contracts and support levels.">
+  <title>ORAG — Extension contracts</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="wordmark" href="./index.html" aria-label="ORAG home">ORAG</a>
+    <nav aria-label="Primary navigation">
+      <a href="./index.html#quickstart">Quickstart</a>
+      <a href="https://github.com/shikanon/orag/tree/main/docs/sdk">Go SDK</a>
+      <a href="./extensions.html" aria-current="page">Extensions</a>
+      <a href="./api.html">API Reference</a>
+      <a href="https://github.com/shikanon/orag">GitHub ↗</a>
+    </nav>
+    <a class="button button-primary header-action" href="https://github.com/shikanon/orag/tree/main/extensions">View source</a>
+  </header>
+
+  <main>
+    <section class="hero section-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">Public Beta · Go-native · Network-free conformance</p>
+        <h1>Extension contracts<br>that stay testable.</h1>
+        <p class="lede">Build ORAG integrations against small, dependency-free interfaces, then verify their minimum behavior locally or in your own CI.</p>
+        <div class="actions">
+          <a class="button button-primary" href="https://pkg.go.dev/github.com/shikanon/orag/extensions">Browse package</a>
+          <a class="button button-secondary" href="https://github.com/shikanon/orag/blob/main/docs/extensions.md">Read full guide</a>
+        </div>
+      </div>
+      <div class="eval-frame" aria-label="Extension conformance example">
+        <div class="frame-head"><div><span class="status-dot"></span><strong>Conformance</strong></div><code>v0beta1</code></div>
+        <div class="frame-body">
+          <div class="frame-title"><div><p class="muted">Local contract check</p><h2>Embedder</h2></div><span class="badge beta">beta</span></div>
+          <pre class="code-card"><code>conformance.Embedder(ctx, myEmbedder)</code></pre>
+          <div class="trace-row"><span>Network required</span><code>no</code><span class="trace-check">✓</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="resources section-grid">
+      <article>
+        <p class="eyebrow">Core contracts</p>
+        <h2>Compose the pipeline.</h2>
+        <p class="section-copy"><code>Parser</code>, <code>Chunker</code>, <code>Embedder</code>, <code>Retriever</code>, <code>Reranker</code>, <code>ModelProvider</code>, <code>Generator</code>, and <code>Storage</code> cover the public integration seams.</p>
+      </article>
+      <article>
+        <p class="eyebrow">Support labels</p>
+        <h2>Set clear expectations.</h2>
+        <div class="maturity-grid">
+          <div><span class="badge stable">certified</span><p>ORAG-maintained public integration with CI evidence.</p></div>
+          <div><span class="badge beta">community</span><p>Third-party integration with a published conformance result.</p></div>
+          <div><span class="badge experimental">experimental</span><p>Unreviewed adapter; no compatibility guarantee.</p></div>
+        </div>
+      </article>
+      <article>
+        <p class="eyebrow">Pre-v1 boundary</p>
+        <h2>Contracts first, loader later.</h2>
+        <p class="section-copy">ORAG does not yet load arbitrary extensions into a running server. The current provider registry and configuration remain the supported runtime boundary while the Beta contracts mature.</p>
+      </article>
+    </section>
+  </main>
+
+  <footer>
+    <a class="wordmark" href="./index.html">ORAG</a>
+    <span>Apache-2.0</span>
+    <a href="https://github.com/shikanon/orag/security/policy">Security</a>
+    <a href="https://github.com/shikanon/orag">GitHub ↗</a>
+  </footer>
+  <script src="./site.js"></script>
+</body>
+</html>
