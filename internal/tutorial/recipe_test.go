@@ -139,6 +139,43 @@ func TestRecipeSourceReaderRejectsUnsafeZIP(t *testing.T) {
 	}
 }
 
+func TestExtractRecipePDFsWritesDeterministicPrivateAssets(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	for _, name := range []string{"z.pdf", "nested/a.pdf", "notes.txt"} {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "source.zip")
+	if err := os.WriteFile(archivePath, archive.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assets, err := ExtractRecipePDFs(archivePath, filepath.Join(t.TempDir(), "private"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assets) != 2 || assets[0].Document != "nested/a.pdf" || assets[0].EvidenceID != "nested/a.pdf#1" || assets[1].Document != "z.pdf" {
+		t.Fatalf("assets=%#v", assets)
+	}
+	for _, asset := range assets {
+		content, err := os.ReadFile(asset.TempPath)
+		if err != nil || int64(len(content)) != asset.Bytes || asset.SHA256 == "" {
+			t.Fatalf("asset=%#v content=%q err=%v", asset, content, err)
+		}
+	}
+	if _, err := ExtractRecipePDFs(archivePath, filepath.Dir(assets[0].TempPath)); !errors.Is(err, ErrRecipeArchiveUnsafe) {
+		t.Fatalf("reused output error=%v", err)
+	}
+}
+
 func TestValidateRecipeZIPRejectsTraversal(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
