@@ -14,7 +14,7 @@ func TestLoadTutorialCatalogBaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.Tutorial.CatalogBaseURL; got != "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs" {
+	if got := cfg.Tutorial.CatalogBaseURL; got != "https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs" {
 		t.Fatalf("tutorial catalog base URL = %q", got)
 	}
 }
@@ -57,7 +57,7 @@ func TestTutorialPrivateStoreRequiresSeparateAliyunOutputBucket(t *testing.T) {
 	t.Setenv("ARK_API_KEY", "test-key")
 	t.Setenv("OBJECT_STORAGE_PROVIDER", "aliyun_oss")
 	t.Setenv("OBJECT_STORAGE_ENDPOINT", "https://oss-cn-guangzhou.aliyuncs.com")
-	t.Setenv("OBJECT_STORAGE_BUCKET_NAME", "orag")
+	t.Setenv("OBJECT_STORAGE_BUCKET_NAME", "lensrhyme")
 	t.Setenv("OBJECT_STORAGE_ACCESS_KEY_ID", "id")
 	t.Setenv("OBJECT_STORAGE_ACCESS_KEY_SECRET", "secret")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "must not be the public tutorial catalog bucket") {

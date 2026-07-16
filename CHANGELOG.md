@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Added the public, immutable `text-rag/1.1.0` CRUD-RAG release: deterministic Quick and Benchmark Packs, the complete upstream `data/` archive, source provenance, `SHA256SUMS`, anonymous HTTPS verification, a guarded TOS publisher, and a hosted release guide.
 - Added a reproducible experimental `text-rag` Benchmark Pack Run: verified Manifest/environment/build evidence, fixed high-precision inputs, P0–P8 contracts, read-only API/Console audit fields, and a controlled PostgreSQL/Qdrant/browser walkthrough.
 - Added the experimental Pack-declared `p8_context_pack` tutorial candidate: direct P0-only lineage, evaluator-v5 isolation, compatible P0-index reuse, durable Context Pack audit fields, read-only API/Console output, and a controlled PostgreSQL/Qdrant/browser P0-to-P8 walkthrough.
 - Added the experimental Pack-declared `p7_graph_retrieval` tutorial candidate: direct P0-only lineage, evaluator-v4 isolation from ambient graph/RAPTOR defaults, a separate graph-enabled candidate index, durable graph audit fields, read-only API/Console output, and a controlled PostgreSQL/Qdrant/browser P0-to-P7 walkthrough.

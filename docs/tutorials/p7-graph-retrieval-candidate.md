@@ -10,4 +10,4 @@ P7 保持 P0 的 `basic` parser、800/120 分块、评测集、`realtime` profil
 
 比较只在直接 P0/P7、同一 tutorial evaluator v5 指纹、同一数据集/profile/Top-K、不同知识库、正常标准评测 Run、P0 `graph_retrieval_enabled=false` 与 P7 `graph_retrieval_enabled=true` 均可验证时返回 `comparable=true`。`index_metrics` 只展示实际候选索引事实，不能单独解释图检索效果。
 
-受控 `tests/fixtures/tutorial-packs/text-rag/1.0.8/quick` 仅供真实 PostgreSQL/Qdrant/浏览器回归临时映射；不会覆盖公开 `1.0.0` Pack。正式公开 Pack 仍须经过独立匿名 HTTPS、MIME、长度和 SHA-256 发布流程。
+受控 `tests/fixtures/tutorial-packs/text-rag/1.0.8/quick` 仅供真实 PostgreSQL/Qdrant/浏览器回归临时映射。公开 `text-rag/1.1.0` 已包含 P1–P8 声明并完成匿名 HTTPS、MIME、长度和 SHA-256 验证；它不覆盖该 fixture。

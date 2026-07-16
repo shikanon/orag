@@ -51,7 +51,7 @@ func TestTutorialCatalogRoutes(t *testing.T) {
 	if len(body.Tutorials) != 3 {
 		t.Fatalf("tutorials = %d, want 3", len(body.Tutorials))
 	}
-	if got := body.Tutorials[0].Packs[0].ManifestURL; !strings.HasPrefix(got, "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs/") {
+	if got := body.Tutorials[0].Packs[0].ManifestURL; !strings.HasPrefix(got, "https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs/") {
 		t.Fatalf("manifest URL = %q", got)
 	}
 
@@ -63,11 +63,11 @@ func TestTutorialCatalogRoutes(t *testing.T) {
 	if err := json.Unmarshal([]byte(current.Body), &currentBody); err != nil {
 		t.Fatal(err)
 	}
-	if currentBody.ID != "text-rag" || currentBody.Version != "1.0.0" || currentBody.Modality != tutorial.ModalityText {
+	if currentBody.ID != "text-rag" || currentBody.Version != "1.1.0" || currentBody.Modality != tutorial.ModalityText {
 		t.Fatalf("current tutorial = %#v", currentBody)
 	}
 
-	versioned := performJSON(h, "GET", "/v1/tutorials/text-rag/versions/1.0.0", "", token)
+	versioned := performJSON(h, "GET", "/v1/tutorials/text-rag/versions/1.1.0", "", token)
 	if versioned.Code != 200 || versioned.Body != current.Body {
 		t.Fatalf("versioned status = %d body=%s, current=%s", versioned.Code, versioned.Body, current.Body)
 	}

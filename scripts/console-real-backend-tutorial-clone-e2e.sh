@@ -60,15 +60,16 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$tmp" "$private_output"
-# The embedded production catalog intentionally remains on the already-published
-# 1.0.0 Pack. For this controlled browser test, serve the immutable 1.0.8 P8
-# Context Pack fixture through the 1.0.0 catalog path after rewriting only the
-# temporary manifest version. No source fixture or public Pack is modified.
+# The production catalog's current Text-RAG release is 1.1.0. For this
+# controlled browser test, serve the immutable 1.0.8 P8 Context Pack fixture
+# through the 1.1.0 catalog path after rewriting only the temporary manifest
+# version. No source fixture or public Pack is modified.
 cp -R "$root/tests/fixtures/tutorial-packs" "$public_catalog"
-rm -rf "$public_catalog/text-rag/1.0.0/quick"
-cp -R "$root/tests/fixtures/tutorial-packs/text-rag/1.0.8/quick" "$public_catalog/text-rag/1.0.0/quick"
-sed -i.bak 's/"version": "1.0.8"/"version": "1.0.0"/' "$public_catalog/text-rag/1.0.0/quick/manifest.json"
-rm "$public_catalog/text-rag/1.0.0/quick/manifest.json.bak"
+rm -rf "$public_catalog/text-rag/1.1.0/quick"
+mkdir -p "$public_catalog/text-rag/1.1.0"
+cp -R "$root/tests/fixtures/tutorial-packs/text-rag/1.0.8/quick" "$public_catalog/text-rag/1.1.0/quick"
+sed -i.bak 's/"version": "1.0.8"/"version": "1.1.0"/' "$public_catalog/text-rag/1.1.0/quick/manifest.json"
+rm "$public_catalog/text-rag/1.1.0/quick/manifest.json.bak"
 "${compose[@]}" up -d --wait
 if ! "${compose[@]}" exec -T postgres psql -U orag -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = 'orag_tutorial_clone_e2e'" | grep -qx '1'; then
   "${compose[@]}" exec -T postgres createdb -U orag orag_tutorial_clone_e2e
@@ -76,7 +77,7 @@ fi
 
 python3 -m http.server 18082 --bind 127.0.0.1 --directory "$public_catalog" >"$fixture_log" 2>&1 &
 fixture_pid=$!
-WAIT_READY_ATTEMPTS=60 ./scripts/wait-ready.sh http://127.0.0.1:18082/text-rag/1.0.0/quick/manifest.json
+WAIT_READY_ATTEMPTS=60 ./scripts/wait-ready.sh http://127.0.0.1:18082/text-rag/1.1.0/quick/manifest.json
 
 go run ./cmd/oragctl migrate
 go build -o "$tmp/orag-api" ./cmd/orag-api
