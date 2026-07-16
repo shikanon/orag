@@ -87,7 +87,7 @@ func TestCollectQuestionsAcceptsCRUDRAGStringPairs(t *testing.T) {
 }
 
 func TestVerifyPublicUsesChecksumContract(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "text-rag", "1.1.0")
 	writeTestFile(t, filepath.Join(root, "nested", "artifact.txt"), "public artifact")
 	hash, err := hashFile(filepath.Join(root, "nested", "artifact.txt"))
 	if err != nil {
@@ -95,7 +95,7 @@ func TestVerifyPublicUsesChecksumContract(t *testing.T) {
 	}
 	writeTestFile(t, filepath.Join(root, "SHA256SUMS"), hash+"  nested/artifact.txt\n")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/tutorial-packs/nested/artifact.txt" {
+		if r.URL.Path != "/tutorial-packs/text-rag/1.1.0/nested/artifact.txt" {
 			http.NotFound(w, r)
 			return
 		}
