@@ -28,11 +28,19 @@ const (
 	TutorialStructuredJSONParserMethod  = "structured_json"
 	TutorialP2RecursiveChunkCandidateID = "p2_recursive_400_80"
 	TutorialP2ChunkingChapter           = "p2_chunking"
+	TutorialP3ContextualCandidateID     = "p3_contextual_retrieval"
+	TutorialP3ContextualChapter         = "p3_contextual_retrieval"
+	TutorialP3ContextualPromptVersion   = "tutorial_contextual_v1"
+	TutorialP3MaxDocumentChars          = 12_000
+	TutorialP3MaxChunkChars             = 2_000
+	TutorialP3MaxContextChars           = 500
 	TutorialBaselineChunkSizeTokens     = 800
 	TutorialBaselineChunkOverlapTokens  = 120
 	TutorialP2ChunkSizeTokens           = 400
 	TutorialP2ChunkOverlapTokens        = 80
 )
+
+const TutorialP3ContextualSystemPrompt = "You are preparing a retrieval chunk for a controlled RAG experiment. Return concise factual context that situates the chunk within the supplied document. Do not answer questions, add facts, or use markdown."
 
 // Manifest describes one immutable, redistributable tutorial pack. It is
 // validated against the selected catalog entry before any object is fetched.
@@ -87,11 +95,12 @@ type RuntimeDataset struct {
 // RuntimeCandidate declares one immutable experiment variant. It deliberately
 // contains no client-configurable model, retrieval, or storage settings.
 type RuntimeCandidate struct {
-	ID                 string `json:"id"`
-	Chapter            string `json:"chapter"`
-	ParserMethod       string `json:"parser_method"`
-	ChunkSizeTokens    int    `json:"chunk_size_tokens,omitempty"`
-	ChunkOverlapTokens int    `json:"chunk_overlap_tokens,omitempty"`
+	ID                  string `json:"id"`
+	Chapter             string `json:"chapter"`
+	ParserMethod        string `json:"parser_method"`
+	ChunkSizeTokens     int    `json:"chunk_size_tokens,omitempty"`
+	ChunkOverlapTokens  int    `json:"chunk_overlap_tokens,omitempty"`
+	ContextualRetrieval bool   `json:"contextual_retrieval,omitempty"`
 }
 
 type RuntimeDatasetItem struct {
@@ -225,6 +234,8 @@ func validateRuntimeCandidates(runtime RuntimeManifest, objectsByPath map[string
 			}
 		case validP2Candidate(candidate):
 			continue
+		case validP3Candidate(candidate):
+			continue
 		default:
 			return fmt.Errorf("%w: runtime candidate %d is unsupported", ErrManifestInvalid, index)
 		}
@@ -236,7 +247,7 @@ func validP1Candidate(candidate RuntimeCandidate) bool {
 	return candidate.ID == TutorialP1StructuredJSONCandidateID &&
 		candidate.Chapter == TutorialP1DocumentParserChapter &&
 		candidate.ParserMethod == TutorialStructuredJSONParserMethod &&
-		candidate.ChunkSizeTokens == 0 && candidate.ChunkOverlapTokens == 0
+		candidate.ChunkSizeTokens == 0 && candidate.ChunkOverlapTokens == 0 && !candidate.ContextualRetrieval
 }
 
 func validP2Candidate(candidate RuntimeCandidate) bool {
@@ -244,7 +255,17 @@ func validP2Candidate(candidate RuntimeCandidate) bool {
 		candidate.Chapter == TutorialP2ChunkingChapter &&
 		candidate.ParserMethod == "basic" &&
 		candidate.ChunkSizeTokens == TutorialP2ChunkSizeTokens &&
-		candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens
+		candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens &&
+		!candidate.ContextualRetrieval
+}
+
+func validP3Candidate(candidate RuntimeCandidate) bool {
+	return candidate.ID == TutorialP3ContextualCandidateID &&
+		candidate.Chapter == TutorialP3ContextualChapter &&
+		candidate.ParserMethod == "basic" &&
+		candidate.ChunkSizeTokens == TutorialBaselineChunkSizeTokens &&
+		candidate.ChunkOverlapTokens == TutorialBaselineChunkOverlapTokens &&
+		candidate.ContextualRetrieval
 }
 
 func validLicense(license License) bool {

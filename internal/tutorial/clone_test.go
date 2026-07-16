@@ -196,10 +196,11 @@ func TestPublicExperimentExposesDeclaredVariantsWithoutManifest(t *testing.T) {
 		PackManifest: Manifest{Runtime: &RuntimeManifest{Candidates: []RuntimeCandidate{
 			{ID: TutorialP1StructuredJSONCandidateID, Chapter: TutorialP1DocumentParserChapter, ParserMethod: TutorialStructuredJSONParserMethod},
 			{ID: TutorialP2RecursiveChunkCandidateID, Chapter: TutorialP2ChunkingChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialP2ChunkSizeTokens, ChunkOverlapTokens: TutorialP2ChunkOverlapTokens},
+			{ID: TutorialP3ContextualCandidateID, Chapter: TutorialP3ContextualChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, ContextualRetrieval: true},
 		}}},
 	}
 	public := publicExperiment(experiment)
-	if len(public.Variants) != 3 || public.Variants[0].ID != "baseline" || public.Variants[0].ChunkSizeTokens != TutorialBaselineChunkSizeTokens || public.Variants[1].ID != TutorialP1StructuredJSONCandidateID || public.Variants[2].ID != TutorialP2RecursiveChunkCandidateID || public.Variants[2].ChunkSizeTokens != TutorialP2ChunkSizeTokens || public.Variants[2].ChunkOverlapTokens != TutorialP2ChunkOverlapTokens || !public.Variants[2].Available {
+	if len(public.Variants) != 4 || public.Variants[0].ID != "baseline" || public.Variants[0].ContextualRetrieval || public.Variants[0].ChunkSizeTokens != TutorialBaselineChunkSizeTokens || public.Variants[1].ID != TutorialP1StructuredJSONCandidateID || public.Variants[2].ID != TutorialP2RecursiveChunkCandidateID || public.Variants[2].ChunkSizeTokens != TutorialP2ChunkSizeTokens || public.Variants[2].ChunkOverlapTokens != TutorialP2ChunkOverlapTokens || public.Variants[2].ContextualRetrieval || public.Variants[3].ID != TutorialP3ContextualCandidateID || !public.Variants[3].ContextualRetrieval || !public.Variants[3].Available {
 		t.Fatalf("variants=%#v", public.Variants)
 	}
 	if public.PackManifest.Runtime != nil || len(public.PackManifest.Objects) != 0 {

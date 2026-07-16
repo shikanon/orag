@@ -157,6 +157,37 @@ func TestParseManifestAcceptsOnlyDeclaredP2RecursiveChunkCandidate(t *testing.T)
 	}
 }
 
+func TestParseManifestAcceptsOnlyDeclaredP3ContextualCandidate(t *testing.T) {
+	template, pack := testTemplateAndPack(t)
+	valid := []byte(`{
+		"template_id":"text-rag","version":"1.0.0","tier":"quick",
+		"license":{"spdx":"CC-BY-4.0","source_url":"https://example.test/license","redistributable":true},
+		"objects":[{"path":"corpus/service.json","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":2,"content_type":"application/json"}],
+		"runtime":{"baseline":{"profile":"realtime","top_k":5},"documents":[{"object_path":"corpus/service.json","name":"服务配置"}],"dataset":{"name":"评测","items":[{"query":"端口","ground_truth":"8080"}]},"candidates":[{"id":"p3_contextual_retrieval","chapter":"p3_contextual_retrieval","parser_method":"basic","chunk_size_tokens":800,"chunk_overlap_tokens":120,"contextual_retrieval":true}]}
+	}`)
+	manifest, err := ParseManifest(valid, template, pack)
+	if err != nil || manifest.Runtime == nil || len(manifest.Runtime.Candidates) != 1 {
+		t.Fatalf("manifest=%#v err=%v", manifest, err)
+	}
+	candidate := manifest.Runtime.Candidates[0]
+	if candidate.ID != TutorialP3ContextualCandidateID || !candidate.ContextualRetrieval || candidate.ChunkSizeTokens != TutorialBaselineChunkSizeTokens || candidate.ChunkOverlapTokens != TutorialBaselineChunkOverlapTokens {
+		t.Fatalf("candidate=%#v", candidate)
+	}
+
+	for name, raw := range map[string][]byte{
+		"disabled_contextual": []byte(strings.Replace(string(valid), `"contextual_retrieval":true`, `"contextual_retrieval":false`, 1)),
+		"wrong_size":          []byte(strings.Replace(string(valid), `"chunk_size_tokens":800`, `"chunk_size_tokens":400`, 1)),
+		"wrong_overlap":       []byte(strings.Replace(string(valid), `"chunk_overlap_tokens":120`, `"chunk_overlap_tokens":80`, 1)),
+		"unrelated_enabled":   []byte(strings.Replace(string(valid), `"id":"p3_contextual_retrieval"`, `"id":"p2_recursive_400_80"`, 1)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseManifest(raw, template, pack); !errors.Is(err, ErrManifestInvalid) {
+				t.Fatalf("ParseManifest() error=%v, want ErrManifestInvalid", err)
+			}
+		})
+	}
+}
+
 func TestValidObjectPathRejectsEscapes(t *testing.T) {
 	for _, value := range []string{"", "/root", "../root", "folder/../root", "folder\\root", "folder/%2e%2e/root"} {
 		if validObjectPath(value) {
