@@ -49,5 +49,16 @@ curl -fsSLO "$base/SHA256SUMS"
 shasum -a 256 -c SHA256SUMS
 ```
 
+The repository provides matching guarded commands. Publishing is explicit and
+requires object-storage credentials to be supplied by the release environment;
+the command never reads credentials from the Recipe.
+
+```sh
+make visual-recipe-publish ORAG_PACK_PUBLISH=1 \
+  VISUAL_RECIPE_ROOT=tutorial-recipes/visual-document-rag/1.0.0
+make visual-recipe-verify \
+  VISUAL_RECIPE_ROOT=tutorial-recipes/visual-document-rag/1.0.0
+```
+
 This verifies the Recipe declaration—not a mirror of ViDoSeek. A later
 upstream revision or new source file requires a new tutorial version.
