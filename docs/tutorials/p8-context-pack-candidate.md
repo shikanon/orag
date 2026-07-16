@@ -10,4 +10,4 @@ P8 保持 P0 的 `basic` parser、800/120 分块、hybrid 检索、评测集、`
 
 比较只在直接 P0/P8、同一 tutorial evaluator v5 指纹、同一知识库/数据集/profile/Top-K、正常标准评测 Run、P0 `context_pack_top_n=5`/`context_pack_max_tokens=6000` 与 P8 `3`/`6000` 均可验证时返回 `comparable=true`。相同 `index_metrics` 表示 P0 索引被继承，不能解释 Context Pack 效果。
 
-受控 `tests/fixtures/tutorial-packs/text-rag/1.0.8/quick` 仅供真实 PostgreSQL/Qdrant/浏览器回归临时映射；不会覆盖公开 `1.0.0` Pack。正式公开 Pack 仍须经过独立匿名 HTTPS、MIME、长度和 SHA-256 发布流程。
+受控 `tests/fixtures/tutorial-packs/text-rag/1.0.8/quick` 仅供真实 PostgreSQL/Qdrant/浏览器回归临时映射。公开 `text-rag/1.1.0` 已包含 P1–P8 声明并完成匿名 HTTPS、MIME、长度和 SHA-256 验证；它不覆盖该 fixture。

@@ -29,7 +29,7 @@
 
 同一 Manifest 还必须声明至少一个 `application/json` 或 `.json` 文档。未知候选、重复候选、错误 chapter/parser，或不含 JSON 文档的声明都会在 Pack 校验时被拒绝。
 
-当前受控测试 fixture 位于 `tests/fixtures/tutorial-packs/text-rag/1.0.1/quick/`。它只用于本地 PostgreSQL + Qdrant/浏览器回归，不会自动发布，也不会修改已发布的 `text-rag/1.0.0` 公共 Pack。创建官方 `1.0.1` 版本时，必须通过独立的 Pack 发布流水线写入新的语义版本目录，并验证匿名 HTTPS 读取、Manifest/对象 MIME、长度和 SHA-256；不得覆盖 `1.0.0`，也不得把公开 Pack 凭证、私有输出 bucket 或签名 URL 暴露给浏览器。
+受控测试 fixture 位于 `tests/fixtures/tutorial-packs/text-rag/1.0.1/quick/`，只用于本地 PostgreSQL + Qdrant/浏览器回归。公开的 `text-rag/1.1.0` 已包含 P1–P8 声明，并发布了匿名 HTTPS 可验证的 Quick/Benchmark Pack；它不回写或替换此 fixture。后续官方 Pack 必须继续使用新的语义版本目录并验证匿名 HTTPS、Manifest/对象 MIME、长度和 SHA-256；不得把公开 Pack 凭证、私有输出 bucket 或签名 URL 暴露给浏览器。
 
 ## Console 操作
 

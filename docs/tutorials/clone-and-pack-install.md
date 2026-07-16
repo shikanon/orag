@@ -42,12 +42,15 @@
 ```bash
 base_url="${TUTORIAL_CATALOG_BASE_URL:-https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs}"
 curl --fail --location --max-time 30 \
-  "$base_url/text-rag/1.0.0/quick/manifest.json" \
+  "$base_url/text-rag/1.1.0/quick/manifest.json" \
   -o /tmp/orag-text-rag-manifest.json
-sha256sum /tmp/orag-text-rag-manifest.json
+curl --fail --location --max-time 30 \
+  "$base_url/text-rag/1.1.0/SHA256SUMS" \
+  -o /tmp/orag-text-rag-SHA256SUMS
+grep 'quick/manifest.json' /tmp/orag-text-rag-SHA256SUMS
 ```
 
-当前默认 OSS 地址在 2026-07-16 返回 `403 AccessDenied`。这表示外部发布前置条件尚未满足：需要公开对象及其匿名读 ACL。不要为绕过该错误向浏览器注入 OSS 凭证，也不要把私有输出 bucket 用作下载源；失败任务会保持可重试状态。
+`text-rag/1.1.0` 已完成匿名 HTTPS 发布与逐工件 SHA-256 校验。不要向浏览器注入对象存储凭证，也不要把私有输出 bucket 用作下载源；公开源只读，失败的安装任务会保持可重试状态。
 
 生产环境要求 `TUTORIAL_CATALOG_BASE_URL` 使用 HTTPS。`ORAG_TEST_MODE=true` 只允许受控本地测试 fixture 使用 HTTP。私有输出可使用本地目录，或使用与公共源不同的 `aliyun_oss` bucket；相关凭证只由服务端读取。
 
@@ -58,4 +61,4 @@ make console-real-tutorial-clone-e2e
 make console-real-tutorial-benchmark-e2e
 ```
 
-两个命令均启动临时 PostgreSQL、Qdrant、API、Console 和只读本地 Pack fixture。Benchmark 命令运行 `high_precision`/Top-K 8 的 P0/P8，验证 P0 索引复用、Context Pack 审计、Manifest/环境 SHA-256 与构建版本。它们不验证外部 OSS ACL；发布前仍须执行上面的匿名读取检查。
+两个命令均启动临时 PostgreSQL、Qdrant、API、Console 和只读本地 Pack fixture。Benchmark 命令运行 `high_precision`/Top-K 8 的 P0/P8，验证 P0 索引复用、Context Pack 审计、Manifest/环境 SHA-256 与构建版本。它们不替代生产 Pack 的匿名读取验证；发布新版本前仍须执行上面的检查。

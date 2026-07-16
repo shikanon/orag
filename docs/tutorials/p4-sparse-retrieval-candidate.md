@@ -16,4 +16,4 @@ P4 保持 P0 的 `basic` parser、800/120 分块、评测集、`realtime` profil
 
 ## Pack 发布与回归
 
-受控 `tests/fixtures/tutorial-packs/text-rag/1.0.4/quick` 仅供真实 PostgreSQL/Qdrant/浏览器回归临时映射，不会覆盖公开 `1.0.0` Pack。正式公开 1.0.4 仍须通过独立匿名 HTTPS、MIME、长度和 SHA-256 发布流程。
+受控 `tests/fixtures/tutorial-packs/text-rag/1.0.4/quick` 仅供真实 PostgreSQL/Qdrant/浏览器回归临时映射。公开 `text-rag/1.1.0` 已包含 P1–P8 声明并完成匿名 HTTPS、MIME、长度和 SHA-256 验证；它不覆盖该 fixture。
