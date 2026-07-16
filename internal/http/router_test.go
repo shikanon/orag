@@ -80,7 +80,7 @@ func TestTutorialCloneRoutesCreatePollAndExposeNoStorageDetails(t *testing.T) {
 		switch r.URL.Path {
 		case "/packs/text-rag/1.0.0/quick/manifest.json":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"template_id":"text-rag","version":"1.0.0","tier":"quick","license":{"spdx":"CC-BY-4.0","source_url":"https://example.test/license","redistributable":true},"objects":[{"path":"corpus/service.json","sha256":"` + checksum + `","bytes":39,"content_type":"application/json"}],"runtime":{"baseline":{"profile":"realtime","top_k":3},"documents":[{"object_path":"corpus/service.json","name":"服务配置"}],"dataset":{"name":"教程基线评测","items":[{"query":"服务端口是多少？","ground_truth":"8080","split":"eval"}]},"candidates":[{"id":"p1_structured_json","chapter":"p1_document_parser","parser_method":"structured_json"}]}}`))
+			_, _ = w.Write([]byte(`{"template_id":"text-rag","version":"1.0.0","tier":"quick","license":{"spdx":"CC-BY-4.0","source_url":"https://example.test/license","redistributable":true},"objects":[{"path":"corpus/service.json","sha256":"` + checksum + `","bytes":39,"content_type":"application/json"}],"runtime":{"baseline":{"profile":"realtime","top_k":3},"documents":[{"object_path":"corpus/service.json","name":"服务配置"}],"dataset":{"name":"教程基线评测","items":[{"query":"服务端口是多少？","ground_truth":"8080","split":"eval"}]},"candidates":[{"id":"p1_structured_json","chapter":"p1_document_parser","parser_method":"structured_json"},{"id":"p2_recursive_400_80","chapter":"p2_chunking","parser_method":"basic","chunk_size_tokens":400,"chunk_overlap_tokens":80}]}}`))
 		case "/packs/text-rag/1.0.0/quick/corpus/service.json":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(pack)
@@ -138,7 +138,7 @@ func TestTutorialCloneRoutesCreatePollAndExposeNoStorageDetails(t *testing.T) {
 	if err := json.Unmarshal([]byte(experiment.Body), &installed); err != nil {
 		t.Fatal(err)
 	}
-	if len(installed.Variants) != 2 || installed.Variants[1].ID != tutorial.TutorialP1StructuredJSONCandidateID {
+	if len(installed.Variants) != 3 || installed.Variants[1].ID != tutorial.TutorialP1StructuredJSONCandidateID || installed.Variants[2].ID != tutorial.TutorialP2RecursiveChunkCandidateID || installed.Variants[2].ChunkSizeTokens != tutorial.TutorialP2ChunkSizeTokens {
 		t.Fatalf("experiment variants=%#v", installed.Variants)
 	}
 	spoofed := performJSON(h, "POST", "/v1/projects/"+accepted.ProjectID+"/tutorial-experiments/"+installed.ID+"/runs", `{"variant":"baseline","idempotency_key":"spoofed","knowledge_base_id":"browser-controlled"}`, token)
@@ -148,6 +148,10 @@ func TestTutorialCloneRoutesCreatePollAndExposeNoStorageDetails(t *testing.T) {
 	beforeBaseline := performJSON(h, "POST", "/v1/projects/"+accepted.ProjectID+"/tutorial-experiments/"+installed.ID+"/runs", `{"variant":"p1_structured_json","idempotency_key":"p1-before-p0"}`, token)
 	if beforeBaseline.Code != http.StatusConflict || !strings.Contains(beforeBaseline.Body, `"code":"tutorial_baseline_required"`) {
 		t.Fatalf("P1 before P0 status=%d body=%s", beforeBaseline.Code, beforeBaseline.Body)
+	}
+	beforeP2Baseline := performJSON(h, "POST", "/v1/projects/"+accepted.ProjectID+"/tutorial-experiments/"+installed.ID+"/runs", `{"variant":"p2_recursive_400_80","idempotency_key":"p2-before-p0"}`, token)
+	if beforeP2Baseline.Code != http.StatusConflict || !strings.Contains(beforeP2Baseline.Body, `"code":"tutorial_baseline_required"`) {
+		t.Fatalf("P2 before P0 status=%d body=%s", beforeP2Baseline.Code, beforeP2Baseline.Body)
 	}
 	started := performJSON(h, "POST", "/v1/projects/"+accepted.ProjectID+"/tutorial-experiments/"+installed.ID+"/runs", `{"idempotency_key":"http_live_run_1"}`, token)
 	if started.Code != http.StatusAccepted {
@@ -207,6 +211,35 @@ func TestTutorialCloneRoutesCreatePollAndExposeNoStorageDetails(t *testing.T) {
 	comparison := performJSON(h, "GET", p1Accepted.PollURL+"/comparison", "", token)
 	if comparison.Code != http.StatusOK || !strings.Contains(comparison.Body, `"comparable":true`) || !strings.Contains(comparison.Body, `"parser_method":"structured_json"`) {
 		t.Fatalf("comparison status=%d body=%s", comparison.Code, comparison.Body)
+	}
+	p2Started := performJSON(h, "POST", "/v1/projects/"+accepted.ProjectID+"/tutorial-experiments/"+installed.ID+"/runs", `{"variant":"p2_recursive_400_80","idempotency_key":"http_live_run_p2"}`, token)
+	if p2Started.Code != http.StatusAccepted {
+		t.Fatalf("P2 start status=%d body=%s", p2Started.Code, p2Started.Body)
+	}
+	var p2Accepted tutorialExperimentRunAcceptedResponse
+	if err := json.Unmarshal([]byte(p2Started.Body), &p2Accepted); err != nil {
+		t.Fatal(err)
+	}
+	var p2Run tutorial.ExperimentRun
+	for range 200 {
+		polled := performJSON(h, "GET", p2Accepted.PollURL, "", token)
+		if polled.Code != http.StatusOK {
+			t.Fatalf("P2 poll status=%d body=%s", polled.Code, polled.Body)
+		}
+		if err := json.Unmarshal([]byte(polled.Body), &p2Run); err != nil {
+			t.Fatal(err)
+		}
+		if p2Run.Status == tutorial.ExperimentRunCompleted || p2Run.Status == tutorial.ExperimentRunFailed {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if p2Run.Status != tutorial.ExperimentRunCompleted || p2Run.BaselineRunID != run.ID || p2Run.ParserMethod != "basic" || p2Run.ChunkSizeTokens != tutorial.TutorialP2ChunkSizeTokens || p2Run.IndexedChunkCount == 0 {
+		t.Fatalf("P2 run=%#v baseline=%#v", p2Run, run)
+	}
+	p2Comparison := performJSON(h, "GET", p2Accepted.PollURL+"/comparison", "", token)
+	if p2Comparison.Code != http.StatusOK || !strings.Contains(p2Comparison.Body, `"comparable":true`) || !strings.Contains(p2Comparison.Body, `"index_metrics"`) || !strings.Contains(p2Comparison.Body, `"chunk_count"`) {
+		t.Fatalf("P2 comparison status=%d body=%s", p2Comparison.Code, p2Comparison.Body)
 	}
 	queued, _, err := application.TutorialRuns.Start(context.Background(), tutorial.Subject{TenantID: "tenant_a", ID: "http_test"}, accepted.ProjectID, "http_live_run_cancel")
 	if err != nil {

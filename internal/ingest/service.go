@@ -59,13 +59,13 @@ type Service struct {
 // server-owned parser variant. It shares immutable runtime dependencies with
 // the primary service but intentionally starts its own source-lock map instead
 // of copying a live sync.Map.
-func NewVariantService(base *Service, documentParser parser.Parser) *Service {
+func NewVariantService(base *Service, documentParser parser.Parser, splitter chunker.Recursive) *Service {
 	if base == nil {
 		return nil
 	}
 	return &Service{
 		Parser:           documentParser,
-		Splitter:         base.Splitter,
+		Splitter:         splitter,
 		Embedder:         base.Embedder,
 		Contextualizer:   base.Contextualizer,
 		RAPTORBuilder:    base.RAPTORBuilder,

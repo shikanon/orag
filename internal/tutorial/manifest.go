@@ -26,6 +26,12 @@ const (
 	TutorialP1StructuredJSONCandidateID = "p1_structured_json"
 	TutorialP1DocumentParserChapter     = "p1_document_parser"
 	TutorialStructuredJSONParserMethod  = "structured_json"
+	TutorialP2RecursiveChunkCandidateID = "p2_recursive_400_80"
+	TutorialP2ChunkingChapter           = "p2_chunking"
+	TutorialBaselineChunkSizeTokens     = 800
+	TutorialBaselineChunkOverlapTokens  = 120
+	TutorialP2ChunkSizeTokens           = 400
+	TutorialP2ChunkOverlapTokens        = 80
 )
 
 // Manifest describes one immutable, redistributable tutorial pack. It is
@@ -81,9 +87,11 @@ type RuntimeDataset struct {
 // RuntimeCandidate declares one immutable experiment variant. It deliberately
 // contains no client-configurable model, retrieval, or storage settings.
 type RuntimeCandidate struct {
-	ID           string `json:"id"`
-	Chapter      string `json:"chapter"`
-	ParserMethod string `json:"parser_method"`
+	ID                 string `json:"id"`
+	Chapter            string `json:"chapter"`
+	ParserMethod       string `json:"parser_method"`
+	ChunkSizeTokens    int    `json:"chunk_size_tokens,omitempty"`
+	ChunkOverlapTokens int    `json:"chunk_overlap_tokens,omitempty"`
 }
 
 type RuntimeDatasetItem struct {
@@ -198,26 +206,45 @@ func validateRuntimeManifest(runtime RuntimeManifest, template Template, objects
 func validateRuntimeCandidates(runtime RuntimeManifest, objectsByPath map[string]PackObject) error {
 	seen := make(map[string]struct{}, len(runtime.Candidates))
 	for index, candidate := range runtime.Candidates {
-		if candidate.ID != TutorialP1StructuredJSONCandidateID || candidate.Chapter != TutorialP1DocumentParserChapter || candidate.ParserMethod != TutorialStructuredJSONParserMethod {
-			return fmt.Errorf("%w: runtime candidate %d is unsupported", ErrManifestInvalid, index)
-		}
 		if _, duplicate := seen[candidate.ID]; duplicate {
 			return fmt.Errorf("%w: duplicate runtime candidate", ErrManifestInvalid)
 		}
 		seen[candidate.ID] = struct{}{}
-		hasJSONDocument := false
-		for _, document := range runtime.Documents {
-			object := objectsByPath[document.ObjectPath]
-			if strings.EqualFold(object.ContentType, "application/json") || strings.HasSuffix(strings.ToLower(object.Path), ".json") {
-				hasJSONDocument = true
-				break
+		switch {
+		case validP1Candidate(candidate):
+			hasJSONDocument := false
+			for _, document := range runtime.Documents {
+				object := objectsByPath[document.ObjectPath]
+				if strings.EqualFold(object.ContentType, "application/json") || strings.HasSuffix(strings.ToLower(object.Path), ".json") {
+					hasJSONDocument = true
+					break
+				}
 			}
-		}
-		if !hasJSONDocument {
-			return fmt.Errorf("%w: runtime candidate %d requires a JSON document", ErrManifestInvalid, index)
+			if !hasJSONDocument {
+				return fmt.Errorf("%w: runtime candidate %d requires a JSON document", ErrManifestInvalid, index)
+			}
+		case validP2Candidate(candidate):
+			continue
+		default:
+			return fmt.Errorf("%w: runtime candidate %d is unsupported", ErrManifestInvalid, index)
 		}
 	}
 	return nil
+}
+
+func validP1Candidate(candidate RuntimeCandidate) bool {
+	return candidate.ID == TutorialP1StructuredJSONCandidateID &&
+		candidate.Chapter == TutorialP1DocumentParserChapter &&
+		candidate.ParserMethod == TutorialStructuredJSONParserMethod &&
+		candidate.ChunkSizeTokens == 0 && candidate.ChunkOverlapTokens == 0
+}
+
+func validP2Candidate(candidate RuntimeCandidate) bool {
+	return candidate.ID == TutorialP2RecursiveChunkCandidateID &&
+		candidate.Chapter == TutorialP2ChunkingChapter &&
+		candidate.ParserMethod == "basic" &&
+		candidate.ChunkSizeTokens == TutorialP2ChunkSizeTokens &&
+		candidate.ChunkOverlapTokens == TutorialP2ChunkOverlapTokens
 }
 
 func validLicense(license License) bool {

@@ -28,6 +28,8 @@ type runtimeDefinition struct {
 	profile               string
 	topK                  int
 	parserMethod          string
+	chunkSizeTokens       int
+	chunkOverlapTokens    int
 	comparisonFingerprint string
 	definitionFingerprint string
 }
@@ -37,22 +39,28 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		return runtimeDefinition{}, ErrRuntimeUnavailable
 	}
 	definition := runtimeDefinition{
-		knowledgeBaseID: experiment.KnowledgeBaseID,
-		datasetID:       experiment.DatasetID,
-		profile:         experiment.BaselineProfile,
-		topK:            experiment.BaselineTopK,
-		parserMethod:    "basic",
+		knowledgeBaseID:    experiment.KnowledgeBaseID,
+		datasetID:          experiment.DatasetID,
+		profile:            experiment.BaselineProfile,
+		topK:               experiment.BaselineTopK,
+		parserMethod:       "basic",
+		chunkSizeTokens:    TutorialBaselineChunkSizeTokens,
+		chunkOverlapTokens: TutorialBaselineChunkOverlapTokens,
 	}
 	if variant != "baseline" {
 		candidate, found := runtimeCandidate(experiment.PackManifest.Runtime.Candidates, variant)
 		if !found {
 			return runtimeDefinition{}, ErrExperimentRunVariant
 		}
-		if s.candidateIngestors[candidate.ParserMethod] == nil {
+		if s.candidateIngestors[candidate.ID] == nil {
 			return runtimeDefinition{}, ErrRuntimeUnavailable
 		}
 		definition.knowledgeBaseID = tutorialCandidateKnowledgeBaseIDFor(experiment.ProjectID, experiment.TemplateID, experiment.TemplateVersion, candidate.ID)
 		definition.parserMethod = candidate.ParserMethod
+		if candidate.ChunkSizeTokens > 0 {
+			definition.chunkSizeTokens = candidate.ChunkSizeTokens
+			definition.chunkOverlapTokens = candidate.ChunkOverlapTokens
+		}
 	}
 	comparisonInput := struct {
 		TemplateID      string             `json:"template_id"`
@@ -73,10 +81,13 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		ComparisonFingerprint string `json:"comparison_fingerprint"`
 		Variant               string `json:"variant"`
 		ParserMethod          string `json:"parser_method"`
+		ChunkSizeTokens       int    `json:"chunk_size_tokens"`
+		ChunkOverlapTokens    int    `json:"chunk_overlap_tokens"`
 		KnowledgeBaseID       string `json:"knowledge_base_id"`
 	}{
 		ComparisonFingerprint: definition.comparisonFingerprint, Variant: variant,
-		ParserMethod: definition.parserMethod, KnowledgeBaseID: definition.knowledgeBaseID,
+		ParserMethod: definition.parserMethod, ChunkSizeTokens: definition.chunkSizeTokens,
+		ChunkOverlapTokens: definition.chunkOverlapTokens, KnowledgeBaseID: definition.knowledgeBaseID,
 	})
 	return definition, nil
 }
@@ -96,12 +107,14 @@ func (d runtimeDefinition) matches(run ExperimentRun) bool {
 		run.Profile == d.profile &&
 		run.TopK == d.topK &&
 		run.ParserMethod == d.parserMethod &&
+		run.ChunkSizeTokens == d.chunkSizeTokens &&
+		run.ChunkOverlapTokens == d.chunkOverlapTokens &&
 		run.ComparisonFingerprint == d.comparisonFingerprint &&
 		run.DefinitionFingerprint == d.definitionFingerprint
 }
 
 func (r ExperimentRun) isLegacyBaseline() bool {
-	return r.Variant == "baseline" && r.KnowledgeBaseID == "" && r.DatasetID == "" && r.Profile == "" && r.TopK == 0 && r.ParserMethod == "" && r.ComparisonFingerprint == "" && r.DefinitionFingerprint == ""
+	return r.Variant == "baseline" && r.KnowledgeBaseID == "" && r.DatasetID == "" && r.Profile == "" && r.TopK == 0 && r.ParserMethod == "" && r.ChunkSizeTokens == 0 && r.ChunkOverlapTokens == 0 && r.ComparisonFingerprint == "" && r.DefinitionFingerprint == ""
 }
 
 func manifestSHA256(manifest Manifest) string { return jsonSHA256(manifest) }

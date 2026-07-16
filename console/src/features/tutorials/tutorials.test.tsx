@@ -57,7 +57,7 @@ describe('Tutorial catalog', () => {
     expect(screen.getByRole('link', { name: '返回教程库' })).toHaveAttribute('href', '/tutorials')
   })
 
-  it('runs the server-derived P0 then renders the auditable P1 comparison without Pack locations', async () => {
+  it('runs the server-derived P0 then renders auditable P1 and P2 comparisons without Pack locations', async () => {
     useTutorialLiveRunHandlers()
     const user = userEvent.setup()
     renderApp('/projects/prj_clone/tutorial/experiments/texp_clone')
@@ -65,9 +65,13 @@ describe('Tutorial catalog', () => {
     expect(await screen.findByText('eval_tutorial_clone')).toBeVisible()
     await user.click(screen.getByRole('button', { name: '运行 P1 解析候选' }))
     expect(await screen.findByText('eval_tutorial_clone_p1')).toBeVisible()
-    expect(await screen.findByRole('heading', { name: 'P0 与 P1 使用相同的对比输入' })).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'P0 与候选使用相同的对比输入' })).toBeVisible()
     expect(screen.getByText('accuracy')).toBeVisible()
     expect(screen.getByText('+50.0%')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '运行 P2 分块候选' }))
+    expect(await screen.findByText('eval_tutorial_clone_p2')).toBeVisible()
+    expect(await screen.findByText('chunk_count')).toBeVisible()
+    expect(screen.getAllByText('400/80').length).toBeGreaterThanOrEqual(2)
     expect(screen.queryByText(/oss|access key|bucket/i)).not.toBeInTheDocument()
   })
 })

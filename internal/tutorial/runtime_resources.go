@@ -38,10 +38,15 @@ func (r ResourceInitializer) Ensure(ctx context.Context, job CloneJob, manifest 
 	}
 	for _, candidate := range manifest.Runtime.Candidates {
 		candidateID := tutorialCandidateKnowledgeBaseID(job, candidate.ID)
-		if err := r.ensureKnowledgeBase(ctx, job, candidateID, "教程 P1 解析候选知识库", "由已校验教程 Pack 创建的独立 P1 解析候选运行根。", map[string]string{
+		metadata := map[string]string{
 			"tutorial_template_id": job.TemplateID, "tutorial_template_version": job.TemplateVersion, "tutorial_pack_tier": job.Tier,
 			"tutorial_variant": candidate.ID, "tutorial_parser_method": candidate.ParserMethod,
-		}, now); err != nil {
+		}
+		if candidate.ChunkSizeTokens > 0 {
+			metadata["tutorial_chunk_size_tokens"] = fmt.Sprintf("%d", candidate.ChunkSizeTokens)
+			metadata["tutorial_chunk_overlap_tokens"] = fmt.Sprintf("%d", candidate.ChunkOverlapTokens)
+		}
+		if err := r.ensureKnowledgeBase(ctx, job, candidateID, "教程候选知识库", "由已校验教程 Pack 创建的独立候选运行根。", metadata, now); err != nil {
 			return RuntimeResources{}, err
 		}
 	}

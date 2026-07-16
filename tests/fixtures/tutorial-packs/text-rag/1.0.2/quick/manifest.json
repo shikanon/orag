@@ -1,0 +1,54 @@
+{
+  "template_id": "text-rag",
+  "version": "1.0.2",
+  "tier": "quick",
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "source_url": "https://example.test/tutorial-p2-recursive-chunking-license",
+    "redistributable": true
+  },
+  "objects": [
+    {
+      "path": "corpus/service.json",
+      "sha256": "3a16ee6722ceab6000242fa993d4cc6bcc5fcb0f24d0e06a69a61cf606770228",
+      "bytes": 16055,
+      "content_type": "application/json"
+    }
+  ],
+  "runtime": {
+    "baseline": {
+      "profile": "realtime",
+      "top_k": 5
+    },
+    "documents": [
+      {
+        "object_path": "corpus/service.json",
+        "name": "教程 P2 长服务配置"
+      }
+    ],
+    "dataset": {
+      "name": "教程 P2 Chunking 评测集",
+      "items": [
+        {
+          "query": "ORAG 服务端口是多少？",
+          "ground_truth": "8080",
+          "split": "eval"
+        }
+      ]
+    },
+    "candidates": [
+      {
+        "id": "p1_structured_json",
+        "chapter": "p1_document_parser",
+        "parser_method": "structured_json"
+      },
+      {
+        "id": "p2_recursive_400_80",
+        "chapter": "p2_chunking",
+        "parser_method": "basic",
+        "chunk_size_tokens": 400,
+        "chunk_overlap_tokens": 80
+      }
+    ]
+  }
+}

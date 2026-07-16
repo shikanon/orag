@@ -2996,6 +2996,14 @@ components:
         parser_method:
           type: string
           description: Parser method selected by the server for this declared variant.
+        chunk_size_tokens:
+          type: integer
+          readOnly: true
+          description: Server-owned recursive chunk size in deterministic text units.
+        chunk_overlap_tokens:
+          type: integer
+          readOnly: true
+          description: Server-owned recursive chunk overlap in deterministic text units.
         available:
           type: boolean
           description: Whether this installed Pack currently has a runnable runtime root.
@@ -3076,6 +3084,21 @@ components:
         parser_method:
           type: string
           readOnly: true
+        chunk_size_tokens:
+          type: integer
+          readOnly: true
+        chunk_overlap_tokens:
+          type: integer
+          readOnly: true
+        indexed_chunk_count:
+          type: integer
+          readOnly: true
+          description: Measured chunks stored during this run's private-pack indexing stage.
+        average_chunk_tokens:
+          type: number
+          format: double
+          readOnly: true
+          description: Measured average deterministic text units per indexed chunk.
         stage:
           $ref: "#/components/schemas/TutorialExperimentRunStage"
         status:
@@ -3136,6 +3159,11 @@ components:
           type: boolean
         metrics:
           type: array
+          items:
+            $ref: "#/components/schemas/TutorialExperimentMetricDelta"
+        index_metrics:
+          type: array
+          description: Direct measurements from the two persisted private-pack indexes; these are not quality estimates.
           items:
             $ref: "#/components/schemas/TutorialExperimentMetricDelta"
     ReadinessResponse:

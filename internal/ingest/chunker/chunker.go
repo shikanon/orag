@@ -86,8 +86,13 @@ func splitParagraphs(s string) []string {
 }
 
 func tokenCount(s string) int {
-	return len(textUnits(s))
+	return TokenCount(s)
 }
+
+// TokenCount returns the deterministic text-unit count used by Recursive when
+// it decides whether a chunk is full. It is intentionally not a model-token
+// estimate, so tutorial index facts remain reproducible across deployments.
+func TokenCount(markdown string) int { return len(textUnits(markdown)) }
 
 type textUnit struct {
 	text string

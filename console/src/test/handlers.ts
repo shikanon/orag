@@ -30,22 +30,23 @@ export const tutorialExperiment = {
   template_id: 'text-rag', template_version: '1.0.0', pack_tier: 'quick', pack_status: 'pack_installed',
   runtime_status: 'ready', knowledge_base_id: 'tkb_clone', dataset_id: 'tds_clone', baseline_profile: 'realtime', baseline_top_k: 5,
   variants: [
-    { id: 'baseline', chapter: 'p0_basic_baseline', parser_method: 'basic', available: true },
-    { id: 'p1_structured_json', chapter: 'p1_document_parser', parser_method: 'structured_json', available: true },
+    { id: 'baseline', chapter: 'p0_basic_baseline', parser_method: 'basic', chunk_size_tokens: 800, chunk_overlap_tokens: 120, available: true },
+    { id: 'p1_structured_json', chapter: 'p1_document_parser', parser_method: 'structured_json', chunk_size_tokens: 800, chunk_overlap_tokens: 120, available: true },
+    { id: 'p2_recursive_400_80', chapter: 'p2_chunking', parser_method: 'basic', chunk_size_tokens: 400, chunk_overlap_tokens: 80, available: true },
   ],
   created_at: '2026-07-16T00:00:00Z', updated_at: '2026-07-16T00:00:00Z',
 } as const
 
 export const completedTutorialRun = {
   id: 'terun_clone', tenant_id: 'tenant_a', project_id: completedCloneJob.project_id, experiment_id: tutorialExperiment.id,
-  variant: 'baseline', parser_method: 'basic', comparison_fingerprint: 'comparison_fingerprint', knowledge_base_id: 'tkb_clone', dataset_id: 'tds_clone', profile: 'realtime', top_k: 5, stage: 'completed', status: 'completed', evaluation_run_id: 'eval_tutorial_clone',
+  variant: 'baseline', parser_method: 'basic', chunk_size_tokens: 800, chunk_overlap_tokens: 120, indexed_chunk_count: 2, average_chunk_tokens: 600, comparison_fingerprint: 'comparison_fingerprint', knowledge_base_id: 'tkb_clone', dataset_id: 'tds_clone', profile: 'realtime', top_k: 5, stage: 'completed', status: 'completed', evaluation_run_id: 'eval_tutorial_clone',
   events: [{ stage: 'index_private_pack', outcome: 'completed', occurred_at: '2026-07-16T00:00:00Z' }, { stage: 'run_evaluation', outcome: 'completed', occurred_at: '2026-07-16T00:00:01Z' }, { stage: 'completed', outcome: 'completed', occurred_at: '2026-07-16T00:00:02Z' }],
   created_at: '2026-07-16T00:00:00Z', updated_at: '2026-07-16T00:00:02Z',
 } as const
 
 const completedTutorialP1Run = {
   id: 'terun_clone_p1', tenant_id: 'tenant_a', project_id: completedCloneJob.project_id, experiment_id: tutorialExperiment.id,
-  variant: 'p1_structured_json', baseline_run_id: completedTutorialRun.id, parser_method: 'structured_json', comparison_fingerprint: 'comparison_fingerprint', definition_fingerprint: 'p1_definition_fingerprint', knowledge_base_id: 'tkb_clone_p1', dataset_id: 'tds_clone', profile: 'realtime', top_k: 5, stage: 'completed', status: 'completed', evaluation_run_id: 'eval_tutorial_clone_p1',
+  variant: 'p1_structured_json', baseline_run_id: completedTutorialRun.id, parser_method: 'structured_json', chunk_size_tokens: 800, chunk_overlap_tokens: 120, indexed_chunk_count: 2, average_chunk_tokens: 600, comparison_fingerprint: 'comparison_fingerprint', definition_fingerprint: 'p1_definition_fingerprint', knowledge_base_id: 'tkb_clone_p1', dataset_id: 'tds_clone', profile: 'realtime', top_k: 5, stage: 'completed', status: 'completed', evaluation_run_id: 'eval_tutorial_clone_p1',
   events: [{ stage: 'index_private_pack', outcome: 'completed', occurred_at: '2026-07-16T00:01:00Z' }, { stage: 'run_evaluation', outcome: 'completed', occurred_at: '2026-07-16T00:01:01Z' }, { stage: 'completed', outcome: 'completed', occurred_at: '2026-07-16T00:01:02Z' }],
   created_at: '2026-07-16T00:01:00Z', updated_at: '2026-07-16T00:01:02Z',
 } as const
@@ -55,6 +56,22 @@ const tutorialComparison = {
   candidate: completedTutorialP1Run,
   comparable: true,
   metrics: [{ name: 'accuracy', baseline: 0.5, candidate: 0.75, absolute_delta: 0.25, relative_delta: 0.5 }],
+  index_metrics: [{ name: 'average_chunk_tokens', baseline: 600, candidate: 600, absolute_delta: 0, relative_delta: 0 }, { name: 'chunk_count', baseline: 2, candidate: 2, absolute_delta: 0, relative_delta: 0 }],
+} as const
+
+const completedTutorialP2Run = {
+  id: 'terun_clone_p2', tenant_id: 'tenant_a', project_id: completedCloneJob.project_id, experiment_id: tutorialExperiment.id,
+  variant: 'p2_recursive_400_80', baseline_run_id: completedTutorialRun.id, parser_method: 'basic', chunk_size_tokens: 400, chunk_overlap_tokens: 80, indexed_chunk_count: 4, average_chunk_tokens: 320, comparison_fingerprint: 'comparison_fingerprint', definition_fingerprint: 'p2_definition_fingerprint', knowledge_base_id: 'tkb_clone_p2', dataset_id: 'tds_clone', profile: 'realtime', top_k: 5, stage: 'completed', status: 'completed', evaluation_run_id: 'eval_tutorial_clone_p2',
+  events: [{ stage: 'index_private_pack', outcome: 'completed', occurred_at: '2026-07-16T00:02:00Z' }, { stage: 'run_evaluation', outcome: 'completed', occurred_at: '2026-07-16T00:02:01Z' }, { stage: 'completed', outcome: 'completed', occurred_at: '2026-07-16T00:02:02Z' }],
+  created_at: '2026-07-16T00:02:00Z', updated_at: '2026-07-16T00:02:02Z',
+} as const
+
+const tutorialP2Comparison = {
+  baseline: completedTutorialRun,
+  candidate: completedTutorialP2Run,
+  comparable: true,
+  metrics: [{ name: 'accuracy', baseline: 0.5, candidate: 0.75, absolute_delta: 0.25, relative_delta: 0.5 }],
+  index_metrics: [{ name: 'average_chunk_tokens', baseline: 600, candidate: 320, absolute_delta: -280, relative_delta: -0.4667 }, { name: 'chunk_count', baseline: 2, candidate: 4, absolute_delta: 2, relative_delta: 1 }],
 } as const
 
 export const server = setupServer(
@@ -100,12 +117,14 @@ export function useTutorialLiveRunHandlers() {
     http.get('/v1/projects/prj_clone/tutorial-experiment', () => HttpResponse.json(tutorialExperiment)),
     http.post('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs', async ({ request }) => {
       const input = await request.json() as { variant: string }
-      const run = input.variant === 'p1_structured_json' ? completedTutorialP1Run : completedTutorialRun
+      const run = input.variant === 'p1_structured_json' ? completedTutorialP1Run : input.variant === 'p2_recursive_400_80' ? completedTutorialP2Run : completedTutorialRun
       return HttpResponse.json({ run_id: run.id, poll_url: `/v1/projects/${completedCloneJob.project_id}/tutorial-experiments/${tutorialExperiment.id}/runs/${run.id}`, run }, { status: 202 })
     }),
     http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone', () => HttpResponse.json(completedTutorialRun)),
     http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone_p1', () => HttpResponse.json(completedTutorialP1Run)),
     http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone_p1/comparison', () => HttpResponse.json(tutorialComparison)),
+    http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone_p2', () => HttpResponse.json(completedTutorialP2Run)),
+    http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone_p2/comparison', () => HttpResponse.json(tutorialP2Comparison)),
     http.post('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone:cancel', () => HttpResponse.json(completedTutorialRun, { status: 202 })),
   )
 }

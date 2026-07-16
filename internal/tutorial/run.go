@@ -9,6 +9,7 @@ import (
 
 	"github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/ingest"
+	"github.com/shikanon/orag/internal/ingest/chunker"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/rag"
 )
@@ -56,6 +57,10 @@ type ExperimentRun struct {
 	Profile               string               `json:"profile,omitempty"`
 	TopK                  int                  `json:"top_k,omitempty"`
 	ParserMethod          string               `json:"parser_method,omitempty"`
+	ChunkSizeTokens       int                  `json:"chunk_size_tokens,omitempty"`
+	ChunkOverlapTokens    int                  `json:"chunk_overlap_tokens,omitempty"`
+	IndexedChunkCount     int                  `json:"indexed_chunk_count,omitempty"`
+	AverageChunkTokens    float64              `json:"average_chunk_tokens,omitempty"`
 	Stage                 ExperimentRunStage   `json:"stage"`
 	Status                ExperimentRunStatus  `json:"status"`
 	EvaluationRunID       string               `json:"evaluation_run_id,omitempty"`
@@ -78,6 +83,7 @@ type ExperimentRunRepository interface {
 	FindCompletedBaseline(context.Context, string, string, string, string) (ExperimentRun, bool, error)
 	AcquireExperimentRun(context.Context, string, string, time.Time) (ExperimentRun, bool, error)
 	AdvanceExperimentRun(context.Context, string, string, ExperimentRunStage, ExperimentRunStage, time.Time) (ExperimentRun, bool, error)
+	RecordExperimentRunIndexStats(context.Context, string, string, int, float64, time.Time) (ExperimentRun, bool, error)
 	CompleteExperimentRun(context.Context, string, string, string, time.Time) (ExperimentRun, bool, error)
 	FailExperimentRun(context.Context, string, string, ExperimentRunStage, string, time.Time) (ExperimentRun, bool, error)
 	CancelExperimentRun(context.Context, string, string, time.Time) (ExperimentRun, bool, error)
@@ -130,8 +136,8 @@ func (s *LiveRunService) ConfigureCandidateIngestors(environment RuntimeEnvironm
 	}
 	s.runtimeEnvironment = environment
 	s.candidateIngestors = make(map[string]RuntimeIngestor, len(ingestors))
-	for method, ingestor := range ingestors {
-		s.candidateIngestors[method] = ingestor
+	for candidateID, ingestor := range ingestors {
+		s.candidateIngestors[candidateID] = ingestor
 	}
 }
 
@@ -182,6 +188,7 @@ func (s *LiveRunService) StartVariant(ctx context.Context, subject Subject, proj
 		Variant: variant, BaselineRunID: baselineRunID, ComparisonFingerprint: definition.comparisonFingerprint,
 		DefinitionFingerprint: definition.definitionFingerprint, KnowledgeBaseID: definition.knowledgeBaseID,
 		DatasetID: definition.datasetID, Profile: definition.profile, TopK: definition.topK, ParserMethod: definition.parserMethod,
+		ChunkSizeTokens: definition.chunkSizeTokens, ChunkOverlapTokens: definition.chunkOverlapTokens,
 		Stage: ExperimentRunStageIndex, Status: ExperimentRunQueued,
 		Events:    []ExperimentRunEvent{{Stage: ExperimentRunStageIndex, Outcome: "queued", OccurredAt: now}},
 		CreatedAt: now, UpdatedAt: now,
@@ -251,14 +258,21 @@ func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) er
 		if !definition.matches(run) && !run.isLegacyBaseline() {
 			return s.fail(ctx, run, ErrRuntimeUnavailable)
 		}
-		ingestor, err := s.ingestorFor(run.ParserMethod, definition.parserMethod)
+		ingestor, err := s.ingestorFor(run, definition)
 		if err != nil {
 			return s.fail(ctx, run, err)
 		}
 		switch run.Stage {
 		case ExperimentRunStageIndex:
-			if err := s.index(ctx, experiment, run, ingestor); err != nil {
+			stats, err := s.index(ctx, experiment, run, ingestor)
+			if err != nil {
 				return s.fail(ctx, run, err)
+			}
+			if _, recorded, err := s.repo.RecordExperimentRunIndexStats(ctx, tenantID, run.ID, stats.chunkCount, stats.averageChunkTokens(), s.now().UTC()); err != nil || !recorded {
+				if err != nil {
+					return s.fail(ctx, run, err)
+				}
+				return s.finishCancellationIfRequested(ctx, run)
 			}
 			if _, advanced, err := s.repo.AdvanceExperimentRun(ctx, tenantID, run.ID, ExperimentRunStageIndex, ExperimentRunStageEvaluate, s.now().UTC()); err != nil || !advanced {
 				if err != nil {
@@ -287,38 +301,56 @@ func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) er
 	}
 }
 
-func (s *LiveRunService) index(ctx context.Context, experiment Experiment, run ExperimentRun, ingestor RuntimeIngestor) error {
+type indexStats struct {
+	chunkCount int
+	tokenCount int
+}
+
+func (s indexStats) averageChunkTokens() float64 {
+	if s.chunkCount == 0 {
+		return 0
+	}
+	return float64(s.tokenCount) / float64(s.chunkCount)
+}
+
+func (s *LiveRunService) index(ctx context.Context, experiment Experiment, run ExperimentRun, ingestor RuntimeIngestor) (indexStats, error) {
+	stats := indexStats{}
 	for _, document := range experiment.PackManifest.Runtime.Documents {
 		object, found := packObject(experiment.PackManifest, document.ObjectPath)
 		if !found {
-			return ErrRuntimeUnavailable
+			return indexStats{}, ErrRuntimeUnavailable
 		}
 		content, err := s.private.ReadVerified(ctx, PrivateObject{
 			TenantID: experiment.TenantID, ProjectID: experiment.ProjectID, JobID: experiment.CloneJobID,
 			Object: VerifiedObject{PackObject: object},
 		})
 		if err != nil {
-			return err
+			return indexStats{}, err
 		}
-		if _, err := ingestor.Ingest(ctx, ingest.Request{
+		result, err := ingestor.Ingest(ctx, ingest.Request{
 			TenantID: experiment.TenantID, KnowledgeBaseID: run.KnowledgeBaseID,
 			SourceURI: "tutorial://" + experiment.TemplateID + "/" + experiment.TemplateVersion + "/" + object.Path,
 			Name:      document.Name, Content: content,
-		}); err != nil {
-			return err
+		})
+		if err != nil {
+			return indexStats{}, err
+		}
+		for _, chunk := range result.Chunks {
+			stats.chunkCount++
+			stats.tokenCount += chunker.TokenCount(chunk.Content)
 		}
 	}
-	return nil
+	return stats, nil
 }
 
-func (s *LiveRunService) ingestorFor(storedMethod, derivedMethod string) (RuntimeIngestor, error) {
-	if storedMethod != derivedMethod {
+func (s *LiveRunService) ingestorFor(run ExperimentRun, definition runtimeDefinition) (RuntimeIngestor, error) {
+	if run.ParserMethod != definition.parserMethod || run.ChunkSizeTokens != definition.chunkSizeTokens || run.ChunkOverlapTokens != definition.chunkOverlapTokens {
 		return nil, ErrRuntimeUnavailable
 	}
-	if storedMethod == "basic" && s.ingest != nil {
+	if run.Variant == "baseline" && s.ingest != nil {
 		return s.ingest, nil
 	}
-	if ingestor := s.candidateIngestors[storedMethod]; ingestor != nil {
+	if ingestor := s.candidateIngestors[run.Variant]; ingestor != nil {
 		return ingestor, nil
 	}
 	return nil, ErrRuntimeUnavailable
