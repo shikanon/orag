@@ -255,6 +255,9 @@ func TestPrepareVisualAssetsPersistsPrivatePDFSnapshot(t *testing.T) {
 	if err != nil || !present {
 		t.Fatalf("asset present=%v err=%v", present, err)
 	}
+	if prepared.Runtime == nil || prepared.Runtime.Baseline.Profile != "visual_page" || len(prepared.Runtime.Documents) != 1 {
+		t.Fatalf("runtime=%#v", prepared.Runtime)
+	}
 }
 
 func TestValidateRecipeZIPRejectsTraversal(t *testing.T) {

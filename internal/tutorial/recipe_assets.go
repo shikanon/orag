@@ -40,5 +40,18 @@ func (s *CloneService) prepareVisualAssets(ctx context.Context, job CloneJob, ma
 		}
 		manifest.VisualAssets = append(manifest.VisualAssets, object)
 	}
+	manifest.Runtime = visualRuntimeAsRuntime(*manifest.VisualRuntime, manifest.VisualAssets)
 	return manifest, nil
+}
+
+func visualRuntimeAsRuntime(visual VisualRuntimeManifest, assets []PackObject) *RuntimeManifest {
+	documents := make([]RuntimeDocument, 0, len(assets))
+	for _, asset := range assets {
+		documents = append(documents, RuntimeDocument{ObjectPath: asset.Path, Name: strings.TrimPrefix(asset.Path, "visual/pdf/")})
+	}
+	return &RuntimeManifest{
+		Baseline:  RuntimeBaseline{Profile: visual.Baseline.Profile, TopK: visual.Baseline.TopK},
+		Documents: documents,
+		Dataset:   visual.Dataset,
+	}
 }

@@ -2,6 +2,30 @@ package tutorial
 
 import "testing"
 
+func TestVisualRuntimeDefinitionRequiresVisualAssetsAndProfile(t *testing.T) {
+	service := NewLiveRunService(nil, nil, nil)
+	experiment := Experiment{
+		ProjectID: "prj_visual", CloneJobID: "tclj_visual", TemplateID: "visual-document-rag", TemplateVersion: "1.0.0", Tier: "quick",
+		RuntimeStatus: "ready", KnowledgeBaseID: "tkb_visual", DatasetID: "tds_visual", BaselineProfile: "visual_page", BaselineTopK: 5,
+		PackManifest: Manifest{
+			Runtime:       &RuntimeManifest{Baseline: RuntimeBaseline{Profile: "visual_page", TopK: 5}},
+			VisualRuntime: &VisualRuntimeManifest{Baseline: VisualRuntimeBaseline{Profile: "visual_page", TopK: 5}},
+			VisualAssets:  []PackObject{{Path: "visual/pdf/document.pdf", SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Bytes: 1, ContentType: "application/pdf"}},
+		},
+	}
+	definition, err := service.runtimeDefinition(experiment, "baseline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if definition.profile != "visual_page" || definition.knowledgeBaseID != experiment.KnowledgeBaseID {
+		t.Fatalf("definition=%#v", definition)
+	}
+	experiment.PackManifest.VisualAssets = nil
+	if _, err := service.runtimeDefinition(experiment, "baseline"); err != ErrRuntimeUnavailable {
+		t.Fatalf("missing visual assets error=%v", err)
+	}
+}
+
 func TestRuntimeDefinitionBindsP3ContextualContract(t *testing.T) {
 	service := NewLiveRunService(nil, nil, nil)
 	service.ConfigureCandidateIngestors(RuntimeEnvironment{ChatModel: "chat"}, map[string]RuntimeIngestor{
