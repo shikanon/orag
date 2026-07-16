@@ -93,6 +93,39 @@ func TestParseManifestValidatesRuntimeDeclaration(t *testing.T) {
 	}
 }
 
+func TestParseManifestAcceptsOnlyDeclaredP1StructuredJSONCandidate(t *testing.T) {
+	template, pack := testTemplateAndPack(t)
+	valid := []byte(`{
+		"template_id":"text-rag","version":"1.0.0","tier":"quick",
+		"license":{"spdx":"CC-BY-4.0","source_url":"https://example.test/license","redistributable":true},
+		"objects":[{"path":"corpus/service.json","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":2,"content_type":"application/json"}],
+		"runtime":{"baseline":{"profile":"realtime","top_k":5},"documents":[{"object_path":"corpus/service.json","name":"服务配置"}],"dataset":{"name":"评测","items":[{"query":"端口","ground_truth":"8080"}]},"candidates":[{"id":"p1_structured_json","chapter":"p1_document_parser","parser_method":"structured_json"}]}
+	}`)
+	manifest, err := ParseManifest(valid, template, pack)
+	if err != nil || manifest.Runtime == nil || len(manifest.Runtime.Candidates) != 1 {
+		t.Fatalf("manifest=%#v err=%v", manifest, err)
+	}
+	manifest.Runtime.Candidates[0].ID = "mutated"
+	reparsed, err := ParseManifest(valid, template, pack)
+	if err != nil || reparsed.Runtime.Candidates[0].ID != "p1_structured_json" {
+		t.Fatalf("candidate copy aliases parser state: %#v err=%v", reparsed, err)
+	}
+
+	for name, raw := range map[string][]byte{
+		"duplicate_id":      []byte(strings.Replace(string(valid), `{"id":"p1_structured_json","chapter":"p1_document_parser","parser_method":"structured_json"}]`, `{"id":"p1_structured_json","chapter":"p1_document_parser","parser_method":"structured_json"},{"id":"p1_structured_json","chapter":"p1_document_parser","parser_method":"structured_json"}]`, 1)),
+		"arbitrary_id":      []byte(strings.Replace(string(valid), `"p1_structured_json"`, `"p1_other"`, 1)),
+		"wrong_chapter":     []byte(strings.Replace(string(valid), `"p1_document_parser"`, `"p2_chunking"`, 1)),
+		"wrong_parser":      []byte(strings.Replace(string(valid), `"structured_json"`, `"docling"`, 1)),
+		"non_json_document": []byte(strings.NewReplacer(`corpus/service.json`, `corpus/service.txt`, `"application/json"`, `"text/plain"`).Replace(string(valid))),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseManifest(raw, template, pack); !errors.Is(err, ErrManifestInvalid) {
+				t.Fatalf("ParseManifest() error = %v, want ErrManifestInvalid", err)
+			}
+		})
+	}
+}
+
 func TestValidObjectPathRejectsEscapes(t *testing.T) {
 	for _, value := range []string{"", "/root", "../root", "folder/../root", "folder\\root", "folder/%2e%2e/root"} {
 		if validObjectPath(value) {

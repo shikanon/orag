@@ -1,0 +1,116 @@
+package tutorial
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+)
+
+// RuntimeEnvironment contains the non-secret runtime dimensions that must be
+// unchanged for a baseline/candidate result to be comparable. App wiring owns
+// this snapshot; it is never accepted from an API request.
+type RuntimeEnvironment struct {
+	ChatProvider       string `json:"chat_provider"`
+	ChatModel          string `json:"chat_model"`
+	EmbeddingProvider  string `json:"embedding_provider"`
+	EmbeddingModel     string `json:"embedding_model"`
+	RerankProvider     string `json:"rerank_provider"`
+	RerankModel        string `json:"rerank_model"`
+	MultimodalProvider string `json:"multimodal_provider"`
+	MultimodalModel    string `json:"multimodal_model"`
+	PromptCacheMode    string `json:"prompt_cache_mode"`
+	EvaluatorVersion   string `json:"evaluator_version"`
+}
+
+type runtimeDefinition struct {
+	knowledgeBaseID       string
+	datasetID             string
+	profile               string
+	topK                  int
+	parserMethod          string
+	comparisonFingerprint string
+	definitionFingerprint string
+}
+
+func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string) (runtimeDefinition, error) {
+	if !supportsTextQuickBaseline(experiment.TemplateID, experiment.Tier) || experiment.RuntimeStatus != "ready" || experiment.KnowledgeBaseID == "" || experiment.DatasetID == "" || experiment.CloneJobID == "" || experiment.PackManifest.Runtime == nil {
+		return runtimeDefinition{}, ErrRuntimeUnavailable
+	}
+	definition := runtimeDefinition{
+		knowledgeBaseID: experiment.KnowledgeBaseID,
+		datasetID:       experiment.DatasetID,
+		profile:         experiment.BaselineProfile,
+		topK:            experiment.BaselineTopK,
+		parserMethod:    "basic",
+	}
+	if variant != "baseline" {
+		candidate, found := runtimeCandidate(experiment.PackManifest.Runtime.Candidates, variant)
+		if !found {
+			return runtimeDefinition{}, ErrExperimentRunVariant
+		}
+		if s.candidateIngestors[candidate.ParserMethod] == nil {
+			return runtimeDefinition{}, ErrRuntimeUnavailable
+		}
+		definition.knowledgeBaseID = tutorialCandidateKnowledgeBaseIDFor(experiment.ProjectID, experiment.TemplateID, experiment.TemplateVersion, candidate.ID)
+		definition.parserMethod = candidate.ParserMethod
+	}
+	comparisonInput := struct {
+		TemplateID      string             `json:"template_id"`
+		TemplateVersion string             `json:"template_version"`
+		Tier            string             `json:"tier"`
+		ManifestSHA256  string             `json:"manifest_sha256"`
+		DatasetID       string             `json:"dataset_id"`
+		Profile         string             `json:"profile"`
+		TopK            int                `json:"top_k"`
+		Environment     RuntimeEnvironment `json:"environment"`
+	}{
+		TemplateID: experiment.TemplateID, TemplateVersion: experiment.TemplateVersion, Tier: experiment.Tier,
+		ManifestSHA256: manifestSHA256(experiment.PackManifest), DatasetID: definition.datasetID,
+		Profile: definition.profile, TopK: definition.topK, Environment: s.runtimeEnvironment,
+	}
+	definition.comparisonFingerprint = jsonSHA256(comparisonInput)
+	definition.definitionFingerprint = jsonSHA256(struct {
+		ComparisonFingerprint string `json:"comparison_fingerprint"`
+		Variant               string `json:"variant"`
+		ParserMethod          string `json:"parser_method"`
+		KnowledgeBaseID       string `json:"knowledge_base_id"`
+	}{
+		ComparisonFingerprint: definition.comparisonFingerprint, Variant: variant,
+		ParserMethod: definition.parserMethod, KnowledgeBaseID: definition.knowledgeBaseID,
+	})
+	return definition, nil
+}
+
+func runtimeCandidate(candidates []RuntimeCandidate, id string) (RuntimeCandidate, bool) {
+	for _, candidate := range candidates {
+		if candidate.ID == id {
+			return candidate, true
+		}
+	}
+	return RuntimeCandidate{}, false
+}
+
+func (d runtimeDefinition) matches(run ExperimentRun) bool {
+	return run.KnowledgeBaseID == d.knowledgeBaseID &&
+		run.DatasetID == d.datasetID &&
+		run.Profile == d.profile &&
+		run.TopK == d.topK &&
+		run.ParserMethod == d.parserMethod &&
+		run.ComparisonFingerprint == d.comparisonFingerprint &&
+		run.DefinitionFingerprint == d.definitionFingerprint
+}
+
+func (r ExperimentRun) isLegacyBaseline() bool {
+	return r.Variant == "baseline" && r.KnowledgeBaseID == "" && r.DatasetID == "" && r.Profile == "" && r.TopK == 0 && r.ParserMethod == "" && r.ComparisonFingerprint == "" && r.DefinitionFingerprint == ""
+}
+
+func manifestSHA256(manifest Manifest) string { return jsonSHA256(manifest) }
+
+func jsonSHA256(value any) string {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}

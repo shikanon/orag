@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -57,6 +58,131 @@ func TestLiveRunIndexesPrivatePackAndDelegatesEvaluation(t *testing.T) {
 	}
 	if evaluator.request.DatasetID != experiment.DatasetID || evaluator.request.KnowledgeBaseID != experiment.KnowledgeBaseID || evaluator.request.TopK != 5 {
 		t.Fatalf("evaluation request=%#v", evaluator.request)
+	}
+}
+
+func TestLiveRunRequiresCompatibleBaselineForP1AndUsesIndependentIndex(t *testing.T) {
+	now := time.Date(2026, 7, 16, 14, 0, 0, 0, time.UTC)
+	content := []byte(`{"service":{"port":8080,"name":"ORAG"}}`)
+	hash := sha256.Sum256(content)
+	object := PackObject{Path: "corpus/service.json", SHA256: hex.EncodeToString(hash[:]), Bytes: int64(len(content)), ContentType: "application/json"}
+	store := installPrivateObject(t, "tenant_a", "prj_1", "tclj_1", object, content)
+	repo := NewMemoryCloneRepository()
+	experiment := Experiment{
+		ID: "texp_1", TenantID: "tenant_a", ProjectID: "prj_1", CloneJobID: "tclj_1",
+		TemplateID: "text-rag", TemplateVersion: "1.0.0", Tier: "quick", PackStatus: PackStatusInstalled,
+		RuntimeStatus: "ready", KnowledgeBaseID: "tkb_baseline", DatasetID: "tds_1", BaselineProfile: "realtime", BaselineTopK: 5,
+		PackManifest: Manifest{Objects: []PackObject{object}, Runtime: &RuntimeManifest{
+			Baseline: RuntimeBaseline{Profile: "realtime", TopK: 5}, Documents: []RuntimeDocument{{ObjectPath: object.Path, Name: "服务配置"}},
+			Dataset:    RuntimeDataset{Name: "评测", Items: []RuntimeDatasetItem{{Query: "端口", GroundTruth: "8080"}}},
+			Candidates: []RuntimeCandidate{{ID: TutorialP1StructuredJSONCandidateID, Chapter: TutorialP1DocumentParserChapter, ParserMethod: TutorialStructuredJSONParserMethod}},
+		}},
+	}
+	if err := repo.EnsureExperiment(context.Background(), experiment); err != nil {
+		t.Fatal(err)
+	}
+	baselineIngestor := &recordingRuntimeIngestor{}
+	candidateIngestor := &recordingRuntimeIngestor{}
+	evaluator := &recordingRuntimeEvaluator{}
+	service := NewLiveRunService(repo, repo, func() time.Time { return now })
+	service.Configure(baselineIngestor, evaluator, store)
+	service.ConfigureCandidateIngestors(RuntimeEnvironment{ChatModel: "chat", EmbeddingModel: "embed", RerankModel: "rerank", MultimodalModel: "vision", PromptCacheMode: "auto", EvaluatorVersion: "standard_eval_v1"}, map[string]RuntimeIngestor{TutorialStructuredJSONParserMethod: candidateIngestor})
+	subject := Subject{TenantID: "tenant_a", ID: "user_a"}
+	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP1StructuredJSONCandidateID, "p1-before-p0"); err != ErrBaselineRequired {
+		t.Fatalf("P1 before P0 error=%v", err)
+	}
+	baseline, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, "baseline", "p0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Execute(context.Background(), subject.TenantID, baseline.ID); err != nil {
+		t.Fatal(err)
+	}
+	candidate, replayed, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP1StructuredJSONCandidateID, "p1")
+	if err != nil || replayed {
+		t.Fatalf("candidate=%#v replayed=%v err=%v", candidate, replayed, err)
+	}
+	if candidate.BaselineRunID != baseline.ID || candidate.KnowledgeBaseID == baseline.KnowledgeBaseID || candidate.ParserMethod != TutorialStructuredJSONParserMethod || candidate.ComparisonFingerprint == "" || candidate.DefinitionFingerprint == "" {
+		t.Fatalf("candidate audit fields=%#v", candidate)
+	}
+	if err := service.Execute(context.Background(), subject.TenantID, candidate.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(baselineIngestor.requests) != 1 || baselineIngestor.requests[0].KnowledgeBaseID != baseline.KnowledgeBaseID {
+		t.Fatalf("baseline ingest=%#v", baselineIngestor.requests)
+	}
+	if len(candidateIngestor.requests) != 1 || candidateIngestor.requests[0].KnowledgeBaseID != candidate.KnowledgeBaseID {
+		t.Fatalf("candidate ingest=%#v", candidateIngestor.requests)
+	}
+}
+
+func TestLiveRunRejectsComparisonFingerprintMismatch(t *testing.T) {
+	now := time.Date(2026, 7, 16, 15, 0, 0, 0, time.UTC)
+	content := []byte(`{"service":{"port":8080}}`)
+	hash := sha256.Sum256(content)
+	object := PackObject{Path: "corpus/service.json", SHA256: hex.EncodeToString(hash[:]), Bytes: int64(len(content)), ContentType: "application/json"}
+	repo := NewMemoryCloneRepository()
+	experiment := Experiment{
+		ID: "texp_1", TenantID: "tenant_a", ProjectID: "prj_1", CloneJobID: "tclj_1", TemplateID: "text-rag", TemplateVersion: "1.0.0", Tier: "quick",
+		PackStatus: PackStatusInstalled, RuntimeStatus: "ready", KnowledgeBaseID: "tkb_baseline", DatasetID: "tds_1", BaselineProfile: "realtime", BaselineTopK: 5,
+		PackManifest: Manifest{Objects: []PackObject{object}, Runtime: &RuntimeManifest{
+			Baseline: RuntimeBaseline{Profile: "realtime", TopK: 5}, Documents: []RuntimeDocument{{ObjectPath: object.Path, Name: "服务配置"}},
+			Dataset:    RuntimeDataset{Name: "评测", Items: []RuntimeDatasetItem{{Query: "端口", GroundTruth: "8080"}}},
+			Candidates: []RuntimeCandidate{{ID: TutorialP1StructuredJSONCandidateID, Chapter: TutorialP1DocumentParserChapter, ParserMethod: TutorialStructuredJSONParserMethod}},
+		}},
+	}
+	if err := repo.EnsureExperiment(context.Background(), experiment); err != nil {
+		t.Fatal(err)
+	}
+	store := installPrivateObject(t, "tenant_a", "prj_1", "tclj_1", object, content)
+	service := NewLiveRunService(repo, repo, func() time.Time { return now })
+	service.Configure(&recordingRuntimeIngestor{}, &recordingRuntimeEvaluator{}, store)
+	subject := Subject{TenantID: "tenant_a", ID: "user_a"}
+	service.ConfigureCandidateIngestors(RuntimeEnvironment{ChatModel: "chat-a", EvaluatorVersion: "standard_eval_v1"}, map[string]RuntimeIngestor{TutorialStructuredJSONParserMethod: &recordingRuntimeIngestor{}})
+	baseline, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, "baseline", "p0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Execute(context.Background(), subject.TenantID, baseline.ID); err != nil {
+		t.Fatal(err)
+	}
+	service.ConfigureCandidateIngestors(RuntimeEnvironment{ChatModel: "chat-b", EvaluatorVersion: "standard_eval_v1"}, map[string]RuntimeIngestor{TutorialStructuredJSONParserMethod: &recordingRuntimeIngestor{}})
+	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP1StructuredJSONCandidateID, "p1"); err != ErrBaselineRequired {
+		t.Fatalf("mismatched P1 start error=%v", err)
+	}
+}
+
+func TestLiveRunComparisonUsesPersistedStandardMetrics(t *testing.T) {
+	now := time.Date(2026, 7, 16, 16, 0, 0, 0, time.UTC)
+	repo := NewMemoryCloneRepository()
+	baseline := ExperimentRun{
+		ID: "terun_p0", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: "baseline",
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p0", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic",
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p0", CreatedAt: now, UpdatedAt: now,
+	}
+	candidate := ExperimentRun{
+		ID: "terun_p1", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: TutorialP1StructuredJSONCandidateID, BaselineRunID: baseline.ID,
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p1", KnowledgeBaseID: "tkb_p1", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: TutorialStructuredJSONParserMethod,
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p1", CreatedAt: now, UpdatedAt: now.Add(time.Second),
+	}
+	if _, _, err := repo.CreateOrGetRun(context.Background(), baseline, "p0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := repo.CreateOrGetRun(context.Background(), candidate, "p1"); err != nil {
+		t.Fatal(err)
+	}
+	evaluator := &comparisonRuntimeEvaluator{runs: map[string]eval.RunResult{
+		"eval_p0": {ID: "eval_p0", ProjectID: "prj_1", Metrics: map[string]float64{"accuracy": 0.5, "total_tokens": 20}},
+		"eval_p1": {ID: "eval_p1", ProjectID: "prj_1", Metrics: map[string]float64{"accuracy": 0.75, "total_tokens": 24}},
+	}}
+	service := NewLiveRunService(repo, repo, time.Now)
+	service.Configure(nil, evaluator, nil)
+	comparison, err := service.Compare(context.Background(), Subject{TenantID: "tenant_a", ID: "user_a"}, "prj_1", "texp_1", candidate.ID)
+	if err != nil || !comparison.Comparable || len(comparison.Metrics) != 2 {
+		t.Fatalf("comparison=%#v err=%v", comparison, err)
+	}
+	if got := comparison.Metrics[0]; got.Name != "accuracy" || got.AbsoluteDelta != 0.25 || got.RelativeDelta == nil || *got.RelativeDelta != 0.5 {
+		t.Fatalf("accuracy delta=%#v", got)
 	}
 }
 
@@ -117,9 +243,24 @@ func (r *recordingRuntimeIngestor) Ingest(_ context.Context, request ingest.Requ
 	return ingest.Result{}, nil
 }
 
-type recordingRuntimeEvaluator struct{ request eval.RunRequest }
+type recordingRuntimeEvaluator struct {
+	request  eval.RunRequest
+	requests []eval.RunRequest
+}
 
 func (r *recordingRuntimeEvaluator) Run(_ context.Context, request eval.RunRequest) (eval.RunResult, error) {
 	r.request = request
-	return eval.RunResult{ID: "eval_1"}, nil
+	r.requests = append(r.requests, request)
+	return eval.RunResult{ID: "eval_" + fmt.Sprint(len(r.requests))}, nil
+}
+
+type comparisonRuntimeEvaluator struct{ runs map[string]eval.RunResult }
+
+func (r *comparisonRuntimeEvaluator) Run(_ context.Context, _ eval.RunRequest) (eval.RunResult, error) {
+	return eval.RunResult{}, nil
+}
+
+func (r *comparisonRuntimeEvaluator) GetInProject(_ context.Context, _ string, projectID, runID string) (eval.RunResult, bool, error) {
+	run, found := r.runs[runID]
+	return run, found && run.ProjectID == projectID, nil
 }

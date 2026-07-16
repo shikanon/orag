@@ -1,0 +1,47 @@
+{
+  "template_id": "text-rag",
+  "version": "1.0.1",
+  "tier": "quick",
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "source_url": "https://example.test/tutorial-p1-structured-json-license",
+    "redistributable": true
+  },
+  "objects": [
+    {
+      "path": "corpus/service.json",
+      "sha256": "b459aaa74045e1c5487edfd2f49e7f0cfb495f3cd057aebbd64022893a5eb925",
+      "bytes": 78,
+      "content_type": "application/json"
+    }
+  ],
+  "runtime": {
+    "baseline": {
+      "profile": "realtime",
+      "top_k": 5
+    },
+    "documents": [
+      {
+        "object_path": "corpus/service.json",
+        "name": "教程 P1 服务配置"
+      }
+    ],
+    "dataset": {
+      "name": "教程 P1 JSON 评测集",
+      "items": [
+        {
+          "query": "ORAG 服务端口是多少？",
+          "ground_truth": "8080",
+          "split": "eval"
+        }
+      ]
+    },
+    "candidates": [
+      {
+        "id": "p1_structured_json",
+        "chapter": "p1_document_parser",
+        "parser_method": "structured_json"
+      }
+    ]
+  }
+}

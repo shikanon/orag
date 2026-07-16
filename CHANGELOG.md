@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Added the experimental Pack-declared `p1_structured_json` tutorial candidate: immutable P0/P1 comparison fingerprints, a P0 parent requirement, independent candidate indexes, durable parser/lineage audit fields, a comparison API exposing only persisted standard-evaluation metric deltas, Console P0/P1 controls, and a controlled JSON Pack fixture.
 - Added an experimental Text Quick Pack baseline Live Run: verified Manifest snapshots, private Pack reads, project-scoped knowledge-base/dataset roots, durable/recoverable/cancellable runs, standard evaluation references, Console progress, and a no-key PostgreSQL/Qdrant browser E2E.
 - Added the experimental tutorial clone control plane: idempotent, durable and restart-recoverable Pack jobs; strict anonymous public-manifest/object validation; server-only local or Aliyun private output; project-scoped authorization; Console Pack selection and redacted progress; and a real PostgreSQL/Qdrant browser E2E with a controlled public fixture.
 - Added project ownership and project-scoped authorization for evaluation and optimization run roots, including cross-project input rejection, migration backfill, OpenAPI fields, and public Go SDK scoping.

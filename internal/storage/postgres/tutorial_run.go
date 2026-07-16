@@ -11,6 +11,11 @@ import (
 
 var _ tutorial.ExperimentRunRepository = (*TutorialCloneRepository)(nil)
 
+const tutorialExperimentRunColumns = `id, tenant_id, project_id, experiment_id, variant,
+	COALESCE(baseline_run_id, ''), comparison_fingerprint, definition_fingerprint,
+	knowledge_base_id, dataset_id, profile, top_k, parser_method,
+	stage, status, evaluation_run_id, failure_code, created_at, updated_at`
+
 func (r *TutorialCloneRepository) CreateOrGetRun(ctx context.Context, run tutorial.ExperimentRun, idempotencyKey string) (tutorial.ExperimentRun, bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -19,12 +24,14 @@ func (r *TutorialCloneRepository) CreateOrGetRun(ctx context.Context, run tutori
 	defer tx.Rollback(ctx)
 	created, err := scanTutorialExperimentRun(tx.QueryRow(ctx, `
 		INSERT INTO tutorial_experiment_runs(
-			id, tenant_id, project_id, experiment_id, variant, idempotency_key, stage, status,
+			id, tenant_id, project_id, experiment_id, variant, baseline_run_id, comparison_fingerprint, definition_fingerprint,
+			knowledge_base_id, dataset_id, profile, top_k, parser_method, idempotency_key, stage, status,
 			evaluation_run_id, failure_code, created_at, updated_at
-		) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		ON CONFLICT (tenant_id, project_id, variant, idempotency_key) DO NOTHING
-		RETURNING id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at`,
-		run.ID, run.TenantID, run.ProjectID, run.ExperimentID, run.Variant, idempotencyKey, run.Stage, run.Status,
+		RETURNING `+tutorialExperimentRunColumns,
+		run.ID, run.TenantID, run.ProjectID, run.ExperimentID, run.Variant, run.BaselineRunID, run.ComparisonFingerprint, run.DefinitionFingerprint,
+		run.KnowledgeBaseID, run.DatasetID, run.Profile, run.TopK, run.ParserMethod, idempotencyKey, run.Stage, run.Status,
 		run.EvaluationRunID, run.FailureCode, run.CreatedAt, run.UpdatedAt,
 	))
 	if err == nil {
@@ -40,7 +47,7 @@ func (r *TutorialCloneRepository) CreateOrGetRun(ctx context.Context, run tutori
 		return tutorial.ExperimentRun{}, false, err
 	}
 	existing, err := scanTutorialExperimentRun(tx.QueryRow(ctx, `
-		SELECT id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at
+		SELECT `+tutorialExperimentRunColumns+`
 		FROM tutorial_experiment_runs
 		WHERE tenant_id=$1 AND project_id=$2 AND variant=$3 AND idempotency_key=$4`, run.TenantID, run.ProjectID, run.Variant, idempotencyKey))
 	if err != nil {
@@ -58,8 +65,28 @@ func (r *TutorialCloneRepository) CreateOrGetRun(ctx context.Context, run tutori
 
 func (r *TutorialCloneRepository) GetExperimentRun(ctx context.Context, tenantID, runID string) (tutorial.ExperimentRun, bool, error) {
 	run, err := scanTutorialExperimentRun(r.pool.QueryRow(ctx, `
-		SELECT id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at
+		SELECT `+tutorialExperimentRunColumns+`
 		FROM tutorial_experiment_runs WHERE tenant_id=$1 AND id=$2`, tenantID, runID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return tutorial.ExperimentRun{}, false, nil
+	}
+	if err != nil {
+		return tutorial.ExperimentRun{}, false, err
+	}
+	events, err := tutorialExperimentRunEvents(ctx, r.pool, run.ID)
+	if err != nil {
+		return tutorial.ExperimentRun{}, false, err
+	}
+	return cloneTutorialExperimentRunWithEvents(run, events), true, nil
+}
+
+func (r *TutorialCloneRepository) FindCompletedBaseline(ctx context.Context, tenantID, projectID, experimentID, comparisonFingerprint string) (tutorial.ExperimentRun, bool, error) {
+	run, err := scanTutorialExperimentRun(r.pool.QueryRow(ctx, `
+		SELECT `+tutorialExperimentRunColumns+`
+		FROM tutorial_experiment_runs
+		WHERE tenant_id=$1 AND project_id=$2 AND experiment_id=$3 AND variant='baseline'
+		  AND comparison_fingerprint=$4 AND status='completed'
+		ORDER BY updated_at DESC, id DESC LIMIT 1`, tenantID, projectID, experimentID, comparisonFingerprint))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return tutorial.ExperimentRun{}, false, nil
 	}
@@ -77,49 +104,49 @@ func (r *TutorialCloneRepository) AcquireExperimentRun(ctx context.Context, tena
 	return r.transitionExperimentRun(ctx, tenantID, runID, `
 		UPDATE tutorial_experiment_runs SET status='running', updated_at=$3
 		WHERE tenant_id=$1 AND id=$2 AND status='queued'
-		RETURNING id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at`, now, "started", "")
+		RETURNING `+tutorialExperimentRunColumns, now, "started", "")
 }
 
 func (r *TutorialCloneRepository) AdvanceExperimentRun(ctx context.Context, tenantID, runID string, expected, next tutorial.ExperimentRunStage, now time.Time) (tutorial.ExperimentRun, bool, error) {
 	return r.transitionExperimentRun(ctx, tenantID, runID, `
 		UPDATE tutorial_experiment_runs SET stage=$3, status='queued', updated_at=$4
 		WHERE tenant_id=$1 AND id=$2 AND stage=$5 AND status='running'
-		RETURNING id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at`, next, now, expected, "completed", "")
+		RETURNING `+tutorialExperimentRunColumns, next, now, expected, "completed", "")
 }
 
 func (r *TutorialCloneRepository) CompleteExperimentRun(ctx context.Context, tenantID, runID, evaluationID string, now time.Time) (tutorial.ExperimentRun, bool, error) {
 	return r.transitionExperimentRun(ctx, tenantID, runID, `
 		UPDATE tutorial_experiment_runs SET stage='completed', status='completed', evaluation_run_id=$3, updated_at=$4
 		WHERE tenant_id=$1 AND id=$2 AND stage='run_evaluation' AND status='running'
-		RETURNING id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at`, evaluationID, now, "completed", "")
+		RETURNING `+tutorialExperimentRunColumns, evaluationID, now, "completed", "")
 }
 
 func (r *TutorialCloneRepository) FailExperimentRun(ctx context.Context, tenantID, runID string, stage tutorial.ExperimentRunStage, code string, now time.Time) (tutorial.ExperimentRun, bool, error) {
 	return r.transitionExperimentRun(ctx, tenantID, runID, `
 		UPDATE tutorial_experiment_runs SET status='failed', failure_code=$3, updated_at=$4
 		WHERE tenant_id=$1 AND id=$2 AND stage=$5 AND status='running'
-		RETURNING id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at`, code, now, stage, "failed", code)
+		RETURNING `+tutorialExperimentRunColumns, code, now, stage, "failed", code)
 }
 
 func (r *TutorialCloneRepository) CancelExperimentRun(ctx context.Context, tenantID, runID string, now time.Time) (tutorial.ExperimentRun, bool, error) {
 	run, changed, err := r.transitionExperimentRun(ctx, tenantID, runID, `
 		UPDATE tutorial_experiment_runs SET status='cancelled', updated_at=$3
 		WHERE tenant_id=$1 AND id=$2 AND status='queued'
-		RETURNING id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at`, now, "cancelled", "")
+		RETURNING `+tutorialExperimentRunColumns, now, "cancelled", "")
 	if err != nil || changed {
 		return run, changed, err
 	}
 	return r.transitionExperimentRun(ctx, tenantID, runID, `
 		UPDATE tutorial_experiment_runs SET status='cancel_requested', updated_at=$3
 		WHERE tenant_id=$1 AND id=$2 AND status='running'
-		RETURNING id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at`, now, "cancel_requested", "")
+		RETURNING `+tutorialExperimentRunColumns, now, "cancel_requested", "")
 }
 
 func (r *TutorialCloneRepository) MarkExperimentRunCancelled(ctx context.Context, tenantID, runID string, now time.Time) (tutorial.ExperimentRun, bool, error) {
 	return r.transitionExperimentRun(ctx, tenantID, runID, `
 		UPDATE tutorial_experiment_runs SET status='cancelled', updated_at=$3
 		WHERE tenant_id=$1 AND id=$2 AND status='cancel_requested'
-		RETURNING id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at`, now, "cancelled", "")
+		RETURNING `+tutorialExperimentRunColumns, now, "cancelled", "")
 }
 
 func (r *TutorialCloneRepository) transitionExperimentRun(ctx context.Context, tenantID, runID, statement string, args ...any) (tutorial.ExperimentRun, bool, error) {
@@ -161,7 +188,7 @@ func (r *TutorialCloneRepository) RecoverExperimentRuns(ctx context.Context, now
 		rows, err := tx.Query(ctx, `
 			UPDATE tutorial_experiment_runs SET status=$2, updated_at=$1
 			WHERE status=$3
-			RETURNING id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at`, now, recovery.to, recovery.from)
+		RETURNING `+tutorialExperimentRunColumns, now, recovery.to, recovery.from)
 		if err != nil {
 			return nil, err
 		}
@@ -183,7 +210,7 @@ func (r *TutorialCloneRepository) RecoverExperimentRuns(ctx context.Context, now
 		rows.Close()
 	}
 	rows, err := tx.Query(ctx, `
-		SELECT id, tenant_id, project_id, experiment_id, variant, stage, status, evaluation_run_id, failure_code, created_at, updated_at
+		SELECT `+tutorialExperimentRunColumns+`
 		FROM tutorial_experiment_runs WHERE status='queued' ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
@@ -248,8 +275,10 @@ type tutorialExperimentRunScanner interface{ Scan(...any) error }
 func scanTutorialExperimentRun(row tutorialExperimentRunScanner) (tutorial.ExperimentRun, error) {
 	var run tutorial.ExperimentRun
 	err := row.Scan(
-		&run.ID, &run.TenantID, &run.ProjectID, &run.ExperimentID, &run.Variant, &run.Stage, &run.Status,
-		&run.EvaluationRunID, &run.FailureCode, &run.CreatedAt, &run.UpdatedAt,
+		&run.ID, &run.TenantID, &run.ProjectID, &run.ExperimentID, &run.Variant,
+		&run.BaselineRunID, &run.ComparisonFingerprint, &run.DefinitionFingerprint,
+		&run.KnowledgeBaseID, &run.DatasetID, &run.Profile, &run.TopK, &run.ParserMethod,
+		&run.Stage, &run.Status, &run.EvaluationRunID, &run.FailureCode, &run.CreatedAt, &run.UpdatedAt,
 	)
 	return run, err
 }

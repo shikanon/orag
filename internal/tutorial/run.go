@@ -19,6 +19,8 @@ var (
 	ErrRuntimeUnavailable     = errors.New("tutorial Pack has no runnable runtime declaration")
 	ErrPackNotInstalled       = errors.New("tutorial Pack is not installed")
 	ErrExperimentRunCancelled = errors.New("tutorial experiment run is cancelled")
+	ErrExperimentRunVariant   = errors.New("tutorial experiment run variant is invalid")
+	ErrBaselineRequired       = errors.New("tutorial candidate requires a compatible completed baseline")
 )
 
 type ExperimentRunStage string
@@ -41,18 +43,26 @@ const (
 )
 
 type ExperimentRun struct {
-	ID              string               `json:"id"`
-	TenantID        string               `json:"tenant_id"`
-	ProjectID       string               `json:"project_id"`
-	ExperimentID    string               `json:"experiment_id"`
-	Variant         string               `json:"variant"`
-	Stage           ExperimentRunStage   `json:"stage"`
-	Status          ExperimentRunStatus  `json:"status"`
-	EvaluationRunID string               `json:"evaluation_run_id,omitempty"`
-	FailureCode     string               `json:"failure_code,omitempty"`
-	Events          []ExperimentRunEvent `json:"events"`
-	CreatedAt       time.Time            `json:"created_at"`
-	UpdatedAt       time.Time            `json:"updated_at"`
+	ID                    string               `json:"id"`
+	TenantID              string               `json:"tenant_id"`
+	ProjectID             string               `json:"project_id"`
+	ExperimentID          string               `json:"experiment_id"`
+	Variant               string               `json:"variant"`
+	BaselineRunID         string               `json:"baseline_run_id,omitempty"`
+	ComparisonFingerprint string               `json:"comparison_fingerprint,omitempty"`
+	DefinitionFingerprint string               `json:"definition_fingerprint,omitempty"`
+	KnowledgeBaseID       string               `json:"knowledge_base_id,omitempty"`
+	DatasetID             string               `json:"dataset_id,omitempty"`
+	Profile               string               `json:"profile,omitempty"`
+	TopK                  int                  `json:"top_k,omitempty"`
+	ParserMethod          string               `json:"parser_method,omitempty"`
+	Stage                 ExperimentRunStage   `json:"stage"`
+	Status                ExperimentRunStatus  `json:"status"`
+	EvaluationRunID       string               `json:"evaluation_run_id,omitempty"`
+	FailureCode           string               `json:"failure_code,omitempty"`
+	Events                []ExperimentRunEvent `json:"events"`
+	CreatedAt             time.Time            `json:"created_at"`
+	UpdatedAt             time.Time            `json:"updated_at"`
 }
 
 type ExperimentRunEvent struct {
@@ -65,6 +75,7 @@ type ExperimentRunEvent struct {
 type ExperimentRunRepository interface {
 	CreateOrGetRun(context.Context, ExperimentRun, string) (ExperimentRun, bool, error)
 	GetExperimentRun(context.Context, string, string) (ExperimentRun, bool, error)
+	FindCompletedBaseline(context.Context, string, string, string, string) (ExperimentRun, bool, error)
 	AcquireExperimentRun(context.Context, string, string, time.Time) (ExperimentRun, bool, error)
 	AdvanceExperimentRun(context.Context, string, string, ExperimentRunStage, ExperimentRunStage, time.Time) (ExperimentRun, bool, error)
 	CompleteExperimentRun(context.Context, string, string, string, time.Time) (ExperimentRun, bool, error)
@@ -83,13 +94,15 @@ type RuntimeEvaluator interface {
 }
 
 type LiveRunService struct {
-	repo        ExperimentRunRepository
-	experiments CloneRepository
-	ingest      RuntimeIngestor
-	evaluator   RuntimeEvaluator
-	private     PrivateStore
-	now         func() time.Time
-	newID       func(string) string
+	repo               ExperimentRunRepository
+	experiments        CloneRepository
+	ingest             RuntimeIngestor
+	evaluator          RuntimeEvaluator
+	private            PrivateStore
+	candidateIngestors map[string]RuntimeIngestor
+	runtimeEnvironment RuntimeEnvironment
+	now                func() time.Time
+	newID              func(string) string
 }
 
 func NewLiveRunService(repo ExperimentRunRepository, experiments CloneRepository, now func() time.Time) *LiveRunService {
@@ -108,12 +121,33 @@ func (s *LiveRunService) Configure(ingestor RuntimeIngestor, evaluator RuntimeEv
 	s.private = private
 }
 
+// ConfigureCandidateIngestors installs only app-owned variant ingestors and a
+// redacted runtime description used to prevent comparisons across model or
+// evaluator changes. The browser cannot influence either value.
+func (s *LiveRunService) ConfigureCandidateIngestors(environment RuntimeEnvironment, ingestors map[string]RuntimeIngestor) {
+	if s == nil {
+		return
+	}
+	s.runtimeEnvironment = environment
+	s.candidateIngestors = make(map[string]RuntimeIngestor, len(ingestors))
+	for method, ingestor := range ingestors {
+		s.candidateIngestors[method] = ingestor
+	}
+}
+
 func (s *LiveRunService) Start(ctx context.Context, subject Subject, projectID, idempotencyKey string) (ExperimentRun, bool, error) {
+	return s.StartVariant(ctx, subject, projectID, "baseline", idempotencyKey)
+}
+
+func (s *LiveRunService) StartVariant(ctx context.Context, subject Subject, projectID, variant, idempotencyKey string) (ExperimentRun, bool, error) {
 	if s == nil || s.repo == nil || s.experiments == nil {
 		return ExperimentRun{}, false, errors.New("tutorial live run service is unavailable")
 	}
 	subject = normalizeSubject(subject)
-	projectID, idempotencyKey = strings.TrimSpace(projectID), strings.TrimSpace(idempotencyKey)
+	projectID, variant, idempotencyKey = strings.TrimSpace(projectID), strings.TrimSpace(variant), strings.TrimSpace(idempotencyKey)
+	if variant == "" {
+		variant = "baseline"
+	}
 	if subject.TenantID == "" || projectID == "" || idempotencyKey == "" || len(idempotencyKey) > 200 {
 		return ExperimentRun{}, false, ErrExperimentRunKey
 	}
@@ -127,13 +161,28 @@ func (s *LiveRunService) Start(ctx context.Context, subject Subject, projectID, 
 	if experiment.PackStatus != PackStatusInstalled {
 		return ExperimentRun{}, false, ErrPackNotInstalled
 	}
-	if !supportsTextQuickBaseline(experiment.TemplateID, experiment.Tier) || experiment.RuntimeStatus != "ready" || experiment.KnowledgeBaseID == "" || experiment.DatasetID == "" || experiment.CloneJobID == "" || experiment.PackManifest.Runtime == nil {
-		return ExperimentRun{}, false, ErrRuntimeUnavailable
+	definition, err := s.runtimeDefinition(experiment, variant)
+	if err != nil {
+		return ExperimentRun{}, false, err
+	}
+	baselineRunID := ""
+	if variant != "baseline" {
+		baseline, found, err := s.repo.FindCompletedBaseline(ctx, subject.TenantID, projectID, experiment.ID, definition.comparisonFingerprint)
+		if err != nil {
+			return ExperimentRun{}, false, err
+		}
+		if !found {
+			return ExperimentRun{}, false, ErrBaselineRequired
+		}
+		baselineRunID = baseline.ID
 	}
 	now := s.now().UTC()
 	run := ExperimentRun{
 		ID: s.newID("terun"), TenantID: subject.TenantID, ProjectID: projectID, ExperimentID: experiment.ID,
-		Variant: "baseline", Stage: ExperimentRunStageIndex, Status: ExperimentRunQueued,
+		Variant: variant, BaselineRunID: baselineRunID, ComparisonFingerprint: definition.comparisonFingerprint,
+		DefinitionFingerprint: definition.definitionFingerprint, KnowledgeBaseID: definition.knowledgeBaseID,
+		DatasetID: definition.datasetID, Profile: definition.profile, TopK: definition.topK, ParserMethod: definition.parserMethod,
+		Stage: ExperimentRunStageIndex, Status: ExperimentRunQueued,
 		Events:    []ExperimentRunEvent{{Stage: ExperimentRunStageIndex, Outcome: "queued", OccurredAt: now}},
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -180,7 +229,7 @@ func (s *LiveRunService) RecoverPending(ctx context.Context) ([]ExperimentRun, e
 // Execute performs only server-derived baseline work. It never receives a
 // resource ID, profile, source URL, or object-storage coordinate from a client.
 func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) error {
-	if s == nil || s.repo == nil || s.experiments == nil || s.ingest == nil || s.evaluator == nil || s.private == nil {
+	if s == nil || s.repo == nil || s.experiments == nil || s.evaluator == nil || s.private == nil {
 		return errors.New("tutorial live run service is not configured")
 	}
 	for {
@@ -195,12 +244,20 @@ func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) er
 			}
 			return s.fail(ctx, run, err)
 		}
-		if !supportsTextQuickBaseline(experiment.TemplateID, experiment.Tier) || experiment.RuntimeStatus != "ready" || experiment.PackManifest.Runtime == nil {
+		definition, err := s.runtimeDefinition(experiment, run.Variant)
+		if err != nil {
+			return s.fail(ctx, run, err)
+		}
+		if !definition.matches(run) && !run.isLegacyBaseline() {
 			return s.fail(ctx, run, ErrRuntimeUnavailable)
+		}
+		ingestor, err := s.ingestorFor(run.ParserMethod, definition.parserMethod)
+		if err != nil {
+			return s.fail(ctx, run, err)
 		}
 		switch run.Stage {
 		case ExperimentRunStageIndex:
-			if err := s.index(ctx, experiment); err != nil {
+			if err := s.index(ctx, experiment, run, ingestor); err != nil {
 				return s.fail(ctx, run, err)
 			}
 			if _, advanced, err := s.repo.AdvanceExperimentRun(ctx, tenantID, run.ID, ExperimentRunStageIndex, ExperimentRunStageEvaluate, s.now().UTC()); err != nil || !advanced {
@@ -211,8 +268,8 @@ func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) er
 			}
 		case ExperimentRunStageEvaluate:
 			result, err := s.evaluator.Run(ctx, eval.RunRequest{
-				TenantID: tenantID, ProjectID: experiment.ProjectID, DatasetID: experiment.DatasetID,
-				KnowledgeBaseID: experiment.KnowledgeBaseID, Profile: rag.Profile(experiment.BaselineProfile), TopK: experiment.BaselineTopK,
+				TenantID: tenantID, ProjectID: experiment.ProjectID, DatasetID: run.DatasetID,
+				KnowledgeBaseID: run.KnowledgeBaseID, Profile: rag.Profile(run.Profile), TopK: run.TopK,
 			})
 			if err != nil {
 				return s.fail(ctx, run, err)
@@ -230,7 +287,7 @@ func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) er
 	}
 }
 
-func (s *LiveRunService) index(ctx context.Context, experiment Experiment) error {
+func (s *LiveRunService) index(ctx context.Context, experiment Experiment, run ExperimentRun, ingestor RuntimeIngestor) error {
 	for _, document := range experiment.PackManifest.Runtime.Documents {
 		object, found := packObject(experiment.PackManifest, document.ObjectPath)
 		if !found {
@@ -243,8 +300,8 @@ func (s *LiveRunService) index(ctx context.Context, experiment Experiment) error
 		if err != nil {
 			return err
 		}
-		if _, err := s.ingest.Ingest(ctx, ingest.Request{
-			TenantID: experiment.TenantID, KnowledgeBaseID: experiment.KnowledgeBaseID,
+		if _, err := ingestor.Ingest(ctx, ingest.Request{
+			TenantID: experiment.TenantID, KnowledgeBaseID: run.KnowledgeBaseID,
 			SourceURI: "tutorial://" + experiment.TemplateID + "/" + experiment.TemplateVersion + "/" + object.Path,
 			Name:      document.Name, Content: content,
 		}); err != nil {
@@ -252,6 +309,19 @@ func (s *LiveRunService) index(ctx context.Context, experiment Experiment) error
 		}
 	}
 	return nil
+}
+
+func (s *LiveRunService) ingestorFor(storedMethod, derivedMethod string) (RuntimeIngestor, error) {
+	if storedMethod != derivedMethod {
+		return nil, ErrRuntimeUnavailable
+	}
+	if storedMethod == "basic" && s.ingest != nil {
+		return s.ingest, nil
+	}
+	if ingestor := s.candidateIngestors[storedMethod]; ingestor != nil {
+		return ingestor, nil
+	}
+	return nil, ErrRuntimeUnavailable
 }
 
 func (s *LiveRunService) fail(ctx context.Context, run ExperimentRun, cause error) error {
@@ -289,6 +359,8 @@ func experimentRunFailureCode(err error) string {
 	switch {
 	case errors.Is(err, ErrRuntimeUnavailable):
 		return "runtime_unavailable"
+	case errors.Is(err, ErrBaselineRequired):
+		return "baseline_required"
 	case errors.Is(err, ErrPrivateStoreRead):
 		return "private_pack_unavailable"
 	case errors.Is(err, ErrExperimentRunCancelled):

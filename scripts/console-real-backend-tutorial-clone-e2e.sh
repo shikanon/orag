@@ -8,6 +8,7 @@ compose=(docker compose -p orag-tutorial-clone-e2e -f deployments/docker-compose
 database_url="postgres://orag:orag@127.0.0.1:55432/orag_tutorial_clone_e2e?sslmode=disable"
 tmp="$root/.tmp/console-real-tutorial-clone-e2e"
 private_output="$tmp/private-output"
+public_catalog="$tmp/public-catalog"
 api_log="$tmp/api.log"
 fixture_log="$tmp/fixture.log"
 api_pid=""
@@ -59,12 +60,21 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$tmp" "$private_output"
+# The embedded production catalog intentionally remains on the already-published
+# 1.0.0 Pack. For this controlled browser test, serve the immutable 1.0.1 JSON
+# candidate fixture through the 1.0.0 catalog path after rewriting only the
+# temporary manifest version. No source fixture or public Pack is modified.
+cp -R "$root/tests/fixtures/tutorial-packs" "$public_catalog"
+rm -rf "$public_catalog/text-rag/1.0.0/quick"
+cp -R "$root/tests/fixtures/tutorial-packs/text-rag/1.0.1/quick" "$public_catalog/text-rag/1.0.0/quick"
+sed -i.bak 's/"version": "1.0.1"/"version": "1.0.0"/' "$public_catalog/text-rag/1.0.0/quick/manifest.json"
+rm "$public_catalog/text-rag/1.0.0/quick/manifest.json.bak"
 "${compose[@]}" up -d --wait
 if ! "${compose[@]}" exec -T postgres psql -U orag -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = 'orag_tutorial_clone_e2e'" | grep -qx '1'; then
   "${compose[@]}" exec -T postgres createdb -U orag orag_tutorial_clone_e2e
 fi
 
-python3 -m http.server 18082 --bind 127.0.0.1 --directory "$root/tests/fixtures/tutorial-packs" >"$fixture_log" 2>&1 &
+python3 -m http.server 18082 --bind 127.0.0.1 --directory "$public_catalog" >"$fixture_log" 2>&1 &
 fixture_pid=$!
 WAIT_READY_ATTEMPTS=60 ./scripts/wait-ready.sh http://127.0.0.1:18082/text-rag/1.0.0/quick/manifest.json
 

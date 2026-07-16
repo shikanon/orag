@@ -67,7 +67,7 @@ ORAG 使用 `experimental`、`beta`、`stable` 标注每项公共能力的兼容
 | 能力 | 说明 | API / 入口 |
 | --- | --- | --- |
 | Authentication | 管理员登录换取 Bearer token，业务请求从 token 获取默认 tenant。 | `POST /v1/auth/login` |
-| Tutorial catalog | 三个版本化、只读的端到端教程模板，覆盖中文文本、视觉文档和视频 RAG；控制台入口为 `/tutorials`。 | `GET /v1/tutorials` |
+| Tutorial catalog | 三个版本化、只读的端到端教程模板；已安装且声明运行时的 Text Quick Pack 可运行 P0 基线，声明 P1 的 Pack 可在冻结输入和独立索引下比较结构化 JSON 解析。 | `GET /v1/tutorials`、`/tutorial-experiments` |
 | Knowledge bases | 创建、列表、详情、删除知识库；删除会清理文档、chunks、向量索引和语义缓存。 | `/v1/knowledge-bases` |
 | Document ingestion | 支持 JSON 文本导入和 multipart 文件上传，记录 ingestion job；支持 basic、MinerU、Docling 解析。 | `/documents:import`、`/documents`、`/ingestion-jobs/{id}` |
 | Hybrid retrieval | Qdrant dense retrieval、PostgreSQL FTS sparse retrieval、RRF 融合和 rerank。 | `internal/kb`、`internal/rag` |
@@ -227,7 +227,7 @@ go run ./examples/go/sdk
 
 `INGEST_CONTEXTUAL_RETRIEVAL_ENABLED=true` 会在 chunk embedding 和 PostgreSQL FTS 索引前，为每个 chunk 生成简短定位上下文，并将 `contextual_text + chunk content` 作为检索表示。默认 `INGEST_CONTEXTUAL_FAILURE_MODE=fallback`，LLM 生成失败时继续使用原始 chunk 入库；生产启用前应评估额外模型调用成本。
 
-`TUTORIAL_CATALOG_BASE_URL` 默认是 `https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs`。它只用于把内嵌模板中的相对 Manifest 路径解析为公开下载 URL，不读取 AK/SK，也不承载用户私有数据。当前阶段提供目录 API 与控制台只读列表/详情；一键克隆、Pack 安装、Live 实验、数据集生成和视频入库将在后续阶段实现。
+`TUTORIAL_CATALOG_BASE_URL` 默认是 `https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs`。它只用于把内嵌模板中的相对 Manifest 路径解析为公开下载 URL，不读取 AK/SK，也不承载用户私有数据。已安装且声明运行时的 Text Quick Pack 支持 server-owned P0 baseline；Pack 明确声明 `p1_structured_json` 时，完成的 P0 可以触发使用独立索引的 P1 解析候选，并读取标准评测指标对比。官方 Pack 仍须通过独立发布流程提供匿名 HTTPS、MIME/长度和 SHA-256 均可验证的新语义版本目录；详情见 [`docs/tutorials/p1-structured-json-candidate.md`](./docs/tutorials/p1-structured-json-candidate.md)。
 
 `INGEST_RAPTOR_ENABLED=true` 会在入库时生成递归摘要 chunk，摘要带 `raptor_summary` metadata 并与原始 chunk 一起进入 embedding/FTS 检索层。`RAG_QUERY_ROUTER_ENABLED=true` 会按 direct、single retrieval、multi-step retrieval 路由查询；direct 查询绕过检索直接生成，complex 查询会走高精检索扩展。`RAG_GRAPH_RETRIEVAL_ENABLED=true` 会在入库时抽取轻量实体关系，并在检索后按查询实体扩展相关 chunk。
 

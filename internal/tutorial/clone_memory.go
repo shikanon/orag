@@ -45,6 +45,22 @@ func (r *MemoryCloneRepository) GetExperimentRun(_ context.Context, tenantID, ru
 	return cloneExperimentRun(run), ok && run.TenantID == tenantID, nil
 }
 
+func (r *MemoryCloneRepository) FindCompletedBaseline(_ context.Context, tenantID, projectID, experimentID, comparisonFingerprint string) (ExperimentRun, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var latest ExperimentRun
+	found := false
+	for _, run := range r.runs {
+		if run.TenantID != tenantID || run.ProjectID != projectID || run.ExperimentID != experimentID || run.Variant != "baseline" || run.Status != ExperimentRunCompleted || run.ComparisonFingerprint != comparisonFingerprint {
+			continue
+		}
+		if !found || run.UpdatedAt.After(latest.UpdatedAt) || (run.UpdatedAt.Equal(latest.UpdatedAt) && run.ID > latest.ID) {
+			latest, found = run, true
+		}
+	}
+	return cloneExperimentRun(latest), found, nil
+}
+
 func (r *MemoryCloneRepository) AcquireExperimentRun(_ context.Context, tenantID, runID string, now time.Time) (ExperimentRun, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -190,6 +190,22 @@ func TestCloneRunCreatesProjectCopiesVerifiedPackAndMarksExperimentInstalled(t *
 	}
 }
 
+func TestPublicExperimentExposesDeclaredVariantsWithoutManifest(t *testing.T) {
+	experiment := Experiment{
+		ID: "texp_1", PackStatus: PackStatusInstalled, RuntimeStatus: "ready",
+		PackManifest: Manifest{Runtime: &RuntimeManifest{Candidates: []RuntimeCandidate{{
+			ID: TutorialP1StructuredJSONCandidateID, Chapter: TutorialP1DocumentParserChapter, ParserMethod: TutorialStructuredJSONParserMethod,
+		}}}},
+	}
+	public := publicExperiment(experiment)
+	if len(public.Variants) != 2 || public.Variants[0].ID != "baseline" || public.Variants[1].ID != TutorialP1StructuredJSONCandidateID || !public.Variants[1].Available {
+		t.Fatalf("variants=%#v", public.Variants)
+	}
+	if public.PackManifest.Runtime != nil || len(public.PackManifest.Objects) != 0 {
+		t.Fatalf("public experiment exposes private manifest: %#v", public.PackManifest)
+	}
+}
+
 func TestCloneServiceRecoveryRequeuesInterruptedJobs(t *testing.T) {
 	repo := NewMemoryCloneRepository()
 	now := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)

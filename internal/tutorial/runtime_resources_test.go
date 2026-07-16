@@ -20,6 +20,9 @@ func TestResourceInitializerCreatesStableProjectRoots(t *testing.T) {
 		Baseline:  RuntimeBaseline{Profile: "realtime", TopK: 5},
 		Documents: []RuntimeDocument{{ObjectPath: "corpus/data.txt", Name: "数据"}},
 		Dataset:   RuntimeDataset{Name: "教程验证集", Items: []RuntimeDatasetItem{{Query: "问题", GroundTruth: "答案", Split: "eval"}}},
+		Candidates: []RuntimeCandidate{{
+			ID: "p1_structured_json", Chapter: "p1_document_parser", ParserMethod: "structured_json",
+		}},
 	}}
 	first, err := initializer.Ensure(context.Background(), job, manifest)
 	if err != nil || first.Status != "ready" || first.KnowledgeBaseID == "" || first.DatasetID == "" {
@@ -32,6 +35,11 @@ func TestResourceInitializerCreatesStableProjectRoots(t *testing.T) {
 	base, found, err := store.GetKnowledgeBase(context.Background(), job.TenantID, first.KnowledgeBaseID)
 	if err != nil || !found || base.ProjectID != job.ProjectID {
 		t.Fatalf("knowledge base=%#v found=%v err=%v", base, found, err)
+	}
+	candidateID := tutorialCandidateKnowledgeBaseID(job, "p1_structured_json")
+	candidate, found, err := store.GetKnowledgeBase(context.Background(), job.TenantID, candidateID)
+	if err != nil || !found || candidate.ID == first.KnowledgeBaseID || candidate.Metadata["tutorial_variant"] != "p1_structured_json" || candidate.Metadata["tutorial_parser_method"] != "structured_json" {
+		t.Fatalf("candidate knowledge base=%#v found=%v err=%v", candidate, found, err)
 	}
 	items, err := datasets.Items(context.Background(), job.TenantID, first.DatasetID)
 	if err != nil || len(items) != 1 || items[0].Split != dataset.DatasetSplitEval {

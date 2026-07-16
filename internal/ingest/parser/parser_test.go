@@ -37,6 +37,28 @@ func TestBasicParserText(t *testing.T) {
 	}
 }
 
+func TestStructuredJSONParserProducesCanonicalMarkdown(t *testing.T) {
+	doc, err := (StructuredJSONParser{}).Parse(context.Background(), "service.json", []byte(`{"z":2,"service":{"port":8080,"features":["search","eval"]},"a":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# a\n\ntrue\n\n# service\n\n## features\n\n- search\n- eval\n\n## port\n\n8080\n\n# z\n\n2"
+	if doc.Markdown != want || doc.Metadata["parser_method"] != MethodStructuredJSON {
+		t.Fatalf("doc=%#v", doc)
+	}
+}
+
+func TestStructuredJSONParserRejectsMalformedJSONAndFallsBackForText(t *testing.T) {
+	p := StructuredJSONParser{}
+	if _, err := p.Parse(context.Background(), "bad.json", []byte(`{"open":`)); err == nil {
+		t.Fatal("expected JSON error")
+	}
+	doc, err := p.Parse(context.Background(), "notes.txt", []byte("P0-compatible text"))
+	if err != nil || doc.Markdown != "P0-compatible text" || doc.Metadata["parser_method"] != MethodBasic {
+		t.Fatalf("doc=%#v err=%v", doc, err)
+	}
+}
+
 func TestBasicParserHTML(t *testing.T) {
 	doc, err := (BasicParser{}).Parse(context.Background(), "a.html", []byte("<h1>Hello</h1><p>RAG</p>"))
 	if err != nil {
