@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	MethodBasic   = "basic"
-	MethodMinerU  = "mineru"
-	MethodDocling = "docling"
+	MethodBasic          = "basic"
+	MethodStructuredJSON = "structured_json"
+	MethodMinerU         = "mineru"
+	MethodDocling        = "docling"
 )
 
 type Config struct {
@@ -55,6 +56,9 @@ func New(cfg Config) Parser {
 	if method == MethodBasic {
 		return basic
 	}
+	if method == MethodStructuredJSON {
+		return StructuredJSONParser{Fallback: basic}
+	}
 	client := cfg.HTTPClient
 	if client == nil {
 		timeout := cfg.Docling.Timeout
@@ -75,6 +79,8 @@ func normalizeMethod(method string) string {
 	switch strings.ToLower(strings.TrimSpace(method)) {
 	case "", MethodBasic:
 		return MethodBasic
+	case MethodStructuredJSON:
+		return MethodStructuredJSON
 	case MethodMinerU:
 		return MethodMinerU
 	case MethodDocling:
