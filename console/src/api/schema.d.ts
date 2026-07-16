@@ -865,6 +865,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/tutorial-experiment/video-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Imports an owner-authorized Video-MME source into the project's private store. The server verifies the supplied SHA-256 and byte count, derives fixed-cadence temporal evidence, and never accepts a URL, object key, or browser-selected sampling coordinate. This endpoint does not publish or redistribute media, subtitles, annotations, questions, or answers. */
+        post: operations["importTutorialVideoSource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs": {
         parameters: {
             query?: never;
@@ -1785,13 +1804,13 @@ export interface components {
             /** @enum {string} */
             pack_status: "pending" | "installing" | "pack_installed" | "failed";
             /** @enum {string} */
-            runtime_status: "pending" | "runtime_unavailable" | "ready";
+            runtime_status: "pending" | "runtime_unavailable" | "temporal_index_pending_evaluation" | "ready";
             /** @description Server-derived project knowledge-base identifier. Never an object storage location. */
             knowledge_base_id?: string;
             /** @description Server-derived project evaluation dataset identifier. */
             dataset_id?: string;
             /** @enum {string} */
-            baseline_profile?: "realtime";
+            baseline_profile?: "realtime" | "high_precision" | "visual_page" | "temporal_page";
             baseline_top_k?: number;
             /** @description Immutable tutorial variants declared by the installed Pack. Variant configuration remains server-owned. */
             variants: components["schemas"]["TutorialExperimentVariant"][];
@@ -1831,6 +1850,36 @@ export interface components {
             readonly context_pack_max_tokens?: number;
             /** @description Whether this installed Pack currently has a runnable runtime root. */
             available: boolean;
+        };
+        ImportTutorialVideoSourceRequest: {
+            /**
+             * @description Must be the literal string true; confirms the caller is authorized to privately import this source.
+             * @enum {string}
+             */
+            license_confirmed: "true";
+            /**
+             * Format: binary
+             * @description Private video bytes. They are SHA-256 verified before storage.
+             */
+            file: string;
+            /** @description Caller-owned label used only in private temporal evidence identifiers. */
+            alias: string;
+            /** @description Lowercase SHA-256 for the uploaded bytes. */
+            sha256: string;
+            /**
+             * @description Declared video MIME type; the server validates it against the fixed import allowlist.
+             * @enum {string}
+             */
+            content_type: "video/mp4" | "video/webm" | "video/quicktime";
+            /**
+             * Format: int64
+             * @description Authorized source duration in milliseconds, used only with the protocol's fixed cadence.
+             */
+            duration_ms: number;
+        };
+        ImportTutorialVideoSourceResponse: {
+            source_alias: string;
+            temporal_segment_count: number;
         };
         StartTutorialExperimentRunRequest: {
             /**
@@ -4846,6 +4895,37 @@ export interface operations {
                     "application/json": components["schemas"]["TutorialExperiment"];
                 };
             };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    importTutorialVideoSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ImportTutorialVideoSourceRequest"];
+            };
+        };
+        responses: {
+            /** @description Verified private video source imported and deterministic temporal evidence staged. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportTutorialVideoSourceResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];

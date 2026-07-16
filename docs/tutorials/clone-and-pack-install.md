@@ -2,7 +2,7 @@
 
 教程目录中的模板是全局、只读且版本化的资源。克隆动作会创建一个普通的 tenant 项目，并通过持久化任务把指定的 Quick Pack 或 Benchmark Pack 校验后写入该项目的私有输出存储。
 
-此能力仍是 `experimental`。具有受支持 `runtime` 声明的 `text-rag` Quick 与 Benchmark Pack 都能创建项目知识库/数据集并运行 P0–P8 单变量实验。Quick 固定 `realtime`/Top-K 5；受控 Benchmark Pack 固定 `high_precision`/Top-K 8，并持久化 Manifest SHA-256、运行环境 SHA-256 和构建版本。P1–P3 与 P7 使用独立候选索引，P4/P5/P6/P8 复用兼容 P0 索引。`text-rag` 另提供固定环境的只读官方 Replay；视觉文档/视频 Replay 与 Live Run 仍未开放。
+此能力仍是 `experimental`。具有受支持 `runtime` 声明的 `text-rag` Quick 与 Benchmark Pack 都能创建项目知识库/数据集并运行 P0–P8 单变量实验。Quick 固定 `realtime`/Top-K 5；受控 Benchmark Pack 固定 `high_precision`/Top-K 8，并持久化 Manifest SHA-256、运行环境 SHA-256 和构建版本。P1–P3 与 P7 使用独立候选索引，P4/P5/P6/P8 复用兼容 P0 索引。`video-rag` 可接受所有者授权的私有视频导入，并生成固定时间窗的时序证据索引；在导入所有者授权的私有评测集前，它不会假装可运行或伪造评测结果。`text-rag` 另提供固定环境的只读官方 Replay；视觉文档/视频 Replay 仍未开放。
 
 ## 使用流程
 
@@ -26,12 +26,15 @@
 | 查询任务 | `GET /v1/tutorial-clone-jobs/{job_id}` | 项目可读 |
 | 重试失败任务 | `POST /v1/tutorial-clone-jobs/{job_id}:retry` | 项目可写 |
 | 查询项目实验 | `GET /v1/projects/{project_id}/tutorial-experiment` | 项目可读 |
+| 导入私有 Video-MME 来源 | `POST /v1/projects/{project_id}/tutorial-experiment/video-source` | 项目可写 |
 | 启动 P0/P1–P8 Live Run | `POST /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs` | 项目可写 |
 | 查询 P0/P1–P8 Live Run | `GET /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs/{run_id}` | 项目可读 |
 | 对比已完成候选与 P0 | `GET /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs/{run_id}/comparison` | 项目可读 |
 | 取消 P0/P1–P8 Live Run | `POST /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs/{run_id}:cancel` | 项目可写 |
 
 使用同一 tenant、主体、模板版本和 `idempotency_key` 重复提交会返回同一个项目和任务，而不是创建第二份 Pack。
+
+视频导入使用 `multipart/form-data`，字段为 `license_confirmed=true`、`file`、`alias`、`sha256`、`content_type` 与 `duration_ms`。服务端只接受上传流，不接受 URL、对象 key、签名 URL、帧坐标或用户选择的采样策略；它校验完整上传的大小和 SHA-256 后，按公共 Protocol 的固定 cadence 生成私有时序描述。响应不包含媒体、字幕、对象位置或任何存储凭证。Video-MME 的媒体、字幕、标注、问题和答案都不得随 ORAG 发布或通过公开对象存储分发。
 
 运行使用其自身的 `idempotency_key`，其响应持久化 `evaluation_run_id`，可继续使用既有评测 API 查询真实结果。缺少已完成、输入一致的 P0 时启动候选返回 `409 tutorial_baseline_required`。未声明受支持运行时的已安装 Pack 返回稳定的 `tutorial_runtime_unavailable`，不会伪造 Replay 或评测结果。变量、审计证据和 Pack 发布契约见各候选指南（P1–P8）。
 
