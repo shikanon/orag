@@ -64,7 +64,7 @@
 | `orag_rag_query_latency_ms` | histogram | RAG 查询耗时分桶，单位毫秒，label 为 `profile`、`cache_status`、`outcome`。 |
 | `orag_rag_query_latency_ms_sum` | counter | RAG 查询耗时累计值，单位毫秒。可与 `orag_rag_queries_total` 粗略计算平均耗时。 |
 
-这些指标是进程内 counter/histogram，服务重启后会从零开始；当前没有分位数预聚合、持久化或 OTel exporter。metrics label 不包含 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本，单次请求排查请使用日志和 trace 查询。
+这些指标是进程内 counter/histogram，服务重启后会从零开始；当前没有分位数预聚合、持久化或 OTel metrics exporter。metrics label 不包含 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本，单次请求排查请使用日志和 trace 查询。
 
 ## 日志、Trace 与外部观测边界
 
@@ -86,7 +86,7 @@ oragctl trace --trace-id trace_xxx
 
 命中时输出 `trace` 对象，包含 `tenant_id`、`profile`、`latency_ms`、`has_error`、`error_count` 和按时间排序的 `node_spans`；未命中时输出 `404 trace_not_found` 或 CLI 的 `found=false`。当前支持 HTTP 列表/详情和 CLI 单条/列表/统计查询；仍不提供跨租户聚合、采样、跨服务拓扑或外部 APM 跳转。
 
-`OTEL_EXPORTER_OTLP_ENDPOINT` 和 `LANGFUSE_*` 当前只是配置边界：服务未创建 OTel tracer/provider，不导出 OTel spans 或 metrics；也未创建 LangFuse client，不上传 prompt、completion、score 或 trace。后续如需接入，应先明确脱敏、采样、留存和 `OBSERVABILITY_RECORD_PROMPTS` 策略。
+设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 为绝对 OTLP/HTTP endpoint（例如 `http://otel-collector:4318/v1/traces`）后，服务会批量导出应用 RAG/Graph span。导出的属性仅包含 span 名、时间、错误类型和 `orag.trace_id`，不会导出 query、prompt、文档、模型输出、tenant 或原始错误文本；Prometheus metrics 仍只通过 `/metrics` 暴露。`LANGFUSE_*` 仍只是配置边界：服务不会创建 LangFuse client，也不会上传 prompt、completion、score 或 trace。接入外部平台前仍应明确脱敏、采样、留存和 `OBSERVABILITY_RECORD_PROMPTS` 策略。
 
 ## 本地部署检查
 
