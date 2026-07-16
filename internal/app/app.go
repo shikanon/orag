@@ -226,7 +226,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		EmbeddingProvider: cfg.Models.EmbeddingProvider, EmbeddingModel: cfg.Ark.EmbeddingModel,
 		RerankProvider: cfg.Models.RerankProvider, RerankModel: cfg.Ark.RerankModel,
 		MultimodalProvider: cfg.Models.MultimodalProvider, MultimodalModel: cfg.Ark.MultimodalModel,
-		PromptCacheMode: cfg.RAG.PromptCacheMode, EvaluatorVersion: "tutorial_eval_v5",
+		PromptCacheMode: cfg.RAG.PromptCacheMode, EvaluatorVersion: "tutorial_eval_v5", BuildRevision: cfg.Server.BuildRevision,
 	}, map[string]tutorial.RuntimeIngestor{
 		tutorial.TutorialP1StructuredJSONCandidateID: p1TutorialIngest,
 		tutorial.TutorialP2RecursiveChunkCandidateID: p2TutorialIngest,
