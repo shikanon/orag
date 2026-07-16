@@ -17,6 +17,24 @@
 
 系统默认不依赖 ES/Neo4j。`STORAGE_BACKEND=memory` 仅用于本地无依赖调试或单元测试，不作为生产配置。
 
+## 执行预算、取消与背压
+
+同步的高成本入口由独立的 fail-fast 执行预算保护：文档入库、RAG 查询、评测和 release 写操作分别使用 `EXECUTION_<CLASS>_TIMEOUT` 与 `EXECUTION_<CLASS>_CONCURRENCY`。默认分别为入库 `10m/2`、查询 `90s/32`、评测 `15m/2` 和 release `30s/4`。
+
+- 操作类别已满时，服务不在内存中排队，立即返回 `429 execution_capacity_exhausted`、`Retry-After: 1` 和受控 `operation` 字段。调用方应采用指数退避并尊重自身总 deadline，而不是紧密重试。
+- 准入后，服务把类别 deadline 派生到下游 `context.Context`。支持 context 的 parser、数据库、Qdrant、模型、检索和评测调用会收到取消；若 handler 返回时 deadline 已超出，入口返回 `504 execution_deadline_exceeded`。
+- 客户端取消也会沿请求 context 传播；可恢复的 tutorial/optimizer 作业仍通过自己的持久状态、cancel/resume 语义处理，不能依赖 HTTP 重试来复制一次执行。
+- 这是单 API 实例内的背压边界。多副本部署应在入口层配置全局限流，并根据模型配额、PostgreSQL/Qdrant 容量和 p95 观测结果分别调整每类并发，不应把所有类别提升到同一个高值。
+
+示例：
+
+```dotenv
+EXECUTION_QUERY_TIMEOUT=60s
+EXECUTION_QUERY_CONCURRENCY=16
+EXECUTION_INGESTION_TIMEOUT=8m
+EXECUTION_INGESTION_CONCURRENCY=1
+```
+
 ## 配置安全
 
 真实 `.env` 已被 `.gitignore` 忽略，不应提交。示例变量维护在 [`.env.example`](../.env.example)，结构化配置示例维护在 [`configs/config.example.yaml`](../configs/config.example.yaml)。

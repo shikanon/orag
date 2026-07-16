@@ -22,6 +22,7 @@ type Config struct {
 	Models        ModelProviderConfig
 	RAG           RAGConfig
 	Ingestion     IngestionConfig
+	Execution     ExecutionConfig
 	ObjectStorage ObjectStorageConfig
 	Observability ObservabilityConfig
 	Maintenance   MaintenanceConfig
@@ -135,6 +136,20 @@ type IngestionConfig struct {
 	RAPTOR              RAPTORConfig
 	MinerU              MinerUConfig
 	Docling             DoclingConfig
+}
+
+// ExecutionConfig bounds synchronous API work. A full class is rejected
+// immediately rather than queued in memory; downstream services receive the
+// derived context deadline and must stop on cancellation.
+type ExecutionConfig struct {
+	IngestionTimeout      time.Duration
+	IngestionConcurrency  int
+	QueryTimeout          time.Duration
+	QueryConcurrency      int
+	EvaluationTimeout     time.Duration
+	EvaluationConcurrency int
+	ReleaseTimeout        time.Duration
+	ReleaseConcurrency    int
 }
 
 type RAPTORConfig struct {
@@ -358,6 +373,16 @@ func Load() (Config, error) {
 				Timeout:   getenvDuration("DOCLING_TIMEOUT", 10*time.Minute),
 			},
 		},
+		Execution: ExecutionConfig{
+			IngestionTimeout:      getenvDuration("EXECUTION_INGESTION_TIMEOUT", 10*time.Minute),
+			IngestionConcurrency:  getenvInt("EXECUTION_INGESTION_CONCURRENCY", 2),
+			QueryTimeout:          getenvDuration("EXECUTION_QUERY_TIMEOUT", 90*time.Second),
+			QueryConcurrency:      getenvInt("EXECUTION_QUERY_CONCURRENCY", 32),
+			EvaluationTimeout:     getenvDuration("EXECUTION_EVALUATION_TIMEOUT", 15*time.Minute),
+			EvaluationConcurrency: getenvInt("EXECUTION_EVALUATION_CONCURRENCY", 2),
+			ReleaseTimeout:        getenvDuration("EXECUTION_RELEASE_TIMEOUT", 30*time.Second),
+			ReleaseConcurrency:    getenvInt("EXECUTION_RELEASE_CONCURRENCY", 4),
+		},
 		ObjectStorage: ObjectStorageConfig{
 			Provider:        getenv("OBJECT_STORAGE_PROVIDER", "local"),
 			Region:          getenv("OBJECT_STORAGE_REGION", ""),
@@ -496,6 +521,26 @@ func (c Config) Validate() error {
 	}
 	if c.Ingestion.ParserMethod != "basic" && c.Ingestion.ParserMethod != "mineru" && c.Ingestion.ParserMethod != "docling" {
 		return errors.New("INGEST_PARSER_METHOD must be basic, mineru, or docling")
+	}
+	for name, value := range map[string]time.Duration{
+		"EXECUTION_INGESTION_TIMEOUT":  c.Execution.IngestionTimeout,
+		"EXECUTION_QUERY_TIMEOUT":      c.Execution.QueryTimeout,
+		"EXECUTION_EVALUATION_TIMEOUT": c.Execution.EvaluationTimeout,
+		"EXECUTION_RELEASE_TIMEOUT":    c.Execution.ReleaseTimeout,
+	} {
+		if value < 0 {
+			return fmt.Errorf("%s must not be negative", name)
+		}
+	}
+	for name, value := range map[string]int{
+		"EXECUTION_INGESTION_CONCURRENCY":  c.Execution.IngestionConcurrency,
+		"EXECUTION_QUERY_CONCURRENCY":      c.Execution.QueryConcurrency,
+		"EXECUTION_EVALUATION_CONCURRENCY": c.Execution.EvaluationConcurrency,
+		"EXECUTION_RELEASE_CONCURRENCY":    c.Execution.ReleaseConcurrency,
+	} {
+		if value < 0 {
+			return fmt.Errorf("%s must not be negative", name)
+		}
 	}
 	if c.Ingestion.ContextualRetrieval.FailureMode != "fallback" && c.Ingestion.ContextualRetrieval.FailureMode != "fail" {
 		return errors.New("INGEST_CONTEXTUAL_FAILURE_MODE must be fallback or fail")
@@ -689,6 +734,14 @@ func (c Config) RedactedEnv() map[string]string {
 		"MINERU_BACKEND":                                    c.Ingestion.MinerU.Backend,
 		"MINERU_PARSE_METHOD":                               c.Ingestion.MinerU.ParseMethod,
 		"DOCLING_SERVER_URL":                                c.Ingestion.Docling.ServerURL,
+		"EXECUTION_INGESTION_TIMEOUT":                       c.Execution.IngestionTimeout.String(),
+		"EXECUTION_INGESTION_CONCURRENCY":                   strconv.Itoa(c.Execution.IngestionConcurrency),
+		"EXECUTION_QUERY_TIMEOUT":                           c.Execution.QueryTimeout.String(),
+		"EXECUTION_QUERY_CONCURRENCY":                       strconv.Itoa(c.Execution.QueryConcurrency),
+		"EXECUTION_EVALUATION_TIMEOUT":                      c.Execution.EvaluationTimeout.String(),
+		"EXECUTION_EVALUATION_CONCURRENCY":                  strconv.Itoa(c.Execution.EvaluationConcurrency),
+		"EXECUTION_RELEASE_TIMEOUT":                         c.Execution.ReleaseTimeout.String(),
+		"EXECUTION_RELEASE_CONCURRENCY":                     strconv.Itoa(c.Execution.ReleaseConcurrency),
 		"RERANK_PROVIDER":                                   c.Ark.RerankProvider,
 		"ARK_RERANK_MODEL":                                  c.Ark.RerankModel,
 		"ALIYUN_RERANK_API_KEY":                             redact(c.Ark.RerankAPIKey),
