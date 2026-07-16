@@ -2,7 +2,11 @@ APP_NAME := orag-api
 GOFLAGS ?= -tags=stdjson,gjson
 CGO_ENABLED ?= 0
 
-.PHONY: run test vet fmt tidy sdk-check console-dev console-build console-test console-api-generate console-real-e2e console-real-tutorial-clone-e2e console-real-tutorial-benchmark-e2e docs-build dev-up dev-down demo demo-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-claude install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down
+.PHONY: run test vet fmt tidy sdk-check console-dev console-build console-test console-api-generate console-real-e2e console-real-tutorial-clone-e2e console-real-tutorial-benchmark-e2e docs-build dev-up dev-down demo demo-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-claude install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down tutorial-pack-build tutorial-pack-verify tutorial-pack-publish
+
+TUTORIAL_PACK_SOURCE ?=
+TUTORIAL_PACK_OUTPUT ?= .tmp/tutorial-packs
+TUTORIAL_PACK_ROOT ?= $(TUTORIAL_PACK_OUTPUT)/text-rag/1.1.0
 
 run:
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-api
@@ -47,6 +51,17 @@ console-api-generate:
 
 docs-build:
 	./scripts/build-docs-site.sh
+
+tutorial-pack-build:
+	@test -n "$(TUTORIAL_PACK_SOURCE)" || (echo "TUTORIAL_PACK_SOURCE must be a clean CRUD-RAG checkout"; exit 2)
+	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-pack-release -source "$(TUTORIAL_PACK_SOURCE)" -output "$(TUTORIAL_PACK_OUTPUT)" -version 1.1.0
+
+tutorial-pack-verify:
+	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-pack-release -verify-public "$(TUTORIAL_PACK_ROOT)"
+
+tutorial-pack-publish:
+	@test "$(ORAG_PACK_PUBLISH)" = "1" || (echo "set ORAG_PACK_PUBLISH=1 to publish immutable public Pack objects"; exit 2)
+	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/orag-pack-release -publish "$(TUTORIAL_PACK_ROOT)"
 
 dev-up:
 	docker compose -f deployments/docker-compose.yml up -d postgres qdrant

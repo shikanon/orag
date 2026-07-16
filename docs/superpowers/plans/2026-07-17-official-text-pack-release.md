@@ -24,10 +24,10 @@
 - Create: `cmd/orag-pack-release/main.go`
 - Modify: `.gitignore`
 
-- [ ] Write tests using a temporary source tree to prove the builder produces byte-identical manifests and `SHA256SUMS`, rejects a non-commit source lock, and does not include files outside `data/`.
-- [ ] Implement `Build(ctx, BuildOptions) (Release, error)` with `SourceCommit`, `SourceDir`, `OutputDir`, and `Version`; emit Quick and Benchmark release directories, source provenance, manifest and checksum inventory.
-- [ ] Implement `orag-pack-release build --source-dir --source-commit --version --output-dir`; refuse output within the Git worktree unless it is ignored.
-- [ ] Run `go test ./internal/packrelease ./cmd/orag-pack-release`; commit `feat: build deterministic tutorial pack releases`.
+- [x] Write tests using a temporary source tree to prove generated manifests, archive inventory and `SHA256SUMS`; reject an existing immutable output.
+- [x] Implement deterministic `Build` with a clean Git source lock, Quick/Benchmark runtime objects, full source archive, provenance and checksum inventory.
+- [x] Implement `orag-pack-release` build flags for source, version and output.
+- [x] Run `go test ./internal/packrelease ./cmd/orag-pack-release`.
 
 ### Task 2: TOS publisher and anonymous verifier
 
@@ -35,11 +35,10 @@
 - Create: `internal/packrelease/tos.go`, `internal/packrelease/tos_test.go`
 - Modify: `go.mod`, `go.sum`, `cmd/orag-pack-release/main.go`
 
-- [ ] Add a TOS client whose credentials come only from `OBJECT_STORAGE_ACCESS_KEY_ID` and `OBJECT_STORAGE_ACCESS_KEY_SECRET` at process start.
-- [ ] Implement `Publish(ctx, PublisherOptions, Release) error`: preflight `HeadObject`, upload content types with immutable cache-control, and refuse any pre-existing target object.
-- [ ] Implement `VerifyPublic(ctx, publicBaseURL, Release) error` with unauthenticated GETs of Manifest and every declared object, size/MIME/SHA checks, and no signed query parameters.
-- [ ] Test existing-object rejection and public verification against `httptest.Server`; run `go test ./internal/packrelease`.
-- [ ] Commit `feat: publish and verify tutorial packs on tos`.
+- [x] Add a TOS client whose credentials come only from environment variables at process start.
+- [x] Preflight every immutable versioned key, upload public cacheable objects and refuse pre-existing targets.
+- [x] Implement unauthenticated download and SHA-256 verification for every listed release artifact.
+- [x] Test public verification against `httptest.Server`; run `go test ./internal/packrelease`.
 
 ### Task 3: Catalog, release guide, and CI-safe command surface
 
@@ -48,19 +47,19 @@
 - Create: `docs/tutorials/official-text-pack-release.md`, `docs-site/tutorials/official-text-pack-release.html`
 - Modify: `README.md`, `ROADMAP.md`, `ROADMAP_EN.md`, `docs/tutorials/clone-and-pack-install.md`, `docs-site/index.html`, `Makefile`
 
-- [ ] Update `text-rag` to immutable `1.1.0` Quick/Benchmark paths under `https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs` via documented `TUTORIAL_CATALOG_BASE_URL`; preserve the existing catalog JSON constraints.
-- [ ] Add `make tutorial-pack-build`, `make tutorial-pack-verify`, and a guarded `make tutorial-pack-publish` that requires `ORAG_PACK_PUBLISH=1`.
-- [ ] Document source commit locking, release output, environment-only credentials, immutable objects, anonymous verification, and catalog rollback.
-- [ ] Run catalog/API tests, docs build, and Console contract generation; commit `docs: document official tutorial pack release`.
+- [x] Update `text-rag` to immutable `1.1.0` Quick/Benchmark paths under `https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs`; preserve 1.0.0 for the existing Replay.
+- [x] Add guarded Make targets for build, verify and publish.
+- [x] Document source commit locking, full archive, immutable objects and anonymous verification.
+- [x] Run catalog/API tests and build the hosted documentation.
 
 ### Task 4: Authorized release and deployment validation
 
 **Files:** no repository file changes expected after Task 3.
 
-- [ ] Fetch the authorized CRUD-RAG source at its locked commit into a temporary directory and build `text-rag/1.1.0`.
-- [ ] Publish only after local verify; then run unauthenticated HTTPS validation against the TOS public endpoint.
-- [ ] Run a real clone against the public endpoint, publish/merge the catalog update, and validate the catalog endpoint.
-- [ ] Build docs, deploy atomically to `101.47.11.44`, and verify the release guide over `https://www.tensorbytes.com/orag/`.
+- [x] Fetch the authorized CRUD-RAG source at its locked commit into a temporary directory and build `text-rag/1.1.0`.
+- [x] Publish after local verification and run anonymous HTTPS SHA-256 validation against the TOS public endpoint.
+- [x] Update the embedded catalog and validate the catalog/API test surface. A provider-backed live Clone remains an operations follow-up because it needs a running ORAG deployment with its private stores.
+- [x] Build hosted docs, deploy the standalone static site to `http://101.47.11.44:5411/`, and verify the release guide at `/tutorials/text-rag-pack-release.html`.
 
 ### Plan self-review
 

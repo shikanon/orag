@@ -130,7 +130,7 @@ object_storage:
 
 tutorial:
   # Public read-only package catalog; cloned user data uses user-provided private storage.
-  catalog_base_url: https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs
+  catalog_base_url: https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs
 
 observability:
   record_prompts: false

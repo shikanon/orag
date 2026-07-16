@@ -368,7 +368,7 @@ func Load() (Config, error) {
 			MockUpload:      getenvBool("OBJECT_STORAGE_MOCK_UPLOAD", true),
 		},
 		Tutorial: TutorialConfig{
-			CatalogBaseURL:           getenv("TUTORIAL_CATALOG_BASE_URL", "https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs"),
+			CatalogBaseURL:           getenv("TUTORIAL_CATALOG_BASE_URL", "https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs"),
 			MaxManifestBytes:         int64(getenvInt("TUTORIAL_MAX_MANIFEST_BYTES", 4*1024*1024)),
 			MaxObjectBytes:           int64(getenvInt("TUTORIAL_MAX_OBJECT_BYTES", 32*1024*1024*1024)),
 			HTTPTimeout:              getenvDuration("TUTORIAL_HTTP_TIMEOUT", 2*time.Minute),

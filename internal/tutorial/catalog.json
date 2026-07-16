@@ -4,6 +4,27 @@
     "slug": "text-rag",
     "title": "中文文本 RAG",
     "summary": "在同一中文知识场景中逐步启用解析、分块、上下文检索、多路召回、Rewrite 与 Rerank，观察端到端质量、成本和时延变化。",
+    "version": "1.1.0",
+    "status": "published",
+    "modality": "text",
+    "difficulty": "intermediate",
+    "estimated_duration_minutes": 45,
+    "source_benchmark": "CRUD-RAG",
+    "source_url": "https://github.com/IAAR-Shanghai/CRUD_RAG",
+    "scenario_dimensions": ["事实查询", "多跳问题", "长尾实体", "显式否定", "错误前提", "信息不足"],
+    "pipeline_stages": ["P0 基线", "P1 文档解析", "P2 Chunking", "P3 Contextual Retrieval", "P4 稀疏召回", "P5 多路召回", "P6 Rewrite", "P7 Rerank", "P8 组合策略"],
+    "required_capabilities": ["embedding", "sparse_retrieval", "rewrite", "rerank"],
+    "packs": [
+      {"tier": "quick", "manifest_path": "text-rag/1.1.0/quick/manifest.json", "estimated_bytes": 65903324, "estimated_minutes": 10, "requires_license_check": true},
+      {"tier": "benchmark", "manifest_path": "text-rag/1.1.0/benchmark/manifest.json", "estimated_bytes": 216385950, "estimated_minutes": 45, "requires_license_check": true}
+    ],
+    "replay_available": true
+  },
+  {
+    "id": "text-rag",
+    "slug": "text-rag",
+    "title": "中文文本 RAG",
+    "summary": "保留旧版受控 Replay 的历史目录；新建 Clone 默认使用 1.1.0。",
     "version": "1.0.0",
     "status": "published",
     "modality": "text",

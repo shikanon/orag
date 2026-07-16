@@ -40,7 +40,7 @@
 公共 Pack 源必须由匿名 HTTPS GET 访问；服务端只会从 `TUTORIAL_CATALOG_BASE_URL` 解析目录内相对路径，并拒绝重定向、跨源 URL、路径穿越、未知 Manifest 字段、超大响应、MIME/长度不匹配和 SHA-256 不匹配。
 
 ```bash
-base_url="${TUTORIAL_CATALOG_BASE_URL:-https://orag.oss-cn-guangzhou.aliyuncs.com/tutorial-packs}"
+base_url="${TUTORIAL_CATALOG_BASE_URL:-https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs}"
 curl --fail --location --max-time 30 \
   "$base_url/text-rag/1.0.0/quick/manifest.json" \
   -o /tmp/orag-text-rag-manifest.json
