@@ -95,6 +95,7 @@ The beta surface covers:
 - evaluation: `CreateDataset`, `AddDatasetItem`, `RunEvaluation`, `GetEvaluation`;
 - release control: `CreatePipelineVersion`, `ListPipelineVersions`, `ValidatePipelineVersion`, `ListEnvironments`, `ListReleases`, `Promote`, `Rollback`;
 - operations: `Readiness`, `GetTrace`, `ListTraces`.
+- local reproducibility: `RunMockPerformanceBaseline` produces a validated performance-baseline JSON value from a fixed no-key workload.
 
 Requests use the client tenant unless `TenantID` is explicitly set on the request. Treat a client as tenant-scoped and avoid sharing it across unrelated trust boundaries.
 
@@ -135,6 +136,8 @@ make sdk-check
 ```
 
 That gate compiles external-package tests, scans exported documentation for `internal/*` type leaks, and runs tests plus `go vet` in a standalone consumer module.
+
+For a local performance regression baseline, use `make benchmark-report-run BENCHMARK_REPORT=.tmp/performance-baseline.json` followed by `make benchmark-report-verify BENCHMARK_REPORT=.tmp/performance-baseline.json`. This is deterministic mock evidence for a disclosed local environment, not a production or cross-hardware performance claim.
 
 The standalone consumer resolves the published module directly at
 `github.com/shikanon/orag v0.1.0-beta.2`; it intentionally has no `replace`
