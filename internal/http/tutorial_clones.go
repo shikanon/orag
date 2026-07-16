@@ -49,6 +49,29 @@ func (s *Server) importTutorialVideoSource(ctx context.Context, c *app.RequestCo
 	c.JSON(consts.StatusCreated, map[string]any{"source_alias": source.Alias, "temporal_segment_count": len(segments)})
 }
 
+type tutorialVideoEvaluationRequest struct {
+	DatasetID        string `json:"dataset_id"`
+	LicenseConfirmed bool   `json:"license_confirmed"`
+}
+
+func (s *Server) activateTutorialVideoEvaluation(ctx context.Context, c *app.RequestContext) {
+	principal, ok := requestPrincipal(c)
+	if !ok || !authorizeRequest(c, auth.ActionTutorialCloneCreate, tenantID(c), c.Param("project_id")) {
+		return
+	}
+	var request tutorialVideoEvaluationRequest
+	if !bindJSON(c, &request) || !request.LicenseConfirmed || s.App.VideoEvaluations == nil {
+		writeError(c, consts.StatusBadRequest, "invalid_video_evaluation", "authorized project dataset is required")
+		return
+	}
+	resources, err := s.App.VideoEvaluations.Activate(ctx, tutorial.Subject{TenantID: principal.TenantID, ID: principal.SubjectID}, c.Param("project_id"), request.DatasetID)
+	if err != nil {
+		writeError(c, consts.StatusBadRequest, "invalid_video_evaluation", "video evaluation set could not be activated")
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]any{"runtime_status": resources.Status, "knowledge_base_id": resources.KnowledgeBaseID, "dataset_id": resources.DatasetID})
+}
+
 type tutorialCloneRequest struct {
 	Version  string `json:"version"`
 	PackTier string `json:"pack_tier"`

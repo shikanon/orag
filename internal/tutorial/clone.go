@@ -705,7 +705,7 @@ func supportsVisualRuntime(templateID, tier string) bool {
 }
 
 func supportsTutorialRuntime(templateID, tier string) bool {
-	return supportsTextRuntime(templateID, tier) || supportsVisualRuntime(templateID, tier)
+	return supportsTextRuntime(templateID, tier) || supportsVisualRuntime(templateID, tier) || (templateID == "video-rag" && tier == "benchmark")
 }
 
 func resumeStage(stage CloneStage) CloneStage {
