@@ -104,11 +104,15 @@ func VerifyPublic(ctx context.Context, releaseRoot, publicBaseURL string) error 
 	if publicBaseURL == "" {
 		publicBaseURL = DefaultPublicBaseURL
 	}
+	prefix, err := releasePrefix(releaseRoot)
+	if err != nil {
+		return err
+	}
 	sums, err := os.ReadFile(filepath.Join(releaseRoot, "SHA256SUMS"))
 	if err != nil {
 		return err
 	}
-	base, err := url.Parse(strings.TrimRight(publicBaseURL, "/") + "/")
+	base, err := url.Parse(strings.TrimRight(publicBaseURL, "/") + "/" + prefix + "/")
 	if err != nil {
 		return err
 	}
