@@ -3,7 +3,10 @@ package observability
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
 	"testing"
+
+	"go.opentelemetry.io/otel"
 )
 
 func TestStartSpanUsesInjectedTracerAndKeepsTraceID(t *testing.T) {
@@ -37,6 +40,39 @@ func TestStartSpanDefaultsToNoop(t *testing.T) {
 
 	if got, ok := TraceIDFromContext(spanCtx); !ok || got != "trace_noop" {
 		t.Fatalf("trace_id from noop span context = %q, %v; want trace_noop, true", got, ok)
+	}
+}
+
+func TestConfigureOTLPRestoresGlobalProviders(t *testing.T) {
+	server := httptest.NewServer(nil)
+	defer server.Close()
+
+	previousProvider := otel.GetTracerProvider()
+	previousTracer := &recordingTracer{}
+	restoreTracer := SetTracer(previousTracer)
+	defer restoreTracer()
+
+	closeOTLP, err := ConfigureOTLP(context.Background(), server.URL)
+	if err != nil {
+		t.Fatalf("ConfigureOTLP() error = %v", err)
+	}
+	if got := otel.GetTracerProvider(); got == previousProvider {
+		t.Fatal("ConfigureOTLP() did not install a provider")
+	}
+	if err := closeOTLP(); err != nil {
+		t.Fatalf("closeOTLP() error = %v", err)
+	}
+	if err := closeOTLP(); err != nil {
+		t.Fatalf("second closeOTLP() error = %v", err)
+	}
+	if got := otel.GetTracerProvider(); got != previousProvider {
+		t.Fatal("closeOTLP() did not restore the prior provider")
+	}
+
+	_, span := StartSpan(context.Background(), "after_shutdown")
+	span.End(nil)
+	if len(previousTracer.names) != 1 || previousTracer.names[0] != "after_shutdown" {
+		t.Fatalf("restored tracer spans = %#v, want after_shutdown", previousTracer.names)
 	}
 }
 

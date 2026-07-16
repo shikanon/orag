@@ -83,9 +83,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	if err != nil {
 		return nil, err
 	}
+	otlpNeedsCleanup := true
+	defer func() {
+		if otlpNeedsCleanup {
+			_ = otlpCloser()
+		}
+	}()
 	tutorials, err := tutorial.NewCatalog()
 	if err != nil {
-		_ = otlpCloser()
 		return nil, err
 	}
 	model, err := buildModelClient(cfg)
@@ -276,6 +281,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	offlineKnowledgeSvc := offlineknowledge.NewService(backend.offlineKnowledgeRepo, offlineKnowledgeOptions)
 	offlineScheduler := buildOfflineKnowledgeScheduler(cfg, offlineKnowledgeSvc, logger)
 	closers := append([]func() error{otlpCloser}, backend.closers...)
+	otlpNeedsCleanup = false // closers own the OTLP provider on all subsequent paths.
 	if offlineScheduler != nil && offlineScheduler.Enabled() {
 		if err := offlineScheduler.Start(context.Background()); err != nil {
 			for i := len(closers) - 1; i >= 0; i-- {
@@ -307,7 +313,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		return nil, err
 	}
 	closers = append(closers, tutorialRunRunner.Stop)
-	return &App{
+	app := &App{
 		Config:              cfg,
 		Logger:              logger,
 		Auth:                authSvc,
@@ -342,7 +348,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Postgres:         backend.pool,
 		Qdrant:           backend.qdrant,
 		closers:          closers,
-	}, nil
+	}
+	return app, nil
 }
 
 func buildModelClient(cfg config.Config) (*modelprovider.Client, error) {

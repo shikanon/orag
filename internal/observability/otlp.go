@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -26,9 +27,19 @@ func ConfigureOTLP(ctx context.Context, endpoint string) (func() error, error) {
 		return nil, err
 	}
 	provider := trace.NewTracerProvider(trace.WithBatcher(exporter))
+	previousProvider := otel.GetTracerProvider()
 	otel.SetTracerProvider(provider)
 	restore := SetTracer(NewOTelTracer("github.com/shikanon/orag"))
-	return func() error { restore(); return provider.Shutdown(context.Background()) }, nil
+	var shutdownOnce sync.Once
+	var shutdownErr error
+	return func() error {
+		shutdownOnce.Do(func() {
+			restore()
+			otel.SetTracerProvider(previousProvider)
+			shutdownErr = provider.Shutdown(context.Background())
+		})
+		return shutdownErr
+	}, nil
 }
 
 func NewOTelTracer(name string) OTelTracer {

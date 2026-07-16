@@ -16,7 +16,7 @@
 | Ark/豆包 | `ARK_API_KEY` / `VOLCENGINE_API_KEY`、`ARK_BASE_URL`、模型变量 | 默认推荐 Doubao，提供 Chat、Embedding、Rerank、多模态解析。 |
 | Provider Endpoint | `AZURE_OPENAI_BASE_URL`、`GOOGLE_CLOUD_BASE_URL`、可选 `<PROVIDER>_BASE_URL` | Azure OpenAI 和 Google Cloud 必填，其它 provider 可用来覆盖默认 endpoint。 |
 | Rerank | `LLM_RERANK_PROVIDER` / `RERANK_PROVIDER` | 默认 `volcengine`，兼容旧的 `aliyun`/通义百炼路径。 |
-| Observability | `OTEL_EXPORTER_OTLP_ENDPOINT`、`LANGFUSE_*` | 当前为空时不启用外部 exporter 或 LangFuse。 |
+| Observability | `OTEL_EXPORTER_OTLP_ENDPOINT`、`LANGFUSE_*` | 设置绝对 OTLP/HTTP traces endpoint 时导出受限 span；LangFuse 仍未接入。 |
 
 ## 健康检查
 
@@ -73,7 +73,7 @@ GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-che
 
 metrics label 只使用受控低基数字段。不要把 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本作为 Prometheus label；排查单次请求应使用日志和 trace 查询。
 
-当前指标是进程内 counter/histogram，服务重启后从零开始；当前没有分位数预聚合、持久化或 OTel exporter。
+当前指标是进程内 counter/histogram，服务重启后从零开始；当前没有分位数预聚合、持久化或 OTel metrics exporter。
 
 ## 告警接入
 
@@ -147,7 +147,7 @@ Trace query 存储默认会做基础治理：保存前会截断到 2048 bytes，
 
 | 能力 | 当前状态 | 后续可选增强 |
 | --- | --- | --- |
-| OpenTelemetry | 只保留 `OTEL_EXPORTER_OTLP_ENDPOINT` 等配置边界，当前未创建 OTel tracer/provider，也不导出 OTel spans 或 metrics。 | 接入 OTLP exporter，把 request trace、RAG trace 和 node span 映射为标准 span。 |
+| OpenTelemetry | 设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 为绝对 OTLP/HTTP traces endpoint（如 `http://otel-collector:4318/v1/traces`）后，会批量导出应用 RAG/Graph span；仅包含 span 名、时间、错误类型和 `orag.trace_id`，不会导出 query、prompt、文档、模型输出、tenant 或原始错误文本。Prometheus metrics 仍只通过 `/metrics` 暴露。 | 增加 metrics exporter、采样与跨服务拓扑。 |
 | LangFuse | 只保留 `LANGFUSE_*` 配置边界，当前没有 LangFuse client，也不上传 prompt、completion、score 或 trace。 | 在合规和脱敏策略明确后，将 RAG query、retrieval、rerank、generation 映射到 LangFuse trace/observation。 |
 | Prompt 记录 | 生产默认保持 `OBSERVABILITY_RECORD_PROMPTS=false`。 | 仅在明确授权、脱敏和留存策略后开启。 |
 
