@@ -1753,6 +1753,10 @@ export interface components {
             chapter?: string;
             /** @description Parser method selected by the server for this declared variant. */
             parser_method: string;
+            /** @description Server-owned recursive chunk size in deterministic text units. */
+            readonly chunk_size_tokens?: number;
+            /** @description Server-owned recursive chunk overlap in deterministic text units. */
+            readonly chunk_overlap_tokens?: number;
             /** @description Whether this installed Pack currently has a runnable runtime root. */
             available: boolean;
         };
@@ -1795,6 +1799,15 @@ export interface components {
             readonly profile?: string;
             readonly top_k?: number;
             readonly parser_method?: string;
+            readonly chunk_size_tokens?: number;
+            readonly chunk_overlap_tokens?: number;
+            /** @description Measured chunks stored during this run's private-pack indexing stage. */
+            readonly indexed_chunk_count?: number;
+            /**
+             * Format: double
+             * @description Measured average deterministic text units per indexed chunk.
+             */
+            readonly average_chunk_tokens?: number;
             stage: components["schemas"]["TutorialExperimentRunStage"];
             status: components["schemas"]["TutorialExperimentRunStatus"];
             evaluation_run_id?: string;
@@ -1827,6 +1840,8 @@ export interface components {
             candidate: components["schemas"]["TutorialExperimentRun"];
             comparable: boolean;
             metrics?: components["schemas"]["TutorialExperimentMetricDelta"][];
+            /** @description Direct measurements from the two persisted private-pack indexes; these are not quality estimates. */
+            index_metrics?: components["schemas"]["TutorialExperimentMetricDelta"][];
         };
         ReadinessResponse: {
             /** @enum {string} */

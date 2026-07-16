@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Added the experimental Pack-declared `p2_recursive_400_80` tutorial candidate: fixed P0/P1 800/120 splitters, a direct P0-only P2 parent, independent 400/80 indexes, durable measured chunk facts, generic candidate comparisons, Console P2 controls, and a real PostgreSQL/Qdrant/browser fixture that proves differing index shapes.
 - Added the experimental Pack-declared `p1_structured_json` tutorial candidate: immutable P0/P1 comparison fingerprints, a P0 parent requirement, independent candidate indexes, durable parser/lineage audit fields, a comparison API exposing only persisted standard-evaluation metric deltas, Console P0/P1 controls, and a controlled JSON Pack fixture.
 - Added an experimental Text Quick Pack baseline Live Run: verified Manifest snapshots, private Pack reads, project-scoped knowledge-base/dataset roots, durable/recoverable/cancellable runs, standard evaluation references, Console progress, and a no-key PostgreSQL/Qdrant browser E2E.
 - Added the experimental tutorial clone control plane: idempotent, durable and restart-recoverable Pack jobs; strict anonymous public-manifest/object validation; server-only local or Aliyun private output; project-scoped authorization; Console Pack selection and redacted progress; and a real PostgreSQL/Qdrant browser E2E with a controlled public fixture.
