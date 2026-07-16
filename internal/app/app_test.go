@@ -76,6 +76,9 @@ func TestNewWiresTutorialCatalogForMemoryBackend(t *testing.T) {
 	if application.Tutorials == nil {
 		t.Fatal("Tutorials catalog is nil")
 	}
+	if application.TutorialClones == nil {
+		t.Fatal("Tutorial clone service is nil")
+	}
 	if got := len(application.Tutorials.List()); got != 3 {
 		t.Fatalf("Tutorials.List() len = %d, want 3", got)
 	}

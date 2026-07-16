@@ -770,6 +770,144 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tutorials/{template_id}/clones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: "text-rag" | "visual-document-rag" | "video-rag";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Creates an idempotent tutorial experiment project and asynchronously installs the selected immutable public pack into the configured private store. The API response never contains public manifest URLs, private object keys, or credentials. */
+        post: operations["startTutorialClone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tutorial-clone-jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Returns tenant-scoped clone progress and redacted failure codes. */
+        get: operations["getTutorialCloneJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tutorial-clone-jobs/{job_id}:retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requeues a failed tutorial clone job from the safe resume stage. */
+        post: operations["retryTutorialClone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/tutorial-experiment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Returns the tutorial experiment attached to a project, if one exists. */
+        get: operations["getProjectTutorialExperiment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Starts an idempotent baseline Live Run for a text Pack whose verified runtime declaration has created project-owned resource roots. The server reads only private Pack copies and derives all evaluation inputs. */
+        post: operations["startTutorialExperimentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                experiment_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Returns durable Live Run progress and redacted failure codes. */
+        get: operations["getTutorialExperimentRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs/{run_id}:cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                experiment_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requests cancellation of a queued or running Live Run. */
+        post: operations["cancelTutorialExperimentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/datasets": {
         parameters: {
             query?: never;
@@ -1508,6 +1646,122 @@ export interface components {
         };
         TutorialListResponse: {
             tutorials: components["schemas"]["TutorialTemplate"][];
+        };
+        TutorialCloneProjectInput: {
+            name: string;
+            description?: string;
+        };
+        StartTutorialCloneRequest: {
+            version: string;
+            /** @enum {string} */
+            pack_tier: "quick" | "benchmark";
+            project: components["schemas"]["TutorialCloneProjectInput"];
+            /** @description Reuse the same value to safely resume the same request. */
+            idempotency_key: string;
+            /** @description Must be true when the selected pack requires license acceptance. */
+            license_accepted: boolean;
+        };
+        /** @enum {string} */
+        TutorialCloneStage: "create_project" | "validate_manifest" | "download_pack" | "verify_pack" | "write_private_store" | "create_runtime_resources" | "pack_installed";
+        /** @enum {string} */
+        TutorialCloneStatus: "queued" | "running" | "failed" | "completed";
+        TutorialCloneStageEvent: {
+            stage: components["schemas"]["TutorialCloneStage"];
+            outcome: string;
+            /** @description Stable redacted code only; never a provider response or object location. */
+            detail_code?: string;
+            /** Format: date-time */
+            occurred_at: string;
+        };
+        TutorialCloneJob: {
+            id: string;
+            tenant_id: string;
+            project_id: string;
+            project_name: string;
+            project_description: string;
+            template_id: string;
+            template_version: string;
+            /** @enum {string} */
+            pack_tier: "quick" | "benchmark";
+            stage: components["schemas"]["TutorialCloneStage"];
+            status: components["schemas"]["TutorialCloneStatus"];
+            attempt: number;
+            failure_code?: string;
+            events: components["schemas"]["TutorialCloneStageEvent"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        TutorialCloneAcceptedResponse: {
+            job_id: string;
+            project_id: string;
+            /** @description Relative ORAG API path to poll the durable clone job. */
+            poll_url: string;
+            job: components["schemas"]["TutorialCloneJob"];
+        };
+        TutorialExperiment: {
+            id: string;
+            tenant_id: string;
+            project_id: string;
+            template_id: string;
+            template_version: string;
+            /** @enum {string} */
+            pack_tier: "quick" | "benchmark";
+            /** @enum {string} */
+            pack_status: "pending" | "installing" | "pack_installed" | "failed";
+            /** @enum {string} */
+            runtime_status: "pending" | "runtime_unavailable" | "ready";
+            /** @description Server-derived project knowledge-base identifier. Never an object storage location. */
+            knowledge_base_id?: string;
+            /** @description Server-derived project evaluation dataset identifier. */
+            dataset_id?: string;
+            /** @enum {string} */
+            baseline_profile?: "realtime";
+            baseline_top_k?: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        StartTutorialExperimentRunRequest: {
+            /** @description Reuse the same value to safely resume the same baseline request. */
+            idempotency_key: string;
+        };
+        /** @enum {string} */
+        TutorialExperimentRunStage: "index_private_pack" | "run_evaluation" | "completed";
+        /** @enum {string} */
+        TutorialExperimentRunStatus: "queued" | "running" | "cancel_requested" | "cancelled" | "failed" | "completed";
+        TutorialExperimentRunEvent: {
+            stage: components["schemas"]["TutorialExperimentRunStage"];
+            outcome: string;
+            /** @description Stable redacted code only; never an object location or provider response. */
+            detail_code?: string;
+            /** Format: date-time */
+            occurred_at: string;
+        };
+        TutorialExperimentRun: {
+            id: string;
+            tenant_id: string;
+            project_id: string;
+            experiment_id: string;
+            /** @enum {string} */
+            variant: "baseline";
+            stage: components["schemas"]["TutorialExperimentRunStage"];
+            status: components["schemas"]["TutorialExperimentRunStatus"];
+            evaluation_run_id?: string;
+            failure_code?: string;
+            events: components["schemas"]["TutorialExperimentRunEvent"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        TutorialExperimentRunAcceptedResponse: {
+            run_id: string;
+            /** @description Relative ORAG API path to poll the durable experiment run. */
+            poll_url: string;
+            run: components["schemas"]["TutorialExperimentRun"];
         };
         ReadinessResponse: {
             /** @enum {string} */
@@ -4271,6 +4525,206 @@ export interface operations {
             };
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    startTutorialClone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: "text-rag" | "visual-document-rag" | "video-rag";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartTutorialCloneRequest"];
+            };
+        };
+        responses: {
+            /** @description Clone job accepted. Poll the returned relative URL for progress. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialCloneAcceptedResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    getTutorialCloneJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Durable clone job. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialCloneJob"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    retryTutorialClone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Clone job requeued. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialCloneJob"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    getProjectTutorialExperiment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tutorial experiment metadata, without storage locations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialExperiment"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    startTutorialExperimentRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartTutorialExperimentRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Durable experiment run accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialExperimentRunAcceptedResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    getTutorialExperimentRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                experiment_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tutorial experiment run. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialExperimentRun"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    cancelTutorialExperimentRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                experiment_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancellation state accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialExperimentRun"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };
     };

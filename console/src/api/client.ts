@@ -7,6 +7,13 @@ export type APIKey = components['schemas']['APIKey']
 export type CreateAPIKeyInput = components['schemas']['CreateAPIKeyRequest']
 export type CreateAPIKeyResponse = components['schemas']['CreateAPIKeyResponse']
 export type TutorialTemplate = components['schemas']['TutorialTemplate']
+export type StartTutorialCloneInput = components['schemas']['StartTutorialCloneRequest']
+export type TutorialCloneAcceptedResponse = components['schemas']['TutorialCloneAcceptedResponse']
+export type TutorialCloneJob = components['schemas']['TutorialCloneJob']
+export type TutorialExperiment = components['schemas']['TutorialExperiment']
+export type StartTutorialExperimentRunInput = components['schemas']['StartTutorialExperimentRunRequest']
+export type TutorialExperimentRun = components['schemas']['TutorialExperimentRun']
+export type TutorialExperimentRunAcceptedResponse = components['schemas']['TutorialExperimentRunAcceptedResponse']
 export type LoginInput = components['schemas']['LoginRequest']
 export type LoginResponse = components['schemas']['LoginResponse']
 export type KnowledgeBase = components['schemas']['KnowledgeBase']
@@ -86,6 +93,21 @@ export const tutorialApi = {
   get: (templateId: string) => request<TutorialTemplate>(`/v1/tutorials/${encodeURIComponent(templateId)}`),
   getVersion: (templateId: string, version: string) => request<TutorialTemplate>(
     `/v1/tutorials/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version)}`,
+  ),
+  startClone: (templateId: string, input: StartTutorialCloneInput) => request<TutorialCloneAcceptedResponse>(
+    `/v1/tutorials/${encodeURIComponent(templateId)}/clones`, { method: 'POST', body: JSON.stringify(input) },
+  ),
+  getCloneJob: (jobId: string) => request<TutorialCloneJob>(`/v1/tutorial-clone-jobs/${encodeURIComponent(jobId)}`),
+  retryClone: (jobId: string) => request<TutorialCloneJob>(`/v1/tutorial-clone-jobs/${encodeURIComponent(jobId)}:retry`, { method: 'POST' }),
+  getExperiment: (projectId: string) => request<TutorialExperiment>(`/v1/projects/${encodeURIComponent(projectId)}/tutorial-experiment`),
+  startLiveRun: (projectId: string, experimentId: string, input: StartTutorialExperimentRunInput) => request<TutorialExperimentRunAcceptedResponse>(
+    `/v1/projects/${encodeURIComponent(projectId)}/tutorial-experiments/${encodeURIComponent(experimentId)}/runs`, { method: 'POST', body: JSON.stringify(input) },
+  ),
+  getLiveRun: (projectId: string, experimentId: string, runId: string) => request<TutorialExperimentRun>(
+    `/v1/projects/${encodeURIComponent(projectId)}/tutorial-experiments/${encodeURIComponent(experimentId)}/runs/${encodeURIComponent(runId)}`,
+  ),
+  cancelLiveRun: (projectId: string, experimentId: string, runId: string) => request<TutorialExperimentRun>(
+    `/v1/projects/${encodeURIComponent(projectId)}/tutorial-experiments/${encodeURIComponent(experimentId)}/runs/${encodeURIComponent(runId)}:cancel`, { method: 'POST' },
   ),
 }
 

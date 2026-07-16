@@ -37,28 +37,32 @@ import (
 )
 
 type App struct {
-	Config           config.Config
-	Logger           *slog.Logger
-	Auth             *auth.Service
-	APIKeys          *auth.APIKeyService
-	KBStore          kb.KnowledgeBaseRepository
-	Ingest           *ingest.Service
-	RAG              *rag.Service
-	Datasets         *dataset.Service
-	Projects         *project.Service
-	Tutorials        *tutorial.Catalog
-	Eval             eval.Runner
-	EvaluationPolicy *evaluationpolicy.Service
-	Optimizer        *optimizer.Service
-	OfflineKnowledge *offlineknowledge.Service
-	OfflineScheduler *offlineknowledge.Scheduler
-	Release          *release.Service
-	Pipeline         *pipeline.Service
-	PipelineCompiler *pipeline.Compiler
-	PipelineDebug    *pipeline.DebugRunner
-	ProductionQuery  rag.QueryRunner
-	Metrics          *observability.Metrics
-	Traces           TraceRepository
+	Config              config.Config
+	Logger              *slog.Logger
+	Auth                *auth.Service
+	APIKeys             *auth.APIKeyService
+	KBStore             kb.KnowledgeBaseRepository
+	Ingest              *ingest.Service
+	RAG                 *rag.Service
+	Datasets            *dataset.Service
+	Projects            *project.Service
+	Tutorials           *tutorial.Catalog
+	TutorialClones      *tutorial.CloneService
+	TutorialCloneRunner *tutorial.CloneRunner
+	TutorialRuns        *tutorial.LiveRunService
+	TutorialRunRunner   *tutorial.ExperimentRunRunner
+	Eval                eval.Runner
+	EvaluationPolicy    *evaluationpolicy.Service
+	Optimizer           *optimizer.Service
+	OfflineKnowledge    *offlineknowledge.Service
+	OfflineScheduler    *offlineknowledge.Scheduler
+	Release             *release.Service
+	Pipeline            *pipeline.Service
+	PipelineCompiler    *pipeline.Compiler
+	PipelineDebug       *pipeline.DebugRunner
+	ProductionQuery     rag.QueryRunner
+	Metrics             *observability.Metrics
+	Traces              TraceRepository
 
 	Postgres *pgxpool.Pool
 	Qdrant   *qdrantstore.Client
@@ -139,6 +143,28 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	}
 	datasets := dataset.NewService(backend.datasetRepo)
 	projects := project.NewService(backend.projectRepo, func() time.Time { return time.Now().UTC() })
+	tutorialClones := tutorial.NewCloneService(tutorials, backend.tutorialCloneRepo, func() time.Time { return time.Now().UTC() })
+	publicPacks, err := tutorial.NewPublicPackReader(
+		cfg.Tutorial.CatalogBaseURL,
+		cfg.Tutorial.MaxManifestBytes,
+		cfg.Tutorial.MaxObjectBytes,
+		cfg.Tutorial.HTTPTimeout,
+		"",
+		httpclient.New(cfg.Tutorial.HTTPTimeout),
+	)
+	if err != nil {
+		return nil, err
+	}
+	privatePacks, err := tutorial.NewPrivateStore(tutorial.PrivateStoreConfig{
+		Provider: cfg.ObjectStorage.Provider, Endpoint: cfg.ObjectStorage.Endpoint, Bucket: cfg.ObjectStorage.Bucket,
+		AccessKeyID: cfg.ObjectStorage.AccessKeyID, AccessKeySecret: cfg.ObjectStorage.AccessKeySecret,
+		LocalDirectory: cfg.Tutorial.PrivateOutputDirectory, Prefix: cfg.Tutorial.PrivateOutputPrefix,
+	})
+	if err != nil {
+		return nil, err
+	}
+	tutorialClones.ConfigureInstaller(projects, publicPacks, privatePacks)
+	tutorialClones.ConfigureRuntime(tutorial.ResourceInitializer{KnowledgeBases: backend.store, Datasets: datasets})
 	releaseSvc := release.NewService(backend.releaseRepo)
 	pipelineSvc := pipeline.NewService(backend.pipelineRepo, pipeline.BuiltinRegistry())
 	pipelineCompiler := pipeline.NewCompiler(ragSvc, pipeline.BuiltinRegistry())
@@ -147,6 +173,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	evaluationPolicySvc := evaluationpolicy.NewService(backend.evaluationPolicyRepo, datasets, eval.DefaultMetricRegistry)
 	apiKeys := auth.NewAPIKeyService(backend.apiKeyRepo, cfg.Auth.APIKeyPepper)
 	evalRunner := eval.Runner{RAG: ragSvc, Datasets: datasets, Repository: backend.evalRepo}
+	tutorialRunRepo, ok := backend.tutorialCloneRepo.(tutorial.ExperimentRunRepository)
+	if !ok {
+		return nil, errors.New("tutorial run repository is unavailable")
+	}
+	tutorialRuns := tutorial.NewLiveRunService(tutorialRunRepo, backend.tutorialCloneRepo, func() time.Time { return time.Now().UTC() })
+	tutorialRuns.Configure(ingestSvc, evalRunner, privatePacks)
 	optimizerRunner := optimizer.InternalRAGRunner{
 		BaseRAG:    ragSvc,
 		Datasets:   datasets,
@@ -169,19 +201,43 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		}
 		closers = append(closers, offlineScheduler.Stop)
 	}
+	tutorialCloneRunner := tutorial.NewCloneRunner(tutorialClones)
+	if err := tutorialCloneRunner.Start(context.Background()); err != nil {
+		for i := len(closers) - 1; i >= 0; i-- {
+			if closers[i] != nil {
+				_ = closers[i]()
+			}
+		}
+		return nil, err
+	}
+	closers = append(closers, tutorialCloneRunner.Stop)
+	tutorialRunRunner := tutorial.NewExperimentRunRunner(tutorialRuns)
+	if err := tutorialRunRunner.Start(context.Background()); err != nil {
+		for i := len(closers) - 1; i >= 0; i-- {
+			if closers[i] != nil {
+				_ = closers[i]()
+			}
+		}
+		return nil, err
+	}
+	closers = append(closers, tutorialRunRunner.Stop)
 	return &App{
-		Config:           cfg,
-		Logger:           logger,
-		Auth:             authSvc,
-		APIKeys:          apiKeys,
-		KBStore:          backend.store,
-		Ingest:           ingestSvc,
-		RAG:              ragSvc,
-		Datasets:         datasets,
-		Projects:         projects,
-		Tutorials:        tutorials,
-		Eval:             evalRunner,
-		EvaluationPolicy: evaluationPolicySvc,
+		Config:              cfg,
+		Logger:              logger,
+		Auth:                authSvc,
+		APIKeys:             apiKeys,
+		KBStore:             backend.store,
+		Ingest:              ingestSvc,
+		RAG:                 ragSvc,
+		Datasets:            datasets,
+		Projects:            projects,
+		Tutorials:           tutorials,
+		TutorialClones:      tutorialClones,
+		TutorialCloneRunner: tutorialCloneRunner,
+		TutorialRuns:        tutorialRuns,
+		TutorialRunRunner:   tutorialRunRunner,
+		Eval:                evalRunner,
+		EvaluationPolicy:    evaluationPolicySvc,
 		Optimizer: &optimizer.Service{
 			Repository: backend.optimizerRepo,
 			Runner:     optimizerRunner,
@@ -597,6 +653,7 @@ type knowledgeBackend struct {
 	traceRepo            TraceRepository
 	datasetRepo          dataset.Repository
 	projectRepo          project.Repository
+	tutorialCloneRepo    tutorial.CloneRepository
 	apiKeyRepo           auth.APIKeyRepository
 	evalRepo             eval.Repository
 	evaluationPolicyRepo evaluationpolicy.Repository
@@ -735,6 +792,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 			traceRepo:            traceRepo,
 			datasetRepo:          dataset.NewMemoryRepository(),
 			projectRepo:          projectRepo,
+			tutorialCloneRepo:    tutorial.NewMemoryCloneRepository(),
 			releaseRepo:          release.NewMemoryRepository(project.LegacyDefaultID(defaultTenant)),
 			pipelineRepo:         pipeline.NewMemoryRepository(),
 			apiKeyRepo:           auth.NewMemoryAPIKeyRepository(),
@@ -795,6 +853,7 @@ func buildKnowledgeBackend(ctx context.Context, cfg config.Config, defaultTenant
 		traceRepo:            repo,
 		datasetRepo:          repo,
 		projectRepo:          postgres.NewProjectRepository(pool),
+		tutorialCloneRepo:    postgres.NewTutorialCloneRepository(pool),
 		releaseRepo:          repo,
 		pipelineRepo:         repo,
 		apiKeyRepo:           postgres.NewAPIKeyRepository(pool),

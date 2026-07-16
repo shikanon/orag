@@ -1,0 +1,24 @@
+{
+  "template_id": "text-rag",
+  "version": "1.0.0",
+  "tier": "quick",
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "source_url": "https://example.test/license",
+    "redistributable": true
+  },
+  "objects": [
+    {
+      "path": "corpus/documents.jsonl",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 104857600,
+      "content_type": "application/jsonl"
+    },
+    {
+      "path": "evaluation/questions.jsonl",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "bytes": 52428800,
+      "content_type": "application/jsonl"
+    }
+  ]
+}

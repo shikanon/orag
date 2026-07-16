@@ -1352,6 +1352,255 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /v1/tutorials/{template_id}/clones:
+    parameters:
+      - name: template_id
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [text-rag, visual-document-rag, video-rag]
+    post:
+      tags: [Tutorials]
+      operationId: startTutorialClone
+      x-orag-maturity: experimental
+      description: >-
+        Creates an idempotent tutorial experiment project and asynchronously installs
+        the selected immutable public pack into the configured private store. The API
+        response never contains public manifest URLs, private object keys, or credentials.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartTutorialCloneRequest"
+      responses:
+        "202":
+          description: Clone job accepted. Poll the returned relative URL for progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorialCloneAcceptedResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/tutorial-clone-jobs/{job_id}:
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Tutorials]
+      operationId: getTutorialCloneJob
+      x-orag-maturity: experimental
+      description: Returns tenant-scoped clone progress and redacted failure codes.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Durable clone job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorialCloneJob"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/tutorial-clone-jobs/{job_id}:retry:
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Tutorials]
+      operationId: retryTutorialClone
+      x-orag-maturity: experimental
+      description: Requeues a failed tutorial clone job from the safe resume stage.
+      security:
+        - bearerAuth: []
+      responses:
+        "202":
+          description: Clone job requeued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorialCloneJob"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{project_id}/tutorial-experiment:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Tutorials]
+      operationId: getProjectTutorialExperiment
+      x-orag-maturity: experimental
+      description: Returns the tutorial experiment attached to a project, if one exists.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Tutorial experiment metadata, without storage locations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorialExperiment"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: experiment_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Tutorials]
+      operationId: startTutorialExperimentRun
+      x-orag-maturity: experimental
+      description: >-
+        Starts an idempotent baseline Live Run for a text Pack whose verified runtime
+        declaration has created project-owned resource roots. The server reads only
+        private Pack copies and derives all evaluation inputs.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartTutorialExperimentRunRequest"
+      responses:
+        "202":
+          description: Durable experiment run accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorialExperimentRunAcceptedResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs/{run_id}:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: experiment_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: run_id
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      tags: [Tutorials]
+      operationId: getTutorialExperimentRun
+      x-orag-maturity: experimental
+      description: Returns durable Live Run progress and redacted failure codes.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Tutorial experiment run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorialExperimentRun"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs/{run_id}:cancel:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: experiment_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: run_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Tutorials]
+      operationId: cancelTutorialExperimentRun
+      x-orag-maturity: experimental
+      description: Requests cancellation of a queued or running Live Run.
+      security:
+        - bearerAuth: []
+      responses:
+        "202":
+          description: Cancellation state accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorialExperimentRun"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /v1/datasets:
     post:
       tags: [Evaluation]
@@ -2544,6 +2793,224 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TutorialTemplate"
+    TutorialCloneProjectInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+    StartTutorialCloneRequest:
+      type: object
+      required: [version, pack_tier, project, idempotency_key, license_accepted]
+      properties:
+        version:
+          type: string
+          pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+        pack_tier:
+          type: string
+          enum: [quick, benchmark]
+        project:
+          $ref: "#/components/schemas/TutorialCloneProjectInput"
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Reuse the same value to safely resume the same request.
+        license_accepted:
+          type: boolean
+          description: Must be true when the selected pack requires license acceptance.
+    TutorialCloneStage:
+      type: string
+      enum: [create_project, validate_manifest, download_pack, verify_pack, write_private_store, create_runtime_resources, pack_installed]
+    TutorialCloneStatus:
+      type: string
+      enum: [queued, running, failed, completed]
+    TutorialCloneStageEvent:
+      type: object
+      required: [stage, outcome, occurred_at]
+      properties:
+        stage:
+          $ref: "#/components/schemas/TutorialCloneStage"
+        outcome:
+          type: string
+        detail_code:
+          type: string
+          description: Stable redacted code only; never a provider response or object location.
+        occurred_at:
+          type: string
+          format: date-time
+    TutorialCloneJob:
+      type: object
+      required: [id, tenant_id, project_id, project_name, project_description, template_id, template_version, pack_tier, stage, status, attempt, events, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        project_id:
+          type: string
+        project_name:
+          type: string
+        project_description:
+          type: string
+        template_id:
+          type: string
+        template_version:
+          type: string
+        pack_tier:
+          type: string
+          enum: [quick, benchmark]
+        stage:
+          $ref: "#/components/schemas/TutorialCloneStage"
+        status:
+          $ref: "#/components/schemas/TutorialCloneStatus"
+        attempt:
+          type: integer
+          minimum: 1
+        failure_code:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/TutorialCloneStageEvent"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TutorialCloneAcceptedResponse:
+      type: object
+      required: [job_id, project_id, poll_url, job]
+      properties:
+        job_id:
+          type: string
+        project_id:
+          type: string
+        poll_url:
+          type: string
+          description: Relative ORAG API path to poll the durable clone job.
+        job:
+          $ref: "#/components/schemas/TutorialCloneJob"
+    TutorialExperiment:
+      type: object
+      required: [id, tenant_id, project_id, template_id, template_version, pack_tier, pack_status, runtime_status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        project_id:
+          type: string
+        template_id:
+          type: string
+        template_version:
+          type: string
+        pack_tier:
+          type: string
+          enum: [quick, benchmark]
+        pack_status:
+          type: string
+          enum: [pending, installing, pack_installed, failed]
+        runtime_status:
+          type: string
+          enum: [pending, runtime_unavailable, ready]
+        knowledge_base_id:
+          type: string
+          description: Server-derived project knowledge-base identifier. Never an object storage location.
+        dataset_id:
+          type: string
+          description: Server-derived project evaluation dataset identifier.
+        baseline_profile:
+          type: string
+          enum: [realtime]
+        baseline_top_k:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    StartTutorialExperimentRunRequest:
+      type: object
+      required: [idempotency_key]
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Reuse the same value to safely resume the same baseline request.
+    TutorialExperimentRunStage:
+      type: string
+      enum: [index_private_pack, run_evaluation, completed]
+    TutorialExperimentRunStatus:
+      type: string
+      enum: [queued, running, cancel_requested, cancelled, failed, completed]
+    TutorialExperimentRunEvent:
+      type: object
+      required: [stage, outcome, occurred_at]
+      properties:
+        stage:
+          $ref: "#/components/schemas/TutorialExperimentRunStage"
+        outcome:
+          type: string
+        detail_code:
+          type: string
+          description: Stable redacted code only; never an object location or provider response.
+        occurred_at:
+          type: string
+          format: date-time
+    TutorialExperimentRun:
+      type: object
+      required: [id, tenant_id, project_id, experiment_id, variant, stage, status, events, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        project_id:
+          type: string
+        experiment_id:
+          type: string
+        variant:
+          type: string
+          enum: [baseline]
+        stage:
+          $ref: "#/components/schemas/TutorialExperimentRunStage"
+        status:
+          $ref: "#/components/schemas/TutorialExperimentRunStatus"
+        evaluation_run_id:
+          type: string
+        failure_code:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/TutorialExperimentRunEvent"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TutorialExperimentRunAcceptedResponse:
+      type: object
+      required: [run_id, poll_url, run]
+      properties:
+        run_id:
+          type: string
+        poll_url:
+          type: string
+          description: Relative ORAG API path to poll the durable experiment run.
+        run:
+          $ref: "#/components/schemas/TutorialExperimentRun"
     ReadinessResponse:
       type: object
       required: [status, checks]

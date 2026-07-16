@@ -98,6 +98,43 @@ func (s *Service) CreateInProject(ctx context.Context, tenantID, projectID, name
 	return s.repo.CreateDataset(ctx, ds)
 }
 
+// EnsureInProject creates a caller-derived, stable dataset root exactly once.
+// It is for server-owned workflows such as tutorial installation; public HTTP
+// creation continues to use CreateInProject and server-generated identifiers.
+func (s *Service) EnsureInProject(ctx context.Context, tenantID string, item Dataset) (Dataset, error) {
+	if s == nil || s.repo == nil || strings.TrimSpace(tenantID) == "" || item.ID == "" || item.TenantID != tenantID || item.ProjectID == "" || strings.TrimSpace(item.Name) == "" || strings.TrimSpace(item.Kind) == "" {
+		return Dataset{}, ErrDatasetNotFound
+	}
+	if existing, found, err := s.repo.GetDataset(ctx, tenantID, item.ID); err != nil {
+		return Dataset{}, err
+	} else if found {
+		if existing.ProjectID != item.ProjectID || existing.Kind != item.Kind {
+			return Dataset{}, ErrDatasetNotFound
+		}
+		return existing, nil
+	}
+	if item.CreatedAt.IsZero() {
+		item.CreatedAt = time.Now().UTC()
+	}
+	if item.Version == "" {
+		item.Version = time.Now().UTC().Format("20060102150405")
+	}
+	created, err := s.repo.CreateDataset(ctx, item)
+	if err == nil {
+		return created, nil
+	}
+	// A concurrent workflow may have won the deterministic ID. Re-read only
+	// after the write error so callers remain idempotent across process restarts.
+	existing, found, getErr := s.repo.GetDataset(ctx, tenantID, item.ID)
+	if getErr != nil {
+		return Dataset{}, getErr
+	}
+	if found && existing.ProjectID == item.ProjectID && existing.Kind == item.Kind {
+		return existing, nil
+	}
+	return Dataset{}, err
+}
+
 func (s *Service) AddItem(ctx context.Context, tenantID, datasetID string, item Item) (Item, error) {
 	if _, ok, err := s.repo.GetDataset(ctx, tenantID, datasetID); err != nil {
 		return Item{}, err
@@ -108,6 +145,38 @@ func (s *Service) AddItem(ctx context.Context, tenantID, datasetID string, item 
 	item.DatasetID = datasetID
 	item = NormalizeItemMetadata(item)
 	return s.repo.AddDatasetItem(ctx, tenantID, item)
+}
+
+// EnsureItem avoids duplicate Pack-defined examples when an installation is
+// retried after a partial resource setup. The stable ID is server-derived.
+func (s *Service) EnsureItem(ctx context.Context, tenantID string, item Item) (Item, error) {
+	if s == nil || s.repo == nil || strings.TrimSpace(item.ID) == "" || strings.TrimSpace(item.DatasetID) == "" {
+		return Item{}, ErrDatasetNotFound
+	}
+	items, err := s.Items(ctx, tenantID, item.DatasetID)
+	if err != nil {
+		return Item{}, err
+	}
+	for _, existing := range items {
+		if existing.ID == item.ID {
+			return existing, nil
+		}
+	}
+	item = NormalizeItemMetadata(item)
+	created, err := s.repo.AddDatasetItem(ctx, tenantID, item)
+	if err == nil {
+		return created, nil
+	}
+	items, getErr := s.Items(ctx, tenantID, item.DatasetID)
+	if getErr != nil {
+		return Item{}, getErr
+	}
+	for _, existing := range items {
+		if existing.ID == item.ID {
+			return existing, nil
+		}
+	}
+	return Item{}, err
 }
 
 func (s *Service) Items(ctx context.Context, tenantID, datasetID string) ([]Item, error) {

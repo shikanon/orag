@@ -1,0 +1,299 @@
+package tutorial
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/shikanon/orag/internal/eval"
+	"github.com/shikanon/orag/internal/ingest"
+	"github.com/shikanon/orag/internal/platform/id"
+	"github.com/shikanon/orag/internal/rag"
+)
+
+var (
+	ErrExperimentRunNotFound  = errors.New("tutorial experiment run not found")
+	ErrExperimentRunKey       = errors.New("tutorial experiment run idempotency key is required")
+	ErrRuntimeUnavailable     = errors.New("tutorial Pack has no runnable runtime declaration")
+	ErrPackNotInstalled       = errors.New("tutorial Pack is not installed")
+	ErrExperimentRunCancelled = errors.New("tutorial experiment run is cancelled")
+)
+
+type ExperimentRunStage string
+
+const (
+	ExperimentRunStageIndex    ExperimentRunStage = "index_private_pack"
+	ExperimentRunStageEvaluate ExperimentRunStage = "run_evaluation"
+	ExperimentRunStageComplete ExperimentRunStage = "completed"
+)
+
+type ExperimentRunStatus string
+
+const (
+	ExperimentRunQueued          ExperimentRunStatus = "queued"
+	ExperimentRunRunning         ExperimentRunStatus = "running"
+	ExperimentRunCancelRequested ExperimentRunStatus = "cancel_requested"
+	ExperimentRunCancelled       ExperimentRunStatus = "cancelled"
+	ExperimentRunFailed          ExperimentRunStatus = "failed"
+	ExperimentRunCompleted       ExperimentRunStatus = "completed"
+)
+
+type ExperimentRun struct {
+	ID              string               `json:"id"`
+	TenantID        string               `json:"tenant_id"`
+	ProjectID       string               `json:"project_id"`
+	ExperimentID    string               `json:"experiment_id"`
+	Variant         string               `json:"variant"`
+	Stage           ExperimentRunStage   `json:"stage"`
+	Status          ExperimentRunStatus  `json:"status"`
+	EvaluationRunID string               `json:"evaluation_run_id,omitempty"`
+	FailureCode     string               `json:"failure_code,omitempty"`
+	Events          []ExperimentRunEvent `json:"events"`
+	CreatedAt       time.Time            `json:"created_at"`
+	UpdatedAt       time.Time            `json:"updated_at"`
+}
+
+type ExperimentRunEvent struct {
+	Stage      ExperimentRunStage `json:"stage"`
+	Outcome    string             `json:"outcome"`
+	DetailCode string             `json:"detail_code,omitempty"`
+	OccurredAt time.Time          `json:"occurred_at"`
+}
+
+type ExperimentRunRepository interface {
+	CreateOrGetRun(context.Context, ExperimentRun, string) (ExperimentRun, bool, error)
+	GetExperimentRun(context.Context, string, string) (ExperimentRun, bool, error)
+	AcquireExperimentRun(context.Context, string, string, time.Time) (ExperimentRun, bool, error)
+	AdvanceExperimentRun(context.Context, string, string, ExperimentRunStage, ExperimentRunStage, time.Time) (ExperimentRun, bool, error)
+	CompleteExperimentRun(context.Context, string, string, string, time.Time) (ExperimentRun, bool, error)
+	FailExperimentRun(context.Context, string, string, ExperimentRunStage, string, time.Time) (ExperimentRun, bool, error)
+	CancelExperimentRun(context.Context, string, string, time.Time) (ExperimentRun, bool, error)
+	MarkExperimentRunCancelled(context.Context, string, string, time.Time) (ExperimentRun, bool, error)
+	RecoverExperimentRuns(context.Context, time.Time) ([]ExperimentRun, error)
+}
+
+type RuntimeIngestor interface {
+	Ingest(context.Context, ingest.Request) (ingest.Result, error)
+}
+
+type RuntimeEvaluator interface {
+	Run(context.Context, eval.RunRequest) (eval.RunResult, error)
+}
+
+type LiveRunService struct {
+	repo        ExperimentRunRepository
+	experiments CloneRepository
+	ingest      RuntimeIngestor
+	evaluator   RuntimeEvaluator
+	private     PrivateStore
+	now         func() time.Time
+	newID       func(string) string
+}
+
+func NewLiveRunService(repo ExperimentRunRepository, experiments CloneRepository, now func() time.Time) *LiveRunService {
+	if now == nil {
+		now = func() time.Time { return time.Now().UTC() }
+	}
+	return &LiveRunService{repo: repo, experiments: experiments, now: now, newID: id.New}
+}
+
+func (s *LiveRunService) Configure(ingestor RuntimeIngestor, evaluator RuntimeEvaluator, private PrivateStore) {
+	if s == nil {
+		return
+	}
+	s.ingest = ingestor
+	s.evaluator = evaluator
+	s.private = private
+}
+
+func (s *LiveRunService) Start(ctx context.Context, subject Subject, projectID, idempotencyKey string) (ExperimentRun, bool, error) {
+	if s == nil || s.repo == nil || s.experiments == nil {
+		return ExperimentRun{}, false, errors.New("tutorial live run service is unavailable")
+	}
+	subject = normalizeSubject(subject)
+	projectID, idempotencyKey = strings.TrimSpace(projectID), strings.TrimSpace(idempotencyKey)
+	if subject.TenantID == "" || projectID == "" || idempotencyKey == "" || len(idempotencyKey) > 200 {
+		return ExperimentRun{}, false, ErrExperimentRunKey
+	}
+	experiment, found, err := s.experiments.GetExperiment(ctx, subject.TenantID, projectID)
+	if err != nil {
+		return ExperimentRun{}, false, err
+	}
+	if !found {
+		return ExperimentRun{}, false, ErrCloneExperimentAbsent
+	}
+	if experiment.PackStatus != PackStatusInstalled {
+		return ExperimentRun{}, false, ErrPackNotInstalled
+	}
+	if !supportsTextQuickBaseline(experiment.TemplateID, experiment.Tier) || experiment.RuntimeStatus != "ready" || experiment.KnowledgeBaseID == "" || experiment.DatasetID == "" || experiment.CloneJobID == "" || experiment.PackManifest.Runtime == nil {
+		return ExperimentRun{}, false, ErrRuntimeUnavailable
+	}
+	now := s.now().UTC()
+	run := ExperimentRun{
+		ID: s.newID("terun"), TenantID: subject.TenantID, ProjectID: projectID, ExperimentID: experiment.ID,
+		Variant: "baseline", Stage: ExperimentRunStageIndex, Status: ExperimentRunQueued,
+		Events:    []ExperimentRunEvent{{Stage: ExperimentRunStageIndex, Outcome: "queued", OccurredAt: now}},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	return s.repo.CreateOrGetRun(ctx, run, idempotencyKey)
+}
+
+func (s *LiveRunService) Get(ctx context.Context, subject Subject, runID string) (ExperimentRun, error) {
+	if s == nil || s.repo == nil {
+		return ExperimentRun{}, ErrExperimentRunNotFound
+	}
+	subject = normalizeSubject(subject)
+	run, found, err := s.repo.GetExperimentRun(ctx, subject.TenantID, strings.TrimSpace(runID))
+	if err != nil {
+		return ExperimentRun{}, err
+	}
+	if !found {
+		return ExperimentRun{}, ErrExperimentRunNotFound
+	}
+	return run, nil
+}
+
+func (s *LiveRunService) Cancel(ctx context.Context, subject Subject, runID string) (ExperimentRun, error) {
+	if s == nil || s.repo == nil {
+		return ExperimentRun{}, ErrExperimentRunNotFound
+	}
+	subject = normalizeSubject(subject)
+	run, changed, err := s.repo.CancelExperimentRun(ctx, subject.TenantID, strings.TrimSpace(runID), s.now().UTC())
+	if err != nil {
+		return ExperimentRun{}, err
+	}
+	if !changed {
+		return ExperimentRun{}, ErrExperimentRunNotFound
+	}
+	return run, nil
+}
+
+func (s *LiveRunService) RecoverPending(ctx context.Context) ([]ExperimentRun, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("tutorial live run service is unavailable")
+	}
+	return s.repo.RecoverExperimentRuns(ctx, s.now().UTC())
+}
+
+// Execute performs only server-derived baseline work. It never receives a
+// resource ID, profile, source URL, or object-storage coordinate from a client.
+func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) error {
+	if s == nil || s.repo == nil || s.experiments == nil || s.ingest == nil || s.evaluator == nil || s.private == nil {
+		return errors.New("tutorial live run service is not configured")
+	}
+	for {
+		run, acquired, err := s.repo.AcquireExperimentRun(ctx, tenantID, runID, s.now().UTC())
+		if err != nil || !acquired {
+			return err
+		}
+		experiment, found, err := s.experiments.GetExperiment(ctx, tenantID, run.ProjectID)
+		if err != nil || !found {
+			if err == nil {
+				err = ErrCloneExperimentAbsent
+			}
+			return s.fail(ctx, run, err)
+		}
+		if !supportsTextQuickBaseline(experiment.TemplateID, experiment.Tier) || experiment.RuntimeStatus != "ready" || experiment.PackManifest.Runtime == nil {
+			return s.fail(ctx, run, ErrRuntimeUnavailable)
+		}
+		switch run.Stage {
+		case ExperimentRunStageIndex:
+			if err := s.index(ctx, experiment); err != nil {
+				return s.fail(ctx, run, err)
+			}
+			if _, advanced, err := s.repo.AdvanceExperimentRun(ctx, tenantID, run.ID, ExperimentRunStageIndex, ExperimentRunStageEvaluate, s.now().UTC()); err != nil || !advanced {
+				if err != nil {
+					return err
+				}
+				return s.finishCancellationIfRequested(ctx, run)
+			}
+		case ExperimentRunStageEvaluate:
+			result, err := s.evaluator.Run(ctx, eval.RunRequest{
+				TenantID: tenantID, ProjectID: experiment.ProjectID, DatasetID: experiment.DatasetID,
+				KnowledgeBaseID: experiment.KnowledgeBaseID, Profile: rag.Profile(experiment.BaselineProfile), TopK: experiment.BaselineTopK,
+			})
+			if err != nil {
+				return s.fail(ctx, run, err)
+			}
+			if _, completed, err := s.repo.CompleteExperimentRun(ctx, tenantID, run.ID, result.ID, s.now().UTC()); err != nil || !completed {
+				if err != nil {
+					return err
+				}
+				return s.finishCancellationIfRequested(ctx, run)
+			}
+			return nil
+		default:
+			return s.fail(ctx, run, fmt.Errorf("unsupported tutorial experiment run stage %q", run.Stage))
+		}
+	}
+}
+
+func (s *LiveRunService) index(ctx context.Context, experiment Experiment) error {
+	for _, document := range experiment.PackManifest.Runtime.Documents {
+		object, found := packObject(experiment.PackManifest, document.ObjectPath)
+		if !found {
+			return ErrRuntimeUnavailable
+		}
+		content, err := s.private.ReadVerified(ctx, PrivateObject{
+			TenantID: experiment.TenantID, ProjectID: experiment.ProjectID, JobID: experiment.CloneJobID,
+			Object: VerifiedObject{PackObject: object},
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := s.ingest.Ingest(ctx, ingest.Request{
+			TenantID: experiment.TenantID, KnowledgeBaseID: experiment.KnowledgeBaseID,
+			SourceURI: "tutorial://" + experiment.TemplateID + "/" + experiment.TemplateVersion + "/" + object.Path,
+			Name:      document.Name, Content: content,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *LiveRunService) fail(ctx context.Context, run ExperimentRun, cause error) error {
+	_, transitioned, transitionErr := s.repo.FailExperimentRun(ctx, run.TenantID, run.ID, run.Stage, experimentRunFailureCode(cause), s.now().UTC())
+	if transitionErr != nil {
+		return transitionErr
+	}
+	if !transitioned {
+		return s.finishCancellationIfRequested(ctx, run)
+	}
+	return cause
+}
+
+func (s *LiveRunService) finishCancellationIfRequested(ctx context.Context, run ExperimentRun) error {
+	_, cancelled, err := s.repo.MarkExperimentRunCancelled(ctx, run.TenantID, run.ID, s.now().UTC())
+	if err != nil {
+		return err
+	}
+	if cancelled {
+		return ErrExperimentRunCancelled
+	}
+	return nil
+}
+
+func packObject(manifest Manifest, path string) (PackObject, bool) {
+	for _, object := range manifest.Objects {
+		if object.Path == path {
+			return object, true
+		}
+	}
+	return PackObject{}, false
+}
+
+func experimentRunFailureCode(err error) string {
+	switch {
+	case errors.Is(err, ErrRuntimeUnavailable):
+		return "runtime_unavailable"
+	case errors.Is(err, ErrPrivateStoreRead):
+		return "private_pack_unavailable"
+	case errors.Is(err, ErrExperimentRunCancelled):
+		return "cancelled"
+	default:
+		return "live_run_failed"
+	}
+}

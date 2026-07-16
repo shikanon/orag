@@ -26,9 +26,21 @@ func NewService(repo Repository, now func() time.Time) *Service {
 }
 
 func (s *Service) Create(ctx context.Context, tenantID string, input CreateInput) (Project, error) {
+	return s.CreateWithID(ctx, tenantID, id.New("prj"), input)
+}
+
+// CreateWithID creates a project with a caller-provided identifier. It is
+// intended for internal, idempotent workflows that reserve an identifier
+// before a durable background task creates the project. HTTP handlers must use
+// Create so callers cannot choose project identifiers.
+func (s *Service) CreateWithID(ctx context.Context, tenantID, projectID string, input CreateInput) (Project, error) {
 	tenantID = strings.TrimSpace(tenantID)
 	if tenantID == "" {
 		return Project{}, ErrTenantRequired
+	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return Project{}, ErrConflict
 	}
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
@@ -37,7 +49,7 @@ func (s *Service) Create(ctx context.Context, tenantID string, input CreateInput
 
 	now := s.now()
 	created := Project{
-		ID:          id.New("prj"),
+		ID:          projectID,
 		TenantID:    tenantID,
 		Name:        name,
 		Description: strings.TrimSpace(input.Description),

@@ -1,0 +1,40 @@
+{
+  "template_id": "text-rag",
+  "version": "1.0.0",
+  "tier": "quick",
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "source_url": "https://example.test/tutorial-clone-e2e-license",
+    "redistributable": true
+  },
+  "objects": [
+    {
+      "path": "corpus/tutorial-clone-e2e.txt",
+      "sha256": "e4b94748bba3e7571a7bac3da296835d8e3fe447fb59181ee0e60d53acad0b9b",
+      "bytes": 19,
+      "content_type": "text/plain"
+    }
+  ],
+  "runtime": {
+    "baseline": {
+      "profile": "realtime",
+      "top_k": 5
+    },
+    "documents": [
+      {
+        "object_path": "corpus/tutorial-clone-e2e.txt",
+        "name": "教程克隆 E2E 语料"
+      }
+    ],
+    "dataset": {
+      "name": "教程克隆 E2E 验证集",
+      "items": [
+        {
+          "query": "教程克隆 E2E 语料是什么？",
+          "ground_truth": "tutorial clone e2e",
+          "split": "eval"
+        }
+      ]
+    }
+  }
+}
