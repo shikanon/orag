@@ -144,7 +144,7 @@ For dependency boundaries, [#221](https://github.com/shikanon/orag/issues/221) u
 - Use staged/active visibility or an equivalent transaction protocol so failed documents and vectors never become searchable early.
 - Make knowledge-base deletion, upload recovery, and optimizer resume idempotent, concurrency-safe, compensatable, and retryable.
 - Add migration completeness checks, Qdrant collection compatibility checks, backup/restore exercises, and disaster-recovery documentation.
-- Define and test timeout, retry, cancellation, and backpressure behavior for ingestion, query, evaluation, and release.
+- Independent fail-fast concurrency budgets and deadlines now cover ingestion, query, evaluation, and release write paths: saturated capacity returns retryable `429`, expired work returns `504`, and cancellation propagates downstream. Calibrate global rate limiting and retry policy against real replica capacity and provider quotas next.
 
 ### Security and tenant boundaries
 

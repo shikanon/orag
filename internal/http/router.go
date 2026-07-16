@@ -18,6 +18,7 @@ import (
 	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/dataset"
 	"github.com/shikanon/orag/internal/eval"
+	"github.com/shikanon/orag/internal/execution"
 	"github.com/shikanon/orag/internal/ingest"
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/observability"
@@ -33,7 +34,8 @@ import (
 )
 
 type Server struct {
-	App *core.App
+	App       *core.App
+	Execution *execution.Controller
 }
 
 const maxQueryTopK = 100
@@ -47,13 +49,19 @@ type queryRequest struct {
 }
 
 func NewServer(app *core.App) *Server {
-	return &Server{App: app}
+	return &Server{App: app, Execution: execution.New(map[execution.Operation]execution.Budget{
+		execution.Ingestion:  {Timeout: app.Config.Execution.IngestionTimeout, Concurrency: app.Config.Execution.IngestionConcurrency},
+		execution.Query:      {Timeout: app.Config.Execution.QueryTimeout, Concurrency: app.Config.Execution.QueryConcurrency},
+		execution.Evaluation: {Timeout: app.Config.Execution.EvaluationTimeout, Concurrency: app.Config.Execution.EvaluationConcurrency},
+		execution.Release:    {Timeout: app.Config.Execution.ReleaseTimeout, Concurrency: app.Config.Execution.ReleaseConcurrency},
+	})}
 }
 
 func (s *Server) Hertz() *server.Hertz {
 	h := server.Default(server.WithHostPorts(s.App.Config.Server.Addr()))
 	h.Use(s.traceMiddleware)
 	h.Use(s.metricsMiddleware)
+	h.Use(s.executionMiddleware)
 	h.GET("/healthz", s.health)
 	h.GET("/readyz", s.ready)
 	h.GET("/metrics", s.metrics)
