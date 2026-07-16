@@ -27,6 +27,7 @@
 | 重试失败任务 | `POST /v1/tutorial-clone-jobs/{job_id}:retry` | 项目可写 |
 | 查询项目实验 | `GET /v1/projects/{project_id}/tutorial-experiment` | 项目可读 |
 | 导入私有 Video-MME 来源 | `POST /v1/projects/{project_id}/tutorial-experiment/video-source` | 项目可写 |
+| 冻结私有 Video-MME 评测集 | `POST /v1/projects/{project_id}/tutorial-experiment/video-evaluation` | 项目可写 |
 | 启动 P0/P1–P8 Live Run | `POST /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs` | 项目可写 |
 | 查询 P0/P1–P8 Live Run | `GET /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs/{run_id}` | 项目可读 |
 | 对比已完成候选与 P0 | `GET /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs/{run_id}/comparison` | 项目可读 |
@@ -35,6 +36,8 @@
 使用同一 tenant、主体、模板版本和 `idempotency_key` 重复提交会返回同一个项目和任务，而不是创建第二份 Pack。
 
 视频导入使用 `multipart/form-data`，字段为 `license_confirmed=true`、`file`、`alias`、`sha256`、`content_type` 与 `duration_ms`。服务端只接受上传流，不接受 URL、对象 key、签名 URL、帧坐标或用户选择的采样策略；它校验完整上传的大小和 SHA-256 后，按公共 Protocol 的固定 cadence 生成私有时序描述。响应不包含媒体、字幕、对象位置或任何存储凭证。Video-MME 的媒体、字幕、标注、问题和答案都不得随 ORAG 发布或通过公开对象存储分发。
+
+创建项目内私有数据集后，调用视频评测激活端点并传入 `dataset_id` 和 `license_confirmed=true`。服务端要求每个样本都有 query、ground truth 和至少一个 `expected_evidence`，且每个证据 ID 均属于该项目视频导入生成的固定时序段。通过校验的样本会复制为不可变教程快照，再创建 temporal P0 的知识库与数据集根；原始项目数据集之后的修改不会改变这个实验。
 
 运行使用其自身的 `idempotency_key`，其响应持久化 `evaluation_run_id`，可继续使用既有评测 API 查询真实结果。缺少已完成、输入一致的 P0 时启动候选返回 `409 tutorial_baseline_required`。未声明受支持运行时的已安装 Pack 返回稳定的 `tutorial_runtime_unavailable`，不会伪造 Replay 或评测结果。变量、审计证据和 Pack 发布契约见各候选指南（P1–P8）。
 
