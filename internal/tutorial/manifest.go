@@ -22,6 +22,12 @@ var (
 	sha256Pattern      = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
+const (
+	TutorialP1StructuredJSONCandidateID = "p1_structured_json"
+	TutorialP1DocumentParserChapter     = "p1_document_parser"
+	TutorialStructuredJSONParserMethod  = "structured_json"
+)
+
 // Manifest describes one immutable, redistributable tutorial pack. It is
 // validated against the selected catalog entry before any object is fetched.
 type Manifest struct {
@@ -51,9 +57,10 @@ type PackObject struct {
 // model provider, or arbitrary client configuration. A missing declaration
 // leaves the Pack installable but makes Live Run unavailable.
 type RuntimeManifest struct {
-	Baseline  RuntimeBaseline   `json:"baseline"`
-	Documents []RuntimeDocument `json:"documents"`
-	Dataset   RuntimeDataset    `json:"dataset"`
+	Baseline   RuntimeBaseline    `json:"baseline"`
+	Documents  []RuntimeDocument  `json:"documents"`
+	Dataset    RuntimeDataset     `json:"dataset"`
+	Candidates []RuntimeCandidate `json:"candidates,omitempty"`
 }
 
 type RuntimeBaseline struct {
@@ -69,6 +76,14 @@ type RuntimeDocument struct {
 type RuntimeDataset struct {
 	Name  string               `json:"name"`
 	Items []RuntimeDatasetItem `json:"items"`
+}
+
+// RuntimeCandidate declares one immutable experiment variant. It deliberately
+// contains no client-configurable model, retrieval, or storage settings.
+type RuntimeCandidate struct {
+	ID           string `json:"id"`
+	Chapter      string `json:"chapter"`
+	ParserMethod string `json:"parser_method"`
 }
 
 type RuntimeDatasetItem struct {
@@ -102,7 +117,7 @@ func ParseManifest(raw []byte, template Template, pack PackRef) (Manifest, error
 		return Manifest{}, fmt.Errorf("%w: object count is outside permitted range", ErrManifestInvalid)
 	}
 
-	paths := make(map[string]struct{}, len(manifest.Objects))
+	objectsByPath := make(map[string]PackObject, len(manifest.Objects))
 	var total int64
 	for index := range manifest.Objects {
 		object := manifest.Objects[index]
@@ -118,24 +133,24 @@ func ParseManifest(raw []byte, template Template, pack PackRef) (Manifest, error
 		if !allowedContentType(object.ContentType) {
 			return Manifest{}, fmt.Errorf("%w: object %d content type is unsupported", ErrManifestInvalid, index)
 		}
-		if _, exists := paths[object.Path]; exists {
+		if _, exists := objectsByPath[object.Path]; exists {
 			return Manifest{}, fmt.Errorf("%w: duplicate object path", ErrManifestInvalid)
 		}
-		paths[object.Path] = struct{}{}
+		objectsByPath[object.Path] = object
 		total += object.Bytes
 	}
 	if pack.EstimatedBytes > 0 && total > pack.EstimatedBytes {
 		return Manifest{}, fmt.Errorf("%w: object bytes exceed catalog estimate", ErrManifestInvalid)
 	}
 	if manifest.Runtime != nil {
-		if err := validateRuntimeManifest(*manifest.Runtime, template, paths); err != nil {
+		if err := validateRuntimeManifest(*manifest.Runtime, template, objectsByPath); err != nil {
 			return Manifest{}, err
 		}
 	}
 	return cloneManifest(manifest), nil
 }
 
-func validateRuntimeManifest(runtime RuntimeManifest, template Template, objectPaths map[string]struct{}) error {
+func validateRuntimeManifest(runtime RuntimeManifest, template Template, objectsByPath map[string]PackObject) error {
 	if template.Modality != ModalityText {
 		return fmt.Errorf("%w: runtime declarations are only supported for text packs", ErrManifestInvalid)
 	}
@@ -153,13 +168,16 @@ func validateRuntimeManifest(runtime RuntimeManifest, template Template, objectP
 		if strings.TrimSpace(document.Name) == "" || !validObjectPath(document.ObjectPath) {
 			return fmt.Errorf("%w: runtime document %d is invalid", ErrManifestInvalid, index)
 		}
-		if _, found := objectPaths[document.ObjectPath]; !found {
+		if _, found := objectsByPath[document.ObjectPath]; !found {
 			return fmt.Errorf("%w: runtime document %d is not a Pack object", ErrManifestInvalid, index)
 		}
 		if _, duplicate := seenDocuments[document.ObjectPath]; duplicate {
 			return fmt.Errorf("%w: duplicate runtime document", ErrManifestInvalid)
 		}
 		seenDocuments[document.ObjectPath] = struct{}{}
+	}
+	if err := validateRuntimeCandidates(runtime, objectsByPath); err != nil {
+		return err
 	}
 	for index, item := range runtime.Dataset.Items {
 		if strings.TrimSpace(item.Query) == "" || strings.TrimSpace(item.GroundTruth) == "" {
@@ -172,6 +190,31 @@ func validateRuntimeManifest(runtime RuntimeManifest, template Template, objectP
 		}
 		if item.Weight < 0 {
 			return fmt.Errorf("%w: runtime dataset item %d weight is invalid", ErrManifestInvalid, index)
+		}
+	}
+	return nil
+}
+
+func validateRuntimeCandidates(runtime RuntimeManifest, objectsByPath map[string]PackObject) error {
+	seen := make(map[string]struct{}, len(runtime.Candidates))
+	for index, candidate := range runtime.Candidates {
+		if candidate.ID != TutorialP1StructuredJSONCandidateID || candidate.Chapter != TutorialP1DocumentParserChapter || candidate.ParserMethod != TutorialStructuredJSONParserMethod {
+			return fmt.Errorf("%w: runtime candidate %d is unsupported", ErrManifestInvalid, index)
+		}
+		if _, duplicate := seen[candidate.ID]; duplicate {
+			return fmt.Errorf("%w: duplicate runtime candidate", ErrManifestInvalid)
+		}
+		seen[candidate.ID] = struct{}{}
+		hasJSONDocument := false
+		for _, document := range runtime.Documents {
+			object := objectsByPath[document.ObjectPath]
+			if strings.EqualFold(object.ContentType, "application/json") || strings.HasSuffix(strings.ToLower(object.Path), ".json") {
+				hasJSONDocument = true
+				break
+			}
+		}
+		if !hasJSONDocument {
+			return fmt.Errorf("%w: runtime candidate %d requires a JSON document", ErrManifestInvalid, index)
 		}
 	}
 	return nil
@@ -212,6 +255,7 @@ func cloneManifest(manifest Manifest) Manifest {
 	if manifest.Runtime != nil {
 		runtime := *manifest.Runtime
 		runtime.Documents = slices.Clone(manifest.Runtime.Documents)
+		runtime.Candidates = slices.Clone(manifest.Runtime.Candidates)
 		runtime.Dataset.Items = slices.Clone(manifest.Runtime.Dataset.Items)
 		for index := range runtime.Dataset.Items {
 			runtime.Dataset.Items[index].ExpectedEvidence = slices.Clone(manifest.Runtime.Dataset.Items[index].ExpectedEvidence)

@@ -31,16 +31,17 @@ func (r ResourceInitializer) Ensure(ctx context.Context, job CloneJob, manifest 
 	}
 	now := r.now()
 	knowledgeBaseID := tutorialResourceID("tkb", job.ProjectID, job.TemplateID, job.TemplateVersion)
-	if _, found, err := r.KnowledgeBases.GetKnowledgeBase(ctx, job.TenantID, knowledgeBaseID); err != nil {
+	if err := r.ensureKnowledgeBase(ctx, job, knowledgeBaseID, "教程基线知识库", "由已校验教程 Pack 创建的只读运行根。", map[string]string{
+		"tutorial_template_id": job.TemplateID, "tutorial_template_version": job.TemplateVersion, "tutorial_pack_tier": job.Tier,
+	}, now); err != nil {
 		return RuntimeResources{}, err
-	} else if !found {
-		item := kb.KnowledgeBase{
-			ID: knowledgeBaseID, TenantID: job.TenantID, ProjectID: job.ProjectID,
-			Name: "教程基线知识库", Description: "由已校验教程 Pack 创建的只读运行根。",
-			Metadata:  map[string]string{"tutorial_template_id": job.TemplateID, "tutorial_template_version": job.TemplateVersion, "tutorial_pack_tier": job.Tier},
-			CreatedAt: now, UpdatedAt: now,
-		}
-		if err := r.KnowledgeBases.PutKnowledgeBase(ctx, item); err != nil {
+	}
+	for _, candidate := range manifest.Runtime.Candidates {
+		candidateID := tutorialCandidateKnowledgeBaseID(job, candidate.ID)
+		if err := r.ensureKnowledgeBase(ctx, job, candidateID, "教程 P1 解析候选知识库", "由已校验教程 Pack 创建的独立 P1 解析候选运行根。", map[string]string{
+			"tutorial_template_id": job.TemplateID, "tutorial_template_version": job.TemplateVersion, "tutorial_pack_tier": job.Tier,
+			"tutorial_variant": candidate.ID, "tutorial_parser_method": candidate.ParserMethod,
+		}, now); err != nil {
 			return RuntimeResources{}, err
 		}
 	}
@@ -65,6 +66,22 @@ func (r ResourceInitializer) Ensure(ctx context.Context, job CloneJob, manifest 
 		Status: "ready", KnowledgeBaseID: knowledgeBaseID, DatasetID: datasetID,
 		BaselineProfile: manifest.Runtime.Baseline.Profile, BaselineTopK: manifest.Runtime.Baseline.TopK,
 	}, nil
+}
+
+func (r ResourceInitializer) ensureKnowledgeBase(ctx context.Context, job CloneJob, knowledgeBaseID, name, description string, metadata map[string]string, now time.Time) error {
+	if _, found, err := r.KnowledgeBases.GetKnowledgeBase(ctx, job.TenantID, knowledgeBaseID); err != nil {
+		return err
+	} else if found {
+		return nil
+	}
+	return r.KnowledgeBases.PutKnowledgeBase(ctx, kb.KnowledgeBase{
+		ID: knowledgeBaseID, TenantID: job.TenantID, ProjectID: job.ProjectID,
+		Name: name, Description: description, Metadata: metadata, CreatedAt: now, UpdatedAt: now,
+	})
+}
+
+func tutorialCandidateKnowledgeBaseID(job CloneJob, candidateID string) string {
+	return tutorialResourceID("tkb", job.ProjectID, job.TemplateID, job.TemplateVersion, candidateID)
 }
 
 func (r ResourceInitializer) now() time.Time {

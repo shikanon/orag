@@ -2899,7 +2899,7 @@ components:
           $ref: "#/components/schemas/TutorialCloneJob"
     TutorialExperiment:
       type: object
-      required: [id, tenant_id, project_id, template_id, template_version, pack_tier, pack_status, runtime_status, created_at, updated_at]
+      required: [id, tenant_id, project_id, template_id, template_version, pack_tier, pack_status, runtime_status, variants, created_at, updated_at]
       properties:
         id:
           type: string
@@ -2932,12 +2932,32 @@ components:
         baseline_top_k:
           type: integer
           minimum: 1
+        variants:
+          type: array
+          description: Immutable tutorial variants declared by the installed Pack. Variant configuration remains server-owned.
+          items:
+            $ref: "#/components/schemas/TutorialExperimentVariant"
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+    TutorialExperimentVariant:
+      type: object
+      required: [id, parser_method, available]
+      properties:
+        id:
+          type: string
+          description: Server-declared immutable variant identifier.
+        chapter:
+          type: string
+        parser_method:
+          type: string
+          description: Parser method selected by the server for this declared variant.
+        available:
+          type: boolean
+          description: Whether this installed Pack currently has a runnable runtime root.
     StartTutorialExperimentRunRequest:
       type: object
       required: [idempotency_key]

@@ -100,22 +100,32 @@ type StageEvent struct {
 }
 
 type Experiment struct {
-	ID              string     `json:"id"`
-	TenantID        string     `json:"tenant_id"`
-	ProjectID       string     `json:"project_id"`
-	CloneJobID      string     `json:"-"`
-	TemplateID      string     `json:"template_id"`
-	TemplateVersion string     `json:"template_version"`
-	Tier            string     `json:"pack_tier"`
-	PackStatus      PackStatus `json:"pack_status"`
-	RuntimeStatus   string     `json:"runtime_status"`
-	KnowledgeBaseID string     `json:"knowledge_base_id,omitempty"`
-	DatasetID       string     `json:"dataset_id,omitempty"`
-	BaselineProfile string     `json:"baseline_profile,omitempty"`
-	BaselineTopK    int        `json:"baseline_top_k,omitempty"`
-	PackManifest    Manifest   `json:"-"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID              string              `json:"id"`
+	TenantID        string              `json:"tenant_id"`
+	ProjectID       string              `json:"project_id"`
+	CloneJobID      string              `json:"-"`
+	TemplateID      string              `json:"template_id"`
+	TemplateVersion string              `json:"template_version"`
+	Tier            string              `json:"pack_tier"`
+	PackStatus      PackStatus          `json:"pack_status"`
+	RuntimeStatus   string              `json:"runtime_status"`
+	KnowledgeBaseID string              `json:"knowledge_base_id,omitempty"`
+	DatasetID       string              `json:"dataset_id,omitempty"`
+	BaselineProfile string              `json:"baseline_profile,omitempty"`
+	BaselineTopK    int                 `json:"baseline_top_k,omitempty"`
+	Variants        []ExperimentVariant `json:"variants,omitempty"`
+	PackManifest    Manifest            `json:"-"`
+	CreatedAt       time.Time           `json:"created_at"`
+	UpdatedAt       time.Time           `json:"updated_at"`
+}
+
+// ExperimentVariant is the safe public projection of an immutable Pack
+// candidate. It intentionally excludes resource coordinates and model input.
+type ExperimentVariant struct {
+	ID           string `json:"id"`
+	Chapter      string `json:"chapter,omitempty"`
+	ParserMethod string `json:"parser_method"`
+	Available    bool   `json:"available"`
 }
 
 // CloneRepository persists requests before any project or remote Pack action
@@ -278,7 +288,23 @@ func (s *CloneService) GetExperiment(ctx context.Context, subject Subject, proje
 	if !found {
 		return Experiment{}, ErrCloneExperimentAbsent
 	}
-	return experiment, nil
+	return publicExperiment(experiment), nil
+}
+
+func publicExperiment(experiment Experiment) Experiment {
+	available := experiment.PackStatus == PackStatusInstalled && experiment.RuntimeStatus == "ready" && experiment.PackManifest.Runtime != nil
+	experiment.Variants = []ExperimentVariant{{
+		ID: "baseline", Chapter: "p0_basic_baseline", ParserMethod: "basic", Available: available,
+	}}
+	if experiment.PackManifest.Runtime != nil {
+		for _, candidate := range experiment.PackManifest.Runtime.Candidates {
+			experiment.Variants = append(experiment.Variants, ExperimentVariant{
+				ID: candidate.ID, Chapter: candidate.Chapter, ParserMethod: candidate.ParserMethod, Available: available,
+			})
+		}
+	}
+	experiment.PackManifest = Manifest{}
+	return experiment
 }
 
 // RecoverPending returns work that was queued before process startup and
