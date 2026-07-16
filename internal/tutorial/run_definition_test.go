@@ -55,3 +55,28 @@ func TestRuntimeDefinitionBindsP4SparseReuseContract(t *testing.T) {
 		t.Fatalf("baseline=%#v P4=%#v", baseline, p4)
 	}
 }
+
+func TestRuntimeDefinitionBindsP5MultiQueryReuseContract(t *testing.T) {
+	service := NewLiveRunService(nil, nil, nil)
+	service.ConfigureCandidateEvaluators(map[string]RuntimeEvaluator{TutorialP5MultiQueryCandidateID: &recordingRuntimeEvaluator{}})
+	experiment := Experiment{
+		ProjectID: "prj_1", CloneJobID: "tclj_1", TemplateID: "text-rag", TemplateVersion: "1.0.5", Tier: "quick",
+		RuntimeStatus: "ready", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", BaselineProfile: "realtime", BaselineTopK: 5,
+		PackManifest: Manifest{Runtime: &RuntimeManifest{Candidates: []RuntimeCandidate{{
+			ID: TutorialP5MultiQueryCandidateID, Chapter: TutorialP5MultiQueryChapter, ParserMethod: "basic",
+			ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens,
+			RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReuseBaselineIndex: true, MultiQueryCount: 3,
+		}}}},
+	}
+	baseline, err := service.runtimeDefinition(experiment, "baseline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p5, err := service.runtimeDefinition(experiment, TutorialP5MultiQueryCandidateID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p5.queryExpansionMode != TutorialQueryExpansionMultiQuery || p5.multiQueryCount != 3 || p5.retrievalStrategy != TutorialRetrievalStrategyHybrid || !p5.reuseBaselineIndex || p5.knowledgeBaseID != baseline.knowledgeBaseID || p5.definitionFingerprint == baseline.definitionFingerprint || p5.comparisonFingerprint != baseline.comparisonFingerprint {
+		t.Fatalf("baseline=%#v P5=%#v", baseline, p5)
+	}
+}

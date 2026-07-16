@@ -81,3 +81,21 @@ func TestTutorialP4SparseCandidateMigrationPersistsAuditFields(t *testing.T) {
 		}
 	}
 }
+
+func TestTutorialP5MultiQueryCandidateMigrationPersistsAuditFields(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/000034_tutorial_p5_multi_query_candidate.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(raw)
+	for _, fragment := range []string{
+		"ADD COLUMN query_expansion_mode TEXT NOT NULL DEFAULT 'none'",
+		"ADD COLUMN multi_query_count INTEGER NOT NULL DEFAULT 0",
+		"DROP COLUMN multi_query_count",
+		"DROP COLUMN query_expansion_mode",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing %q", fragment)
+		}
+	}
+}

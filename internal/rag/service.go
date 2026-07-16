@@ -40,11 +40,12 @@ type Service struct {
 	ShadowRetriever        ShadowRetriever
 	ShadowSourceReader     ShadowSourceReader
 
-	QueryRewriteEnabled bool
-	MultiQueryCount     int
-	HyDEEnabled         bool
-	QueryRouter         QueryRouter
-	Logger              *slog.Logger
+	QueryRewriteEnabled   bool
+	MultiQueryCount       int
+	MultiQueryForRealtime bool
+	HyDEEnabled           bool
+	QueryRouter           QueryRouter
+	Logger                *slog.Logger
 }
 
 func (s *Service) Query(ctx context.Context, req QueryRequest) (QueryResponse, error) {

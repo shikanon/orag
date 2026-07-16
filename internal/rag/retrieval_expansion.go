@@ -53,7 +53,7 @@ func (s *Service) BuildRetrievalQueries(ctx context.Context, req QueryRequest, p
 	}
 	var queries []RetrievalQuery
 	addRetrievalQuery(&queries, RetrievalQuery{Query: base, Source: source})
-	if profile != ProfileHighPrecision {
+	if profile != ProfileHighPrecision && !s.MultiQueryForRealtime {
 		return queries, nil
 	}
 
