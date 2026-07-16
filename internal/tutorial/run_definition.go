@@ -55,6 +55,9 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 	if supportsVisualRuntime(experiment.TemplateID, experiment.Tier) && (experiment.PackManifest.VisualRuntime == nil || experiment.BaselineProfile != "visual_page" || len(experiment.PackManifest.VisualAssets) == 0) {
 		return runtimeDefinition{}, ErrRuntimeUnavailable
 	}
+	if experiment.TemplateID == "video-rag" && (experiment.PackManifest.VideoProtocol == nil || experiment.PackManifest.VideoSource == nil || len(experiment.PackManifest.TemporalAssets) == 0 || experiment.BaselineProfile != "temporal_page") {
+		return runtimeDefinition{}, ErrRuntimeUnavailable
+	}
 	definition := runtimeDefinition{
 		knowledgeBaseID:          experiment.KnowledgeBaseID,
 		datasetID:                experiment.DatasetID,
