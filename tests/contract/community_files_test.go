@@ -35,6 +35,9 @@ func TestCommunityFilesContainRequiredPolicy(t *testing.T) {
 			"stable",
 			"v1.0.0",
 		},
+		"../../GOVERNANCE.md":                      {"RFC process", "Committers", "Maintainers", "SECURITY.md"},
+		"../../docs/decisions/README.md":           {"accepted", "rejected", "superseded"},
+		"../../.github/DISCUSSION_TEMPLATE/rfc.md": {"Problem", "Alternatives", "Compatibility", "Security", "Validation"},
 	}
 
 	for path, phrases := range checks {
