@@ -5,10 +5,23 @@ demo. It keeps credentials and runtime state on the server and uses the
 published GHCR images, so the procedure is reproducible without cloning the
 repository on the host.
 
-The current reference host is `root@8.134.24.116`. Use a dedicated hostname
-such as `orag.tensorbytes.com`; do not repoint the existing
-`www.tensorbytes.com` site unless its current content has been migrated and
-the DNS change has been approved.
+The current reference host is `root@8.134.24.116`. The static community
+documentation mirror is served at
+[`https://www.tensorbytes.com/orag/`](https://www.tensorbytes.com/orag/).
+It is a versioned static directory behind the existing `www` virtual host, so
+it does not replace the company homepage at `/`. Use a dedicated hostname
+such as `orag.tensorbytes.com` for a public API/Console deployment; do not
+reuse the documentation path for application traffic.
+
+The mirror serves a build from an exact `main` commit under
+`/var/www/orag-docs-releases/<commit>` and switches the
+`/var/www/orag-docs` symlink only after extraction succeeds. Nginx exposes it
+through `location /orag/`; the same virtual host owns the HTTP-01 ACME path.
+The matching `www.tensorbytes.com` certificate reloads through a Certbot
+deploy hook after renewal. Before every documentation update, build from the
+target `main` commit, verify the archive checksum, publish a new immutable
+release directory, update the symlink, then run `nginx -t` and request the
+homepage, `/orag/`, `/orag/api.html`, and `/orag/openapi.yaml` over HTTPS.
 
 ## 1. DNS and host prerequisites
 

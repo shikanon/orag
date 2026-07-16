@@ -122,7 +122,7 @@ Answer + Citations + Trace + Metrics
 make demo
 ```
 
-该命令显式启用 deterministic mock，构建并启动 PostgreSQL、Qdrant、迁移、API 和 Console，然后完成入库、带引用查询、trace 查询和评测。结果写入 `.orag-demo/walkthrough.json`。打开 Console：`http://localhost:3000`；交互式 API 文档：`http://localhost:8080/docs`。无需本地服务也可浏览[托管文档站](https://shikanon.github.io/orag/)与[托管 API Reference](https://shikanon.github.io/orag/api.html)。
+该命令显式启用 deterministic mock，构建并启动 PostgreSQL、Qdrant、迁移、API 和 Console，然后完成入库、带引用查询、trace 查询和评测。结果写入 `.orag-demo/walkthrough.json`。打开 Console：`http://localhost:3000`；交互式 API 文档：`http://localhost:8080/docs`。无需本地服务也可浏览 [GitHub Pages 文档站](https://shikanon.github.io/orag/)、[托管 API Reference](https://shikanon.github.io/orag/api.html) 或 [社区文档镜像](https://www.tensorbytes.com/orag/)。
 
 这条路径只用于本地体验和回归验证，不是生产凭据模板。停止栈：
 
