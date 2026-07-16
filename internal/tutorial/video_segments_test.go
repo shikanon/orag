@@ -39,3 +39,10 @@ func TestBuildTemporalSegmentsRejectsSourceOverProtocolLimit(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestTemporalSegmentIndexTextExcludesPrivateCoordinates(t *testing.T) {
+	text := (TemporalSegment{EvidenceID: "clip@0-10000", StartMS: 0, EndMS: 10000, SubtitleText: "scene"}).IndexText()
+	if text != "evidence=clip@0-10000\nstart_ms=0\nend_ms=10000\nsubtitle=scene" {
+		t.Fatalf("text=%q", text)
+	}
+}

@@ -15,6 +15,13 @@ type TemporalSegment struct {
 	SubtitleText string `json:"subtitle_text,omitempty"`
 }
 
+// IndexText is the only video-derived content eligible for the text index.
+// It is deterministic and intentionally excludes media paths, URLs, bytes,
+// digests, and any client-selected extraction coordinate.
+func (s TemporalSegment) IndexText() string {
+	return fmt.Sprintf("evidence=%s\nstart_ms=%d\nend_ms=%d\nsubtitle=%s", s.EvidenceID, s.StartMS, s.EndMS, strings.TrimSpace(s.SubtitleText))
+}
+
 // BuildTemporalSegments uses the protocol cadence only. It never accepts
 // timestamps, paths, provider settings, or frame selection from a browser.
 func BuildTemporalSegments(source VideoSource, protocol VideoBenchmarkProtocol) ([]TemporalSegment, error) {
