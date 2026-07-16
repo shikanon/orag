@@ -63,15 +63,17 @@ const TutorialP3ContextualSystemPrompt = "You are preparing a retrieval chunk fo
 // Manifest describes one immutable, redistributable tutorial pack. It is
 // validated against the selected catalog entry before any object is fetched.
 type Manifest struct {
-	TemplateID    string                  `json:"template_id"`
-	Version       string                  `json:"version"`
-	Tier          string                  `json:"tier"`
-	License       License                 `json:"license"`
-	Objects       []PackObject            `json:"objects"`
-	Runtime       *RuntimeManifest        `json:"runtime,omitempty"`
-	VisualRuntime *VisualRuntimeManifest  `json:"visual_runtime,omitempty"`
-	VisualAssets  []PackObject            `json:"visual_assets,omitempty"`
-	VideoProtocol *VideoBenchmarkProtocol `json:"video_protocol,omitempty"`
+	TemplateID       string                  `json:"template_id"`
+	Version          string                  `json:"version"`
+	Tier             string                  `json:"tier"`
+	License          License                 `json:"license"`
+	Objects          []PackObject            `json:"objects"`
+	Runtime          *RuntimeManifest        `json:"runtime,omitempty"`
+	VisualRuntime    *VisualRuntimeManifest  `json:"visual_runtime,omitempty"`
+	VisualAssets     []PackObject            `json:"visual_assets,omitempty"`
+	VideoProtocol    *VideoBenchmarkProtocol `json:"video_protocol,omitempty"`
+	VideoSource      *VideoSource            `json:"video_source,omitempty"`
+	TemporalSegments []TemporalSegment       `json:"temporal_segments,omitempty"`
 }
 
 type License struct {
@@ -416,5 +418,11 @@ func cloneManifest(manifest Manifest) Manifest {
 		protocol := *manifest.VideoProtocol
 		cloned.VideoProtocol = &protocol
 	}
+	if manifest.VideoSource != nil {
+		source := *manifest.VideoSource
+		source.Subtitles = slices.Clone(manifest.VideoSource.Subtitles)
+		cloned.VideoSource = &source
+	}
+	cloned.TemporalSegments = slices.Clone(manifest.TemporalSegments)
 	return cloned
 }
