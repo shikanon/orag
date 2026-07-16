@@ -44,30 +44,31 @@ const (
 )
 
 type ExperimentRun struct {
-	ID                    string               `json:"id"`
-	TenantID              string               `json:"tenant_id"`
-	ProjectID             string               `json:"project_id"`
-	ExperimentID          string               `json:"experiment_id"`
-	Variant               string               `json:"variant"`
-	BaselineRunID         string               `json:"baseline_run_id,omitempty"`
-	ComparisonFingerprint string               `json:"comparison_fingerprint,omitempty"`
-	DefinitionFingerprint string               `json:"definition_fingerprint,omitempty"`
-	KnowledgeBaseID       string               `json:"knowledge_base_id,omitempty"`
-	DatasetID             string               `json:"dataset_id,omitempty"`
-	Profile               string               `json:"profile,omitempty"`
-	TopK                  int                  `json:"top_k,omitempty"`
-	ParserMethod          string               `json:"parser_method,omitempty"`
-	ChunkSizeTokens       int                  `json:"chunk_size_tokens,omitempty"`
-	ChunkOverlapTokens    int                  `json:"chunk_overlap_tokens,omitempty"`
-	IndexedChunkCount     int                  `json:"indexed_chunk_count,omitempty"`
-	AverageChunkTokens    float64              `json:"average_chunk_tokens,omitempty"`
-	Stage                 ExperimentRunStage   `json:"stage"`
-	Status                ExperimentRunStatus  `json:"status"`
-	EvaluationRunID       string               `json:"evaluation_run_id,omitempty"`
-	FailureCode           string               `json:"failure_code,omitempty"`
-	Events                []ExperimentRunEvent `json:"events"`
-	CreatedAt             time.Time            `json:"created_at"`
-	UpdatedAt             time.Time            `json:"updated_at"`
+	ID                         string               `json:"id"`
+	TenantID                   string               `json:"tenant_id"`
+	ProjectID                  string               `json:"project_id"`
+	ExperimentID               string               `json:"experiment_id"`
+	Variant                    string               `json:"variant"`
+	BaselineRunID              string               `json:"baseline_run_id,omitempty"`
+	ComparisonFingerprint      string               `json:"comparison_fingerprint,omitempty"`
+	DefinitionFingerprint      string               `json:"definition_fingerprint,omitempty"`
+	KnowledgeBaseID            string               `json:"knowledge_base_id,omitempty"`
+	DatasetID                  string               `json:"dataset_id,omitempty"`
+	Profile                    string               `json:"profile,omitempty"`
+	TopK                       int                  `json:"top_k,omitempty"`
+	ParserMethod               string               `json:"parser_method,omitempty"`
+	ChunkSizeTokens            int                  `json:"chunk_size_tokens,omitempty"`
+	ChunkOverlapTokens         int                  `json:"chunk_overlap_tokens,omitempty"`
+	ContextualRetrievalEnabled bool                 `json:"contextual_retrieval_enabled"`
+	IndexedChunkCount          int                  `json:"indexed_chunk_count,omitempty"`
+	AverageChunkTokens         float64              `json:"average_chunk_tokens,omitempty"`
+	Stage                      ExperimentRunStage   `json:"stage"`
+	Status                     ExperimentRunStatus  `json:"status"`
+	EvaluationRunID            string               `json:"evaluation_run_id,omitempty"`
+	FailureCode                string               `json:"failure_code,omitempty"`
+	Events                     []ExperimentRunEvent `json:"events"`
+	CreatedAt                  time.Time            `json:"created_at"`
+	UpdatedAt                  time.Time            `json:"updated_at"`
 }
 
 type ExperimentRunEvent struct {
@@ -189,7 +190,8 @@ func (s *LiveRunService) StartVariant(ctx context.Context, subject Subject, proj
 		DefinitionFingerprint: definition.definitionFingerprint, KnowledgeBaseID: definition.knowledgeBaseID,
 		DatasetID: definition.datasetID, Profile: definition.profile, TopK: definition.topK, ParserMethod: definition.parserMethod,
 		ChunkSizeTokens: definition.chunkSizeTokens, ChunkOverlapTokens: definition.chunkOverlapTokens,
-		Stage: ExperimentRunStageIndex, Status: ExperimentRunQueued,
+		ContextualRetrievalEnabled: definition.contextualRetrievalEnabled,
+		Stage:                      ExperimentRunStageIndex, Status: ExperimentRunQueued,
 		Events:    []ExperimentRunEvent{{Stage: ExperimentRunStageIndex, Outcome: "queued", OccurredAt: now}},
 		CreatedAt: now, UpdatedAt: now,
 	}

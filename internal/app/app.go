@@ -180,7 +180,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	tutorialRuns := tutorial.NewLiveRunService(tutorialRunRepo, backend.tutorialCloneRepo, func() time.Time { return time.Now().UTC() })
 	tutorialRuns.Configure(ingest.NewVariantService(ingestSvc, parser.New(parser.Config{Method: parser.MethodBasic, Multimodal: model}), chunker.Recursive{
 		SizeTokens: tutorial.TutorialBaselineChunkSizeTokens, OverlapTokens: tutorial.TutorialBaselineChunkOverlapTokens,
-	}), evalRunner, privatePacks)
+	}, nil), evalRunner, privatePacks)
 	tutorialRuns.ConfigureCandidateIngestors(tutorial.RuntimeEnvironment{
 		ChatProvider: cfg.Models.ChatProvider, ChatModel: cfg.Ark.ChatModel,
 		EmbeddingProvider: cfg.Models.EmbeddingProvider, EmbeddingModel: cfg.Ark.EmbeddingModel,
@@ -190,10 +190,17 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	}, map[string]tutorial.RuntimeIngestor{
 		tutorial.TutorialP1StructuredJSONCandidateID: ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
 			Method: parser.MethodStructuredJSON, Multimodal: model,
-		}), chunker.Recursive{SizeTokens: tutorial.TutorialBaselineChunkSizeTokens, OverlapTokens: tutorial.TutorialBaselineChunkOverlapTokens}),
+		}), chunker.Recursive{SizeTokens: tutorial.TutorialBaselineChunkSizeTokens, OverlapTokens: tutorial.TutorialBaselineChunkOverlapTokens}, nil),
 		tutorial.TutorialP2RecursiveChunkCandidateID: ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
 			Method: parser.MethodBasic, Multimodal: model,
-		}), chunker.Recursive{SizeTokens: tutorial.TutorialP2ChunkSizeTokens, OverlapTokens: tutorial.TutorialP2ChunkOverlapTokens}),
+		}), chunker.Recursive{SizeTokens: tutorial.TutorialP2ChunkSizeTokens, OverlapTokens: tutorial.TutorialP2ChunkOverlapTokens}, nil),
+		tutorial.TutorialP3ContextualCandidateID: ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
+			Method: parser.MethodBasic, Multimodal: model,
+		}), chunker.Recursive{SizeTokens: tutorial.TutorialBaselineChunkSizeTokens, OverlapTokens: tutorial.TutorialBaselineChunkOverlapTokens}, ingest.LLMContextualizer{
+			Model: model, SystemPrompt: tutorial.TutorialP3ContextualSystemPrompt,
+			MaxDocumentChars: tutorial.TutorialP3MaxDocumentChars, MaxChunkChars: tutorial.TutorialP3MaxChunkChars,
+			MaxContextChars: tutorial.TutorialP3MaxContextChars, FailureMode: ingest.ContextualFailureFail,
+		}),
 	})
 	optimizerRunner := optimizer.InternalRAGRunner{
 		BaseRAG:    ragSvc,

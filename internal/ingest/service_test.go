@@ -40,6 +40,28 @@ type fixedContextualizer struct {
 	contexts []string
 }
 
+func TestNewVariantServiceUsesExplicitContextualizer(t *testing.T) {
+	baseContextualizer := &fixedContextualizer{contexts: []string{"base"}}
+	explicitContextualizer := &fixedContextualizer{contexts: []string{"variant"}}
+	base := &Service{
+		Embedder:         fakeEmbedder{},
+		Contextualizer:   baseContextualizer,
+		KnowledgeBases:   kb.NewMemoryStore(),
+		Indexer:          noopIndexer{},
+		Jobs:             NewMemoryJobStore(),
+		Uploads:          NewMemoryUploadStore(),
+		MaxDocumentBytes: 123,
+	}
+	variant := NewVariantService(base, parser.New(parser.Config{Method: parser.MethodBasic}), chunker.Recursive{SizeTokens: 800, OverlapTokens: 120}, explicitContextualizer)
+	if variant == nil || variant.Contextualizer != explicitContextualizer || variant.Embedder != base.Embedder || variant.KnowledgeBases != base.KnowledgeBases || variant.Indexer != base.Indexer || variant.MaxDocumentBytes != base.MaxDocumentBytes {
+		t.Fatalf("variant=%#v", variant)
+	}
+	withoutContext := NewVariantService(base, parser.New(parser.Config{Method: parser.MethodBasic}), chunker.Recursive{}, nil)
+	if withoutContext == nil || withoutContext.Contextualizer != nil {
+		t.Fatalf("variant without contextualizer=%#v", withoutContext)
+	}
+}
+
 func (c fixedContextualizer) Contextualize(_ context.Context, _ ContextualizationRequest) ([]string, []string, error) {
 	return c.contexts, nil, nil
 }

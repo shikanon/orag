@@ -21,6 +21,7 @@ type ChatModel interface {
 
 type LLMContextualizer struct {
 	Model            ChatModel
+	SystemPrompt     string
 	MaxDocumentChars int
 	MaxChunkChars    int
 	MaxContextChars  int
@@ -38,7 +39,7 @@ func (c LLMContextualizer) Contextualize(ctx context.Context, req Contextualizat
 	document := trimRunes(req.DocumentText, defaultInt(c.MaxDocumentChars, 12000))
 	for i, chunk := range req.Chunks {
 		answer, err := c.Model.Chat(ctx, []ark.ChatMessage{
-			{Role: "system", Content: "你是 RAG 文档分块定位器。请基于全文和当前 chunk，输出一句简短上下文，说明该 chunk 在全文中的位置和主题。只输出上下文本身。"},
+			{Role: "system", Content: c.systemPrompt()},
 			{Role: "user", Content: fmt.Sprintf("document_name: %s\n\ndocument:\n%s\n\nchunk:\n%s", req.DocumentName, document, trimRunes(chunk.Content, defaultInt(c.MaxChunkChars, 2000)))},
 		})
 		if err != nil {
@@ -47,6 +48,13 @@ func (c LLMContextualizer) Contextualize(ctx context.Context, req Contextualizat
 		contexts[i] = cleanContextualText(answer, defaultInt(c.MaxContextChars, 500))
 	}
 	return contexts, nil, nil
+}
+
+func (c LLMContextualizer) systemPrompt() string {
+	if prompt := strings.TrimSpace(c.SystemPrompt); prompt != "" {
+		return prompt
+	}
+	return "你是 RAG 文档分块定位器。请基于全文和当前 chunk，输出一句简短上下文，说明该 chunk 在全文中的位置和主题。只输出上下文本身。"
 }
 
 func (c LLMContextualizer) handleFailure(contexts []string, err error) ([]string, []string, error) {
