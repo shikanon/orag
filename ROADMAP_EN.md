@@ -193,7 +193,7 @@ Latest progress: the Pack-declared P2 `p2_recursive_400_80` is now a direct chil
 
 ### Stable extension points
 
-- Define minimal stable interfaces and conformance tests for parsers, chunkers, embeddings, retrievers, rerankers, model providers, and storage adapters.
+- A dependency-free public `extensions` Beta contract and `extensions/conformance` suite now cover parsers, chunkers, embeddings, retrievers, rerankers, generators, and storage with deterministic fixtures. The runtime keeps its built-in composition boundary until real downstream demand justifies dynamic registration.
 - Expand integrations only in response to real users. Separate certified, community, and experimental integrations in the support matrix.
 - Publish SDK/API compatibility policy, deprecation windows, upgrade tooling, and long-term support scope.
 
