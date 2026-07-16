@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	orag "github.com/shikanon/orag"
 	"github.com/shikanon/orag/internal/agentsync"
 	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/backup"
@@ -63,6 +64,10 @@ func main() {
 	case "benchmark-report":
 		if err := benchmarkReportCmd(os.Args[2:], os.Stdout); err != nil {
 			log.Fatalf("benchmark-report: %v", err)
+		}
+	case "benchmark-run":
+		if err := benchmarkRunCmd(os.Args[2:], os.Stdout); err != nil {
+			log.Fatalf("benchmark-run: %v", err)
 		}
 	case "backup-verify":
 		if err := backupVerifyCmd(os.Args[2:], os.Stdout); err != nil {
@@ -118,6 +123,60 @@ func benchmarkReportCmd(args []string, out io.Writer) error {
 		return fmt.Errorf("fingerprint report")
 	}
 	_, err = fmt.Fprintf(out, "verified %s %s\n", report.ID, fingerprint)
+	return err
+}
+
+func benchmarkRunCmd(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("benchmark-run", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	output := fs.String("output", "", "report output JSON file")
+	buildRevision := fs.String("build-revision", "", "revision under measurement")
+	warmup := fs.Int("warmup-requests", 10, "warmup request count")
+	measured := fs.Int("measured-requests", 20, "measured request count")
+	concurrency := fs.Int("concurrency", 1, "query concurrency")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*output) == "" {
+		return fmt.Errorf("output is required")
+	}
+	raw, err := orag.RunMockPerformanceBaseline(context.Background(), orag.PerformanceBaselineOptions{
+		BuildRevision:    strings.TrimSpace(*buildRevision),
+		WarmupRequests:   *warmup,
+		MeasuredRequests: *measured,
+		Concurrency:      *concurrency,
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := benchmark.Parse(raw); err != nil {
+		return fmt.Errorf("validate generated report: %w", err)
+	}
+	dir := filepath.Dir(*output)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(dir, ".orag-benchmark-*")
+	if err != nil {
+		return err
+	}
+	temporaryName := temporary.Name()
+	defer os.Remove(temporaryName)
+	if err := temporary.Chmod(0o600); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(raw); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryName, *output); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "wrote %s\n", *output)
 	return err
 }
 
@@ -410,5 +469,5 @@ func (f optionalBoolFlag) IsBoolFlag() bool {
 }
 
 func usage() {
-	fmt.Println("usage: oragctl [migrate [--status]|eval|token|trace|generate-agent-artifacts|generate-skills]")
+	fmt.Println("usage: oragctl [migrate [--status]|eval|token|trace|benchmark-run|benchmark-report|generate-agent-artifacts|generate-skills]")
 }

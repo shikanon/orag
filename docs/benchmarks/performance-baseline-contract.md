@@ -13,11 +13,18 @@
 验证会拒绝未知字段、多个 JSON 值、无效 SHA-256、非 mock 运行、少于 20 个测量请求、p95 小于 p50、超出 `[0,1]` 的缓存命中率，以及无法由原始值复算的吞吐。
 
 ```bash
+make benchmark-report-run BENCHMARK_REPORT=.tmp/performance-baseline.json
+make benchmark-report-verify BENCHMARK_REPORT=.tmp/performance-baseline.json
 make console-real-tutorial-benchmark-e2e
-make benchmark-report-verify BENCHMARK_REPORT=path/to/report.json
 ```
 
-前一个命令验证真实 PostgreSQL、Qdrant、迁移、API、Console 与固定 Benchmark fixture 的可复现教程路径。第二个命令验证报告的比较前提和统计口径；运行器生成正式公开报告前，不应在 README 或营销材料中宣称任何通用性能数字。
+第一个命令使用公开 Go SDK 的 `MockConfig` 实际执行固定的三文档、三问题
+`text-rag/mock-baseline-v1` workload：入库、10 次预热、20 次测量查询和一次评测。
+它不读取真实 Key、服务环境变量或外部存储，并从观测到的 wall-clock 结果生成报告。
+`model_calls` 是 mock 管线调用次数的明确记账（预热、测量和 evaluator 查询），
+`cost_usd` 固定为零。第二个命令验证报告的比较前提和统计口径；第三个命令验证真实 PostgreSQL、Qdrant、迁移、API、Console 与固定 Benchmark fixture 的可复现教程路径。
+
+本地 mock 结果只能作为同一机器、同一 Go 运行时、同一构建和同一负载下的回归基线。发布任何可比较的公开性能结果前，必须披露硬件、操作系统、Go 版本、provider/网络条件和完整命令；不得把该报告写成生产吞吐或跨硬件结论。
 
 ## 比较规则
 

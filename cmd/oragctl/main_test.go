@@ -71,6 +71,35 @@ func TestBenchmarkReportCmdVerifiesControlledReport(t *testing.T) {
 	}
 }
 
+func TestBenchmarkRunCmdWritesVerifiedReport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "report.json")
+	var out bytes.Buffer
+	if err := benchmarkRunCmd([]string{"--output", path, "--build-revision", "test-revision"}, &out); err != nil {
+		t.Fatalf("benchmarkRunCmd() error = %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := benchmarkReportCmd([]string{"--file", path}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("benchmarkReportCmd() generated report error = %v", err)
+	}
+	if !strings.Contains(out.String(), "wrote "+path) || !strings.Contains(string(raw), "text-rag/mock-baseline-v1") {
+		t.Fatalf("benchmark runner output=%q report=%s", out.String(), raw)
+	}
+}
+
+func TestBenchmarkRunCmdRejectsInvalidInputWithoutOutput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "report.json")
+	err := benchmarkRunCmd([]string{"--output", path, "--build-revision", "test-revision", "--measured-requests", "19"}, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("benchmarkRunCmd() accepted invalid measured request count")
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("invalid benchmark run left output: %v", statErr)
+	}
+}
+
 func TestRunTraceLookupNotFound(t *testing.T) {
 	var out bytes.Buffer
 

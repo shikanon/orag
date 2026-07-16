@@ -2,7 +2,7 @@
 
 English | [简体中文](./ROADMAP.md)
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 ## Positioning
 
@@ -156,7 +156,7 @@ For dependency boundaries, [#221](https://github.com/shikanon/orag/issues/221) u
 
 - Optional OpenTelemetry trace/metrics exporters and importable Prometheus/Grafana resources with baseline alerts are available. OTLP traces support W3C `traceparent` cross-service propagation and parent-based ratio head sampling; metrics persistence and Collector retention/tail-sampling calibration remain operator work.
 - Gate Go unit/vet/race, OpenAPI, Console typecheck/unit/build/E2E, PostgreSQL + Qdrant integration, and dual-architecture image smoke tests.
-- A verifiable performance-baseline report contract now fixes Benchmark Pack, mock-run, environment/build/load fingerprints, and ingestion throughput, query p50/p95, cache-hit, evaluation-duration, model-call, and cost definitions; publish comparable results next with disclosed hardware and provider conditions.
+- A verifiable performance-baseline report contract and deterministic mock runner now execute a fixed public-SDK workload through ingestion, warmup/measured queries, and evaluation while recording environment/build/load fingerprints and ingestion throughput, query p50/p95, cache-hit, evaluation-duration, model-call, and cost definitions; publish comparable results next with disclosed hardware and provider conditions.
 
 ### Phase exit criteria
 
