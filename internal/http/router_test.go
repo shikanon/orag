@@ -71,6 +71,14 @@ func TestTutorialCatalogRoutes(t *testing.T) {
 	if versioned.Code != 200 || versioned.Body != current.Body {
 		t.Fatalf("versioned status = %d body=%s, current=%s", versioned.Code, versioned.Body, current.Body)
 	}
+
+	replay := performJSON(h, "GET", "/v1/tutorials/text-rag/replay", "", token)
+	if replay.Code != http.StatusOK || !strings.Contains(replay.Body, `"id":"text-rag/1.0.0/benchmark/replay-v1"`) || !strings.Contains(replay.Body, `"fingerprint":"`) || strings.Contains(strings.ToLower(replay.Body), "access_key") {
+		t.Fatalf("replay status=%d body=%s", replay.Code, replay.Body)
+	}
+	if unavailable := performJSON(h, "GET", "/v1/tutorials/video-rag/replay", "", token); unavailable.Code != http.StatusNotFound || !strings.Contains(unavailable.Body, `"code":"tutorial_replay_not_found"`) {
+		t.Fatalf("unavailable replay status=%d body=%s", unavailable.Code, unavailable.Body)
+	}
 }
 
 func TestTutorialCloneRoutesCreatePollAndExposeNoStorageDetails(t *testing.T) {

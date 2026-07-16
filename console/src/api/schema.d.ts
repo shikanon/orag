@@ -770,6 +770,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tutorials/{template_id}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: "text-rag" | "visual-document-rag" | "video-rag";
+            };
+            cookie?: never;
+        };
+        /** @description Returns the immutable, offline official Replay for a tutorial. It contains public aggregate facts from a controlled environment only; it never starts a model, creates a project, or returns private storage coordinates. */
+        get: operations["getTutorialReplay"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tutorials/{template_id}/clones": {
         parameters: {
             query?: never;
@@ -1637,7 +1656,7 @@ export interface components {
          *           "requires_license_check": true
          *         }
          *       ],
-         *       "replay_available": true
+         *       "replay_available": false
          *     } */
         TutorialTemplate: {
             /** @example text-rag */
@@ -1667,6 +1686,40 @@ export interface components {
         };
         TutorialListResponse: {
             tutorials: components["schemas"]["TutorialTemplate"][];
+        };
+        TutorialReplayMetric: {
+            name: string;
+            value: number;
+        };
+        TutorialReplayVariant: {
+            /** @enum {string} */
+            variant: "baseline" | "p8_context_pack";
+            /** @enum {string} */
+            profile: "high_precision";
+            top_k: number;
+            context_pack_top_n: number;
+            context_pack_max_tokens: number;
+            metrics: components["schemas"]["TutorialReplayMetric"][];
+            index_metrics: components["schemas"]["TutorialReplayMetric"][];
+        };
+        TutorialReplaySnapshot: {
+            /** @example text-rag/1.0.0/benchmark/replay-v1 */
+            id: string;
+            /** @enum {string} */
+            template_id: "text-rag";
+            template_version: string;
+            /** @enum {string} */
+            pack_tier: "benchmark";
+            pack_manifest_sha256: string;
+            runtime_environment_sha256: string;
+            build_revision: string;
+            evaluator_version: string;
+            /** Format: date-time */
+            generated_at: string;
+            summary: string;
+            baseline: components["schemas"]["TutorialReplayVariant"];
+            candidate: components["schemas"]["TutorialReplayVariant"];
+            fingerprint: string;
         };
         TutorialCloneProjectInput: {
             name: string;
@@ -4657,6 +4710,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TutorialTemplate"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    getTutorialReplay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: "text-rag" | "visual-document-rag" | "video-rag";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable official tutorial Replay. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialReplaySnapshot"];
                 };
             };
             401: components["responses"]["Error"];

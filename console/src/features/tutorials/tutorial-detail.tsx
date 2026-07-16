@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ApiError, tutorialApi, type StartTutorialCloneInput, type TutorialTemplate } from '../../api/client'
+import { ApiError, tutorialApi, type StartTutorialCloneInput, type TutorialReplaySnapshot, type TutorialTemplate } from '../../api/client'
 
 export function TutorialDetail() {
   const { templateId = '' } = useParams()
@@ -18,17 +18,30 @@ export function TutorialDetail() {
 
 function TutorialContent({ tutorial }: { tutorial: TutorialTemplate }) {
   const [cloneOpen, setCloneOpen] = useState(false)
+	const replay = useQuery({ queryKey: ['tutorials', 'replay', tutorial.id], queryFn: () => tutorialApi.getReplay(tutorial.id), enabled: tutorial.replay_available })
   return <main className="content tutorial-detail">
     <Link className="back-link" to="/tutorials">← 返回教程库</Link>
     <header className="tutorial-detail-header">
-      <div><p className="eyebrow">{tutorial.source_benchmark} · v{tutorial.version}</p><h1>{tutorial.title}</h1><p>{tutorial.summary}</p><div className="tutorial-statuses"><span>{tutorial.replay_available ? 'Replay 结果即将开放' : '仅 Live Run'}</span><span>预计 {tutorial.estimated_duration_minutes} 分钟</span><span>系统只读模板</span></div></div>
+      <div><p className="eyebrow">{tutorial.source_benchmark} · v{tutorial.version}</p><h1>{tutorial.title}</h1><p>{tutorial.summary}</p><div className="tutorial-statuses"><span>{tutorial.replay_available ? '官方 Replay 可用' : '仅 Live Run'}</span><span>预计 {tutorial.estimated_duration_minutes} 分钟</span><span>系统只读模板</span></div></div>
       <button className="primary-button" type="button" onClick={() => setCloneOpen(true)}>克隆教程</button>
     </header>
     <section className="tutorial-detail-section"><div className="section-heading"><p className="eyebrow">Dataset first</p><h2>逐项消融实验</h2><p>固定数据和评测口径，每次只改变一个模块，定位提升发生在哪类问题上。</p></div><ol className="pipeline-sequence">{tutorial.pipeline_stages.map((stage) => <li key={stage}><span>{stage.split(' ')[0]}</span><strong>{stage.slice(stage.indexOf(' ') + 1)}</strong></li>)}</ol></section>
     <section className="tutorial-detail-section split-section"><div><div className="section-heading"><p className="eyebrow">Scenario slices</p><h2>重点数据维度</h2></div><div className="tutorial-tags large">{tutorial.scenario_dimensions.map((dimension) => <span key={dimension}>{dimension}</span>)}</div></div><div><div className="section-heading"><p className="eyebrow">Source</p><h2>公开基准来源</h2></div><p className="source-copy">数据包基于公开基准的可再分发精选子集。安装前仍需确认上游许可。</p><a className="text-link" href={tutorial.source_url} target="_blank" rel="noreferrer">查看 {tutorial.source_benchmark} 原始项目 ↗</a></div></section>
+    {tutorial.replay_available ? <OfficialReplay replay={replay.data} loading={replay.isLoading} unavailable={replay.isError} /> : null}
     <section className="tutorial-detail-section"><div className="section-heading"><p className="eyebrow">Data packages</p><h2>选择实验规模</h2></div><div className="tutorial-pack-grid">{tutorial.packs.map((pack) => <article className="tutorial-pack" key={pack.tier}><div><p className="pack-tier">{pack.tier === 'quick' ? '快速验证' : '完整对比'}</p><h3>{pack.tier === 'quick' ? 'Quick Pack' : 'Benchmark Pack'}</h3></div><dl><div><dt>准备时间</dt><dd>约 {pack.estimated_minutes} 分钟</dd></div><div><dt>下载大小</dt><dd>{formatBytes(pack.estimated_bytes)}</dd></div><div><dt>许可确认</dt><dd>{pack.requires_license_check ? '需要' : '不需要'}</dd></div></dl><p className="pack-note">由 ORAG 服务端校验并写入项目私有存储。</p></article>)}</div></section>
     {cloneOpen ? <CloneTutorialDialog tutorial={tutorial} onClose={() => setCloneOpen(false)} /> : null}
   </main>
+}
+
+function OfficialReplay({ replay, loading, unavailable }: { replay?: TutorialReplaySnapshot, loading: boolean, unavailable: boolean }) {
+  return <section className="tutorial-detail-section" aria-label="官方 Replay">
+    <div className="section-heading"><p className="eyebrow">Official Replay · read only</p><h2>固定环境的官方复现</h2><p>这是受控 Benchmark Pack 的离线快照，不执行模型、不创建项目，也不代表当前环境的 Live Run。</p></div>
+    {loading ? <div className="replay-card" aria-busy="true"><span className="skeleton-line short" /><span className="skeleton-line" /></div> : unavailable || !replay ? <div className="replay-card" role="status"><strong>Replay 暂不可读取</strong><p>官方快照不可用时不会回退为推测结果；你仍可克隆教程运行自己的实验。</p></div> : <div className="replay-card"><p>{replay.summary}</p><dl className="replay-provenance"><div><dt>Pack</dt><dd>{replay.pack_tier} · {replay.pack_manifest_sha256.slice(0, 12)}…</dd></div><div><dt>环境</dt><dd>{replay.runtime_environment_sha256.slice(0, 12)}…</dd></div><div><dt>构建</dt><dd>{replay.build_revision}</dd></div><div><dt>指纹</dt><dd>{replay.fingerprint.slice(0, 12)}…</dd></div></dl><div className="replay-variants"><ReplayVariant title="P0 基线" variant={replay.baseline} /><ReplayVariant title="P8 Context Pack" variant={replay.candidate} /></div></div>}
+  </section>
+}
+
+function ReplayVariant({ title, variant }: { title: string, variant: TutorialReplaySnapshot['baseline'] }) {
+  return <article><h3>{title}</h3><p>{variant.profile} · Top-K {variant.top_k} · Context Pack {variant.context_pack_top_n}/{variant.context_pack_max_tokens}</p><dl>{[...variant.metrics, ...variant.index_metrics].map((metric) => <div key={metric.name}><dt>{metric.name}</dt><dd>{metric.value}</dd></div>)}</dl></article>
 }
 
 function CloneTutorialDialog({ tutorial, onClose }: { tutorial: TutorialTemplate; onClose: () => void }) {

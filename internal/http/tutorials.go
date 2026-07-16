@@ -62,6 +62,15 @@ func (s *Server) getTutorialVersion(_ context.Context, c *app.RequestContext) {
 	s.writeTutorial(c, c.Param("template_id"), c.Param("version"))
 }
 
+func (s *Server) getTutorialReplay(_ context.Context, c *app.RequestContext) {
+	replay, err := s.App.Tutorials.Replay(c.Param("template_id"))
+	if err != nil {
+		writeTutorialReplayError(c, err)
+		return
+	}
+	c.JSON(consts.StatusOK, replay)
+}
+
 func (s *Server) writeTutorial(c *app.RequestContext, templateID, version string) {
 	item, err := s.App.Tutorials.Get(templateID, version)
 	if err != nil {
@@ -144,6 +153,17 @@ func writeTutorialError(c *app.RequestContext, err error) {
 		writeError(c, consts.StatusNotFound, "tutorial_not_found", "tutorial not found")
 	case errors.Is(err, tutorial.ErrVersionNotFound):
 		writeError(c, consts.StatusNotFound, "tutorial_version_not_found", "tutorial version not found")
+	default:
+		writeError(c, consts.StatusInternalServerError, "tutorial_catalog_failed", "tutorial catalog is unavailable")
+	}
+}
+
+func writeTutorialReplayError(c *app.RequestContext, err error) {
+	switch {
+	case errors.Is(err, tutorial.ErrTemplateNotFound):
+		writeError(c, consts.StatusNotFound, "tutorial_not_found", "tutorial not found")
+	case errors.Is(err, tutorial.ErrReplayNotFound):
+		writeError(c, consts.StatusNotFound, "tutorial_replay_not_found", "official tutorial replay is not available")
 	default:
 		writeError(c, consts.StatusInternalServerError, "tutorial_catalog_failed", "tutorial catalog is unavailable")
 	}

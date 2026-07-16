@@ -39,7 +39,7 @@
       {"tier": "quick", "manifest_path": "visual-document-rag/1.0.0/quick/manifest.json", "estimated_bytes": 536870912, "estimated_minutes": 20, "requires_license_check": true},
       {"tier": "benchmark", "manifest_path": "visual-document-rag/1.0.0/benchmark/manifest.json", "estimated_bytes": 4294967296, "estimated_minutes": 90, "requires_license_check": true}
     ],
-    "replay_available": true
+    "replay_available": false
   },
   {
     "id": "video-rag",
@@ -60,6 +60,6 @@
       {"tier": "quick", "manifest_path": "video-rag/1.0.0/quick/manifest.json", "estimated_bytes": 2147483648, "estimated_minutes": 30, "requires_license_check": true},
       {"tier": "benchmark", "manifest_path": "video-rag/1.0.0/benchmark/manifest.json", "estimated_bytes": 21474836480, "estimated_minutes": 180, "requires_license_check": true}
     ],
-    "replay_available": true
+    "replay_available": false
   }
 ]
