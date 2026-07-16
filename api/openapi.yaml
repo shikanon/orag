@@ -1513,6 +1513,48 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /v1/projects/{project_id}/tutorial-experiment/video-source:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Tutorials]
+      operationId: importTutorialVideoSource
+      x-orag-maturity: experimental
+      description: >-
+        Imports an owner-authorized Video-MME source into the project's private
+        store. The server verifies the supplied SHA-256 and byte count, derives
+        fixed-cadence temporal evidence, and never accepts a URL, object key, or
+        browser-selected sampling coordinate. This endpoint does not publish or
+        redistribute media, subtitles, annotations, questions, or answers.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ImportTutorialVideoSourceRequest"
+      responses:
+        "201":
+          description: Verified private video source imported and deterministic temporal evidence staged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportTutorialVideoSourceResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs:
     parameters:
       - name: project_id
@@ -3067,7 +3109,7 @@ components:
           enum: [pending, installing, pack_installed, failed]
         runtime_status:
           type: string
-          enum: [pending, runtime_unavailable, ready]
+          enum: [pending, runtime_unavailable, temporal_index_pending_evaluation, ready]
         knowledge_base_id:
           type: string
           description: Server-derived project knowledge-base identifier. Never an object storage location.
@@ -3076,7 +3118,7 @@ components:
           description: Server-derived project evaluation dataset identifier.
         baseline_profile:
           type: string
-          enum: [realtime]
+          enum: [realtime, high_precision, visual_page, temporal_page]
         baseline_top_k:
           type: integer
           minimum: 1
@@ -3150,6 +3192,46 @@ components:
         available:
           type: boolean
           description: Whether this installed Pack currently has a runnable runtime root.
+    ImportTutorialVideoSourceRequest:
+      type: object
+      required: [license_confirmed, file, alias, sha256, content_type, duration_ms]
+      properties:
+        license_confirmed:
+          type: string
+          enum: ["true"]
+          description: Must be the literal string true; confirms the caller is authorized to privately import this source.
+        file:
+          type: string
+          format: binary
+          description: Private video bytes. They are SHA-256 verified before storage.
+        alias:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Caller-owned label used only in private temporal evidence identifiers.
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: Lowercase SHA-256 for the uploaded bytes.
+        content_type:
+          type: string
+          enum: [video/mp4, video/webm, video/quicktime]
+          description: Declared video MIME type; the server validates it against the fixed import allowlist.
+        duration_ms:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 86400000
+          description: Authorized source duration in milliseconds, used only with the protocol's fixed cadence.
+    ImportTutorialVideoSourceResponse:
+      type: object
+      required: [source_alias, temporal_segment_count]
+      properties:
+        source_alias:
+          type: string
+        temporal_segment_count:
+          type: integer
+          minimum: 1
     StartTutorialExperimentRunRequest:
       type: object
       required: [idempotency_key]
