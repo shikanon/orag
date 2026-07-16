@@ -1772,6 +1772,10 @@ export interface components {
             readonly rerank_enabled?: boolean;
             /** @description Whether this immutable variant builds graph relations and uses graph expansion during evaluation. */
             readonly graph_retrieval_enabled?: boolean;
+            /** @description Fixed maximum number of retrieved evidence chunks packed into the generation context. */
+            readonly context_pack_top_n?: number;
+            /** @description Fixed maximum context-pack token budget in deterministic text units. */
+            readonly context_pack_max_tokens?: number;
             /** @description Whether this installed Pack currently has a runnable runtime root. */
             available: boolean;
         };
@@ -1836,6 +1840,10 @@ export interface components {
             readonly rerank_enabled?: boolean;
             /** @description Stored server-derived graph retrieval state for this run. */
             readonly graph_retrieval_enabled?: boolean;
+            /** @description Stored server-derived maximum evidence chunks packed into generation context. */
+            readonly context_pack_top_n?: number;
+            /** @description Stored server-derived context-pack token budget in deterministic text units. */
+            readonly context_pack_max_tokens?: number;
             /** @description Measured chunks stored during this run's private-pack indexing stage. */
             readonly indexed_chunk_count?: number;
             /**

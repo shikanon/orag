@@ -84,6 +84,7 @@ function VariantCard({ variant, disabled, pending, onStart }: { variant: Tutoria
     {variant.multi_query_count ? <p>查询扩展：<code>multi_query/{variant.multi_query_count}</code></p> : null}
     <p>Rerank：{variant.rerank_enabled ? '已由服务端固定启用' : '未启用'}</p>
     <p>图检索：{variant.graph_retrieval_enabled ? '已由服务端固定启用' : '未启用'}</p>
+    <p>Context Pack：{variant.context_pack_top_n && variant.context_pack_max_tokens ? <code>{variant.context_pack_top_n} / {variant.context_pack_max_tokens}</code> : '未声明'}</p>
     <p>{variantDescription(variant, baseline)}</p>
     <button className={baseline ? 'primary-button' : 'secondary-button'} disabled={disabled} onClick={() => onStart(variant.id)}>{pending ? '正在提交…' : variantButtonLabel(variant)}</button>
   </article>
@@ -115,6 +116,7 @@ function RunAudit({ run }: { run: TutorialExperimentRun }) {
     <div><dt>查询扩展</dt><dd><code>{run.query_expansion_mode || 'none'}{run.multi_query_count ? `/${run.multi_query_count}` : ''}</code></dd></div>
     <div><dt>Rerank</dt><dd>{run.rerank_enabled ? '已启用' : '未启用'}</dd></div>
     <div><dt>图检索</dt><dd>{run.graph_retrieval_enabled ? '已启用' : '未启用'}</dd></div>
+    <div><dt>Context Pack</dt><dd>{run.context_pack_top_n && run.context_pack_max_tokens ? <code>{run.context_pack_top_n} / {run.context_pack_max_tokens}</code> : '—'}</dd></div>
     {run.reused_baseline_index ? <div><dt>索引来源</dt><dd>兼容 P0 父运行</dd></div> : null}
     {run.contextual_retrieval_enabled ? <><div><dt>已上下文化 Chunk</dt><dd>{run.contextualized_chunk_count ?? '—'}</dd></div><div><dt>平均上下文文本单元</dt><dd>{run.average_context_tokens == null ? '—' : formatMetric(run.average_context_tokens)}</dd></div></> : null}
     {run.baseline_run_id ? <div><dt>P0 父运行</dt><dd><code>{run.baseline_run_id}</code></dd></div> : null}
@@ -152,6 +154,7 @@ function variantTitle(variant: TutorialExperimentVariant) {
 	if (variant.id === 'p5_multi_query_retrieval') return 'Multi-query retrieval · P5'
 	if (variant.id === 'p6_rerank_retrieval') return 'Rerank retrieval · P6'
 	if (variant.id === 'p7_graph_retrieval') return 'Graph retrieval · P7'
+	if (variant.id === 'p8_context_pack') return 'Context pack · P8'
   return variant.chapter || variant.id
 }
 function variantDescription(variant: TutorialExperimentVariant, baseline: boolean) {
@@ -163,6 +166,7 @@ function variantDescription(variant: TutorialExperimentVariant, baseline: boolea
 	if (variant.id === 'p5_multi_query_retrieval') return '复用兼容 P0 索引；只在实时评测中固定启用 3 路 multi-query，rewrite 与 HyDE 保持关闭。'
 	if (variant.id === 'p6_rerank_retrieval') return '复用兼容 P0 索引；只启用服务端固定 rerank，解析、分块、检索、评测集与 Top-K 保持 P0。'
 	if (variant.id === 'p7_graph_retrieval') return '独立 Knowledge Base；只构建服务端固定图关系并用图扩展检索，解析、分块、评测集与 Top-K 保持 P0。'
+	if (variant.id === 'p8_context_pack') return '复用兼容 P0 索引；只将服务端 Context Pack 从前 5 条证据固定缩小为前 3 条，检索、评测集与 Top-K 保持 P0。'
   return '独立 Knowledge Base；仅使用此 Pack 声明的单变量服务器配置。'
 }
 function variantButtonLabel(variant: TutorialExperimentVariant) {
@@ -174,5 +178,6 @@ function variantButtonLabel(variant: TutorialExperimentVariant) {
 	if (variant.id === 'p5_multi_query_retrieval') return '运行 P5 多查询候选'
 	if (variant.id === 'p6_rerank_retrieval') return '运行 P6 重排候选'
 	if (variant.id === 'p7_graph_retrieval') return '运行 P7 图检索候选'
+	if (variant.id === 'p8_context_pack') return '运行 P8 Context Pack 候选'
   return `运行 ${variant.chapter || '候选'}`
 }

@@ -184,6 +184,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	tutorialRuns := tutorial.NewLiveRunService(tutorialRunRepo, backend.tutorialCloneRepo, func() time.Time { return time.Now().UTC() })
 	tutorialBaselineRAG := *ragSvc
 	tutorialBaselineRAG.Retriever = hybrid
+	tutorialBaselineRAG.Packer = rag.ContextPacker{MaxTokens: tutorial.TutorialContextPackMaxTokens, TopN: tutorial.TutorialBaselineContextPackTopN}
 	tutorialBaselineRAG.Pipeline = nil
 	tutorialBaselineRAG.Cache = nil
 	tutorialBaselineRAG.QueryRouter = nil
@@ -225,7 +226,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		EmbeddingProvider: cfg.Models.EmbeddingProvider, EmbeddingModel: cfg.Ark.EmbeddingModel,
 		RerankProvider: cfg.Models.RerankProvider, RerankModel: cfg.Ark.RerankModel,
 		MultimodalProvider: cfg.Models.MultimodalProvider, MultimodalModel: cfg.Ark.MultimodalModel,
-		PromptCacheMode: cfg.RAG.PromptCacheMode, EvaluatorVersion: "tutorial_eval_v4",
+		PromptCacheMode: cfg.RAG.PromptCacheMode, EvaluatorVersion: "tutorial_eval_v5",
 	}, map[string]tutorial.RuntimeIngestor{
 		tutorial.TutorialP1StructuredJSONCandidateID: p1TutorialIngest,
 		tutorial.TutorialP2RecursiveChunkCandidateID: p2TutorialIngest,
@@ -241,11 +242,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	rerankTutorialRAG.DisableRerank = false
 	graphTutorialRAG := tutorialBaselineRAG
 	graphTutorialRAG.Retriever = kb.GraphRetriever{Base: hybrid, Store: tutorialGraphStore, TopK: cfg.RAG.GraphRetrieval.TopK}
+	contextPackTutorialRAG := tutorialBaselineRAG
+	contextPackTutorialRAG.Packer.TopN = tutorial.TutorialP8ContextPackTopN
 	tutorialRuns.ConfigureCandidateEvaluators(map[string]tutorial.RuntimeEvaluator{
-		tutorial.TutorialP4SparseCandidateID:     eval.Runner{RAG: &sparseTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
-		tutorial.TutorialP5MultiQueryCandidateID: eval.Runner{RAG: &multiQueryTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
-		tutorial.TutorialP6RerankCandidateID:     eval.Runner{RAG: &rerankTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
-		tutorial.TutorialP7GraphCandidateID:      eval.Runner{RAG: &graphTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
+		tutorial.TutorialP4SparseCandidateID:      eval.Runner{RAG: &sparseTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
+		tutorial.TutorialP5MultiQueryCandidateID:  eval.Runner{RAG: &multiQueryTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
+		tutorial.TutorialP6RerankCandidateID:      eval.Runner{RAG: &rerankTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
+		tutorial.TutorialP7GraphCandidateID:       eval.Runner{RAG: &graphTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
+		tutorial.TutorialP8ContextPackCandidateID: eval.Runner{RAG: &contextPackTutorialRAG, Datasets: datasets, Repository: backend.evalRepo},
 	})
 	optimizerRunner := optimizer.InternalRAGRunner{
 		BaseRAG:    ragSvc,

@@ -38,6 +38,8 @@ type runtimeDefinition struct {
 	multiQueryCount            int
 	rerankEnabled              bool
 	graphRetrievalEnabled      bool
+	contextPackTopN            int
+	contextPackMaxTokens       int
 	comparisonFingerprint      string
 	definitionFingerprint      string
 }
@@ -47,15 +49,17 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		return runtimeDefinition{}, ErrRuntimeUnavailable
 	}
 	definition := runtimeDefinition{
-		knowledgeBaseID:    experiment.KnowledgeBaseID,
-		datasetID:          experiment.DatasetID,
-		profile:            experiment.BaselineProfile,
-		topK:               experiment.BaselineTopK,
-		parserMethod:       "basic",
-		chunkSizeTokens:    TutorialBaselineChunkSizeTokens,
-		chunkOverlapTokens: TutorialBaselineChunkOverlapTokens,
-		retrievalStrategy:  TutorialRetrievalStrategyHybrid,
-		queryExpansionMode: TutorialQueryExpansionNone,
+		knowledgeBaseID:      experiment.KnowledgeBaseID,
+		datasetID:            experiment.DatasetID,
+		profile:              experiment.BaselineProfile,
+		topK:                 experiment.BaselineTopK,
+		parserMethod:         "basic",
+		chunkSizeTokens:      TutorialBaselineChunkSizeTokens,
+		chunkOverlapTokens:   TutorialBaselineChunkOverlapTokens,
+		retrievalStrategy:    TutorialRetrievalStrategyHybrid,
+		queryExpansionMode:   TutorialQueryExpansionNone,
+		contextPackTopN:      TutorialBaselineContextPackTopN,
+		contextPackMaxTokens: TutorialContextPackMaxTokens,
 	}
 	if variant != "baseline" {
 		candidate, found := runtimeCandidate(experiment.PackManifest.Runtime.Candidates, variant)
@@ -82,6 +86,12 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		definition.multiQueryCount = candidate.MultiQueryCount
 		definition.rerankEnabled = candidate.RerankEnabled
 		definition.graphRetrievalEnabled = candidate.GraphRetrievalEnabled
+		if candidate.ContextPackTopN > 0 {
+			definition.contextPackTopN = candidate.ContextPackTopN
+		}
+		if candidate.ContextPackMaxTokens > 0 {
+			definition.contextPackMaxTokens = candidate.ContextPackMaxTokens
+		}
 		if candidate.MultiQueryCount > 0 {
 			definition.queryExpansionMode = TutorialQueryExpansionMultiQuery
 		}
@@ -118,6 +128,8 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		MultiQueryCount            int    `json:"multi_query_count"`
 		RerankEnabled              bool   `json:"rerank_enabled"`
 		GraphRetrievalEnabled      bool   `json:"graph_retrieval_enabled"`
+		ContextPackTopN            int    `json:"context_pack_top_n"`
+		ContextPackMaxTokens       int    `json:"context_pack_max_tokens"`
 		KnowledgeBaseID            string `json:"knowledge_base_id"`
 	}{
 		ComparisonFingerprint: definition.comparisonFingerprint, Variant: variant,
@@ -128,6 +140,8 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		QueryExpansionMode: definition.queryExpansionMode, MultiQueryCount: definition.multiQueryCount,
 		RerankEnabled:         definition.rerankEnabled,
 		GraphRetrievalEnabled: definition.graphRetrievalEnabled,
+		ContextPackTopN:       definition.contextPackTopN,
+		ContextPackMaxTokens:  definition.contextPackMaxTokens,
 	})
 	return definition, nil
 }
@@ -156,12 +170,14 @@ func (d runtimeDefinition) matches(run ExperimentRun) bool {
 		run.MultiQueryCount == d.multiQueryCount &&
 		run.RerankEnabled == d.rerankEnabled &&
 		run.GraphRetrievalEnabled == d.graphRetrievalEnabled &&
+		run.ContextPackTopN == d.contextPackTopN &&
+		run.ContextPackMaxTokens == d.contextPackMaxTokens &&
 		run.ComparisonFingerprint == d.comparisonFingerprint &&
 		run.DefinitionFingerprint == d.definitionFingerprint
 }
 
 func (r ExperimentRun) isLegacyBaseline() bool {
-	return r.Variant == "baseline" && r.KnowledgeBaseID == "" && r.DatasetID == "" && r.Profile == "" && r.TopK == 0 && r.ParserMethod == "" && r.ChunkSizeTokens == 0 && r.ChunkOverlapTokens == 0 && !r.ContextualRetrievalEnabled && (r.RetrievalStrategy == "" || r.RetrievalStrategy == TutorialRetrievalStrategyHybrid) && !r.ReusedBaselineIndex && (r.QueryExpansionMode == "" || r.QueryExpansionMode == TutorialQueryExpansionNone) && r.MultiQueryCount == 0 && !r.RerankEnabled && !r.GraphRetrievalEnabled && r.ComparisonFingerprint == "" && r.DefinitionFingerprint == ""
+	return r.Variant == "baseline" && r.KnowledgeBaseID == "" && r.DatasetID == "" && r.Profile == "" && r.TopK == 0 && r.ParserMethod == "" && r.ChunkSizeTokens == 0 && r.ChunkOverlapTokens == 0 && !r.ContextualRetrievalEnabled && (r.RetrievalStrategy == "" || r.RetrievalStrategy == TutorialRetrievalStrategyHybrid) && !r.ReusedBaselineIndex && (r.QueryExpansionMode == "" || r.QueryExpansionMode == TutorialQueryExpansionNone) && r.MultiQueryCount == 0 && !r.RerankEnabled && !r.GraphRetrievalEnabled && r.ContextPackTopN == 0 && r.ContextPackMaxTokens == 0 && r.ComparisonFingerprint == "" && r.DefinitionFingerprint == ""
 }
 
 func manifestSHA256(manifest Manifest) string { return jsonSHA256(manifest) }

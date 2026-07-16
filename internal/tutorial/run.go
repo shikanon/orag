@@ -66,6 +66,8 @@ type ExperimentRun struct {
 	MultiQueryCount            int                  `json:"multi_query_count"`
 	RerankEnabled              bool                 `json:"rerank_enabled"`
 	GraphRetrievalEnabled      bool                 `json:"graph_retrieval_enabled"`
+	ContextPackTopN            int                  `json:"context_pack_top_n"`
+	ContextPackMaxTokens       int                  `json:"context_pack_max_tokens"`
 	IndexedChunkCount          int                  `json:"indexed_chunk_count,omitempty"`
 	AverageChunkTokens         float64              `json:"average_chunk_tokens,omitempty"`
 	ContextualizedChunkCount   int                  `json:"contextualized_chunk_count,omitempty"`
@@ -229,6 +231,8 @@ func (s *LiveRunService) StartVariant(ctx context.Context, subject Subject, proj
 		MultiQueryCount:            definition.multiQueryCount,
 		RerankEnabled:              definition.rerankEnabled,
 		GraphRetrievalEnabled:      definition.graphRetrievalEnabled,
+		ContextPackTopN:            definition.contextPackTopN,
+		ContextPackMaxTokens:       definition.contextPackMaxTokens,
 		IndexedChunkCount:          baseline.IndexedChunkCount,
 		AverageChunkTokens:         baseline.AverageChunkTokens,
 		ContextualizedChunkCount:   baseline.ContextualizedChunkCount,

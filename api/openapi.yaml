@@ -3030,6 +3030,16 @@ components:
           type: boolean
           readOnly: true
           description: Whether this immutable variant builds graph relations and uses graph expansion during evaluation.
+        context_pack_top_n:
+          type: integer
+          readOnly: true
+          minimum: 0
+          description: Fixed maximum number of retrieved evidence chunks packed into the generation context.
+        context_pack_max_tokens:
+          type: integer
+          readOnly: true
+          minimum: 0
+          description: Fixed maximum context-pack token budget in deterministic text units.
         available:
           type: boolean
           description: Whether this installed Pack currently has a runnable runtime root.
@@ -3147,6 +3157,16 @@ components:
           type: boolean
           readOnly: true
           description: Stored server-derived graph retrieval state for this run.
+        context_pack_top_n:
+          type: integer
+          readOnly: true
+          minimum: 0
+          description: Stored server-derived maximum evidence chunks packed into generation context.
+        context_pack_max_tokens:
+          type: integer
+          readOnly: true
+          minimum: 0
+          description: Stored server-derived context-pack token budget in deterministic text units.
         indexed_chunk_count:
           type: integer
           readOnly: true

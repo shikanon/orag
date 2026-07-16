@@ -18,7 +18,7 @@
       <article><p class="eyebrow">What changes</p><h2>Only query fanout.</h2><p class="section-copy">P5 keeps P0 hybrid retrieval and fans each realtime evaluation query out to a fixed three-query candidate set.</p></article>
       <article><p class="eyebrow">What is disabled</p><h2>No hidden production defaults.</h2><p class="section-copy">The tutorial evaluator removes the pipeline, semantic cache, and query router, and keeps rewrite, HyDE and rerank off.</p></article>
       <article><p class="eyebrow">What is inherited</p><h2>The P0 index facts.</h2><p class="section-copy">No duplicate indexing occurs. Durable audit fields record P0-index reuse and the exact multi-query count.</p></article>
-      <article><p class="eyebrow">When comparison is valid</p><h2>Only direct P0 → P5.</h2><p class="section-copy">The API requires a compatible evaluator-v2 P0 parent, the same knowledge base and frozen evaluation inputs.</p></article>
+      <article><p class="eyebrow">When comparison is valid</p><h2>Only direct P0 → P5.</h2><p class="section-copy">The API requires a compatible evaluator-v5 P0 parent, the same knowledge base and frozen evaluation inputs.</p></article>
     </section>
     <section class="quickstart section-grid"><div><p class="eyebrow">Reproduce it</p><h2>Run the controlled walkthrough.</h2><p class="section-copy">The real browser regression starts PostgreSQL, Qdrant, migrations, API, Console, and a controlled immutable Pack. It runs P0 then P5 and verifies multi-query audit facts and P0-index reuse.</p></div><div class="terminal"><div class="terminal-head"><span></span><span></span><span></span><em>orag — tutorial P5</em></div><pre><span class="terminal-dim">$</span> make console-real-tutorial-clone-e2e
 
