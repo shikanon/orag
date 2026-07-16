@@ -11,13 +11,15 @@ import (
 )
 
 type contextualChatModel struct {
-	answers []string
-	err     error
-	calls   int
+	answers  []string
+	err      error
+	calls    int
+	messages [][]ark.ChatMessage
 }
 
 func (m *contextualChatModel) Chat(_ context.Context, messages []ark.ChatMessage) (string, error) {
 	m.calls++
+	m.messages = append(m.messages, append([]ark.ChatMessage(nil), messages...))
 	if m.err != nil {
 		return "", m.err
 	}
@@ -28,6 +30,17 @@ func (m *contextualChatModel) Chat(_ context.Context, messages []ark.ChatMessage
 		return m.answers[m.calls-1], nil
 	}
 	return "context", nil
+}
+
+func TestLLMContextualizerUsesConfiguredSystemPrompt(t *testing.T) {
+	model := &contextualChatModel{answers: []string{"context"}}
+	contextualizer := LLMContextualizer{Model: model, SystemPrompt: "fixed tutorial prompt"}
+	if _, _, err := contextualizer.Contextualize(context.Background(), ContextualizationRequest{DocumentName: "doc", DocumentText: "text", Chunks: []chunker.Chunk{{Content: "chunk"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(model.messages) != 1 || len(model.messages[0]) != 2 || model.messages[0][0].Role != "system" || model.messages[0][0].Content != "fixed tutorial prompt" {
+		t.Fatalf("messages=%#v", model.messages)
+	}
 }
 
 func TestLLMContextualizerGeneratesContextPerChunk(t *testing.T) {

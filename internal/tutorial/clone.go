@@ -122,12 +122,13 @@ type Experiment struct {
 // ExperimentVariant is the safe public projection of an immutable Pack
 // candidate. It intentionally excludes resource coordinates and model input.
 type ExperimentVariant struct {
-	ID                 string `json:"id"`
-	Chapter            string `json:"chapter,omitempty"`
-	ParserMethod       string `json:"parser_method"`
-	ChunkSizeTokens    int    `json:"chunk_size_tokens,omitempty"`
-	ChunkOverlapTokens int    `json:"chunk_overlap_tokens,omitempty"`
-	Available          bool   `json:"available"`
+	ID                  string `json:"id"`
+	Chapter             string `json:"chapter,omitempty"`
+	ParserMethod        string `json:"parser_method"`
+	ChunkSizeTokens     int    `json:"chunk_size_tokens,omitempty"`
+	ChunkOverlapTokens  int    `json:"chunk_overlap_tokens,omitempty"`
+	ContextualRetrieval bool   `json:"contextual_retrieval"`
+	Available           bool   `json:"available"`
 }
 
 // CloneRepository persists requests before any project or remote Pack action
@@ -304,7 +305,8 @@ func publicExperiment(experiment Experiment) Experiment {
 		for _, candidate := range experiment.PackManifest.Runtime.Candidates {
 			experiment.Variants = append(experiment.Variants, ExperimentVariant{
 				ID: candidate.ID, Chapter: candidate.Chapter, ParserMethod: candidate.ParserMethod,
-				ChunkSizeTokens: candidate.ChunkSizeTokens, ChunkOverlapTokens: candidate.ChunkOverlapTokens, Available: available,
+				ChunkSizeTokens: candidate.ChunkSizeTokens, ChunkOverlapTokens: candidate.ChunkOverlapTokens,
+				ContextualRetrieval: candidate.ContextualRetrieval, Available: available,
 			})
 		}
 	}

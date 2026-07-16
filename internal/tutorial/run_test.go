@@ -12,6 +12,7 @@ import (
 
 	"github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/ingest"
+	"github.com/shikanon/orag/internal/ingest/chunker"
 	"github.com/shikanon/orag/internal/kb"
 )
 
@@ -79,6 +80,7 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 			Candidates: []RuntimeCandidate{
 				{ID: TutorialP1StructuredJSONCandidateID, Chapter: TutorialP1DocumentParserChapter, ParserMethod: TutorialStructuredJSONParserMethod},
 				{ID: TutorialP2RecursiveChunkCandidateID, Chapter: TutorialP2ChunkingChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialP2ChunkSizeTokens, ChunkOverlapTokens: TutorialP2ChunkOverlapTokens},
+				{ID: TutorialP3ContextualCandidateID, Chapter: TutorialP3ContextualChapter, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, ContextualRetrieval: true},
 			},
 		}},
 	}
@@ -88,12 +90,14 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	baselineIngestor := &recordingRuntimeIngestor{}
 	p1Ingestor := &recordingRuntimeIngestor{}
 	p2Ingestor := &recordingRuntimeIngestor{}
+	p3Ingestor := &recordingRuntimeIngestor{chunks: []kb.Chunk{{Content: "service port configuration", ContextualText: "The document describes the ORAG service port."}}}
 	evaluator := &recordingRuntimeEvaluator{}
 	service := NewLiveRunService(repo, repo, func() time.Time { return now })
 	service.Configure(baselineIngestor, evaluator, store)
 	service.ConfigureCandidateIngestors(RuntimeEnvironment{ChatModel: "chat", EmbeddingModel: "embed", RerankModel: "rerank", MultimodalModel: "vision", PromptCacheMode: "auto", EvaluatorVersion: "standard_eval_v1"}, map[string]RuntimeIngestor{
 		TutorialP1StructuredJSONCandidateID: p1Ingestor,
 		TutorialP2RecursiveChunkCandidateID: p2Ingestor,
+		TutorialP3ContextualCandidateID:     p3Ingestor,
 	})
 	subject := Subject{TenantID: "tenant_a", ID: "user_a"}
 	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP1StructuredJSONCandidateID, "p1-before-p0"); err != ErrBaselineRequired {
@@ -101,6 +105,9 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	}
 	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP2RecursiveChunkCandidateID, "p2-before-p0"); err != ErrBaselineRequired {
 		t.Fatalf("P2 before P0 error=%v", err)
+	}
+	if _, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP3ContextualCandidateID, "p3-before-p0"); err != ErrBaselineRequired {
+		t.Fatalf("P3 before P0 error=%v", err)
 	}
 	baseline, _, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, "baseline", "p0")
 	if err != nil {
@@ -144,6 +151,17 @@ func TestLiveRunRequiresCompatibleBaselineAndUsesIndependentCandidateIndexes(t *
 	completedP2, err := service.Get(context.Background(), subject, p2.ID)
 	if err != nil || completedP2.IndexedChunkCount != 1 || completedP2.AverageChunkTokens <= 0 {
 		t.Fatalf("P2 index stats=%#v err=%v", completedP2, err)
+	}
+	p3, replayed, err := service.StartVariant(context.Background(), subject, experiment.ProjectID, TutorialP3ContextualCandidateID, "p3")
+	if err != nil || replayed || !p3.ContextualRetrievalEnabled || p3.BaselineRunID != baseline.ID || p3.KnowledgeBaseID == baseline.KnowledgeBaseID || p3.ParserMethod != "basic" || p3.ChunkSizeTokens != TutorialBaselineChunkSizeTokens || p3.ChunkOverlapTokens != TutorialBaselineChunkOverlapTokens {
+		t.Fatalf("P3=%#v replayed=%v err=%v", p3, replayed, err)
+	}
+	if err := service.Execute(context.Background(), subject.TenantID, p3.ID); err != nil {
+		t.Fatal(err)
+	}
+	completedP3, err := service.Get(context.Background(), subject, p3.ID)
+	if err != nil || completedP3.ContextualizedChunkCount != 1 || completedP3.AverageContextTokens != float64(chunker.TokenCount("The document describes the ORAG service port.")) {
+		t.Fatalf("P3 contextual stats=%#v err=%v", completedP3, err)
 	}
 }
 
@@ -250,6 +268,43 @@ func TestLiveRunComparisonAllowsP2AndReportsIndexMetrics(t *testing.T) {
 	}
 }
 
+func TestLiveRunComparisonAllowsP3OnlyWithMeasuredContext(t *testing.T) {
+	now := time.Date(2026, 7, 16, 16, 45, 0, 0, time.UTC)
+	repo := NewMemoryCloneRepository()
+	baseline := ExperimentRun{
+		ID: "terun_p0", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: "baseline",
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p0", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, IndexedChunkCount: 2, AverageChunkTokens: 600,
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p0", CreatedAt: now, UpdatedAt: now,
+	}
+	candidate := ExperimentRun{
+		ID: "terun_p3", TenantID: "tenant_a", ProjectID: "prj_1", ExperimentID: "texp_1", Variant: TutorialP3ContextualCandidateID, BaselineRunID: baseline.ID,
+		ComparisonFingerprint: "same", DefinitionFingerprint: "p3", KnowledgeBaseID: "tkb_p3", DatasetID: "tds_1", Profile: "realtime", TopK: 5, ParserMethod: "basic", ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens, ContextualRetrievalEnabled: true, IndexedChunkCount: 2, AverageChunkTokens: 600, ContextualizedChunkCount: 2, AverageContextTokens: 14,
+		Stage: ExperimentRunStageComplete, Status: ExperimentRunCompleted, EvaluationRunID: "eval_p3", CreatedAt: now, UpdatedAt: now.Add(time.Second),
+	}
+	if _, _, err := repo.CreateOrGetRun(context.Background(), baseline, "p0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := repo.CreateOrGetRun(context.Background(), candidate, "p3"); err != nil {
+		t.Fatal(err)
+	}
+	service := NewLiveRunService(repo, repo, time.Now)
+	service.Configure(nil, &comparisonRuntimeEvaluator{runs: map[string]eval.RunResult{
+		"eval_p0": {ID: "eval_p0", ProjectID: "prj_1", Metrics: map[string]float64{"accuracy": 0.5}},
+		"eval_p3": {ID: "eval_p3", ProjectID: "prj_1", Metrics: map[string]float64{"accuracy": 0.75}},
+	}}, nil)
+	comparison, err := service.Compare(context.Background(), Subject{TenantID: "tenant_a", ID: "user_a"}, "prj_1", "texp_1", candidate.ID)
+	if err != nil || !comparison.Comparable || len(comparison.IndexMetrics) != 4 {
+		t.Fatalf("comparison=%#v err=%v", comparison, err)
+	}
+	if got := comparison.IndexMetrics[2]; got.Name != "contextualized_chunk_count" || got.Baseline != 0 || got.Candidate != 2 || got.AbsoluteDelta != 2 {
+		t.Fatalf("context count delta=%#v", got)
+	}
+	candidate.ContextualizedChunkCount = 0
+	if runsComparable(baseline, candidate) {
+		t.Fatalf("comparison accepted P3 without contextual facts: %#v", candidate)
+	}
+}
+
 func TestLiveRunRejectsUnavailableRuntimeAndCancelsQueuedRun(t *testing.T) {
 	repo := NewMemoryCloneRepository()
 	if err := repo.EnsureExperiment(context.Background(), Experiment{ID: "texp_missing", TenantID: "tenant_a", ProjectID: "prj_missing", TemplateID: "text-rag", Tier: "quick", PackStatus: PackStatusInstalled, RuntimeStatus: "runtime_unavailable"}); err != nil {
@@ -300,10 +355,16 @@ func installPrivateObject(t *testing.T, tenantID, projectID, jobID string, objec
 	return store
 }
 
-type recordingRuntimeIngestor struct{ requests []ingest.Request }
+type recordingRuntimeIngestor struct {
+	requests []ingest.Request
+	chunks   []kb.Chunk
+}
 
 func (r *recordingRuntimeIngestor) Ingest(_ context.Context, request ingest.Request) (ingest.Result, error) {
 	r.requests = append(r.requests, request)
+	if r.chunks != nil {
+		return ingest.Result{Chunks: append([]kb.Chunk(nil), r.chunks...)}, nil
+	}
 	return ingest.Result{Chunks: []kb.Chunk{{Content: string(request.Content)}}}, nil
 }
 

@@ -23,15 +23,17 @@ type RuntimeEnvironment struct {
 }
 
 type runtimeDefinition struct {
-	knowledgeBaseID       string
-	datasetID             string
-	profile               string
-	topK                  int
-	parserMethod          string
-	chunkSizeTokens       int
-	chunkOverlapTokens    int
-	comparisonFingerprint string
-	definitionFingerprint string
+	knowledgeBaseID            string
+	datasetID                  string
+	profile                    string
+	topK                       int
+	parserMethod               string
+	chunkSizeTokens            int
+	chunkOverlapTokens         int
+	contextualRetrievalEnabled bool
+	contextualPromptVersion    string
+	comparisonFingerprint      string
+	definitionFingerprint      string
 }
 
 func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string) (runtimeDefinition, error) {
@@ -61,6 +63,10 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 			definition.chunkSizeTokens = candidate.ChunkSizeTokens
 			definition.chunkOverlapTokens = candidate.ChunkOverlapTokens
 		}
+		definition.contextualRetrievalEnabled = candidate.ContextualRetrieval
+		if candidate.ContextualRetrieval {
+			definition.contextualPromptVersion = TutorialP3ContextualPromptVersion
+		}
 	}
 	comparisonInput := struct {
 		TemplateID      string             `json:"template_id"`
@@ -78,16 +84,19 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 	}
 	definition.comparisonFingerprint = jsonSHA256(comparisonInput)
 	definition.definitionFingerprint = jsonSHA256(struct {
-		ComparisonFingerprint string `json:"comparison_fingerprint"`
-		Variant               string `json:"variant"`
-		ParserMethod          string `json:"parser_method"`
-		ChunkSizeTokens       int    `json:"chunk_size_tokens"`
-		ChunkOverlapTokens    int    `json:"chunk_overlap_tokens"`
-		KnowledgeBaseID       string `json:"knowledge_base_id"`
+		ComparisonFingerprint      string `json:"comparison_fingerprint"`
+		Variant                    string `json:"variant"`
+		ParserMethod               string `json:"parser_method"`
+		ChunkSizeTokens            int    `json:"chunk_size_tokens"`
+		ChunkOverlapTokens         int    `json:"chunk_overlap_tokens"`
+		ContextualRetrievalEnabled bool   `json:"contextual_retrieval_enabled"`
+		ContextualPromptVersion    string `json:"contextual_prompt_version"`
+		KnowledgeBaseID            string `json:"knowledge_base_id"`
 	}{
 		ComparisonFingerprint: definition.comparisonFingerprint, Variant: variant,
 		ParserMethod: definition.parserMethod, ChunkSizeTokens: definition.chunkSizeTokens,
-		ChunkOverlapTokens: definition.chunkOverlapTokens, KnowledgeBaseID: definition.knowledgeBaseID,
+		ChunkOverlapTokens: definition.chunkOverlapTokens, ContextualRetrievalEnabled: definition.contextualRetrievalEnabled,
+		ContextualPromptVersion: definition.contextualPromptVersion, KnowledgeBaseID: definition.knowledgeBaseID,
 	})
 	return definition, nil
 }
@@ -109,12 +118,13 @@ func (d runtimeDefinition) matches(run ExperimentRun) bool {
 		run.ParserMethod == d.parserMethod &&
 		run.ChunkSizeTokens == d.chunkSizeTokens &&
 		run.ChunkOverlapTokens == d.chunkOverlapTokens &&
+		run.ContextualRetrievalEnabled == d.contextualRetrievalEnabled &&
 		run.ComparisonFingerprint == d.comparisonFingerprint &&
 		run.DefinitionFingerprint == d.definitionFingerprint
 }
 
 func (r ExperimentRun) isLegacyBaseline() bool {
-	return r.Variant == "baseline" && r.KnowledgeBaseID == "" && r.DatasetID == "" && r.Profile == "" && r.TopK == 0 && r.ParserMethod == "" && r.ChunkSizeTokens == 0 && r.ChunkOverlapTokens == 0 && r.ComparisonFingerprint == "" && r.DefinitionFingerprint == ""
+	return r.Variant == "baseline" && r.KnowledgeBaseID == "" && r.DatasetID == "" && r.Profile == "" && r.TopK == 0 && r.ParserMethod == "" && r.ChunkSizeTokens == 0 && r.ChunkOverlapTokens == 0 && !r.ContextualRetrievalEnabled && r.ComparisonFingerprint == "" && r.DefinitionFingerprint == ""
 }
 
 func manifestSHA256(manifest Manifest) string { return jsonSHA256(manifest) }

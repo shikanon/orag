@@ -1757,6 +1757,8 @@ export interface components {
             readonly chunk_size_tokens?: number;
             /** @description Server-owned recursive chunk overlap in deterministic text units. */
             readonly chunk_overlap_tokens?: number;
+            /** @description Whether this immutable Pack-declared variant uses server-owned contextual retrieval. */
+            readonly contextual_retrieval?: boolean;
             /** @description Whether this installed Pack currently has a runnable runtime root. */
             available: boolean;
         };
@@ -1801,6 +1803,8 @@ export interface components {
             readonly parser_method?: string;
             readonly chunk_size_tokens?: number;
             readonly chunk_overlap_tokens?: number;
+            /** @description Whether the stored server-derived execution definition enabled contextual retrieval. */
+            readonly contextual_retrieval_enabled?: boolean;
             /** @description Measured chunks stored during this run's private-pack indexing stage. */
             readonly indexed_chunk_count?: number;
             /**
@@ -1808,6 +1812,13 @@ export interface components {
              * @description Measured average deterministic text units per indexed chunk.
              */
             readonly average_chunk_tokens?: number;
+            /** @description Measured indexed chunks with non-empty server-generated contextual text. */
+            readonly contextualized_chunk_count?: number;
+            /**
+             * Format: double
+             * @description Measured average deterministic text units in non-empty contextual text.
+             */
+            readonly average_context_tokens?: number;
             stage: components["schemas"]["TutorialExperimentRunStage"];
             status: components["schemas"]["TutorialExperimentRunStatus"];
             evaluation_run_id?: string;

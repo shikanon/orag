@@ -44,30 +44,33 @@ const (
 )
 
 type ExperimentRun struct {
-	ID                    string               `json:"id"`
-	TenantID              string               `json:"tenant_id"`
-	ProjectID             string               `json:"project_id"`
-	ExperimentID          string               `json:"experiment_id"`
-	Variant               string               `json:"variant"`
-	BaselineRunID         string               `json:"baseline_run_id,omitempty"`
-	ComparisonFingerprint string               `json:"comparison_fingerprint,omitempty"`
-	DefinitionFingerprint string               `json:"definition_fingerprint,omitempty"`
-	KnowledgeBaseID       string               `json:"knowledge_base_id,omitempty"`
-	DatasetID             string               `json:"dataset_id,omitempty"`
-	Profile               string               `json:"profile,omitempty"`
-	TopK                  int                  `json:"top_k,omitempty"`
-	ParserMethod          string               `json:"parser_method,omitempty"`
-	ChunkSizeTokens       int                  `json:"chunk_size_tokens,omitempty"`
-	ChunkOverlapTokens    int                  `json:"chunk_overlap_tokens,omitempty"`
-	IndexedChunkCount     int                  `json:"indexed_chunk_count,omitempty"`
-	AverageChunkTokens    float64              `json:"average_chunk_tokens,omitempty"`
-	Stage                 ExperimentRunStage   `json:"stage"`
-	Status                ExperimentRunStatus  `json:"status"`
-	EvaluationRunID       string               `json:"evaluation_run_id,omitempty"`
-	FailureCode           string               `json:"failure_code,omitempty"`
-	Events                []ExperimentRunEvent `json:"events"`
-	CreatedAt             time.Time            `json:"created_at"`
-	UpdatedAt             time.Time            `json:"updated_at"`
+	ID                         string               `json:"id"`
+	TenantID                   string               `json:"tenant_id"`
+	ProjectID                  string               `json:"project_id"`
+	ExperimentID               string               `json:"experiment_id"`
+	Variant                    string               `json:"variant"`
+	BaselineRunID              string               `json:"baseline_run_id,omitempty"`
+	ComparisonFingerprint      string               `json:"comparison_fingerprint,omitempty"`
+	DefinitionFingerprint      string               `json:"definition_fingerprint,omitempty"`
+	KnowledgeBaseID            string               `json:"knowledge_base_id,omitempty"`
+	DatasetID                  string               `json:"dataset_id,omitempty"`
+	Profile                    string               `json:"profile,omitempty"`
+	TopK                       int                  `json:"top_k,omitempty"`
+	ParserMethod               string               `json:"parser_method,omitempty"`
+	ChunkSizeTokens            int                  `json:"chunk_size_tokens,omitempty"`
+	ChunkOverlapTokens         int                  `json:"chunk_overlap_tokens,omitempty"`
+	ContextualRetrievalEnabled bool                 `json:"contextual_retrieval_enabled"`
+	IndexedChunkCount          int                  `json:"indexed_chunk_count,omitempty"`
+	AverageChunkTokens         float64              `json:"average_chunk_tokens,omitempty"`
+	ContextualizedChunkCount   int                  `json:"contextualized_chunk_count,omitempty"`
+	AverageContextTokens       float64              `json:"average_context_tokens,omitempty"`
+	Stage                      ExperimentRunStage   `json:"stage"`
+	Status                     ExperimentRunStatus  `json:"status"`
+	EvaluationRunID            string               `json:"evaluation_run_id,omitempty"`
+	FailureCode                string               `json:"failure_code,omitempty"`
+	Events                     []ExperimentRunEvent `json:"events"`
+	CreatedAt                  time.Time            `json:"created_at"`
+	UpdatedAt                  time.Time            `json:"updated_at"`
 }
 
 type ExperimentRunEvent struct {
@@ -83,7 +86,7 @@ type ExperimentRunRepository interface {
 	FindCompletedBaseline(context.Context, string, string, string, string) (ExperimentRun, bool, error)
 	AcquireExperimentRun(context.Context, string, string, time.Time) (ExperimentRun, bool, error)
 	AdvanceExperimentRun(context.Context, string, string, ExperimentRunStage, ExperimentRunStage, time.Time) (ExperimentRun, bool, error)
-	RecordExperimentRunIndexStats(context.Context, string, string, int, float64, time.Time) (ExperimentRun, bool, error)
+	RecordExperimentRunIndexStats(context.Context, string, string, ExperimentRunIndexStats, time.Time) (ExperimentRun, bool, error)
 	CompleteExperimentRun(context.Context, string, string, string, time.Time) (ExperimentRun, bool, error)
 	FailExperimentRun(context.Context, string, string, ExperimentRunStage, string, time.Time) (ExperimentRun, bool, error)
 	CancelExperimentRun(context.Context, string, string, time.Time) (ExperimentRun, bool, error)
@@ -189,7 +192,8 @@ func (s *LiveRunService) StartVariant(ctx context.Context, subject Subject, proj
 		DefinitionFingerprint: definition.definitionFingerprint, KnowledgeBaseID: definition.knowledgeBaseID,
 		DatasetID: definition.datasetID, Profile: definition.profile, TopK: definition.topK, ParserMethod: definition.parserMethod,
 		ChunkSizeTokens: definition.chunkSizeTokens, ChunkOverlapTokens: definition.chunkOverlapTokens,
-		Stage: ExperimentRunStageIndex, Status: ExperimentRunQueued,
+		ContextualRetrievalEnabled: definition.contextualRetrievalEnabled,
+		Stage:                      ExperimentRunStageIndex, Status: ExperimentRunQueued,
 		Events:    []ExperimentRunEvent{{Stage: ExperimentRunStageIndex, Outcome: "queued", OccurredAt: now}},
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -268,7 +272,7 @@ func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) er
 			if err != nil {
 				return s.fail(ctx, run, err)
 			}
-			if _, recorded, err := s.repo.RecordExperimentRunIndexStats(ctx, tenantID, run.ID, stats.chunkCount, stats.averageChunkTokens(), s.now().UTC()); err != nil || !recorded {
+			if _, recorded, err := s.repo.RecordExperimentRunIndexStats(ctx, tenantID, run.ID, stats.persisted(), s.now().UTC()); err != nil || !recorded {
 				if err != nil {
 					return s.fail(ctx, run, err)
 				}
@@ -302,8 +306,19 @@ func (s *LiveRunService) Execute(ctx context.Context, tenantID, runID string) er
 }
 
 type indexStats struct {
-	chunkCount int
-	tokenCount int
+	chunkCount               int
+	tokenCount               int
+	contextualizedChunkCount int
+	contextTokenCount        int
+}
+
+// ExperimentRunIndexStats is the atomically persisted measurement from an
+// actual indexing pass. These values are never supplied by an API client.
+type ExperimentRunIndexStats struct {
+	ChunkCount               int
+	AverageChunkTokens       float64
+	ContextualizedChunkCount int
+	AverageContextTokens     float64
 }
 
 func (s indexStats) averageChunkTokens() float64 {
@@ -311,6 +326,20 @@ func (s indexStats) averageChunkTokens() float64 {
 		return 0
 	}
 	return float64(s.tokenCount) / float64(s.chunkCount)
+}
+
+func (s indexStats) averageContextTokens() float64 {
+	if s.contextualizedChunkCount == 0 {
+		return 0
+	}
+	return float64(s.contextTokenCount) / float64(s.contextualizedChunkCount)
+}
+
+func (s indexStats) persisted() ExperimentRunIndexStats {
+	return ExperimentRunIndexStats{
+		ChunkCount: s.chunkCount, AverageChunkTokens: s.averageChunkTokens(),
+		ContextualizedChunkCount: s.contextualizedChunkCount, AverageContextTokens: s.averageContextTokens(),
+	}
 }
 
 func (s *LiveRunService) index(ctx context.Context, experiment Experiment, run ExperimentRun, ingestor RuntimeIngestor) (indexStats, error) {
@@ -338,6 +367,10 @@ func (s *LiveRunService) index(ctx context.Context, experiment Experiment, run E
 		for _, chunk := range result.Chunks {
 			stats.chunkCount++
 			stats.tokenCount += chunker.TokenCount(chunk.Content)
+			if contextualText := strings.TrimSpace(chunk.ContextualText); contextualText != "" {
+				stats.contextualizedChunkCount++
+				stats.contextTokenCount += chunker.TokenCount(contextualText)
+			}
 		}
 	}
 	return stats, nil

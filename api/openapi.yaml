@@ -3004,6 +3004,10 @@ components:
           type: integer
           readOnly: true
           description: Server-owned recursive chunk overlap in deterministic text units.
+        contextual_retrieval:
+          type: boolean
+          readOnly: true
+          description: Whether this immutable Pack-declared variant uses server-owned contextual retrieval.
         available:
           type: boolean
           description: Whether this installed Pack currently has a runnable runtime root.
@@ -3090,6 +3094,10 @@ components:
         chunk_overlap_tokens:
           type: integer
           readOnly: true
+        contextual_retrieval_enabled:
+          type: boolean
+          readOnly: true
+          description: Whether the stored server-derived execution definition enabled contextual retrieval.
         indexed_chunk_count:
           type: integer
           readOnly: true
@@ -3099,6 +3107,15 @@ components:
           format: double
           readOnly: true
           description: Measured average deterministic text units per indexed chunk.
+        contextualized_chunk_count:
+          type: integer
+          readOnly: true
+          description: Measured indexed chunks with non-empty server-generated contextual text.
+        average_context_tokens:
+          type: number
+          format: double
+          readOnly: true
+          description: Measured average deterministic text units in non-empty contextual text.
         stage:
           $ref: "#/components/schemas/TutorialExperimentRunStage"
         status:

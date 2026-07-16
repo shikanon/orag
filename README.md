@@ -67,7 +67,7 @@ ORAG 使用 `experimental`、`beta`、`stable` 标注每项公共能力的兼容
 | 能力 | 说明 | API / 入口 |
 | --- | --- | --- |
 | Authentication | 管理员登录换取 Bearer token，业务请求从 token 获取默认 tenant。 | `POST /v1/auth/login` |
-| Tutorial catalog | 三个版本化、只读的端到端教程模板；已安装且声明运行时的 Text Quick Pack 可运行 P0 基线，并在冻结输入、独立索引下比较 Pack 声明的 P1 JSON 解析或 P2 400/80 分块候选。 | `GET /v1/tutorials`、`/tutorial-experiments` |
+| Tutorial catalog | 三个版本化、只读的端到端教程模板；已安装且声明运行时的 Text Quick Pack 可运行 P0 基线，并在冻结输入、独立索引下比较 Pack 声明的 P1 JSON 解析、P2 400/80 分块或 P3 上下文化检索候选。 | `GET /v1/tutorials`、`/tutorial-experiments` |
 | Knowledge bases | 创建、列表、详情、删除知识库；删除会清理文档、chunks、向量索引和语义缓存。 | `/v1/knowledge-bases` |
 | Document ingestion | 支持 JSON 文本导入和 multipart 文件上传，记录 ingestion job；支持 basic、MinerU、Docling 解析。 | `/documents:import`、`/documents`、`/ingestion-jobs/{id}` |
 | Hybrid retrieval | Qdrant dense retrieval、PostgreSQL FTS sparse retrieval、RRF 融合和 rerank。 | `internal/kb`、`internal/rag` |

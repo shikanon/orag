@@ -45,3 +45,21 @@ func TestTutorialP2ChunkCandidateMigrationPersistsAuditFields(t *testing.T) {
 		}
 	}
 }
+
+func TestTutorialP3ContextualCandidateMigrationPersistsAuditFields(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/000032_tutorial_p3_contextual_candidate.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(raw)
+	for _, fragment := range []string{
+		"ADD COLUMN contextual_retrieval_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+		"ADD COLUMN contextualized_chunk_count INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN average_context_tokens DOUBLE PRECISION NOT NULL DEFAULT 0",
+		"DROP COLUMN average_context_tokens",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing %q", fragment)
+		}
+	}
+}
