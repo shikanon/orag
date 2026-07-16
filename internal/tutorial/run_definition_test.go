@@ -80,3 +80,28 @@ func TestRuntimeDefinitionBindsP5MultiQueryReuseContract(t *testing.T) {
 		t.Fatalf("baseline=%#v P5=%#v", baseline, p5)
 	}
 }
+
+func TestRuntimeDefinitionBindsP6RerankReuseContract(t *testing.T) {
+	service := NewLiveRunService(nil, nil, nil)
+	service.ConfigureCandidateEvaluators(map[string]RuntimeEvaluator{TutorialP6RerankCandidateID: &recordingRuntimeEvaluator{}})
+	experiment := Experiment{
+		ProjectID: "prj_1", CloneJobID: "tclj_1", TemplateID: "text-rag", TemplateVersion: "1.0.6", Tier: "quick",
+		RuntimeStatus: "ready", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", BaselineProfile: "realtime", BaselineTopK: 5,
+		PackManifest: Manifest{Runtime: &RuntimeManifest{Candidates: []RuntimeCandidate{{
+			ID: TutorialP6RerankCandidateID, Chapter: TutorialP6RerankChapter, ParserMethod: "basic",
+			ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens,
+			RetrievalStrategy: TutorialRetrievalStrategyHybrid, ReuseBaselineIndex: true, RerankEnabled: true,
+		}}}},
+	}
+	baseline, err := service.runtimeDefinition(experiment, "baseline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p6, err := service.runtimeDefinition(experiment, TutorialP6RerankCandidateID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p6.rerankEnabled || p6.multiQueryCount != 0 || p6.queryExpansionMode != TutorialQueryExpansionNone || p6.retrievalStrategy != TutorialRetrievalStrategyHybrid || !p6.reuseBaselineIndex || p6.knowledgeBaseID != baseline.knowledgeBaseID || p6.definitionFingerprint == baseline.definitionFingerprint || p6.comparisonFingerprint != baseline.comparisonFingerprint {
+		t.Fatalf("baseline=%#v P6=%#v", baseline, p6)
+	}
+}

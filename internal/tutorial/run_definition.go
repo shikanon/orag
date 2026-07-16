@@ -36,6 +36,7 @@ type runtimeDefinition struct {
 	reuseBaselineIndex         bool
 	queryExpansionMode         string
 	multiQueryCount            int
+	rerankEnabled              bool
 	comparisonFingerprint      string
 	definitionFingerprint      string
 }
@@ -78,6 +79,7 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		definition.retrievalStrategy = candidateRetrievalStrategy(candidate)
 		definition.reuseBaselineIndex = candidate.ReuseBaselineIndex
 		definition.multiQueryCount = candidate.MultiQueryCount
+		definition.rerankEnabled = candidate.RerankEnabled
 		if candidate.MultiQueryCount > 0 {
 			definition.queryExpansionMode = TutorialQueryExpansionMultiQuery
 		}
@@ -112,6 +114,7 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		ReuseBaselineIndex         bool   `json:"reuse_baseline_index"`
 		QueryExpansionMode         string `json:"query_expansion_mode"`
 		MultiQueryCount            int    `json:"multi_query_count"`
+		RerankEnabled              bool   `json:"rerank_enabled"`
 		KnowledgeBaseID            string `json:"knowledge_base_id"`
 	}{
 		ComparisonFingerprint: definition.comparisonFingerprint, Variant: variant,
@@ -120,6 +123,7 @@ func (s *LiveRunService) runtimeDefinition(experiment Experiment, variant string
 		ContextualPromptVersion: definition.contextualPromptVersion, KnowledgeBaseID: definition.knowledgeBaseID,
 		RetrievalStrategy: definition.retrievalStrategy, ReuseBaselineIndex: definition.reuseBaselineIndex,
 		QueryExpansionMode: definition.queryExpansionMode, MultiQueryCount: definition.multiQueryCount,
+		RerankEnabled: definition.rerankEnabled,
 	})
 	return definition, nil
 }
@@ -146,12 +150,13 @@ func (d runtimeDefinition) matches(run ExperimentRun) bool {
 		run.ReusedBaselineIndex == d.reuseBaselineIndex &&
 		run.QueryExpansionMode == d.queryExpansionMode &&
 		run.MultiQueryCount == d.multiQueryCount &&
+		run.RerankEnabled == d.rerankEnabled &&
 		run.ComparisonFingerprint == d.comparisonFingerprint &&
 		run.DefinitionFingerprint == d.definitionFingerprint
 }
 
 func (r ExperimentRun) isLegacyBaseline() bool {
-	return r.Variant == "baseline" && r.KnowledgeBaseID == "" && r.DatasetID == "" && r.Profile == "" && r.TopK == 0 && r.ParserMethod == "" && r.ChunkSizeTokens == 0 && r.ChunkOverlapTokens == 0 && !r.ContextualRetrievalEnabled && (r.RetrievalStrategy == "" || r.RetrievalStrategy == TutorialRetrievalStrategyHybrid) && !r.ReusedBaselineIndex && (r.QueryExpansionMode == "" || r.QueryExpansionMode == TutorialQueryExpansionNone) && r.MultiQueryCount == 0 && r.ComparisonFingerprint == "" && r.DefinitionFingerprint == ""
+	return r.Variant == "baseline" && r.KnowledgeBaseID == "" && r.DatasetID == "" && r.Profile == "" && r.TopK == 0 && r.ParserMethod == "" && r.ChunkSizeTokens == 0 && r.ChunkOverlapTokens == 0 && !r.ContextualRetrievalEnabled && (r.RetrievalStrategy == "" || r.RetrievalStrategy == TutorialRetrievalStrategyHybrid) && !r.ReusedBaselineIndex && (r.QueryExpansionMode == "" || r.QueryExpansionMode == TutorialQueryExpansionNone) && r.MultiQueryCount == 0 && !r.RerankEnabled && r.ComparisonFingerprint == "" && r.DefinitionFingerprint == ""
 }
 
 func manifestSHA256(manifest Manifest) string { return jsonSHA256(manifest) }

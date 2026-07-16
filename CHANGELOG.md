@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Added the experimental Pack-declared `p6_rerank_retrieval` tutorial candidate: direct P0-only lineage, evaluator-v3 rerank isolation, compatible P0-index reuse, durable rerank audit fields, read-only API/Console output, and a controlled PostgreSQL/Qdrant/browser P0-to-P6 walkthrough.
 - Added the experimental Pack-declared `p5_multi_query_retrieval` tutorial candidate: direct P0-only lineage, evaluator-v2 isolation from production rewrite/HyDE/cache/pipeline defaults, P0-index reuse, fixed three-query expansion audit fields, read-only API/Console output, and a controlled PostgreSQL/Qdrant/browser P0-to-P5 walkthrough.
 - Added the experimental Pack-declared `p4_sparse_retrieval` tutorial candidate: direct P0-only lineage, pure sparse evaluator isolation, compatible P0-index reuse, durable retrieval/index-reuse audit fields, read-only API/Console output, and a controlled PostgreSQL/Qdrant/browser P0-to-P4 walkthrough.
 - Added the experimental Pack-declared `p3_contextual_retrieval` tutorial candidate: direct P0-only lineage, isolated strict-fail server-owned contextualization, durable actual context facts, read-only API/Console audit output, and a controlled PostgreSQL/Qdrant/browser P0-to-P3 walkthrough.

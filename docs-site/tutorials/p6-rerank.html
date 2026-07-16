@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="ORAG P6 rerank tutorial candidate."><title>ORAG P6 rerank retrieval</title><link rel="stylesheet" href="../styles.css"></head>
+<body>
+  <header class="site-header"><a class="wordmark" href="../index.html" aria-label="ORAG home">ORAG</a><nav aria-label="Primary navigation"><a href="../index.html">Documentation</a><a href="../api.html">API Reference</a><a href="https://github.com/shikanon/orag">GitHub ↗</a></nav></header>
+  <main>
+    <section class="hero section-grid"><div class="hero-copy"><p class="eyebrow">Experimental tutorial · P6</p><h1>Rerank retrieval,<br>one variable at a time.</h1><p class="lede"><code>p6_rerank_retrieval</code> reuses a compatible P0 index and enables only the server-owned reranker.</p><div class="actions"><a class="button button-primary" href="https://github.com/shikanon/orag/blob/main/docs/tutorials/p6-rerank-candidate.md">Read the full guide</a><a class="button button-secondary" href="../api.html">Explore the API</a></div></div><div class="eval-frame"><div class="frame-head"><div><span class="status-dot"></span><strong>Auditable contract</strong></div><code>P0 → P6</code></div><div class="frame-body"><div class="frame-title"><div><p class="muted">Single-variable experiment</p><h2>Server-owned rerank</h2></div><span class="badge experimental">experimental</span></div><div class="metrics"><article><span>Parser</span><strong>Basic</strong><small>unchanged from P0</small></article><article><span>Retriever</span><strong>Hybrid</strong><small>unchanged from P0</small></article><article><span>Rerank</span><strong>Enabled</strong><small>P0 keeps it off</small></article></div></div></div></section>
+    <section class="resources section-grid"><article><p class="eyebrow">What changes</p><h2>Only rerank.</h2><p class="section-copy">P6 keeps P0 retrieval and invokes the existing reranker after retrieval.</p></article><article><p class="eyebrow">What is disabled</p><h2>No hidden defaults.</h2><p class="section-copy">Evaluator v3 removes pipeline, cache and routing, and keeps rewrite, HyDE and multi-query off.</p></article><article><p class="eyebrow">What is inherited</p><h2>The P0 index facts.</h2><p class="section-copy">No duplicate indexing occurs. Durable audit fields record P0-index reuse and rerank state.</p></article><article><p class="eyebrow">When comparison is valid</p><h2>Only direct P0 → P6.</h2><p class="section-copy">The API requires a compatible evaluator-v3 P0 parent, the same knowledge base and frozen evaluation inputs.</p></article></section>
+    <section class="quickstart section-grid"><div><p class="eyebrow">Reproduce it</p><h2>Run the controlled walkthrough.</h2><p class="section-copy">The real browser regression starts PostgreSQL, Qdrant, migrations, API, Console, and a controlled immutable Pack. It runs P0 then P6 and verifies rerank audit facts and P0-index reuse.</p></div><div class="terminal"><div class="terminal-head"><span></span><span></span><span></span><em>orag — tutorial P6</em></div><pre><span class="terminal-dim">$</span> make console-real-tutorial-clone-e2e
+
+<span class="terminal-blue">✓</span> P0 baseline completed without rerank
+<span class="terminal-blue">✓</span> P6 enables rerank
+<span class="terminal-blue">✓</span> P0 index facts inherited
+<span class="terminal-coral">✓</span> direct P0 → P6 comparison ready</pre></div></section>
+  </main>
+  <footer><a class="wordmark" href="../index.html">ORAG</a><span>Apache-2.0</span><a href="https://github.com/shikanon/orag/security/policy">Security</a><a href="https://github.com/shikanon/orag">GitHub ↗</a></footer>
+</body>
+</html>

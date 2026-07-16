@@ -36,13 +36,14 @@ export const tutorialExperiment = {
     { id: 'p3_contextual_retrieval', chapter: 'p3_contextual_retrieval', parser_method: 'basic', chunk_size_tokens: 800, chunk_overlap_tokens: 120, contextual_retrieval: true, retrieval_strategy: 'hybrid', reuse_baseline_index: false, available: true },
     { id: 'p4_sparse_retrieval', chapter: 'p4_sparse_retrieval', parser_method: 'basic', chunk_size_tokens: 800, chunk_overlap_tokens: 120, contextual_retrieval: false, retrieval_strategy: 'sparse', reuse_baseline_index: true, available: true },
     { id: 'p5_multi_query_retrieval', chapter: 'p5_multi_query_retrieval', parser_method: 'basic', chunk_size_tokens: 800, chunk_overlap_tokens: 120, contextual_retrieval: false, retrieval_strategy: 'hybrid', reuse_baseline_index: true, multi_query_count: 3, available: true },
+    { id: 'p6_rerank_retrieval', chapter: 'p6_rerank_retrieval', parser_method: 'basic', chunk_size_tokens: 800, chunk_overlap_tokens: 120, contextual_retrieval: false, retrieval_strategy: 'hybrid', reuse_baseline_index: true, rerank_enabled: true, available: true },
   ],
   created_at: '2026-07-16T00:00:00Z', updated_at: '2026-07-16T00:00:00Z',
 } as const
 
 export const completedTutorialRun = {
   id: 'terun_clone', tenant_id: 'tenant_a', project_id: completedCloneJob.project_id, experiment_id: tutorialExperiment.id,
-  variant: 'baseline', parser_method: 'basic', chunk_size_tokens: 800, chunk_overlap_tokens: 120, contextual_retrieval_enabled: false, retrieval_strategy: 'hybrid', reused_baseline_index: false, query_expansion_mode: 'none', multi_query_count: 0, indexed_chunk_count: 2, average_chunk_tokens: 600, contextualized_chunk_count: 0, average_context_tokens: 0, comparison_fingerprint: 'comparison_fingerprint', knowledge_base_id: 'tkb_clone', dataset_id: 'tds_clone', profile: 'realtime', top_k: 5, stage: 'completed', status: 'completed', evaluation_run_id: 'eval_tutorial_clone',
+  variant: 'baseline', parser_method: 'basic', chunk_size_tokens: 800, chunk_overlap_tokens: 120, contextual_retrieval_enabled: false, retrieval_strategy: 'hybrid', reused_baseline_index: false, query_expansion_mode: 'none', multi_query_count: 0, rerank_enabled: false, indexed_chunk_count: 2, average_chunk_tokens: 600, contextualized_chunk_count: 0, average_context_tokens: 0, comparison_fingerprint: 'comparison_fingerprint', knowledge_base_id: 'tkb_clone', dataset_id: 'tds_clone', profile: 'realtime', top_k: 5, stage: 'completed', status: 'completed', evaluation_run_id: 'eval_tutorial_clone',
   events: [{ stage: 'index_private_pack', outcome: 'completed', occurred_at: '2026-07-16T00:00:00Z' }, { stage: 'run_evaluation', outcome: 'completed', occurred_at: '2026-07-16T00:00:01Z' }, { stage: 'completed', outcome: 'completed', occurred_at: '2026-07-16T00:00:02Z' }],
   created_at: '2026-07-16T00:00:00Z', updated_at: '2026-07-16T00:00:02Z',
 } as const
@@ -96,6 +97,13 @@ const completedTutorialP5Run = {
   created_at: '2026-07-16T00:05:00Z', updated_at: '2026-07-16T00:05:01Z',
 } as const
 
+const completedTutorialP6Run = {
+  id: 'terun_clone_p6', tenant_id: 'tenant_a', project_id: completedCloneJob.project_id, experiment_id: tutorialExperiment.id,
+  variant: 'p6_rerank_retrieval', baseline_run_id: completedTutorialRun.id, parser_method: 'basic', chunk_size_tokens: 800, chunk_overlap_tokens: 120, contextual_retrieval_enabled: false, retrieval_strategy: 'hybrid', reused_baseline_index: true, query_expansion_mode: 'none', multi_query_count: 0, rerank_enabled: true, indexed_chunk_count: 2, average_chunk_tokens: 600, contextualized_chunk_count: 0, average_context_tokens: 0, comparison_fingerprint: 'comparison_fingerprint', definition_fingerprint: 'p6_definition_fingerprint', knowledge_base_id: 'tkb_clone', dataset_id: 'tds_clone', profile: 'realtime', top_k: 5, stage: 'completed', status: 'completed', evaluation_run_id: 'eval_tutorial_clone_p6',
+  events: [{ stage: 'run_evaluation', outcome: 'completed', occurred_at: '2026-07-16T00:06:00Z' }, { stage: 'completed', outcome: 'completed', occurred_at: '2026-07-16T00:06:01Z' }],
+  created_at: '2026-07-16T00:06:00Z', updated_at: '2026-07-16T00:06:01Z',
+} as const
+
 const tutorialP4Comparison = {
   baseline: completedTutorialRun, candidate: completedTutorialP4Run, comparable: true,
   metrics: [{ name: 'accuracy', baseline: 0.5, candidate: 0.75, absolute_delta: 0.25, relative_delta: 0.5 }],
@@ -104,6 +112,12 @@ const tutorialP4Comparison = {
 
 const tutorialP5Comparison = {
   baseline: completedTutorialRun, candidate: completedTutorialP5Run, comparable: true,
+  metrics: [{ name: 'accuracy', baseline: 0.5, candidate: 0.75, absolute_delta: 0.25, relative_delta: 0.5 }],
+  index_metrics: [{ name: 'average_chunk_tokens', baseline: 600, candidate: 600, absolute_delta: 0, relative_delta: 0 }, { name: 'chunk_count', baseline: 2, candidate: 2, absolute_delta: 0, relative_delta: 0 }],
+} as const
+
+const tutorialP6Comparison = {
+  baseline: completedTutorialRun, candidate: completedTutorialP6Run, comparable: true,
   metrics: [{ name: 'accuracy', baseline: 0.5, candidate: 0.75, absolute_delta: 0.25, relative_delta: 0.5 }],
   index_metrics: [{ name: 'average_chunk_tokens', baseline: 600, candidate: 600, absolute_delta: 0, relative_delta: 0 }, { name: 'chunk_count', baseline: 2, candidate: 2, absolute_delta: 0, relative_delta: 0 }],
 } as const
@@ -159,7 +173,7 @@ export function useTutorialLiveRunHandlers() {
     http.get('/v1/projects/prj_clone/tutorial-experiment', () => HttpResponse.json(tutorialExperiment)),
     http.post('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs', async ({ request }) => {
       const input = await request.json() as { variant: string }
-      const run = input.variant === 'p1_structured_json' ? completedTutorialP1Run : input.variant === 'p2_recursive_400_80' ? completedTutorialP2Run : input.variant === 'p3_contextual_retrieval' ? completedTutorialP3Run : input.variant === 'p4_sparse_retrieval' ? completedTutorialP4Run : input.variant === 'p5_multi_query_retrieval' ? completedTutorialP5Run : completedTutorialRun
+      const run = input.variant === 'p1_structured_json' ? completedTutorialP1Run : input.variant === 'p2_recursive_400_80' ? completedTutorialP2Run : input.variant === 'p3_contextual_retrieval' ? completedTutorialP3Run : input.variant === 'p4_sparse_retrieval' ? completedTutorialP4Run : input.variant === 'p5_multi_query_retrieval' ? completedTutorialP5Run : input.variant === 'p6_rerank_retrieval' ? completedTutorialP6Run : completedTutorialRun
       return HttpResponse.json({ run_id: run.id, poll_url: `/v1/projects/${completedCloneJob.project_id}/tutorial-experiments/${tutorialExperiment.id}/runs/${run.id}`, run }, { status: 202 })
     }),
     http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone', () => HttpResponse.json(completedTutorialRun)),
@@ -173,6 +187,8 @@ export function useTutorialLiveRunHandlers() {
     http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone_p4/comparison', () => HttpResponse.json(tutorialP4Comparison)),
     http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone_p5', () => HttpResponse.json(completedTutorialP5Run)),
     http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone_p5/comparison', () => HttpResponse.json(tutorialP5Comparison)),
+    http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone_p6', () => HttpResponse.json(completedTutorialP6Run)),
+    http.get('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone_p6/comparison', () => HttpResponse.json(tutorialP6Comparison)),
     http.post('/v1/projects/prj_clone/tutorial-experiments/texp_clone/runs/terun_clone:cancel', () => HttpResponse.json(completedTutorialRun, { status: 202 })),
   )
 }
