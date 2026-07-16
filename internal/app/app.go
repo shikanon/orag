@@ -79,9 +79,13 @@ type TraceRepository interface {
 }
 
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, error) {
-	_ = ctx
+	otlpCloser, err := observability.ConfigureOTLP(ctx, cfg.Observability.OTLPEndpoint)
+	if err != nil {
+		return nil, err
+	}
 	tutorials, err := tutorial.NewCatalog()
 	if err != nil {
+		_ = otlpCloser()
 		return nil, err
 	}
 	model, err := buildModelClient(cfg)
@@ -271,7 +275,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	configureRAGShadow(ragSvc, cfg.Maintenance.OfflineKnowledgeOrganizer, offlineKnowledgeOptions)
 	offlineKnowledgeSvc := offlineknowledge.NewService(backend.offlineKnowledgeRepo, offlineKnowledgeOptions)
 	offlineScheduler := buildOfflineKnowledgeScheduler(cfg, offlineKnowledgeSvc, logger)
-	closers := append([]func() error{}, backend.closers...)
+	closers := append([]func() error{otlpCloser}, backend.closers...)
 	if offlineScheduler != nil && offlineScheduler.Enabled() {
 		if err := offlineScheduler.Start(context.Background()); err != nil {
 			for i := len(closers) - 1; i >= 0; i-- {
