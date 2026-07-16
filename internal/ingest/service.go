@@ -55,6 +55,29 @@ type Service struct {
 	sourceLocks      sync.Map
 }
 
+// NewVariantService creates an app-lifetime ingestion service for a fixed,
+// server-owned parser variant. It shares immutable runtime dependencies with
+// the primary service but intentionally starts its own source-lock map instead
+// of copying a live sync.Map.
+func NewVariantService(base *Service, documentParser parser.Parser) *Service {
+	if base == nil {
+		return nil
+	}
+	return &Service{
+		Parser:           documentParser,
+		Splitter:         base.Splitter,
+		Embedder:         base.Embedder,
+		Contextualizer:   base.Contextualizer,
+		RAPTORBuilder:    base.RAPTORBuilder,
+		GraphBuilder:     base.GraphBuilder,
+		KnowledgeBases:   base.KnowledgeBases,
+		Indexer:          base.Indexer,
+		Jobs:             base.Jobs,
+		Uploads:          base.Uploads,
+		MaxDocumentBytes: base.MaxDocumentBytes,
+	}
+}
+
 type Request struct {
 	TenantID        string
 	KnowledgeBaseID string

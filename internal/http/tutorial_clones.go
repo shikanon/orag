@@ -1,8 +1,11 @@
 package http
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -30,6 +33,7 @@ type tutorialCloneAcceptedResponse struct {
 }
 
 type tutorialExperimentRunRequest struct {
+	Variant        string `json:"variant"`
 	IdempotencyKey string `json:"idempotency_key"`
 }
 
@@ -156,10 +160,10 @@ func (s *Server) startTutorialExperimentRun(ctx context.Context, c *app.RequestC
 		return
 	}
 	var req tutorialExperimentRunRequest
-	if !bindJSON(c, &req) {
+	if !bindTutorialExperimentRunRequest(c, &req) {
 		return
 	}
-	run, duplicate, err := s.App.TutorialRuns.Start(ctx, tutorial.Subject{TenantID: principal.TenantID, ID: principal.SubjectID}, projectID, req.IdempotencyKey)
+	run, duplicate, err := s.App.TutorialRuns.StartVariant(ctx, tutorial.Subject{TenantID: principal.TenantID, ID: principal.SubjectID}, projectID, req.Variant, req.IdempotencyKey)
 	if err != nil {
 		writeTutorialRunError(c, err)
 		return
@@ -170,6 +174,33 @@ func (s *Server) startTutorialExperimentRun(ctx context.Context, c *app.RequestC
 	if !duplicate && s.App.TutorialRunRunner != nil {
 		s.App.TutorialRunRunner.Schedule(principal.TenantID, run.ID)
 	}
+}
+
+func (s *Server) getTutorialExperimentRunComparison(ctx context.Context, c *app.RequestContext) {
+	principal, ok := requestPrincipal(c)
+	if !ok {
+		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+		return
+	}
+	projectID, experimentID, runID := c.Param("project_id"), c.Param("experiment_id"), c.Param("run_id")
+	run, err := s.App.TutorialRuns.Get(ctx, tutorial.Subject{TenantID: principal.TenantID, ID: principal.SubjectID}, runID)
+	if err != nil {
+		writeTutorialRunError(c, err)
+		return
+	}
+	if run.ProjectID != projectID || run.ExperimentID != experimentID {
+		writeError(c, consts.StatusNotFound, "tutorial_experiment_run_not_found", "tutorial experiment run not found")
+		return
+	}
+	if !authorizeRequest(c, auth.ActionTutorialRunRead, principal.TenantID, run.ProjectID) {
+		return
+	}
+	comparison, err := s.App.TutorialRuns.Compare(ctx, tutorial.Subject{TenantID: principal.TenantID, ID: principal.SubjectID}, projectID, experimentID, runID)
+	if err != nil {
+		writeTutorialRunError(c, err)
+		return
+	}
+	c.JSON(consts.StatusOK, comparison)
 }
 
 func (s *Server) getTutorialExperimentRun(ctx context.Context, c *app.RequestContext) {
@@ -254,6 +285,12 @@ func writeTutorialRunError(c *app.RequestContext, err error) {
 		writeError(c, consts.StatusNotFound, "tutorial_experiment_run_not_found", "tutorial experiment run not found")
 	case errors.Is(err, tutorial.ErrExperimentRunKey):
 		writeError(c, consts.StatusBadRequest, "invalid_tutorial_experiment_run_request", "tutorial experiment run request is invalid")
+	case errors.Is(err, tutorial.ErrExperimentRunVariant):
+		writeError(c, consts.StatusBadRequest, "invalid_tutorial_experiment_run_request", "tutorial experiment run request is invalid")
+	case errors.Is(err, tutorial.ErrBaselineRequired):
+		writeError(c, consts.StatusConflict, "tutorial_baseline_required", "tutorial candidate requires a compatible completed baseline")
+	case errors.Is(err, tutorial.ErrExperimentComparisonUnavailable):
+		writeError(c, consts.StatusConflict, "tutorial_experiment_comparison_unavailable", "tutorial experiment comparison is unavailable")
 	case errors.Is(err, tutorial.ErrRuntimeUnavailable):
 		writeError(c, consts.StatusConflict, "tutorial_runtime_unavailable", "tutorial Pack does not declare a runnable runtime")
 	case errors.Is(err, tutorial.ErrPackNotInstalled):
@@ -263,4 +300,19 @@ func writeTutorialRunError(c *app.RequestContext, err error) {
 	default:
 		writeError(c, consts.StatusInternalServerError, "tutorial_experiment_run_failed", "tutorial experiment run operation failed")
 	}
+}
+
+func bindTutorialExperimentRunRequest(c *app.RequestContext, dst *tutorialExperimentRunRequest) bool {
+	decoder := json.NewDecoder(bytes.NewReader(c.Request.Body()))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		writeError(c, consts.StatusBadRequest, "invalid_tutorial_experiment_run_request", "tutorial experiment run request is invalid")
+		return false
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		writeError(c, consts.StatusBadRequest, "invalid_tutorial_experiment_run_request", "tutorial experiment run request is invalid")
+		return false
+	}
+	return true
 }

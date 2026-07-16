@@ -74,15 +74,15 @@ func TestTutorialCatalogRoutes(t *testing.T) {
 }
 
 func TestTutorialCloneRoutesCreatePollAndExposeNoStorageDetails(t *testing.T) {
-	pack := []byte("tutorial data")
-	checksum := "00361bf3e3d0f3bf104e229dee7f524f9d3f588969930bedd7aedde3ef5c5cb6"
+	pack := []byte(`{"service":{"port":8080,"name":"ORAG"}}`)
+	checksum := "bdb62ea22175c8ad0f316fb554a4e8884c2ea3ae0df9c1cdf8def49b523b79ce"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/packs/text-rag/1.0.0/quick/manifest.json":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"template_id":"text-rag","version":"1.0.0","tier":"quick","license":{"spdx":"CC-BY-4.0","source_url":"https://example.test/license","redistributable":true},"objects":[{"path":"corpus/data.txt","sha256":"` + checksum + `","bytes":13,"content_type":"text/plain"}],"runtime":{"baseline":{"profile":"realtime","top_k":3},"documents":[{"object_path":"corpus/data.txt","name":"教程语料"}],"dataset":{"name":"教程基线评测","items":[{"query":"教程数据是什么？","ground_truth":"tutorial data","split":"eval"}]}}}`))
-		case "/packs/text-rag/1.0.0/quick/corpus/data.txt":
-			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte(`{"template_id":"text-rag","version":"1.0.0","tier":"quick","license":{"spdx":"CC-BY-4.0","source_url":"https://example.test/license","redistributable":true},"objects":[{"path":"corpus/service.json","sha256":"` + checksum + `","bytes":39,"content_type":"application/json"}],"runtime":{"baseline":{"profile":"realtime","top_k":3},"documents":[{"object_path":"corpus/service.json","name":"服务配置"}],"dataset":{"name":"教程基线评测","items":[{"query":"服务端口是多少？","ground_truth":"8080","split":"eval"}]},"candidates":[{"id":"p1_structured_json","chapter":"p1_document_parser","parser_method":"structured_json"}]}}`))
+		case "/packs/text-rag/1.0.0/quick/corpus/service.json":
+			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(pack)
 		default:
 			http.NotFound(w, r)
@@ -100,7 +100,7 @@ func TestTutorialCloneRoutesCreatePollAndExposeNoStorageDetails(t *testing.T) {
 	if created.Code != http.StatusAccepted {
 		t.Fatalf("create status=%d body=%s", created.Code, created.Body)
 	}
-	for _, forbidden := range []string{"bucket", "access_key", "object_key", "manifest_url", "tutorial data"} {
+	for _, forbidden := range []string{"bucket", "access_key", "object_key", "manifest_url", "ORAG"} {
 		if strings.Contains(created.Body, forbidden) {
 			t.Fatalf("create leaked %q: %s", forbidden, created.Body)
 		}
@@ -138,6 +138,17 @@ func TestTutorialCloneRoutesCreatePollAndExposeNoStorageDetails(t *testing.T) {
 	if err := json.Unmarshal([]byte(experiment.Body), &installed); err != nil {
 		t.Fatal(err)
 	}
+	if len(installed.Variants) != 2 || installed.Variants[1].ID != tutorial.TutorialP1StructuredJSONCandidateID {
+		t.Fatalf("experiment variants=%#v", installed.Variants)
+	}
+	spoofed := performJSON(h, "POST", "/v1/projects/"+accepted.ProjectID+"/tutorial-experiments/"+installed.ID+"/runs", `{"variant":"baseline","idempotency_key":"spoofed","knowledge_base_id":"browser-controlled"}`, token)
+	if spoofed.Code != http.StatusBadRequest || !strings.Contains(spoofed.Body, `"code":"invalid_tutorial_experiment_run_request"`) {
+		t.Fatalf("spoofed start status=%d body=%s", spoofed.Code, spoofed.Body)
+	}
+	beforeBaseline := performJSON(h, "POST", "/v1/projects/"+accepted.ProjectID+"/tutorial-experiments/"+installed.ID+"/runs", `{"variant":"p1_structured_json","idempotency_key":"p1-before-p0"}`, token)
+	if beforeBaseline.Code != http.StatusConflict || !strings.Contains(beforeBaseline.Body, `"code":"tutorial_baseline_required"`) {
+		t.Fatalf("P1 before P0 status=%d body=%s", beforeBaseline.Code, beforeBaseline.Body)
+	}
 	started := performJSON(h, "POST", "/v1/projects/"+accepted.ProjectID+"/tutorial-experiments/"+installed.ID+"/runs", `{"idempotency_key":"http_live_run_1"}`, token)
 	if started.Code != http.StatusAccepted {
 		t.Fatalf("live run start status=%d body=%s", started.Code, started.Body)
@@ -167,6 +178,35 @@ func TestTutorialCloneRoutesCreatePollAndExposeNoStorageDetails(t *testing.T) {
 	}
 	if run.Status != tutorial.ExperimentRunCompleted || run.EvaluationRunID == "" {
 		t.Fatalf("live run = %#v", run)
+	}
+	p1Started := performJSON(h, "POST", "/v1/projects/"+accepted.ProjectID+"/tutorial-experiments/"+installed.ID+"/runs", `{"variant":"p1_structured_json","idempotency_key":"http_live_run_p1"}`, token)
+	if p1Started.Code != http.StatusAccepted {
+		t.Fatalf("P1 start status=%d body=%s", p1Started.Code, p1Started.Body)
+	}
+	var p1Accepted tutorialExperimentRunAcceptedResponse
+	if err := json.Unmarshal([]byte(p1Started.Body), &p1Accepted); err != nil {
+		t.Fatal(err)
+	}
+	var p1Run tutorial.ExperimentRun
+	for range 200 {
+		polled := performJSON(h, "GET", p1Accepted.PollURL, "", token)
+		if polled.Code != http.StatusOK {
+			t.Fatalf("P1 poll status=%d body=%s", polled.Code, polled.Body)
+		}
+		if err := json.Unmarshal([]byte(polled.Body), &p1Run); err != nil {
+			t.Fatal(err)
+		}
+		if p1Run.Status == tutorial.ExperimentRunCompleted || p1Run.Status == tutorial.ExperimentRunFailed {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if p1Run.Status != tutorial.ExperimentRunCompleted || p1Run.BaselineRunID != run.ID || p1Run.KnowledgeBaseID == run.KnowledgeBaseID || p1Run.ParserMethod != tutorial.TutorialStructuredJSONParserMethod {
+		t.Fatalf("P1 run=%#v baseline=%#v", p1Run, run)
+	}
+	comparison := performJSON(h, "GET", p1Accepted.PollURL+"/comparison", "", token)
+	if comparison.Code != http.StatusOK || !strings.Contains(comparison.Body, `"comparable":true`) || !strings.Contains(comparison.Body, `"parser_method":"structured_json"`) {
+		t.Fatalf("comparison status=%d body=%s", comparison.Code, comparison.Body)
 	}
 	queued, _, err := application.TutorialRuns.Start(context.Background(), tutorial.Subject{TenantID: "tenant_a", ID: "http_test"}, accepted.ProjectID, "http_live_run_cancel")
 	if err != nil {

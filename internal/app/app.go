@@ -178,7 +178,18 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		return nil, errors.New("tutorial run repository is unavailable")
 	}
 	tutorialRuns := tutorial.NewLiveRunService(tutorialRunRepo, backend.tutorialCloneRepo, func() time.Time { return time.Now().UTC() })
-	tutorialRuns.Configure(ingestSvc, evalRunner, privatePacks)
+	tutorialRuns.Configure(ingest.NewVariantService(ingestSvc, parser.New(parser.Config{Method: parser.MethodBasic, Multimodal: model})), evalRunner, privatePacks)
+	tutorialRuns.ConfigureCandidateIngestors(tutorial.RuntimeEnvironment{
+		ChatProvider: cfg.Models.ChatProvider, ChatModel: cfg.Ark.ChatModel,
+		EmbeddingProvider: cfg.Models.EmbeddingProvider, EmbeddingModel: cfg.Ark.EmbeddingModel,
+		RerankProvider: cfg.Models.RerankProvider, RerankModel: cfg.Ark.RerankModel,
+		MultimodalProvider: cfg.Models.MultimodalProvider, MultimodalModel: cfg.Ark.MultimodalModel,
+		PromptCacheMode: cfg.RAG.PromptCacheMode, EvaluatorVersion: "standard_eval_v1",
+	}, map[string]tutorial.RuntimeIngestor{
+		parser.MethodStructuredJSON: ingest.NewVariantService(ingestSvc, parser.New(parser.Config{
+			Method: parser.MethodStructuredJSON, Multimodal: model,
+		})),
+	})
 	optimizerRunner := optimizer.InternalRAGRunner{
 		BaseRAG:    ragSvc,
 		Datasets:   datasets,

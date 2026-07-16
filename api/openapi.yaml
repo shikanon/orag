@@ -1497,9 +1497,10 @@ paths:
       operationId: startTutorialExperimentRun
       x-orag-maturity: experimental
       description: >-
-        Starts an idempotent baseline Live Run for a text Pack whose verified runtime
-        declaration has created project-owned resource roots. The server reads only
-        private Pack copies and derives all evaluation inputs.
+        Starts an idempotent server-declared Live Run for a text Pack whose verified
+        runtime declaration has created project-owned resource roots. Candidate variants
+        require a compatible completed baseline. The server reads only private Pack copies
+        and derives all parser, resource, model, and evaluation inputs.
       security:
         - bearerAuth: []
       requestBody:
@@ -1560,6 +1561,46 @@ paths:
         "403":
           $ref: "#/components/responses/Error"
         "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{project_id}/tutorial-experiments/{experiment_id}/runs/{run_id}/comparison:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: experiment_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: run_id
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      tags: [Tutorials]
+      operationId: getTutorialExperimentRunComparison
+      x-orag-maturity: experimental
+      description: >-
+        Returns the server-verified P0/P1 comparison for a completed candidate. The
+        response contains only persisted standard evaluation metrics and audit lineage.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Auditable tutorial experiment comparison.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorialExperimentRunComparison"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
@@ -2962,11 +3003,17 @@ components:
       type: object
       required: [idempotency_key]
       properties:
+        variant:
+          type: string
+          default: baseline
+          description: >-
+            Immutable variant identifier from TutorialExperiment.variants. The server
+            rejects undeclared values and never accepts parser or model configuration.
         idempotency_key:
           type: string
           minLength: 1
           maxLength: 200
-          description: Reuse the same value to safely resume the same baseline request.
+          description: Reuse the same value to safely resume the same immutable variant request.
     TutorialExperimentRunStage:
       type: string
       enum: [index_private_pack, run_evaluation, completed]
@@ -3001,7 +3048,34 @@ components:
           type: string
         variant:
           type: string
-          enum: [baseline]
+          description: Immutable Pack-declared variant identifier.
+        baseline_run_id:
+          type: string
+          readOnly: true
+          description: Server-selected compatible P0 parent for a candidate run.
+        comparison_fingerprint:
+          type: string
+          readOnly: true
+          description: SHA-256 of redacted inputs that must match between P0 and P1.
+        definition_fingerprint:
+          type: string
+          readOnly: true
+          description: SHA-256 of the variant's server-derived execution definition.
+        knowledge_base_id:
+          type: string
+          readOnly: true
+        dataset_id:
+          type: string
+          readOnly: true
+        profile:
+          type: string
+          readOnly: true
+        top_k:
+          type: integer
+          readOnly: true
+        parser_method:
+          type: string
+          readOnly: true
         stage:
           $ref: "#/components/schemas/TutorialExperimentRunStage"
         status:
@@ -3031,6 +3105,39 @@ components:
           description: Relative ORAG API path to poll the durable experiment run.
         run:
           $ref: "#/components/schemas/TutorialExperimentRun"
+    TutorialExperimentMetricDelta:
+      type: object
+      required: [name, baseline, candidate, absolute_delta]
+      properties:
+        name:
+          type: string
+        baseline:
+          type: number
+          format: double
+        candidate:
+          type: number
+          format: double
+        absolute_delta:
+          type: number
+          format: double
+        relative_delta:
+          type: number
+          format: double
+          nullable: true
+    TutorialExperimentRunComparison:
+      type: object
+      required: [baseline, candidate, comparable]
+      properties:
+        baseline:
+          $ref: "#/components/schemas/TutorialExperimentRun"
+        candidate:
+          $ref: "#/components/schemas/TutorialExperimentRun"
+        comparable:
+          type: boolean
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/TutorialExperimentMetricDelta"
     ReadinessResponse:
       type: object
       required: [status, checks]

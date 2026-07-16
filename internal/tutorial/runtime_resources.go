@@ -81,7 +81,11 @@ func (r ResourceInitializer) ensureKnowledgeBase(ctx context.Context, job CloneJ
 }
 
 func tutorialCandidateKnowledgeBaseID(job CloneJob, candidateID string) string {
-	return tutorialResourceID("tkb", job.ProjectID, job.TemplateID, job.TemplateVersion, candidateID)
+	return tutorialCandidateKnowledgeBaseIDFor(job.ProjectID, job.TemplateID, job.TemplateVersion, candidateID)
+}
+
+func tutorialCandidateKnowledgeBaseIDFor(projectID, templateID, templateVersion, candidateID string) string {
+	return tutorialResourceID("tkb", projectID, templateID, templateVersion, candidateID)
 }
 
 func (r ResourceInitializer) now() time.Time {
