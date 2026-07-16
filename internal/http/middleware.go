@@ -19,7 +19,14 @@ func (s *Server) traceMiddleware(ctx context.Context, c *app.RequestContext) {
 	}
 	c.Set("trace_id", traceID)
 	c.Header(observability.TraceIDHeader, traceID)
-	c.Next(observability.WithTraceID(ctx, traceID))
+	ctx = observability.WithTraceID(ctx, traceID)
+	ctx = observability.ExtractTraceContext(ctx, string(c.GetHeader("traceparent")))
+	spanCtx, span := observability.StartSpan(ctx, "http.server")
+	c.Next(spanCtx)
+	span.End(nil)
+	if traceparent := observability.TraceparentFromContext(spanCtx); traceparent != "" {
+		c.Header("traceparent", traceparent)
+	}
 }
 
 func (s *Server) authMiddleware(ctx context.Context, c *app.RequestContext) {

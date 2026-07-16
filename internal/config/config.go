@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"strconv"
@@ -204,13 +205,15 @@ type TutorialConfig struct {
 }
 
 type ObservabilityConfig struct {
-	OTLPEndpoint        string
-	OTLPMetricsEndpoint string
-	LangFuseHost        string
-	LangFusePublicKey   string
-	LangFuseSecretKey   string
-	RecordPrompts       bool
-	Trace               TracePrivacyConfig
+	OTLPEndpoint         string
+	OTLPMetricsEndpoint  string
+	OTLPTraceSampleRatio float64
+	OTLPServiceName      string
+	LangFuseHost         string
+	LangFusePublicKey    string
+	LangFuseSecretKey    string
+	RecordPrompts        bool
+	Trace                TracePrivacyConfig
 }
 
 type TracePrivacyConfig struct {
@@ -267,6 +270,10 @@ type OfflineKnowledgeOrganizerTargetConfig struct {
 
 func Load() (Config, error) {
 	jwtSecret := getenv("JWT_SECRET", getenv("SECRET_KEY", "orag-dev-secret-change-me"))
+	otlpTraceSampleRatio, err := getenvTraceSampleRatio("OTEL_TRACES_SAMPLER_ARG", 1)
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		Server: ServerConfig{
 			Host:          getenv("HOST", "0.0.0.0"),
@@ -403,12 +410,14 @@ func Load() (Config, error) {
 			AllowInsecureCatalogHTTP: getenvBool("ORAG_TEST_MODE", false),
 		},
 		Observability: ObservabilityConfig{
-			OTLPEndpoint:        getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
-			OTLPMetricsEndpoint: getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
-			LangFuseHost:        getenv("LANGFUSE_HOST", ""),
-			LangFusePublicKey:   getenv("LANGFUSE_PUBLIC_KEY", ""),
-			LangFuseSecretKey:   getenv("LANGFUSE_SECRET_KEY", ""),
-			RecordPrompts:       getenvBool("OBSERVABILITY_RECORD_PROMPTS", false),
+			OTLPEndpoint:         getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+			OTLPMetricsEndpoint:  getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
+			OTLPTraceSampleRatio: otlpTraceSampleRatio,
+			OTLPServiceName:      getenv("OTEL_SERVICE_NAME", "orag"),
+			LangFuseHost:         getenv("LANGFUSE_HOST", ""),
+			LangFusePublicKey:    getenv("LANGFUSE_PUBLIC_KEY", ""),
+			LangFuseSecretKey:    getenv("LANGFUSE_SECRET_KEY", ""),
+			RecordPrompts:        getenvBool("OBSERVABILITY_RECORD_PROMPTS", false),
 			Trace: TracePrivacyConfig{
 				StoreQuery:    getenvBool("TRACE_STORE_QUERY", true),
 				QueryMaxBytes: getenvInt("TRACE_QUERY_MAX_BYTES", 2048),
@@ -978,6 +987,18 @@ func getenvFloat(key string, fallback float64) float64 {
 		return fallback
 	}
 	return n
+}
+
+func getenvTraceSampleRatio(key string, fallback float64) (float64, error) {
+	value := strings.TrimSpace(getenv(key, ""))
+	if value == "" {
+		return fallback, nil
+	}
+	ratio, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < 0 || ratio > 1 {
+		return 0, fmt.Errorf("%s must be a decimal ratio in [0, 1]", key)
+	}
+	return ratio, nil
 }
 
 func getenvBool(key string, fallback bool) bool {

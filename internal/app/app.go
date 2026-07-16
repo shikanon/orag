@@ -79,7 +79,7 @@ type TraceRepository interface {
 }
 
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, error) {
-	otlpCloser, err := observability.ConfigureOTLP(ctx, cfg.Observability.OTLPEndpoint)
+	otlpCloser, err := observability.ConfigureOTLP(ctx, cfg.Observability.OTLPEndpoint, cfg.Observability.OTLPTraceSampleRatio, cfg.Observability.OTLPServiceName)
 	if err != nil {
 		return nil, err
 	}

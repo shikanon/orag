@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestStartSpanUsesInjectedTracerAndKeepsTraceID(t *testing.T) {
@@ -52,7 +54,7 @@ func TestConfigureOTLPRestoresGlobalProviders(t *testing.T) {
 	restoreTracer := SetTracer(previousTracer)
 	defer restoreTracer()
 
-	closeOTLP, err := ConfigureOTLP(context.Background(), server.URL)
+	closeOTLP, err := ConfigureOTLP(context.Background(), server.URL, 1, "orag-test")
 	if err != nil {
 		t.Fatalf("ConfigureOTLP() error = %v", err)
 	}
@@ -73,6 +75,48 @@ func TestConfigureOTLPRestoresGlobalProviders(t *testing.T) {
 	span.End(nil)
 	if len(previousTracer.names) != 1 || previousTracer.names[0] != "after_shutdown" {
 		t.Fatalf("restored tracer spans = %#v, want after_shutdown", previousTracer.names)
+	}
+}
+
+func TestOTLPParentBasedSamplerHonorsRemoteParentAndRatio(t *testing.T) {
+	sampler := newOTLPSampler(0)
+	root := sampler.ShouldSample(sdktrace.SamplingParameters{})
+	if root.Decision != sdktrace.Drop {
+		t.Fatalf("zero-ratio root decision = %v, want drop", root.Decision)
+	}
+	remoteTraceID, err := trace.TraceIDFromHex("0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteSpanID, err := trace.SpanIDFromHex("0123456789abcdef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteParent := trace.ContextWithRemoteSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    remoteTraceID,
+		SpanID:     remoteSpanID,
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	}))
+	child := sampler.ShouldSample(sdktrace.SamplingParameters{ParentContext: remoteParent})
+	if child.Decision != sdktrace.RecordAndSample {
+		t.Fatalf("sampled remote child decision = %v, want record and sample", child.Decision)
+	}
+}
+
+func TestConfigureOTLPRestoresGlobalPropagator(t *testing.T) {
+	server := httptest.NewServer(nil)
+	defer server.Close()
+	previous := otel.GetTextMapPropagator()
+	closeOTLP, err := ConfigureOTLP(context.Background(), server.URL, 1, "orag-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := closeOTLP(); err != nil {
+		t.Fatal(err)
+	}
+	if got := otel.GetTextMapPropagator(); got != previous {
+		t.Fatal("ConfigureOTLP() did not restore the prior text-map propagator")
 	}
 }
 

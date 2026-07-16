@@ -17,7 +17,7 @@
 | Ark/豆包 | `ARK_API_KEY` / `VOLCENGINE_API_KEY`、`ARK_BASE_URL`、模型变量 | 默认推荐 Doubao，提供 Chat、Embedding、Rerank、多模态解析。 |
 | Provider Endpoint | `AZURE_OPENAI_BASE_URL`、`GOOGLE_CLOUD_BASE_URL`、可选 `<PROVIDER>_BASE_URL` | Azure OpenAI 和 Google Cloud 必填，其它 provider 可用来覆盖默认 endpoint。 |
 | Rerank | `LLM_RERANK_PROVIDER` / `RERANK_PROVIDER` | 默认 `volcengine`，兼容旧的 `aliyun`/通义百炼路径。 |
-| Observability | `OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`、`LANGFUSE_*` | 设置绝对 OTLP/HTTP endpoints 时导出受限 trace 与核心 metrics；LangFuse 仍未接入。 |
+| Observability | `OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`、`OTEL_TRACES_SAMPLER_ARG`、`OTEL_SERVICE_NAME`、`LANGFUSE_*` | 设置绝对 OTLP/HTTP endpoints 时导出受限 trace 与核心 metrics；trace 使用 W3C 传播和 parent-based sampling；LangFuse 仍未接入。 |
 
 ## 健康检查
 
@@ -74,7 +74,7 @@ GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-che
 
 metrics label 只使用受控低基数字段。不要把 `trace_id`、tenant、用户输入、prompt、文档内容、模型响应或原始错误文本作为 Prometheus label；排查单次请求应使用日志和 trace 查询。
 
-当前指标是进程内 counter/histogram，服务重启后从零开始；仓库提供可导入的 [Grafana overview dashboard](grafana.md) 和基础 Prometheus 告警规则。设置 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 为绝对 OTLP/HTTP metrics endpoint 后，会导出核心 HTTP、RAG、依赖就绪和 trace-store metrics；当前仍没有分位数预聚合、指标持久化、采样策略或跨服务拓扑。
+当前指标是进程内 counter/histogram，服务重启后从零开始；仓库提供可导入的 [Grafana overview dashboard](grafana.md) 和基础 Prometheus 告警规则。设置 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 为绝对 OTLP/HTTP metrics endpoint 后，会导出核心 HTTP、RAG、依赖就绪和 trace-store metrics；当前仍没有分位数预聚合或指标持久化。
 
 ## 告警接入
 
@@ -140,7 +140,7 @@ GET /v1/traces/{trace_id}
 Authorization: Bearer <access_token>
 ```
 
-CLI 支持本地 PostgreSQL 单条、列表和统计查询。HTTP `GET /v1/traces:stats` 返回当前 tenant 的 node 级 count、avg、p95、p99 和 error_count。当前仍不提供跨租户聚合、采样、跨服务拓扑或外部 APM 跳转。
+CLI 支持本地 PostgreSQL 单条、列表和统计查询。HTTP `GET /v1/traces:stats` 返回当前 tenant 的 node 级 count、avg、p95、p99 和 error_count。当前仍不提供跨租户聚合或外部 APM 跳转。
 
 Trace query 存储默认会做基础治理：保存前会截断到 2048 bytes，并对常见 `authorization: bearer`、`api_key`、`token` 片段做 `[redacted]` 替换。部署侧可通过 `TRACE_STORE_QUERY`、`TRACE_QUERY_MAX_BYTES`、`TRACE_RETENTION_DAYS` 表达策略；历史数据清理需要单独 job 或数据库保留策略。
 
@@ -148,7 +148,7 @@ Trace query 存储默认会做基础治理：保存前会截断到 2048 bytes，
 
 | 能力 | 当前状态 | 后续可选增强 |
 | --- | --- | --- |
-| OpenTelemetry | `OTEL_EXPORTER_OTLP_ENDPOINT` 和 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 分别接受绝对 OTLP/HTTP traces/metrics endpoint（如 `http://otel-collector:4318/v1/traces` 与 `/v1/metrics`）。trace 只包含受限 span 属性；metrics 导出核心 HTTP、RAG、依赖就绪和 trace-store counters/histograms，并仅使用低基数属性。两者都不导出 query、prompt、文档、模型输出、tenant、trace ID 或原始错误文本。 | 增加指标持久化、采样与跨服务拓扑。 |
+| OpenTelemetry | `OTEL_EXPORTER_OTLP_ENDPOINT` 和 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 分别接受绝对 OTLP/HTTP traces/metrics endpoint（如 `http://otel-collector:4318/v1/traces` 与 `/v1/metrics`）。HTTP 接受并返回 W3C `traceparent`；`OTEL_TRACES_SAMPLER_ARG` 是 `[0,1]` 的根 trace 采样比例（默认 `1`），已采样/未采样远端父级均按 parent-based 语义继承，`OTEL_SERVICE_NAME` 默认 `orag`。trace 只包含受限 span 属性；metrics 导出核心 HTTP、RAG、依赖就绪和 trace-store counters/histograms，并仅使用低基数属性。两者都不导出 query、prompt、文档、模型输出、tenant、trace ID 或原始错误文本。 | 增加指标持久化；在 Collector 端按真实容量配置 retention 与 error/latency tail sampling。 |
 | LangFuse | 只保留 `LANGFUSE_*` 配置边界，当前没有 LangFuse client，也不上传 prompt、completion、score 或 trace。 | 在合规和脱敏策略明确后，将 RAG query、retrieval、rerank、generation 映射到 LangFuse trace/observation。 |
 | Prompt 记录 | 生产默认保持 `OBSERVABILITY_RECORD_PROMPTS=false`。 | 仅在明确授权、脱敏和留存策略后开启。 |
 
