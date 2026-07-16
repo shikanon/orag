@@ -132,6 +132,16 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Logger:              logger,
 	}
 	metrics := observability.NewMetrics()
+	otlpMetricsCloser, err := observability.ConfigureOTLPMetrics(ctx, cfg.Observability.OTLPMetricsEndpoint, metrics)
+	if err != nil {
+		return nil, err
+	}
+	otlpMetricsNeedsCleanup := true
+	defer func() {
+		if otlpMetricsNeedsCleanup {
+			_ = otlpMetricsCloser()
+		}
+	}()
 	graphRunner, err := raggraph.NewRAGGraph(ctx, ragSvc)
 	if err != nil {
 		return nil, err
@@ -280,8 +290,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	configureRAGShadow(ragSvc, cfg.Maintenance.OfflineKnowledgeOrganizer, offlineKnowledgeOptions)
 	offlineKnowledgeSvc := offlineknowledge.NewService(backend.offlineKnowledgeRepo, offlineKnowledgeOptions)
 	offlineScheduler := buildOfflineKnowledgeScheduler(cfg, offlineKnowledgeSvc, logger)
-	closers := append([]func() error{otlpCloser}, backend.closers...)
+	closers := append([]func() error{otlpCloser, otlpMetricsCloser}, backend.closers...)
 	otlpNeedsCleanup = false // closers own the OTLP provider on all subsequent paths.
+	otlpMetricsNeedsCleanup = false
 	if offlineScheduler != nil && offlineScheduler.Enabled() {
 		if err := offlineScheduler.Start(context.Background()); err != nil {
 			for i := len(closers) - 1; i >= 0; i-- {
