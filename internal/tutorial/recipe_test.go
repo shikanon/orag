@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,30 @@ func TestParseRecipeFitsPublishedVisualQuickTier(t *testing.T) {
 	}
 	if _, err := ParseRecipe([]byte(validVisualRecipe), template, pack); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPublishedVisualRecipesMatchCatalog(t *testing.T) {
+	catalog, err := NewCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, err := catalog.Get("visual-document-rag", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tier := range []string{"quick", "benchmark"} {
+		pack, ok := templatePack(template, tier)
+		if !ok {
+			t.Fatalf("%s pack is absent", tier)
+		}
+		raw, err := os.ReadFile(filepath.Join("..", "..", "tutorial-recipes", "visual-document-rag", "1.0.0", tier, "manifest.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ParseRecipe(raw, template, pack); err != nil {
+			t.Fatalf("%s recipe: %v", tier, err)
+		}
 	}
 }
 
