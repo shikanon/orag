@@ -31,7 +31,7 @@ func main() {
 	switch os.Args[1] {
 	case "migrate":
 		cfg := mustConfig()
-		if err := migrateCmd(cfg); err != nil {
+		if err := migrateCmd(cfg, os.Args[2:], os.Stdout); err != nil {
 			log.Fatalf("migrate: %v", err)
 		}
 		fmt.Println("migrations completed")
@@ -75,12 +75,34 @@ func mustConfig() config.Config {
 	return cfg
 }
 
-func migrateCmd(cfg config.Config) error {
+func migrateCmd(cfg config.Config, args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	status := fs.Bool("status", false, "report local migration state without applying changes")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	pool, err := postgres.Open(context.Background(), cfg.Database.URL)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
+	if *status {
+		entries, err := postgres.MigrationStatuses(context.Background(), pool, "migrations")
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			state := "pending"
+			at := ""
+			if entry.AppliedAt != nil {
+				state = "applied"
+				at = entry.AppliedAt.Format(time.RFC3339)
+			}
+			fmt.Fprintf(out, "%s\t%s\t%s\n", entry.Version, state, at)
+		}
+		return nil
+	}
 	return postgres.Migrate(context.Background(), pool, "migrations")
 }
 
@@ -334,5 +356,5 @@ func (f optionalBoolFlag) IsBoolFlag() bool {
 }
 
 func usage() {
-	fmt.Println("usage: oragctl [migrate|eval|token|trace|generate-agent-artifacts|generate-skills]")
+	fmt.Println("usage: oragctl [migrate [--status]|eval|token|trace|generate-agent-artifacts|generate-skills]")
 }

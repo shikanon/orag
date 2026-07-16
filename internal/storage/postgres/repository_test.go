@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -49,6 +50,23 @@ DROP TABLE example;`)
 	}
 	if !strings.Contains(got, "DROP TABLE example") {
 		t.Fatalf("down migration missing drop statement: %q", got)
+	}
+}
+
+func TestMigrationVersionsSortsSQLFilesAndIgnoresOtherFiles(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"000010_later.sql", "000002_earlier.sql", "README.md"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := migrationVersions(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"000002_earlier", "000010_later"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("migrationVersions() = %#v, want %#v", got, want)
 	}
 }
 

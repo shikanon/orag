@@ -35,8 +35,11 @@ docker-compose --env-file .env images
 docker-compose --env-file .env run --rm --no-deps orag-api oragctl migrate --status
 ```
 
-If the installed `oragctl` does not support `--status`, record the migration
-table from PostgreSQL and the image digest instead.
+`migrate --status` is read-only: it lists every migration bundled with the
+running release as `applied` or `pending`, with the applied timestamp. Keep
+this output with the backup manifest. A pending migration means the backup and
+the intended restore image are not at the same schema level; resolve that
+before claiming a restore drill passed.
 
 ## PostgreSQL backup
 
