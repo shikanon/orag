@@ -105,3 +105,28 @@ func TestRuntimeDefinitionBindsP6RerankReuseContract(t *testing.T) {
 		t.Fatalf("baseline=%#v P6=%#v", baseline, p6)
 	}
 }
+
+func TestRuntimeDefinitionBindsP7GraphContract(t *testing.T) {
+	service := NewLiveRunService(nil, nil, nil)
+	service.ConfigureCandidateIngestors(RuntimeEnvironment{}, map[string]RuntimeIngestor{TutorialP7GraphCandidateID: &recordingRuntimeIngestor{}})
+	experiment := Experiment{
+		ProjectID: "prj_1", CloneJobID: "tclj_1", TemplateID: "text-rag", TemplateVersion: "1.0.7", Tier: "quick",
+		RuntimeStatus: "ready", KnowledgeBaseID: "tkb_p0", DatasetID: "tds_1", BaselineProfile: "realtime", BaselineTopK: 5,
+		PackManifest: Manifest{Runtime: &RuntimeManifest{Candidates: []RuntimeCandidate{{
+			ID: TutorialP7GraphCandidateID, Chapter: TutorialP7GraphChapter, ParserMethod: "basic",
+			ChunkSizeTokens: TutorialBaselineChunkSizeTokens, ChunkOverlapTokens: TutorialBaselineChunkOverlapTokens,
+			RetrievalStrategy: TutorialRetrievalStrategyGraph, GraphRetrievalEnabled: true,
+		}}}},
+	}
+	baseline, err := service.runtimeDefinition(experiment, "baseline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p7, err := service.runtimeDefinition(experiment, TutorialP7GraphCandidateID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p7.graphRetrievalEnabled || p7.rerankEnabled || p7.multiQueryCount != 0 || p7.queryExpansionMode != TutorialQueryExpansionNone || p7.retrievalStrategy != TutorialRetrievalStrategyGraph || p7.reuseBaselineIndex || p7.knowledgeBaseID == baseline.knowledgeBaseID || p7.definitionFingerprint == baseline.definitionFingerprint || p7.comparisonFingerprint != baseline.comparisonFingerprint {
+		t.Fatalf("baseline=%#v P7=%#v", baseline, p7)
+	}
+}

@@ -122,17 +122,18 @@ type Experiment struct {
 // ExperimentVariant is the safe public projection of an immutable Pack
 // candidate. It intentionally excludes resource coordinates and model input.
 type ExperimentVariant struct {
-	ID                  string `json:"id"`
-	Chapter             string `json:"chapter,omitempty"`
-	ParserMethod        string `json:"parser_method"`
-	ChunkSizeTokens     int    `json:"chunk_size_tokens,omitempty"`
-	ChunkOverlapTokens  int    `json:"chunk_overlap_tokens,omitempty"`
-	ContextualRetrieval bool   `json:"contextual_retrieval"`
-	RetrievalStrategy   string `json:"retrieval_strategy"`
-	ReuseBaselineIndex  bool   `json:"reuse_baseline_index"`
-	MultiQueryCount     int    `json:"multi_query_count"`
-	RerankEnabled       bool   `json:"rerank_enabled"`
-	Available           bool   `json:"available"`
+	ID                    string `json:"id"`
+	Chapter               string `json:"chapter,omitempty"`
+	ParserMethod          string `json:"parser_method"`
+	ChunkSizeTokens       int    `json:"chunk_size_tokens,omitempty"`
+	ChunkOverlapTokens    int    `json:"chunk_overlap_tokens,omitempty"`
+	ContextualRetrieval   bool   `json:"contextual_retrieval"`
+	RetrievalStrategy     string `json:"retrieval_strategy"`
+	ReuseBaselineIndex    bool   `json:"reuse_baseline_index"`
+	MultiQueryCount       int    `json:"multi_query_count"`
+	RerankEnabled         bool   `json:"rerank_enabled"`
+	GraphRetrievalEnabled bool   `json:"graph_retrieval_enabled"`
+	Available             bool   `json:"available"`
 }
 
 // CloneRepository persists requests before any project or remote Pack action
@@ -313,8 +314,9 @@ func publicExperiment(experiment Experiment) Experiment {
 				ChunkSizeTokens: candidate.ChunkSizeTokens, ChunkOverlapTokens: candidate.ChunkOverlapTokens,
 				ContextualRetrieval: candidate.ContextualRetrieval, RetrievalStrategy: candidateRetrievalStrategy(candidate),
 				ReuseBaselineIndex: candidate.ReuseBaselineIndex, Available: available,
-				MultiQueryCount: candidate.MultiQueryCount,
-				RerankEnabled:   candidate.RerankEnabled,
+				MultiQueryCount:       candidate.MultiQueryCount,
+				RerankEnabled:         candidate.RerankEnabled,
+				GraphRetrievalEnabled: candidate.GraphRetrievalEnabled,
 			})
 		}
 	}

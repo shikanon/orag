@@ -3011,7 +3011,7 @@ components:
         retrieval_strategy:
           type: string
           readOnly: true
-          enum: [hybrid, sparse]
+          enum: [hybrid, sparse, graph]
           description: Immutable server-owned retriever strategy for this Pack-declared variant.
         reuse_baseline_index:
           type: boolean
@@ -3026,6 +3026,10 @@ components:
           type: boolean
           readOnly: true
           description: Whether this immutable variant enables the server-owned reranker.
+        graph_retrieval_enabled:
+          type: boolean
+          readOnly: true
+          description: Whether this immutable variant builds graph relations and uses graph expansion during evaluation.
         available:
           type: boolean
           description: Whether this installed Pack currently has a runnable runtime root.
@@ -3119,7 +3123,7 @@ components:
         retrieval_strategy:
           type: string
           readOnly: true
-          enum: [hybrid, sparse]
+          enum: [hybrid, sparse, graph]
           description: Stored server-derived retriever strategy.
         reused_baseline_index:
           type: boolean
@@ -3139,6 +3143,10 @@ components:
           type: boolean
           readOnly: true
           description: Stored server-derived reranker state for this run.
+        graph_retrieval_enabled:
+          type: boolean
+          readOnly: true
+          description: Stored server-derived graph retrieval state for this run.
         indexed_chunk_count:
           type: integer
           readOnly: true
