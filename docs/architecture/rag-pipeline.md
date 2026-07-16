@@ -53,7 +53,7 @@ trace context (trace_id)
                 node_name, latency_ms, error, created_at
 ```
 
-`rag_traces` 表示一次完整 RAG 查询；`rag_node_spans` 表示 Graph 中关键节点的执行片段。node span 按 `created_at, id` 排序后可还原节点执行顺序；任一 span 的 `error` 非空时，HTTP/CLI 查询结果会标记 `has_error=true` 并累计 `error_count`。如果调用方复用同一个 `X-Trace-ID`，持久化记录按最后完成的请求整体覆盖主记录和 node spans，不会把多次请求的 spans 追加到同一个 trace。持久化应用 trace 仍是查询权威；当设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 时，应用会额外导出只含受限属性的 OpenTelemetry span，LangFuse 仍未接入。
+`rag_traces` 表示一次完整 RAG 查询；`rag_node_spans` 表示 Graph 中关键节点的执行片段。node span 按 `created_at, id` 排序后可还原节点执行顺序；任一 span 的 `error` 非空时，HTTP/CLI 查询结果会标记 `has_error=true` 并累计 `error_count`。如果调用方复用同一个 `X-Trace-ID`，持久化记录按最后完成的请求整体覆盖主记录和 node spans，不会把多次请求的 spans 追加到同一个 trace。持久化应用 trace 仍是查询权威；当设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 时，应用会额外导出只含受限属性的 OpenTelemetry span，并用 W3C `traceparent` 连接调用链。`OTEL_TRACES_SAMPLER_ARG` 仅控制这条可选导出的新根 trace 比例，不能影响应用 trace 持久化；LangFuse 仍未接入。
 
 ## 入库可见性与检索授权
 

@@ -2393,6 +2393,7 @@ type testResponse struct {
 	Body          string
 	ContentType   string
 	TraceIDHeader string
+	Traceparent   string
 }
 
 func newTestHertz(t *testing.T) (*route.Engine, func()) {
@@ -2651,6 +2652,7 @@ func performJSONWithHeaders(h *route.Engine, method, path, body, token string, e
 		Body:          string(result.Body()),
 		ContentType:   string(result.Header.ContentType()),
 		TraceIDHeader: result.Header.Get(observability.TraceIDHeader),
+		Traceparent:   result.Header.Get("traceparent"),
 	}
 }
 

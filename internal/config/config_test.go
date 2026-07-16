@@ -31,6 +31,34 @@ func TestLoadOTLPMetricsEndpoint(t *testing.T) {
 	}
 }
 
+func TestLoadOTLPTraceSampling(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "test-key")
+	t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.25")
+	t.Setenv("OTEL_SERVICE_NAME", "orag-pilot")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := cfg.Observability.OTLPTraceSampleRatio, 0.25; got != want {
+		t.Fatalf("OTLP trace sample ratio = %v, want %v", got, want)
+	}
+	if got, want := cfg.Observability.OTLPServiceName, "orag-pilot"; got != want {
+		t.Fatalf("OTLP service name = %q, want %q", got, want)
+	}
+}
+
+func TestLoadOTLPTraceSamplingRejectsInvalidRatio(t *testing.T) {
+	for _, value := range []string{"not-a-number", "-0.01", "1.01", "NaN", "Inf"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("ARK_API_KEY", "test-key")
+			t.Setenv("OTEL_TRACES_SAMPLER_ARG", value)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), "OTEL_TRACES_SAMPLER_ARG") {
+				t.Fatalf("Load() error = %v, want OTEL_TRACES_SAMPLER_ARG validation error", err)
+			}
+		})
+	}
+}
+
 func TestLoadTutorialCatalogBaseURLOverride(t *testing.T) {
 	t.Setenv("ARK_API_KEY", "test-key")
 	t.Setenv("TUTORIAL_CATALOG_BASE_URL", "https://example.test/packs")

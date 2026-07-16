@@ -41,7 +41,7 @@ Current baseline:
 | HTTP API, knowledge bases, ingestion, JSON/SSE query | `beta` | Close consistency gaps and validate versioned contracts in production pilots |
 | PostgreSQL + Qdrant hybrid retrieval, RRF, rerank, semantic cache | `beta` | Complete load, recovery, and compatibility validation |
 | Datasets, evaluations, LLM-as-Judge, optimizer | `beta` | Publish reproducible benchmarks and enforce budget/concurrency limits |
-| Application traces, Prometheus metrics, readiness and health | `beta` | Complete metrics persistence/sampling policy and cross-service topology |
+| Application traces, Prometheus metrics, readiness and health | `beta` | Complete metrics persistence and calibrate Collector retention/tail sampling for pilot capacity |
 | Contextual Retrieval, RAPTOR, Query Router, Graph Retrieval | `experimental` | Publish ablations, cost, fallback behavior, and recommended use cases |
 | Offline Knowledge and MCP self-check/diagnose/ops | `experimental` | Remove fixture dependencies and validate approval and audit boundaries |
 | ORAG Console | `experimental` | Complete orchestration, API debugging, evaluation gates, promotion, and rollback |
@@ -154,7 +154,7 @@ For dependency boundaries, [#221](https://github.com/shikanon/orag/issues/221) u
 
 ### Observability and quality gates
 
-- Optional OpenTelemetry trace/metrics exporters and importable Prometheus/Grafana resources with baseline alerts are available; complete metrics persistence, sampling, and cross-service topology next.
+- Optional OpenTelemetry trace/metrics exporters and importable Prometheus/Grafana resources with baseline alerts are available. OTLP traces support W3C `traceparent` cross-service propagation and parent-based ratio head sampling; metrics persistence and Collector retention/tail-sampling calibration remain operator work.
 - Gate Go unit/vet/race, OpenAPI, Console typecheck/unit/build/E2E, PostgreSQL + Qdrant integration, and dual-architecture image smoke tests.
 - A verifiable performance-baseline report contract now fixes Benchmark Pack, mock-run, environment/build/load fingerprints, and ingestion throughput, query p50/p95, cache-hit, evaluation-duration, model-call, and cost definitions; publish comparable results next with disclosed hardware and provider conditions.
 

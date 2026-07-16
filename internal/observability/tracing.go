@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/shikanon/orag/internal/platform/id"
+	"go.opentelemetry.io/otel/propagation"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 const TraceIDHeader = "X-Trace-ID"
@@ -55,6 +57,23 @@ func EnsureTraceID(ctx context.Context) string {
 		return traceID
 	}
 	return NewTraceID()
+}
+
+// ExtractTraceContext adds a valid W3C traceparent to ctx. Invalid input is
+// intentionally ignored by the OpenTelemetry propagator.
+func ExtractTraceContext(ctx context.Context, traceparent string) context.Context {
+	return propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": strings.TrimSpace(traceparent)})
+}
+
+// TraceparentFromContext returns the W3C traceparent for the active span, or an
+// empty string when no OpenTelemetry span context exists.
+func TraceparentFromContext(ctx context.Context) string {
+	if !oteltrace.SpanContextFromContext(ctx).IsValid() {
+		return ""
+	}
+	carrier := propagation.MapCarrier{}
+	propagation.TraceContext{}.Inject(ctx, carrier)
+	return carrier.Get("traceparent")
 }
 
 func SetTracer(tracer Tracer) func() {
