@@ -59,7 +59,7 @@ func NewPublicPackReader(baseURL string, maxManifestBytes, maxObjectBytes int64,
 }
 
 func (r *PublicPackReader) FetchManifest(ctx context.Context, manifestPath string) ([]byte, error) {
-	if r == nil || !validManifestPath(manifestPath) {
+	if r == nil || !validPublicArtifactPath(manifestPath) {
 		return nil, ErrPublicPackOrigin
 	}
 	response, err := r.get(ctx, manifestPath)
@@ -71,6 +71,18 @@ func (r *PublicPackReader) FetchManifest(ctx context.Context, manifestPath strin
 		return nil, ErrPublicPackContentType
 	}
 	return readBounded(response.Body, response.ContentLength, r.maxManifestBytes)
+}
+
+func validPublicArtifactPath(value string) bool {
+	return validManifestPath(value) || strings.HasSuffix(value, "/protocol.json") && validArtifactPathPrefix(value)
+}
+
+func validArtifactPathPrefix(value string) bool {
+	if value == "" || strings.HasPrefix(value, "/") || strings.Contains(value, "\\") {
+		return false
+	}
+	cleaned := path.Clean(value)
+	return cleaned == value && cleaned != "." && !strings.HasPrefix(cleaned, "../")
 }
 
 func (r *PublicPackReader) FetchObject(ctx context.Context, manifestPath string, object PackObject) (VerifiedObject, error) {

@@ -190,6 +190,40 @@ func TestCloneRunCreatesProjectCopiesVerifiedPackAndMarksExperimentInstalled(t *
 	}
 }
 
+func TestCloneRunInstallsVideoProtocolWithoutDownloadingBenchmarkData(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/packs/video-rag/1.0.0/quick/protocol.json" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(validVideoProtocol))
+	}))
+	defer server.Close()
+	repo := NewMemoryCloneRepository()
+	svc := NewCloneService(catalogForCloneTest(t), repo, time.Now)
+	reader, err := NewPublicPackReader(server.URL+"/packs", 1024, 1024, time.Second, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewLocalPrivateStore(t.TempDir(), "tutorial-experiments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.ConfigureInstaller(newFakeCloneProjects(), reader, store)
+	job, _, err := svc.Start(context.Background(), Subject{TenantID: "tenant_a", ID: "user_a"}, CloneRequest{TemplateID: "video-rag", Version: "1.0.0", Tier: "quick", ProjectName: "Video lab", IdempotencyKey: "video_1", LicenseAccepted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Run(context.Background(), Subject{TenantID: "tenant_a", ID: "user_a"}, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	experiment, found, err := repo.GetExperiment(context.Background(), "tenant_a", job.ProjectID)
+	if err != nil || !found || experiment.PackStatus != PackStatusInstalled || experiment.RuntimeStatus != "runtime_unavailable" || experiment.PackManifest.VideoProtocol == nil || len(experiment.PackManifest.Objects) != 0 {
+		t.Fatalf("experiment=%#v found=%v err=%v", experiment, found, err)
+	}
+}
+
 func TestPublicExperimentExposesDeclaredVariantsWithoutManifest(t *testing.T) {
 	experiment := Experiment{
 		ID: "texp_1", PackStatus: PackStatusInstalled, RuntimeStatus: "ready",
