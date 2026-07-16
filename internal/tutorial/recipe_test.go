@@ -1,7 +1,10 @@
 package tutorial
 
 import (
+	"archive/zip"
+	"bytes"
 	"errors"
+	"io"
 	"testing"
 )
 
@@ -25,6 +28,38 @@ func TestParseRecipeRejectsSourceDrift(t *testing.T) {
 func TestParseRecipeRejectsUnknownFields(t *testing.T) {
 	raw := []byte(validVisualRecipe[:len(validVisualRecipe)-1] + `,"url":"https://example.com"}`)
 	if _, err := ParseRecipe(raw, visualRecipeTemplate(), visualRecipePack()); !errors.Is(err, ErrRecipeInvalid) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestVerifyRecipeSourceChecksSizeAndChecksum(t *testing.T) {
+	object := RecipeSourceObject{Path: "vidoseek.json", Bytes: 3, SHA256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}
+	if err := VerifyRecipeSource(bytes.NewBufferString("abc"), object); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyRecipeSource(bytes.NewBufferString("abcd"), object); !errors.Is(err, ErrRecipeSourceSize) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestValidateRecipeZIPRejectsTraversal(t *testing.T) {
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	entry, err := writer.Create("../escape.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(entry, "x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(buffer.Bytes()), int64(buffer.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateRecipeZIP(reader); !errors.Is(err, ErrRecipeArchiveUnsafe) {
 		t.Fatalf("err = %v", err)
 	}
 }
