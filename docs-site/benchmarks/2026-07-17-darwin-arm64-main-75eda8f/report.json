@@ -1,0 +1,29 @@
+{
+  "schema_version": "orag.performance-baseline.v1",
+  "id": "text-rag/mock-baseline-v1",
+  "generated_at": "2026-07-17T00:09:13Z",
+  "provenance": {
+    "workload_id": "text-rag/mock-baseline-v1",
+    "pack_tier": "benchmark",
+    "deterministic_mock": true,
+    "dataset_fingerprint": "cf9464182852e8e42d66dbb934e127a6e512b991b7d5a42469438fe0c21200f4",
+    "runtime_environment_sha256": "e71ac748efc9df9740e40a5ad6875ad809ebf47017a76427edd6574de25b257b",
+    "build_revision": "75eda8f80787d205e16e4ff7f65096bcd8926888"
+  },
+  "load": {
+    "warmup_requests": 10,
+    "measured_requests": 20,
+    "concurrency": 1
+  },
+  "metrics": {
+    "ingestion_documents": 3,
+    "ingestion_duration_ms": 1,
+    "ingestion_throughput_docs_per_sec": 3000,
+    "query_p50_ms": 1,
+    "query_p95_ms": 1,
+    "cache_hit_rate": 1,
+    "evaluation_duration_ms": 3,
+    "model_calls": 33,
+    "cost_usd": 0
+  }
+}

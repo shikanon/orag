@@ -156,7 +156,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 - 已接入可选 OpenTelemetry trace/metrics exporter，并提供可导入的 Prometheus/Grafana 资源和基础告警规则；OTLP trace 支持 W3C `traceparent` 跨服务传播和 parent-based ratio head sampling。指标持久化及按试点容量校准的 Collector 留存/tail sampling 仍由 operator 完成。
 - CI 覆盖 Go 单测/vet/race、OpenAPI、Console typecheck/unit/build/E2E、PostgreSQL + Qdrant 集成测试和双架构镜像 smoke。
-- 已发布可验证的性能基线报告契约和 deterministic mock runner：固定的公开 SDK workload 实际执行入库、预热/测量查询和评测，并记录环境/构建/负载指纹与入库吞吐、查询 p50/p95、缓存命中、评测耗时、模型调用和成本口径；待在已披露硬件与 provider 条件下生成可比较公开结果。
+- 已发布可验证的性能基线报告契约和 deterministic mock runner：固定的公开 SDK workload 实际执行入库、预热/测量查询和评测，并记录环境/构建/负载指纹与入库吞吐、查询 p50/p95、缓存命中、评测耗时、模型调用和成本口径；首份公开、本机披露的 `75eda8f` evidence 含报告、环境 allowlist、manifest 与 SHA-256 校验，待在已披露 provider/网络条件下生成可比较结果。
 
 ### 阶段退出门槛
 

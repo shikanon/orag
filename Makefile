@@ -2,7 +2,7 @@ APP_NAME := orag-api
 GOFLAGS ?= -tags=stdjson,gjson
 CGO_ENABLED ?= 0
 
-.PHONY: run test vet fmt tidy sdk-check console-dev console-build console-test console-api-generate console-real-e2e console-real-tutorial-clone-e2e console-real-tutorial-benchmark-e2e backup-restore-drill benchmark-report-run benchmark-report-verify docs-build dev-up dev-down demo demo-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-claude install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down tutorial-pack-build tutorial-pack-verify tutorial-pack-publish video-protocol-verify video-protocol-publish
+.PHONY: run test vet fmt tidy sdk-check console-dev console-build console-test console-api-generate console-real-e2e console-real-tutorial-clone-e2e console-real-tutorial-benchmark-e2e backup-restore-drill benchmark-report-run benchmark-report-verify performance-baseline-evidence-verify docs-build dev-up dev-down demo demo-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-claude install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down tutorial-pack-build tutorial-pack-verify tutorial-pack-publish video-protocol-verify video-protocol-publish
 
 TUTORIAL_PACK_SOURCE ?=
 TUTORIAL_PACK_OUTPUT ?= .tmp/tutorial-packs
@@ -56,6 +56,10 @@ benchmark-report-verify:
 benchmark-report-run:
 	@test -n "$(BENCHMARK_REPORT)" || (echo "BENCHMARK_REPORT must point to the output performance baseline JSON file"; exit 2)
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/oragctl benchmark-run --output "$(BENCHMARK_REPORT)" --build-revision "$$(git rev-parse HEAD)"
+
+performance-baseline-evidence-verify:
+	@test -n "$(PERFORMANCE_BASELINE_EVIDENCE)" || (echo "PERFORMANCE_BASELINE_EVIDENCE must point to a public performance baseline evidence directory"; exit 2)
+	./scripts/verify-performance-baseline-evidence.sh --dir "$(PERFORMANCE_BASELINE_EVIDENCE)"
 
 console-api-generate:
 	npm --prefix console run api:generate
