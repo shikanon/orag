@@ -57,6 +57,24 @@ func (r *MemoryAPIKeyRepository) RevokeAPIKey(_ context.Context, tenantID, id st
 	return true, nil
 }
 
+func (r *MemoryAPIKeyRepository) RotateAPIKey(_ context.Context, tenantID, sourceID string, replacement APIKey, revokedAt time.Time) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	source, ok := r.items[sourceID]
+	if !ok || source.TenantID != tenantID || source.RevokedAt != nil || (source.ExpiresAt != nil && !source.ExpiresAt.After(revokedAt)) {
+		return false, nil
+	}
+	for _, item := range r.items {
+		if item.RotatedFromKeyID == sourceID {
+			return false, nil
+		}
+	}
+	source.RevokedAt = timePointerCopy(revokedAt)
+	r.items[sourceID] = source
+	r.items[replacement.ID] = replacement
+	return true, nil
+}
+
 func (r *MemoryAPIKeyRepository) TouchAPIKeyLastUsed(_ context.Context, id string, usedAt, notAfter time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

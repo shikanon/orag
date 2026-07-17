@@ -75,6 +75,7 @@ func (s *Server) Hertz() *server.Hertz {
 	v1 := h.Group("/v1", s.authMiddleware)
 	v1.POST("/api-keys", s.createAPIKey)
 	v1.GET("/api-keys", s.listAPIKeys)
+	v1.POST("/api-keys/:api_key_id/rotate", s.rotateAPIKey)
 	v1.DELETE("/api-keys/:api_key_id", s.revokeAPIKey)
 	v1.POST("/projects", s.createProject)
 	v1.GET("/projects", s.listProjects)

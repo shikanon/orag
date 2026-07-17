@@ -46,7 +46,7 @@ Content-Type: application/json
 Authorization: Bearer <access_token>
 ```
 
-Bearer 同时支持登录返回的用户 token 和 `orag_sk_` 机器 API Key。只有 `tenant_admin` 可以通过 `POST /v1/api-keys`、`GET /v1/api-keys` 和 `DELETE /v1/api-keys/{api_key_id}` 管理密钥；创建响应会返回一次完整 secret，后续列表只返回非敏感元数据。
+Bearer 同时支持登录返回的用户 token 和 `orag_sk_` 机器 API Key。只有 `tenant_admin` 可以通过 `POST /v1/api-keys`、`GET /v1/api-keys`、`POST /v1/api-keys/{api_key_id}/rotate` 和 `DELETE /v1/api-keys/{api_key_id}` 管理密钥；创建或轮换响应会返回一次完整 secret，后续列表只返回非敏感元数据。轮换在同一事务中创建继任 Key 并立即撤销原 Key，不提供重叠有效期。
 
 `project_editor` 和 `project_viewer` 必须绑定项目。项目级密钥可以访问其项目下的知识库、上传、查询、数据集和评测；editor 可以写入这些资源，viewer 只能读取、查询和读取评测结果。创建知识库或数据集时省略 `project_id` 会自动使用密钥绑定的项目，显式指定其他项目会返回 `403 forbidden`。
 

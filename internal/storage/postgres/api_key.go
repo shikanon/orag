@@ -22,13 +22,7 @@ func NewAPIKeyRepository(pool *pgxpool.Pool) *APIKeyRepository {
 }
 
 func (r *APIKeyRepository) CreateAPIKey(ctx context.Context, item auth.APIKey) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO api_keys(
-			id, tenant_id, project_id, name, prefix, key_hash, role, created_by,
-			created_at, expires_at, revoked_at, last_used_at
-		) VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-		item.ID, item.TenantID, item.ProjectID, item.Name, item.Prefix, item.KeyHash,
-		item.Role, item.CreatedBy, item.CreatedAt, item.ExpiresAt, item.RevokedAt, item.LastUsedAt)
+	_, err := insertAPIKey(ctx, r.pool, item)
 	return apiKeyPersistenceError(err)
 }
 
@@ -67,6 +61,44 @@ func (r *APIKeyRepository) RevokeAPIKey(ctx context.Context, tenantID, id string
 	return tag.RowsAffected() > 0, nil
 }
 
+// RotateAPIKey atomically inserts a replacement and revokes its active source.
+// A row lock prevents two callers from successfully rotating the same key.
+func (r *APIKeyRepository) RotateAPIKey(ctx context.Context, tenantID, sourceID string, replacement auth.APIKey, revokedAt time.Time) (bool, error) {
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	source, err := scanAPIKey(tx.QueryRow(ctx, apiKeySelect+` WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, sourceID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if source.RevokedAt != nil || (source.ExpiresAt != nil && !source.ExpiresAt.After(revokedAt)) {
+		return false, nil
+	}
+	if replacement.TenantID != source.TenantID || replacement.RotatedFromKeyID != source.ID {
+		return false, auth.ErrAPIKeyInvalid
+	}
+	if _, err := insertAPIKey(ctx, tx, replacement); err != nil {
+		return false, apiKeyPersistenceError(err)
+	}
+	tag, err := tx.Exec(ctx, `UPDATE api_keys SET revoked_at=$3 WHERE tenant_id=$1 AND id=$2 AND revoked_at IS NULL`, tenantID, sourceID, revokedAt)
+	if err != nil {
+		return false, err
+	}
+	if tag.RowsAffected() != 1 {
+		return false, nil
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (r *APIKeyRepository) TouchAPIKeyLastUsed(ctx context.Context, id string, usedAt, notAfter time.Time) error {
 	_, err := r.pool.Exec(ctx, `
 		UPDATE api_keys SET last_used_at=$2
@@ -76,14 +108,28 @@ func (r *APIKeyRepository) TouchAPIKeyLastUsed(ctx context.Context, id string, u
 
 const apiKeySelect = `
 	SELECT id, tenant_id, COALESCE(project_id,''), name, prefix, key_hash, role,
-		created_by, created_at, expires_at, revoked_at, last_used_at
+		created_by, created_at, expires_at, revoked_at, last_used_at, COALESCE(rotated_from_key_id,'')
 	FROM api_keys`
+
+type apiKeyExecutor interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func insertAPIKey(ctx context.Context, executor apiKeyExecutor, item auth.APIKey) (pgconn.CommandTag, error) {
+	return executor.Exec(ctx, `
+		INSERT INTO api_keys(
+			id, tenant_id, project_id, name, prefix, key_hash, role, created_by,
+			created_at, expires_at, revoked_at, last_used_at, rotated_from_key_id
+		) VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10,$11,$12,NULLIF($13,''))`,
+		item.ID, item.TenantID, item.ProjectID, item.Name, item.Prefix, item.KeyHash,
+		item.Role, item.CreatedBy, item.CreatedAt, item.ExpiresAt, item.RevokedAt, item.LastUsedAt, item.RotatedFromKeyID)
+}
 
 func scanAPIKey(row interface{ Scan(...any) error }) (auth.APIKey, error) {
 	var item auth.APIKey
 	err := row.Scan(&item.ID, &item.TenantID, &item.ProjectID, &item.Name, &item.Prefix,
 		&item.KeyHash, &item.Role, &item.CreatedBy, &item.CreatedAt, &item.ExpiresAt,
-		&item.RevokedAt, &item.LastUsedAt)
+		&item.RevokedAt, &item.LastUsedAt, &item.RotatedFromKeyID)
 	return item, err
 }
 

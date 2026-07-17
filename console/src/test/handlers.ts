@@ -188,6 +188,7 @@ export const server = setupServer(
     return HttpResponse.json({ api_key: apiKey, secret: 'orag_sk_key_new_secret' }, { status: 201 })
   }),
   http.delete('/v1/api-keys/:apiKeyId', () => new HttpResponse(null, { status: 204 })),
+  http.post('/v1/api-keys/:apiKeyId/rotate', ({ params }) => HttpResponse.json({ api_key: { id: 'key_rotated', tenant_id: 'tenant_a', name: 'Active runner', prefix: 'orag_sk_key_rotated', role: 'project_editor', project_id: 'prj_a', created_by: 'user:admin', created_at: '2026-07-11T00:00:00Z', rotated_from_key_id: params.apiKeyId }, secret: 'orag_sk_key_rotated_secret' }, { status: 201 })),
   http.get('/v1/tutorials', () => HttpResponse.json({ tutorials })),
   http.get('/v1/tutorials/:templateId/replay', ({ params }) => params.templateId === 'text-rag' ? HttpResponse.json(officialReplay) : new HttpResponse(null, { status: 404 })),
   http.get('/v1/tutorials/:templateId', ({ params }) => {

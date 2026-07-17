@@ -74,6 +74,23 @@ func (s *Server) revokeAPIKey(ctx context.Context, c *app.RequestContext) {
 	c.Status(consts.StatusNoContent)
 }
 
+func (s *Server) rotateAPIKey(ctx context.Context, c *app.RequestContext) {
+	principal, ok := requestPrincipal(c)
+	if !ok || !authorizeRequest(c, auth.ActionAPIKeyManage, principal.TenantID, "") {
+		return
+	}
+	rotated, err := s.App.APIKeys.Rotate(ctx, auth.APIKeyRotateInput{
+		TenantID:  principal.TenantID,
+		KeyID:     c.Param("api_key_id"),
+		RotatedBy: string(principal.Kind) + ":" + principal.SubjectID,
+	})
+	if err != nil {
+		writeAPIKeyError(c, err, "api_key_rotate_failed")
+		return
+	}
+	c.JSON(consts.StatusCreated, rotated)
+}
+
 func writeAPIKeyProjectError(c *app.RequestContext, err error) {
 	if errors.Is(err, project.ErrNotFound) {
 		writeError(c, consts.StatusNotFound, "project_not_found", "project not found")

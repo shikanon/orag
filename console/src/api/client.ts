@@ -88,6 +88,7 @@ export const projectApi = {
 export const apiKeyApi = {
   list: () => request<{ api_keys: APIKey[] }>('/v1/api-keys'),
   create: (input: CreateAPIKeyInput) => request<CreateAPIKeyResponse>('/v1/api-keys', { method: 'POST', body: JSON.stringify(input) }),
+  rotate: (apiKeyId: string) => request<CreateAPIKeyResponse>(`/v1/api-keys/${encodeURIComponent(apiKeyId)}/rotate`, { method: 'POST' }),
   revoke: (apiKeyId: string) => requestVoid(`/v1/api-keys/${encodeURIComponent(apiKeyId)}`, { method: 'DELETE' }),
 }
 

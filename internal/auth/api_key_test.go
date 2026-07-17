@@ -101,6 +101,54 @@ func TestAPIKeyCreateValidation(t *testing.T) {
 	}
 }
 
+func TestAPIKeyRotateAtomicallyReplacesActiveSource(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMemoryAPIKeyRepository()
+	service := NewAPIKeyService(repo, "test-pepper")
+	now := time.Date(2026, 7, 17, 1, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	expires := now.Add(24 * time.Hour)
+	source, err := service.Create(ctx, APIKeyCreateInput{TenantID: "tenant_1", ProjectID: "prj_1", Name: "CI deploy", Role: RoleProjectEditor, CreatedBy: "user_1", ExpiresAt: &expires})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := service.Rotate(ctx, APIKeyRotateInput{TenantID: "tenant_1", KeyID: source.APIKey.ID, RotatedBy: "user_2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replacement.Secret == "" || replacement.APIKey.ID == source.APIKey.ID || replacement.APIKey.RotatedFromKeyID != source.APIKey.ID {
+		t.Fatalf("replacement = %#v", replacement)
+	}
+	if replacement.APIKey.TenantID != source.APIKey.TenantID || replacement.APIKey.ProjectID != source.APIKey.ProjectID || replacement.APIKey.Role != source.APIKey.Role || replacement.APIKey.Name != source.APIKey.Name || replacement.APIKey.ExpiresAt == nil || !replacement.APIKey.ExpiresAt.Equal(expires) {
+		t.Fatalf("rotation did not preserve source scope: source=%#v replacement=%#v", source.APIKey, replacement.APIKey)
+	}
+	if _, err := service.Authenticate(ctx, source.Secret); !errors.Is(err, ErrAPIKeyRevoked) {
+		t.Fatalf("source authentication error = %v, want revoked", err)
+	}
+	if principal, err := service.Authenticate(ctx, replacement.Secret); err != nil || principal.SubjectID != replacement.APIKey.ID || principal.ProjectID != "prj_1" {
+		t.Fatalf("replacement authentication principal=%#v err=%v", principal, err)
+	}
+	items, err := service.List(ctx, "tenant_1")
+	if err != nil || len(items) != 2 || !hasRotatedAPIKey(items, replacement.APIKey.ID, source.APIKey.ID) || strings.Contains(items[0].Prefix, replacement.Secret) {
+		t.Fatalf("listed rotation metadata=%#v err=%v", items, err)
+	}
+	if _, err := service.Rotate(ctx, APIKeyRotateInput{TenantID: "tenant_1", KeyID: source.APIKey.ID, RotatedBy: "user_2"}); !errors.Is(err, ErrAPIKeyNotFound) {
+		t.Fatalf("second rotation error = %v, want not found", err)
+	}
+	if _, err := service.Rotate(ctx, APIKeyRotateInput{TenantID: "tenant_2", KeyID: replacement.APIKey.ID, RotatedBy: "user_2"}); !errors.Is(err, ErrAPIKeyNotFound) {
+		t.Fatalf("cross-tenant rotation error = %v, want not found", err)
+	}
+}
+
+func hasRotatedAPIKey(items []APIKey, id, sourceID string) bool {
+	for _, item := range items {
+		if item.ID == id && item.RotatedFromKeyID == sourceID {
+			return true
+		}
+	}
+	return false
+}
+
 func TestAPIKeyAuthenticationRejectsMalformedWrongAndExpiredSecrets(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMemoryAPIKeyRepository()

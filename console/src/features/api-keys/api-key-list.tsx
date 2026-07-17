@@ -16,6 +16,8 @@ export function APIKeyList() {
   const projectsQuery = useQuery({ queryKey: ['projects', 'list'], queryFn: projectApi.list })
   const [createOpen, setCreateOpen] = useState(false)
   const [revokeTarget, setRevokeTarget] = useState<APIKey | null>(null)
+  const [rotateTarget, setRotateTarget] = useState<APIKey | null>(null)
+  const [rotated, setRotated] = useState<CreateAPIKeyResponse | null>(null)
   const revokeMutation = useMutation({
     mutationFn: apiKeyApi.revoke,
     onSuccess: (_result, apiKeyId) => {
@@ -23,14 +25,24 @@ export function APIKeyList() {
       setRevokeTarget(null)
     },
   })
+  const rotateMutation = useMutation({
+    mutationFn: apiKeyApi.rotate,
+    onSuccess: (result, apiKeyId) => {
+      setRotated(result)
+      queryClient.setQueryData<{ api_keys: APIKey[] }>(['api-keys', 'list'], (current) => ({ api_keys: [result.api_key, ...(current?.api_keys ?? []).map((key) => key.id === apiKeyId ? { ...key, revoked_at: new Date().toISOString() } : key)] }))
+      setRotateTarget(null)
+    },
+  })
 
   const projectNames = new Map(projectsQuery.data?.projects.map((project) => [project.id, project.name]))
   const keys = keysQuery.data?.api_keys ?? []
   return <main className="content"><header className="page-header"><div><h1>API Keys</h1><p>为自动化和服务集成创建可撤销的机器凭证。</p></div><button className="primary-button" type="button" onClick={() => setCreateOpen(true)}>创建 API Key</button></header>
     <p className="security-note"><strong>安全提示</strong> 完整密钥只在创建后显示一次。请立即存入密钥管理器，切勿提交到代码仓库。</p>
-    {keysQuery.isLoading ? <APIKeyListSkeleton /> : keysQuery.isError ? <section className="api-key-state" role="alert"><h2>API Key 加载失败</h2><p>无法读取机器凭证，请检查 API 状态后重试。</p><button className="secondary-button" type="button" onClick={() => void keysQuery.refetch()}>重新加载</button></section> : keys.length === 0 ? <section className="api-key-state"><h2>还没有 API Key</h2><p>创建项目级密钥，让自动化任务使用最小权限访问 ORAG。</p><button className="primary-button" type="button" onClick={() => setCreateOpen(true)}>创建第一个 API Key</button></section> : <section className="api-key-table" aria-label="API Key 列表"><div className="api-key-head"><span>名称 / Prefix</span><span>权限</span><span>范围</span><span>最近使用</span><span>状态</span><span /></div>{keys.map((key) => <div className="api-key-row" key={key.id}><span><strong>{key.name}</strong><code>{key.prefix}…</code></span><span>{roleLabels[key.role]}</span><span>{key.project_id ? projectNames.get(key.project_id) ?? key.project_id : '全部项目'}</span><time>{key.last_used_at ? formatDate(key.last_used_at) : '从未使用'}</time><KeyStatus item={key} /><span>{key.revoked_at ? null : <button className="danger-link" type="button" onClick={() => setRevokeTarget(key)}>撤销</button>}</span></div>)}</section>}
+    {keysQuery.isLoading ? <APIKeyListSkeleton /> : keysQuery.isError ? <section className="api-key-state" role="alert"><h2>API Key 加载失败</h2><p>无法读取机器凭证，请检查 API 状态后重试。</p><button className="secondary-button" type="button" onClick={() => void keysQuery.refetch()}>重新加载</button></section> : keys.length === 0 ? <section className="api-key-state"><h2>还没有 API Key</h2><p>创建项目级密钥，让自动化任务使用最小权限访问 ORAG。</p><button className="primary-button" type="button" onClick={() => setCreateOpen(true)}>创建第一个 API Key</button></section> : <section className="api-key-table" aria-label="API Key 列表"><div className="api-key-head"><span>名称 / Prefix</span><span>权限</span><span>范围</span><span>最近使用</span><span>状态</span><span /></div>{keys.map((key) => <div className="api-key-row" key={key.id}><span><strong>{key.name}</strong><code>{key.prefix}…</code></span><span>{roleLabels[key.role]}</span><span>{key.project_id ? projectNames.get(key.project_id) ?? key.project_id : '全部项目'}</span><time>{key.last_used_at ? formatDate(key.last_used_at) : '从未使用'}</time><KeyStatus item={key} /><span>{isActive(key) ? <><button className="secondary-link" type="button" onClick={() => setRotateTarget(key)}>轮换</button><button className="danger-link" type="button" onClick={() => setRevokeTarget(key)}>撤销</button></> : null}</span></div>)}</section>}
     {createOpen ? <CreateAPIKeyDialog projects={projectsQuery.data?.projects ?? []} onClose={() => setCreateOpen(false)} /> : null}
     {revokeTarget ? <ConfirmRevokeDialog item={revokeTarget} pending={revokeMutation.isPending} failed={revokeMutation.isError} onCancel={() => { revokeMutation.reset(); setRevokeTarget(null) }} onConfirm={() => revokeMutation.mutate(revokeTarget.id)} /> : null}
+    {rotateTarget ? <ConfirmRotateDialog item={rotateTarget} pending={rotateMutation.isPending} failed={rotateMutation.isError} onCancel={() => { rotateMutation.reset(); setRotateTarget(null) }} onConfirm={() => rotateMutation.mutate(rotateTarget.id)} /> : null}
+    {rotated ? <RotatedAPIKeyDialog result={rotated} onClose={() => setRotated(null)} /> : null}
   </main>
 }
 
@@ -38,6 +50,10 @@ function KeyStatus({ item }: { item: APIKey }) {
   if (item.revoked_at) return <span className="key-status revoked">已撤销</span>
   if (item.expires_at && new Date(item.expires_at).getTime() <= Date.now()) return <span className="key-status expired">已过期</span>
   return <span className="key-status active">有效</span>
+}
+
+function isActive(item: APIKey) {
+  return !item.revoked_at && (!item.expires_at || new Date(item.expires_at).getTime() > Date.now())
 }
 
 function CreateAPIKeyDialog({ projects, onClose }: { projects: Array<{ id: string; name: string }>; onClose: () => void }) {
@@ -84,6 +100,23 @@ function CreateAPIKeyDialog({ projects, onClose }: { projects: Array<{ id: strin
 
 function ConfirmRevokeDialog({ item, pending, failed, onCancel, onConfirm }: { item: APIKey; pending: boolean; failed: boolean; onCancel: () => void; onConfirm: () => void }) {
   return <div className="dialog-backdrop" role="presentation"><section className="api-key-dialog compact" role="alertdialog" aria-modal="true" aria-labelledby="revoke-title"><header><div><span className="eyebrow danger">不可恢复</span><h2 id="revoke-title">撤销 “{item.name}”</h2></div></header><p>使用该密钥的所有自动化请求会立即失效。历史记录仍会保留。</p>{failed ? <p role="alert">撤销失败，请稍后重试。</p> : null}<div className="dialog-actions"><button className="secondary-button" type="button" onClick={onCancel}>取消</button><button className="danger-button" type="button" disabled={pending} onClick={onConfirm}>{pending ? '撤销中…' : '确认撤销'}</button></div></section></div>
+}
+
+function ConfirmRotateDialog({ item, pending, failed, onCancel, onConfirm }: { item: APIKey; pending: boolean; failed: boolean; onCancel: () => void; onConfirm: () => void }) {
+  return <div className="dialog-backdrop" role="presentation"><section className="api-key-dialog compact" role="alertdialog" aria-modal="true" aria-labelledby="rotate-title"><header><div><span className="eyebrow">立即切换</span><h2 id="rotate-title">轮换 “{item.name}”</h2></div></header><p>系统会立即撤销当前密钥，并只显示一次新的完整密钥。请先确保能够安全保存新密钥。</p>{failed ? <p role="alert">轮换失败，请稍后重试。</p> : null}<div className="dialog-actions"><button className="secondary-button" type="button" onClick={onCancel}>取消</button><button className="primary-button" type="button" disabled={pending} onClick={onConfirm}>{pending ? '轮换中…' : '确认轮换'}</button></div></section></div>
+}
+
+function RotatedAPIKeyDialog({ result, onClose }: { result: CreateAPIKeyResponse; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+  const copySecret = async () => {
+    try {
+      await navigator.clipboard.writeText(result.secret)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }
+  return <div className="dialog-backdrop" role="presentation"><section className="api-key-dialog" role="dialog" aria-modal="true" aria-labelledby="rotated-api-key-title"><header><div><span className="eyebrow">轮换成功</span><h2 id="rotated-api-key-title">立即保存新的 API Key</h2></div></header><p className="one-time-warning">旧密钥已失效。关闭此窗口后，完整新密钥将无法再次查看。</p><label className="secret-field">API Key<div><code data-testid="rotated-api-key-secret">{result.secret}</code><button className="secondary-button" type="button" onClick={() => void copySecret()}>{copied ? '已复制' : '复制'}</button></div></label><p className="secret-metadata">{result.api_key.name} · {roleLabels[result.api_key.role]} · Prefix {result.api_key.prefix}</p><div className="dialog-actions"><button className="primary-button" type="button" onClick={onClose}>我已安全保存</button></div></section></div>
 }
 
 function APIKeyListSkeleton() {

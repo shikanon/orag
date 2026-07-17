@@ -110,16 +110,26 @@ func TestPostgresAPIKeyLifecycleAndTenantProjectBoundary(t *testing.T) {
 	if status, body := performIntegrationJSON(h, "GET", "/v1/traces", "", created.Secret); status != 403 {
 		t.Fatalf("HTTP unmigrated trace route status=%d body=%s", status, body)
 	}
-	if err := app.APIKeys.Revoke(ctx, "tenant_other", created.APIKey.ID); !errors.Is(err, auth.ErrAPIKeyNotFound) {
-		t.Fatalf("cross-tenant revoke error = %v", err)
-	}
-	if err := app.APIKeys.Revoke(ctx, testTenantID, created.APIKey.ID); err != nil {
-		t.Fatal(err)
+	rotated, err := app.APIKeys.Rotate(ctx, auth.APIKeyRotateInput{TenantID: testTenantID, KeyID: created.APIKey.ID, RotatedBy: "integration_rotate"})
+	if err != nil || rotated.Secret == "" || rotated.APIKey.RotatedFromKeyID != created.APIKey.ID {
+		t.Fatalf("rotate result=%#v err=%v", rotated, err)
 	}
 	if _, err := app.APIKeys.Authenticate(ctx, created.Secret); !errors.Is(err, auth.ErrAPIKeyRevoked) {
+		t.Fatalf("rotated source authentication error=%v", err)
+	}
+	if principal, err := app.APIKeys.Authenticate(ctx, rotated.Secret); err != nil || principal.SubjectID != rotated.APIKey.ID {
+		t.Fatalf("rotated replacement principal=%#v err=%v", principal, err)
+	}
+	if err := app.APIKeys.Revoke(ctx, "tenant_other", rotated.APIKey.ID); !errors.Is(err, auth.ErrAPIKeyNotFound) {
+		t.Fatalf("cross-tenant revoke error = %v", err)
+	}
+	if err := app.APIKeys.Revoke(ctx, testTenantID, rotated.APIKey.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.APIKeys.Authenticate(ctx, rotated.Secret); !errors.Is(err, auth.ErrAPIKeyRevoked) {
 		t.Fatalf("revoked authentication error = %v", err)
 	}
-	if status, body := performIntegrationJSON(h, "GET", "/v1/projects/"+ownedProject.ID, "", created.Secret); status != 401 {
+	if status, body := performIntegrationJSON(h, "GET", "/v1/projects/"+ownedProject.ID, "", rotated.Secret); status != 401 {
 		t.Fatalf("revoked HTTP API key status=%d body=%s", status, body)
 	}
 }

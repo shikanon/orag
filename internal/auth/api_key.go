@@ -30,18 +30,19 @@ var (
 )
 
 type APIKey struct {
-	ID         string     `json:"id"`
-	TenantID   string     `json:"tenant_id"`
-	ProjectID  string     `json:"project_id,omitempty"`
-	Name       string     `json:"name"`
-	Prefix     string     `json:"prefix"`
-	KeyHash    string     `json:"-"`
-	Role       Role       `json:"role"`
-	CreatedBy  string     `json:"created_by"`
-	CreatedAt  time.Time  `json:"created_at"`
-	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
-	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	ID               string     `json:"id"`
+	TenantID         string     `json:"tenant_id"`
+	ProjectID        string     `json:"project_id,omitempty"`
+	Name             string     `json:"name"`
+	Prefix           string     `json:"prefix"`
+	KeyHash          string     `json:"-"`
+	Role             Role       `json:"role"`
+	CreatedBy        string     `json:"created_by"`
+	CreatedAt        time.Time  `json:"created_at"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	RevokedAt        *time.Time `json:"revoked_at,omitempty"`
+	LastUsedAt       *time.Time `json:"last_used_at,omitempty"`
+	RotatedFromKeyID string     `json:"rotated_from_key_id,omitempty"`
 }
 
 type APIKeyCreateInput struct {
@@ -58,12 +59,59 @@ type APIKeyCreateResult struct {
 	Secret string `json:"secret"`
 }
 
+type APIKeyRotateInput struct {
+	TenantID  string
+	KeyID     string
+	RotatedBy string
+}
+
 type APIKeyRepository interface {
 	CreateAPIKey(context.Context, APIKey) error
 	ListAPIKeys(context.Context, string) ([]APIKey, error)
 	GetAPIKeyByID(context.Context, string) (APIKey, bool, error)
 	RevokeAPIKey(context.Context, string, string, time.Time) (bool, error)
+	RotateAPIKey(context.Context, string, string, APIKey, time.Time) (bool, error)
 	TouchAPIKeyLastUsed(context.Context, string, time.Time, time.Time) error
+}
+
+func (s *APIKeyService) Rotate(ctx context.Context, input APIKeyRotateInput) (APIKeyCreateResult, error) {
+	input.TenantID = strings.TrimSpace(input.TenantID)
+	input.KeyID = strings.TrimSpace(input.KeyID)
+	input.RotatedBy = strings.TrimSpace(input.RotatedBy)
+	if input.TenantID == "" || input.KeyID == "" || input.RotatedBy == "" {
+		return APIKeyCreateResult{}, fmt.Errorf("%w: tenant, key, and actor are required", ErrAPIKeyInvalid)
+	}
+	source, found, err := s.repo.GetAPIKeyByID(ctx, input.KeyID)
+	if err != nil {
+		return APIKeyCreateResult{}, err
+	}
+	now := s.now()
+	if !found || source.TenantID != input.TenantID || source.RevokedAt != nil || (source.ExpiresAt != nil && !source.ExpiresAt.After(now)) {
+		return APIKeyCreateResult{}, ErrAPIKeyNotFound
+	}
+	keyID := id.New("key")
+	secretBytes := make([]byte, 32)
+	if n, err := s.rand(secretBytes); err != nil || n != len(secretBytes) {
+		if err == nil {
+			err = errors.New("short random read")
+		}
+		return APIKeyCreateResult{}, fmt.Errorf("generate rotated api key: %w", err)
+	}
+	secret := apiKeyPrefix + keyID + "_" + base64.RawURLEncoding.EncodeToString(secretBytes)
+	replacement := APIKey{
+		ID: keyID, TenantID: source.TenantID, ProjectID: source.ProjectID, Name: source.Name,
+		Prefix: apiKeyPrefix + keyID, KeyHash: s.hashAPIKey(secret), Role: source.Role,
+		CreatedBy: input.RotatedBy, CreatedAt: now, ExpiresAt: source.ExpiresAt,
+		RotatedFromKeyID: source.ID,
+	}
+	rotated, err := s.repo.RotateAPIKey(ctx, input.TenantID, source.ID, replacement, now)
+	if err != nil {
+		return APIKeyCreateResult{}, err
+	}
+	if !rotated {
+		return APIKeyCreateResult{}, ErrAPIKeyNotFound
+	}
+	return APIKeyCreateResult{APIKey: replacement, Secret: secret}, nil
 }
 
 type APIKeyService struct {

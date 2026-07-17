@@ -763,6 +763,35 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /v1/api-keys/{api_key_id}/rotate:
+    parameters:
+      - name: api_key_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [APIKeys]
+      operationId: rotateAPIKey
+      x-orag-maturity: experimental
+      description: Atomically creates a successor and immediately revokes the source key. The full replacement secret is returned exactly once.
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Replacement API key metadata and its one-time secret.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateAPIKeyResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /v1/projects:
     get:
       tags: [Projects]
@@ -2450,6 +2479,9 @@ components:
         last_used_at:
           type: string
           format: date-time
+        rotated_from_key_id:
+          type: string
+          description: Source key ID when this key was created by rotation.
     CreateAPIKeyResponse:
       type: object
       required: [api_key, secret]
