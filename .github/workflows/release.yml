@@ -32,6 +32,15 @@ jobs:
           cache-dependency-path: console/package-lock.json
       - run: go mod download
       - run: npm --prefix console ci
+      - name: Audit published API and SDK compatibility
+        run: |
+          previous_tag="$(git tag --merged "${GITHUB_SHA}^" --sort=-version:refname | head -n1)"
+          if [ -z "$previous_tag" ]; then
+            echo "no previous published tag; compatibility audit bootstrap"
+            exit 0
+          fi
+          echo "auditing compatibility against $previous_tag"
+          COMPATIBILITY_BASE="$previous_tag" make compatibility-audit
       - run: make test vet openapi-validate agent-gate sdk-check
       - run: npm --prefix console test -- --run
       - run: npm --prefix console run build
