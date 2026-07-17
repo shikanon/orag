@@ -2,6 +2,8 @@
 
 # ORAG
 
+> This legacy English entry remains for existing links. The canonical English README is [README.md](./README.md); switch to [简体中文](./README.zh-CN.md).
+
 **A Go-native RAG service framework for ingestion, hybrid retrieval, generation, evaluation, and optimization.**
 
 <p>
