@@ -149,7 +149,7 @@ For dependency boundaries, [#221](https://github.com/shikanon/orag/issues/221) u
 ### Security and tenant boundaries
 
 - Add machine API keys, minimal RBAC, and project-scoped authorization; default administrator credentials are bootstrap-only.
-- Threat-model and test secret injection/rotation, log redaction, prompt/document recording, and cross-tenant queries.
+- Threat-model and test secret injection/rotation, log redaction, prompt/document recording, and cross-tenant queries. The `ORAG_ENV=production` startup guard now rejects demo/weak credentials, debug/mock execution, mock storage, and non-HTTPS local URLs; rotation exercises and an independent threat-model review remain outstanding.
 - Add CodeQL, `govulncheck`, npm audit, secret scanning, container scanning, and OpenSSF Scorecard to CI.
 
 ### Observability and quality gates

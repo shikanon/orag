@@ -157,6 +157,7 @@ Trace query 存储默认会做基础治理：保存前会截断到 2048 bytes，
 部署前确认：
 
 - 已替换 `JWT_SECRET`、`ADMIN_DEFAULT_PASSWORD`、数据库密码、所选模型 provider key、所选 provider 的 base URL 和对象存储密钥。
+- 公网服务显式设置 `ORAG_ENV=production`；启动会拒绝 demo/弱/相同的 JWT 与 API-key pepper、默认管理员密码、debug/mock provider/mock storage 以及非 HTTPS 或本机 `PUBLIC_BASE_URL`。该模式不会打印 secret 值。
 - 容器内 `DATABASE_URL` 使用 Compose/Kubernetes 服务名，例如 `postgres`。
 - 容器内 `QDRANT_HOST` 使用服务名，例如 `qdrant`。
 - 已执行数据库迁移。

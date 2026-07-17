@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -35,12 +36,17 @@ type StorageConfig struct {
 }
 
 type ServerConfig struct {
+	Environment   string
 	Host          string
 	Port          int
 	PublicBaseURL string
 	Debug         bool
 	BuildRevision string
 }
+
+// IsProduction reports whether strict startup safety checks apply. Production
+// intent is explicit; URL shape and host location never infer it.
+func (c ServerConfig) IsProduction() bool { return c.Environment == "production" }
 
 func (c ServerConfig) Addr() string {
 	return fmt.Sprintf("%s:%d", c.Host, c.Port)
@@ -276,6 +282,7 @@ func Load() (Config, error) {
 	}
 	cfg := Config{
 		Server: ServerConfig{
+			Environment:   strings.ToLower(strings.TrimSpace(getenv("ORAG_ENV", "development"))),
 			Host:          getenv("HOST", "0.0.0.0"),
 			Port:          getenvInt("PORT", 8080),
 			PublicBaseURL: getenv("PUBLIC_BASE_URL", "http://localhost:8080"),
@@ -507,6 +514,9 @@ func selectedProviderModel(registry modelprovider.Registry, provider string, cap
 
 func (c Config) Validate() error {
 	var missing []string
+	if c.Server.Environment != "" && c.Server.Environment != "development" && c.Server.Environment != "production" {
+		return errors.New("ORAG_ENV must be development or production")
+	}
 	if c.Auth.JWTSecret == "" {
 		missing = append(missing, "JWT_SECRET")
 	}
@@ -608,10 +618,73 @@ func (c Config) Validate() error {
 	if err := c.Maintenance.OfflineKnowledgeOrganizer.Validate(); err != nil {
 		return err
 	}
+	if err := c.validateProductionConfiguration(); err != nil {
+		return err
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+func (c Config) validateProductionConfiguration() error {
+	if !c.Server.IsProduction() {
+		return nil
+	}
+	if c.Server.Debug {
+		return errors.New("production configuration forbids DEBUG=true")
+	}
+	if c.Models.AllowDeterministicMock {
+		return errors.New("production configuration forbids ALLOW_DETERMINISTIC_MOCK=true")
+	}
+	for _, provider := range []string{c.Models.ChatProvider, c.Models.EmbeddingProvider, c.Models.RerankProvider, c.Models.MultimodalProvider} {
+		if modelprovider.NormalizeName(provider) == modelprovider.Mock {
+			return errors.New("production configuration forbids mock model providers")
+		}
+	}
+	if c.ObjectStorage.MockUpload {
+		return errors.New("production configuration forbids OBJECT_STORAGE_MOCK_UPLOAD=true")
+	}
+	if weakProductionSecret(c.Auth.JWTSecret) {
+		return errors.New("production configuration requires a non-demo JWT_SECRET of at least 32 bytes")
+	}
+	if weakProductionSecret(c.Auth.APIKeyPepper) || c.Auth.APIKeyPepper == c.Auth.JWTSecret {
+		return errors.New("production configuration requires an independent non-demo API_KEY_PEPPER of at least 32 bytes")
+	}
+	if len(c.Auth.AdminDefaultPassword) < 16 || c.Auth.AdminDefaultPassword == "admin" {
+		return errors.New("production configuration requires a non-demo ADMIN_DEFAULT_PASSWORD of at least 16 bytes")
+	}
+	if !safeProductionPublicBaseURL(c.Server.PublicBaseURL) {
+		return errors.New("production configuration requires PUBLIC_BASE_URL to be an absolute HTTPS non-local URL")
+	}
+	return nil
+}
+
+func weakProductionSecret(value string) bool {
+	if len(value) < 32 {
+		return true
+	}
+	switch value {
+	case "orag-dev-secret-change-me", "orag-dev-api-key-pepper-change-me", "orag-compose-demo-secret":
+		return true
+	default:
+		return false
+	}
+}
+
+func safeProductionPublicBaseURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "" || host == "localhost" || strings.HasSuffix(host, ".local") {
+		return false
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return false
+	}
+	return true
 }
 
 func (c TutorialConfig) Validate() error {
@@ -716,6 +789,7 @@ func isRate(value float64) bool {
 
 func (c Config) RedactedEnv() map[string]string {
 	return map[string]string{
+		"ORAG_ENV":                                          c.Server.Environment,
 		"HOST":                                              c.Server.Host,
 		"PORT":                                              strconv.Itoa(c.Server.Port),
 		"DATABASE_URL":                                      redact(c.Database.URL),
