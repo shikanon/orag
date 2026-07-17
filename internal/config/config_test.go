@@ -490,6 +490,95 @@ func TestExplicitMockModeAllowsMissingProviderAPIKey(t *testing.T) {
 	}
 }
 
+func TestProductionConfigurationGuard(t *testing.T) {
+	configureProductionConfig(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() safe production config error = %v", err)
+	}
+	if cfg.Server.Environment != "production" || !cfg.Server.IsProduction() {
+		t.Fatalf("production environment = %#v", cfg.Server)
+	}
+
+	for name, mutate := range map[string]func(t *testing.T){
+		"default_jwt_secret": func(t *testing.T) {
+			t.Setenv("JWT_SECRET", "orag-dev-secret-change-me")
+		},
+		"short_jwt_secret": func(t *testing.T) {
+			t.Setenv("JWT_SECRET", "too-short")
+		},
+		"same_auth_secrets": func(t *testing.T) {
+			t.Setenv("API_KEY_PEPPER", strings.Repeat("j", 32))
+		},
+		"default_admin_password": func(t *testing.T) {
+			t.Setenv("ADMIN_DEFAULT_PASSWORD", "admin")
+		},
+		"short_admin_password": func(t *testing.T) {
+			t.Setenv("ADMIN_DEFAULT_PASSWORD", "too-short")
+		},
+		"debug": func(t *testing.T) {
+			t.Setenv("DEBUG", "true")
+		},
+		"deterministic_mock": func(t *testing.T) {
+			t.Setenv("ALLOW_DETERMINISTIC_MOCK", "true")
+		},
+		"mock_provider": func(t *testing.T) {
+			t.Setenv("ALLOW_DETERMINISTIC_MOCK", "true")
+			t.Setenv("LLM_CHAT_PROVIDER", "mock")
+		},
+		"mock_object_storage": func(t *testing.T) {
+			t.Setenv("OBJECT_STORAGE_MOCK_UPLOAD", "true")
+		},
+		"http_public_url": func(t *testing.T) {
+			t.Setenv("PUBLIC_BASE_URL", "http://orag.example.test")
+		},
+		"localhost_public_url": func(t *testing.T) {
+			t.Setenv("PUBLIC_BASE_URL", "https://localhost")
+		},
+		"ip_public_url": func(t *testing.T) {
+			t.Setenv("PUBLIC_BASE_URL", "https://127.0.0.1")
+		},
+		"local_public_url": func(t *testing.T) {
+			t.Setenv("PUBLIC_BASE_URL", "https://orag.local")
+		},
+	} {
+		name, mutate, want := name, mutate, "production"
+		t.Run(name, func(t *testing.T) {
+			configureProductionConfig(t)
+			mutate(t)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("Load() error = %v, want production guard error", err)
+			}
+		})
+	}
+}
+
+func TestEnvironmentRejectsUnknownValue(t *testing.T) {
+	configureProductionConfig(t)
+	t.Setenv("ORAG_ENV", "staging")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "ORAG_ENV") {
+		t.Fatalf("Load() error = %v, want ORAG_ENV validation error", err)
+	}
+}
+
+func configureProductionConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("ORAG_ENV", "production")
+	t.Setenv("PUBLIC_BASE_URL", "https://orag.example.test")
+	t.Setenv("DEBUG", "false")
+	t.Setenv("JWT_SECRET", strings.Repeat("j", 32))
+	t.Setenv("API_KEY_PEPPER", strings.Repeat("p", 32))
+	t.Setenv("ADMIN_DEFAULT_PASSWORD", "safe-bootstrap-password")
+	t.Setenv("ALLOW_DETERMINISTIC_MOCK", "false")
+	t.Setenv("LLM_CHAT_PROVIDER", "volcengine")
+	t.Setenv("LLM_EMBEDDING_PROVIDER", "volcengine")
+	t.Setenv("LLM_RERANK_PROVIDER", "volcengine")
+	t.Setenv("LLM_MULTIMODAL_PROVIDER", "volcengine")
+	t.Setenv("ARK_API_KEY", "production-provider-key")
+	t.Setenv("LLM_API_KEY", "")
+	t.Setenv("OBJECT_STORAGE_MOCK_UPLOAD", "false")
+}
+
 func TestProviderSpecificAPIKeyValidation(t *testing.T) {
 	t.Setenv("LLM_CHAT_PROVIDER", "openai")
 	t.Setenv("LLM_EMBEDDING_PROVIDER", "openai")
