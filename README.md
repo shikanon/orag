@@ -81,19 +81,19 @@ See the [compatibility and capability maturity policy](./docs/compatibility.md) 
 flowchart TB
   clients["Clients<br/>Console · curl · Go SDK"] --> api["Hertz HTTP API"]
   api --> auth["Authentication · Tenant · Error model"]
-  api --> graph["Eino RAG Graph"]
+  api --> rag_graph["Eino RAG Graph"]
   subgraph knowledge["Knowledge ingestion and retrieval"]
     ingest["Parser · Chunker · Loader"] --> postgres["PostgreSQL<br/>metadata · FTS sparse retrieval<br/>traces · evaluations"]
     ingest --> qdrant["Qdrant<br/>dense vectors · semantic cache"]
     postgres --> fusion["RRF fusion · rerank"]
     qdrant --> fusion
   end
-  graph --> ingest
-  graph --> fusion
-  graph --> providers["Model providers<br/>Ark / Doubao · embedding · rerank · multimodal"]
+  rag_graph --> ingest
+  rag_graph --> fusion
+  rag_graph --> providers["Model providers<br/>Ark / Doubao · embedding · rerank · multimodal"]
   fusion --> providers
   providers --> response["Answer · citations · trace · metrics"]
-  graph --> evaluation["Datasets · evaluations · optimizer"]
+  rag_graph --> evaluation["Datasets · evaluations · optimizer"]
   evaluation --> postgres
   response --> observability["Prometheus · logs · OpenTelemetry"]
 ```

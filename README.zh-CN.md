@@ -82,19 +82,19 @@ ORAG 使用 `experimental`、`beta`、`stable` 标注每项公共能力的兼容
 flowchart TB
   clients["客户端<br/>Console · curl · Go SDK"] --> api["Hertz HTTP API"]
   api --> auth["认证 · 租户 · 错误模型"]
-  api --> graph["Eino RAG Graph"]
+  api --> rag_graph["Eino RAG Graph"]
   subgraph knowledge["知识入库与检索"]
     ingest["解析 · 分块 · 入库"] --> postgres["PostgreSQL<br/>元数据 · FTS 稀疏检索<br/>Trace · 评估"]
     ingest --> qdrant["Qdrant<br/>Dense 向量 · 语义缓存"]
     postgres --> fusion["RRF 融合 · 重排"]
     qdrant --> fusion
   end
-  graph --> ingest
-  graph --> fusion
-  graph --> providers["模型 Provider<br/>Ark / 豆包 · Embedding · Rerank · 多模态"]
+  rag_graph --> ingest
+  rag_graph --> fusion
+  rag_graph --> providers["模型 Provider<br/>Ark / 豆包 · Embedding · Rerank · 多模态"]
   fusion --> providers
   providers --> response["回答 · 引用 · Trace · Metrics"]
-  graph --> evaluation["数据集 · 评估 · Optimizer"]
+  rag_graph --> evaluation["数据集 · 评估 · Optimizer"]
   evaluation --> postgres
   response --> observability["Prometheus · 日志 · OpenTelemetry"]
 ```
