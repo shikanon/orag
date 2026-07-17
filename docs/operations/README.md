@@ -6,6 +6,7 @@
 - [Reference server deployment](server-deployment.md)：在 `orag.tensorbytes.com` 上使用 GHCR 发布镜像部署 API、Console、迁移和依赖。
 - [Backup, restore, and disaster recovery](disaster-recovery.md)：PostgreSQL 与 Qdrant 的一致性备份、隔离恢复演练、校验和回滚流程。
 - [Grafana dashboard](grafana.md)：导入 ORAG Prometheus 指标概览、关联基础告警并保持只读处置边界。
+- [Credential rotation](credential-rotation.md)：API Key immediate cutover 演练，以及 JWT、server pepper、provider 和存储凭据的安全运维边界。
 
 ## 运行依赖
 

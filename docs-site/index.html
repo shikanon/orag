@@ -15,6 +15,7 @@
       <a href="https://github.com/shikanon/orag/tree/main/docs/sdk">Go SDK</a>
       <a href="./extensions.html">Extensions</a>
       <a href="./disaster-recovery.html">Recovery</a>
+      <a href="./credential-rotation.html">Security</a>
       <a href="https://github.com/shikanon/orag/blob/main/docs/operations/server-deployment.md">Deploy</a>
       <a href="./grafana.html">Observability</a>
       <a href="./api.html">API Reference</a>
@@ -118,6 +119,12 @@ result, err := client.Query(ctx, request)</code></pre>
         <h2>Prove the restore path.</h2>
         <p class="section-copy">Run an isolated PostgreSQL + Qdrant backup and restore drill, then verify a cited query and trace against recovered data.</p>
         <a class="text-link" href="./disaster-recovery.html">Read the recovery drill →</a>
+      </article>
+      <article>
+        <p class="eyebrow">Credential rotation</p>
+        <h2>Exercise the cutover path.</h2>
+        <p class="section-copy">Run an isolated API-key rotation drill that verifies source rejection, replacement access and secret-free evidence.</p>
+        <a class="text-link" href="./credential-rotation.html">Read the security boundary →</a>
       </article>
       <article>
         <p class="eyebrow">Performance evidence</p>
