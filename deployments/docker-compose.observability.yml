@@ -1,0 +1,36 @@
+# Optional controlled-pilot overlay. It intentionally does not alter the
+# default Compose walkthrough. Start it with the base file plus this overlay.
+services:
+  orag-api:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${ORAG_PILOT_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${ORAG_PILOT_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+      OTEL_TRACES_SAMPLER_ARG: ${ORAG_PILOT_TRACE_HEAD_SAMPLING_RATIO:-0.1}
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${ORAG_PROMETHEUS_RETENTION:-7d}
+      - --storage.tsdb.retention.size=${ORAG_PROMETHEUS_RETENTION_SIZE:-10GB}
+    ports:
+      - "${ORAG_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      orag-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.130.1
+    command: ["--config=/etc/otelcol-contrib/pilot.yml"]
+    volumes:
+      - ./otel-collector/pilot.yml:/etc/otelcol-contrib/pilot.yml:ro
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
