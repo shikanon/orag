@@ -62,3 +62,9 @@ make visual-recipe-verify \
 
 This verifies the Recipe declaration—not a mirror of ViDoSeek. A later
 upstream revision or new source file requires a new tutorial version.
+
+The repository's daily/manual `public pack verification` workflow also
+performs this anonymous HTTPS, MIME, declared-length, and SHA-256 check for
+the released Recipe. It verifies the declaration only; it does not download,
+redistribute, or make claims about ViDoSeek source data or visual Live Run
+results.

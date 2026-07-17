@@ -9,14 +9,26 @@ permissions:
   contents: read
 
 jobs:
-  text-rag:
-    name: text-rag public artifacts
+  tutorial-release:
+    name: ${{ matrix.id }} ${{ matrix.version }} public artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       CGO_ENABLED: "0"
       GOFLAGS: -tags=stdjson,gjson
       GOTOOLCHAIN: local
+      ORAG_TUTORIAL_PACK_ID: ${{ matrix.id }}
+      ORAG_TUTORIAL_PACK_VERSION: ${{ matrix.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: text-rag
+            version: 1.1.0
+          - id: visual-document-rag
+            version: 1.0.1
+          - id: video-rag
+            version: 1.0.0
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0

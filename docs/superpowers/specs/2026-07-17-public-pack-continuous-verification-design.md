@@ -2,7 +2,7 @@
 
 ## 目标
 
-把 `text-rag/1.1.0` 发布后的一次性人工回读，变成可重复、可见的 GitHub Actions 门禁。该门禁只验证已公开的只读工件，不上传、替换或删除对象，也不读取任何对象存储凭据。
+把已发布教程工件的一次性人工回读，变成可重复、可见的 GitHub Actions 门禁。首批矩阵覆盖 `text-rag/1.1.0`、`visual-document-rag/1.0.1` Recipe 与 `video-rag/1.0.0` Protocol。该门禁只验证已公开的只读声明与工件，不上传、替换或删除对象，也不读取任何对象存储凭据。
 
 ## 方案选择
 
@@ -12,7 +12,7 @@
 
 ## 架构与数据流
 
-workflow 在 GitHub-hosted runner 中匿名下载已发布版本根目录的 `SHA256SUMS`，写入临时目录 `text-rag/1.1.0/`。现有 `orag-pack-release -verify-public` 从该本地校验表派生固定公开前缀，并逐项 GET 其中声明的对象。
+workflow 在 GitHub-hosted runner 中匿名下载每个已发布版本根目录的 `SHA256SUMS`，写入相应临时目录。现有 `orag-pack-release -verify-public` 从该本地校验表派生固定公开前缀，并逐项 GET 其中声明的对象。
 
 每个响应必须满足：HTTP 200、HTTPS URL、响应体 SHA-256 与清单匹配、已声明的 `Content-Length` 等于实际读取字节数、以及按扩展名确定的 MIME 类型（JSON 为 `application/json`、gzip 为 `application/gzip`、其余文本为 `text/plain`，允许 MIME 参数）。验证器不接受重定向后的非 HTTPS URL。workflow 不打印 URL 中不存在的凭据，也不下载到仓库工作树。
 
@@ -23,6 +23,6 @@ workflow 在 GitHub-hosted runner 中匿名下载已发布版本根目录的 `SH
 ## 验收
 
 - 单元测试覆盖 MIME、长度、非 HTTPS 重定向和既有 SHA-256 合同。
-- `make tutorial-pack-public-verify` 无凭据运行并验证当前公开 `text-rag/1.1.0`。
+- `make tutorial-pack-public-verify` 无凭据运行；workflow 对三个当前公开版本分别执行它。
 - workflow 支持手动运行和每日定时运行，且不成为 PR 必需 check。
 - 文档说明其范围和本地复现命令。

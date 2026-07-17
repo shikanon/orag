@@ -53,3 +53,8 @@ base=https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs/video-rag/1.0.0
 curl -fsSLO "$base/SHA256SUMS"
 shasum -a 256 -c SHA256SUMS
 ```
+
+The repository's daily/manual `public pack verification` workflow performs
+the same anonymous HTTPS, MIME, declared-length, and SHA-256 check. It checks
+only the public Protocol declarations; it never accesses Video-MME source
+material and does not imply that a public Video Replay exists.
