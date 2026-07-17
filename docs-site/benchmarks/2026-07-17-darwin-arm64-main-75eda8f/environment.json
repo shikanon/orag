@@ -1,0 +1,21 @@
+{
+  "schema_version": "orag.performance-baseline-environment.v1",
+  "captured_at": "2026-07-17T00:09:13Z",
+  "machine": {
+    "cpu_model": "Apple M3 Pro",
+    "memory_bytes": 38654705664,
+    "host_arch": "arm64"
+  },
+  "runtime": {
+    "go_version": "go version go1.26.5 darwin/amd64",
+    "goos": "darwin",
+    "goarch": "amd64"
+  },
+  "operating_system": {
+    "name": "macOS",
+    "version": "26.5.1",
+    "build": "25F80"
+  },
+  "runner_command": "CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./cmd/oragctl benchmark-run --output report.json --build-revision 75eda8f80787d205e16e4ff7f65096bcd8926888",
+  "scope": "local deterministic-mock regression evidence; not a production or cross-hardware claim"
+}

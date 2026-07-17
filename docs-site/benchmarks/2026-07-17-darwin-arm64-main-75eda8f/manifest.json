@@ -1,0 +1,11 @@
+{
+  "schema_version": "orag.performance-baseline-evidence.v1",
+  "id": "2026-07-17-darwin-arm64-main-75eda8f",
+  "build_revision": "75eda8f80787d205e16e4ff7f65096bcd8926888",
+  "report_fingerprint_sha256": "cf1b1e6678853bd0e635509f4622ce4c2b2e839b3751e1ac43928528f9d2f50b",
+  "artifacts": [
+    "report.json",
+    "environment.json",
+    "manifest.json"
+  ]
+}
