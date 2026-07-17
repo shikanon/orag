@@ -35,6 +35,8 @@ make console-real-tutorial-benchmark-e2e
 SDK 运行，以及经 allowlist 处理的机器、运行时和系统披露。下载
 `report.json`、`environment.json`、`manifest.json` 和 `SHA256SUMS` 后，可用上面的
 Make 命令复核；完整性、报告 schema、mock 标记、build revision 和安全披露字段都必须通过。
+常规 CI 会对该冻结证据运行同一验证，防止校验清单、schema 或披露约束随仓库漂移；
+它不会在 CI 重新测量性能，也不会把本机 mock 数据提升为生产性能结论。
 
 新证据必须使用独立目录，不能覆盖旧报告：
 

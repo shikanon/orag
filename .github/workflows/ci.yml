@@ -27,6 +27,7 @@ jobs:
       - run: go test ./...
       - run: go vet ./...
       - run: go test ./tests/contract -run TestOpenAPI -v
+      - run: make performance-baseline-evidence-verify PERFORMANCE_BASELINE_EVIDENCE=docs-site/benchmarks/2026-07-17-darwin-arm64-main-75eda8f
       - run: docker build -f deployments/Dockerfile -t orag-api:ci .
       - run: docker build -f deployments/console.Dockerfile --target console -t orag-console:ci .
       - run: docker compose -f deployments/docker-compose.yml --profile demo config >/dev/null
