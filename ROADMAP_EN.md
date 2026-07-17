@@ -155,7 +155,7 @@ For dependency boundaries, [#221](https://github.com/shikanon/orag/issues/221) u
 
 ### Observability and quality gates
 
-- Optional OpenTelemetry trace/metrics exporters and importable Prometheus/Grafana resources with baseline alerts are available. OTLP traces support W3C `traceparent` cross-service propagation and parent-based ratio head sampling; metrics persistence and Collector retention/tail-sampling calibration remain operator work.
+- Optional OpenTelemetry trace/metrics exporters, importable Prometheus/Grafana resources, baseline alerts, and an optional pilot Compose overlay (persistent Prometheus, explicit reference retention, and policy-only Collector tail sampling) are available. OTLP traces support W3C `traceparent` cross-service propagation and parent-based ratio head sampling; pilot-capacity retention, a controlled trace backend, and tail-sampling calibration remain operator work.
 - Gate Go unit/vet/race, OpenAPI, Console typecheck/unit/build/E2E, PostgreSQL + Qdrant integration, and dual-architecture image smoke tests.
 - A verifiable performance-baseline report contract and deterministic mock runner now execute a fixed public-SDK workload through ingestion, warmup/measured queries, and evaluation while recording environment/build/load fingerprints and ingestion throughput, query p50/p95, cache-hit, evaluation-duration, model-call, and cost definitions. The first public, locally disclosed `75eda8f` evidence includes report, allowlisted environment, manifest, and SHA-256 verification; publish comparable results next with disclosed provider and network conditions.
 

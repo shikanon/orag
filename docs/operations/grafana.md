@@ -35,3 +35,26 @@ The dashboard does not authorize, enqueue, or execute a repair. Any self-ops app
 The built-in metrics are process-local counters and histograms. They reset on API restart; Prometheus retention is configured by the operator and is not managed by ORAG. Dashboard queries only use controlled labels such as route, status class, profile, cache status, dependency state, and outcome. They do not include trace IDs, tenants, user input, prompts, documents, model output, or raw errors.
 
 OTLP trace and core metrics export are optional through `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`. HTTP trace export accepts and returns W3C `traceparent`; `OTEL_TRACES_SAMPLER_ARG` sets the parent-based root sampling ratio (default `1`) and `OTEL_SERVICE_NAME` defaults to `orag`. Prometheus remains the complete local metrics surface and Grafana datasource for this release; metrics persistence and Collector retention/tail-sampling policy remain operator-owned.
+
+## Controlled pilot profile
+
+The optional [`docker-compose.observability.yml`](../../deployments/docker-compose.observability.yml)
+overlay provides a reviewable starting point for a controlled pilot. It adds a
+Prometheus named volume, a seven-day/10 GB default retention ceiling, existing
+alert rules, and an internal-only OTLP Collector:
+
+```bash
+docker compose \
+  -f deployments/docker-compose.yml \
+  -f deployments/docker-compose.observability.yml \
+  up -d
+```
+
+The overlay sets a 10% root head-sampling ratio and the Collector's reference
+tail policies retain error spans, spans at or above 5 seconds, and a 10%
+sample. Its default `nop` exporter deliberately drops received OTLP telemetry:
+it proves transport/policy wiring without writing traces to logs or an
+unreviewed backend. Before retaining traces, replace that exporter with an
+authenticated, access-controlled backend and calibrate quotas, retention and
+sampling from measured pilot traffic. These defaults are not production SLO or
+capacity claims.

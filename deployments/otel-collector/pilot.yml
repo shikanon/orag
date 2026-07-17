@@ -1,0 +1,45 @@
+# Policy-only pilot reference. Replace the nop exporter with a reviewed,
+# authenticated trace backend before expecting persistence or retention.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 5000
+    expected_new_traces_per_sec: 50
+    policies:
+      - name: retain-errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: retain-slow
+        type: latency
+        latency:
+          threshold_ms: 5000
+      - name: retain-pilot-sample
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+  batch:
+    timeout: 5s
+
+exporters:
+  nop: {}
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, tail_sampling, batch]
+      exporters: [nop]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [nop]
