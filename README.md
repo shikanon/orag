@@ -77,23 +77,25 @@ See the [compatibility and capability maturity policy](./docs/compatibility.md) 
 
 ## Architecture
 
-```text
-Client / curl / Go examples / SDK
-        |
-        v
-Hertz HTTP API  ---->  Auth / Tenant / Error Model
-        |
-        v
-Eino RAG Graph
-        |
-        +--> Parser / Chunker / Loader
-        +--> Qdrant dense retrieval + semantic cache
-        +--> PostgreSQL metadata + FTS sparse retrieval
-        +--> RRF fusion + rerank
-        +--> Ark / Doubao chat, embedding, multimodal adapters
-        |
-        v
-Answer + Citations + Trace + Metrics
+```mermaid
+flowchart TB
+  clients["Clients<br/>Console · curl · Go SDK"] --> api["Hertz HTTP API"]
+  api --> auth["Authentication · Tenant · Error model"]
+  api --> graph["Eino RAG Graph"]
+  subgraph knowledge["Knowledge ingestion and retrieval"]
+    ingest["Parser · Chunker · Loader"] --> postgres["PostgreSQL<br/>metadata · FTS sparse retrieval<br/>traces · evaluations"]
+    ingest --> qdrant["Qdrant<br/>dense vectors · semantic cache"]
+    postgres --> fusion["RRF fusion · rerank"]
+    qdrant --> fusion
+  end
+  graph --> ingest
+  graph --> fusion
+  graph --> providers["Model providers<br/>Ark / Doubao · embedding · rerank · multimodal"]
+  fusion --> providers
+  providers --> response["Answer · citations · trace · metrics"]
+  graph --> evaluation["Datasets · evaluations · optimizer"]
+  evaluation --> postgres
+  response --> observability["Prometheus · logs · OpenTelemetry"]
 ```
 
 | Layer | Default implementation | Notes |
