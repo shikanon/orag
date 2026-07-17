@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ORAG isolated PostgreSQL and Qdrant backup restore drill.">
+  <title>ORAG — Recovery drill</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="wordmark" href="./index.html">ORAG</a>
+    <nav><a href="./index.html">Documentation</a><a href="./api.html">API Reference</a><a href="https://github.com/shikanon/orag">GitHub ↗</a></nav>
+  </header>
+  <main>
+    <section class="hero section-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">Operational evidence · isolated restore</p>
+        <h1>Back up both stores.<br>Prove both restore.</h1>
+        <p class="lede">ORAG's local drill exports PostgreSQL metadata and Qdrant snapshots, restores them into an empty stack, and verifies a cited query plus trace against recovered data.</p>
+        <div class="actions"><a class="button button-primary" href="https://github.com/shikanon/orag/blob/main/docs/operations/disaster-recovery.md">Read the full runbook</a><a class="button button-secondary" href="https://github.com/shikanon/orag/blob/main/scripts/backup-restore-drill.sh">View runner</a></div>
+      </div>
+      <div class="eval-frame"><div class="frame-head"><strong>Isolated recovery</strong><code>orag.backup.v1</code></div><div class="frame-body"><div class="metrics"><article><span>Metadata</span><strong>Postgres</strong><small>custom dump</small></article><article><span>Vectors</span><strong>Qdrant</strong><small>two snapshots</small></article><article><span>Proof</span><strong>query + trace</strong><small>recovered target</small></article></div></div></div>
+    </section>
+    <section class="resources section-grid">
+      <article><p class="eyebrow">Run locally</p><h2>Create recoverable evidence.</h2><pre><code>make backup-restore-drill</code></pre><p class="section-copy">The runner writes a manifest, checksums, logs and non-secret drill evidence below <code>.tmp/backup-restore-drill/run.*</code>.</p></article>
+      <article><p class="eyebrow">Safe boundary</p><h2>Never targets your deployment.</h2><p class="section-copy">It uses temporary Docker Compose projects and deterministic mock providers. It does not read a user .env file, provider credentials, or production storage.</p></article>
+      <article><p class="eyebrow">Honest scope</p><h2>A drill is not an SLA.</h2><p class="section-copy">The local result proves the repository path. Production RPO/RTO, off-host encryption, approvals and independent reference deployments still require operator evidence.</p></article>
+    </section>
+  </main>
+  <footer><a class="wordmark" href="./index.html">ORAG</a><span>Apache-2.0</span><a href="https://github.com/shikanon/orag/security/policy">Security</a><a href="https://github.com/shikanon/orag">GitHub ↗</a></footer>
+</body>
+</html>

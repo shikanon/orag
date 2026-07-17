@@ -143,7 +143,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 - 入库使用 staged/active 可见性或等价事务协议，失败文档和向量不能提前进入检索结果。
 - 知识库删除、上传恢复和 optimizer resume 具备幂等、并发保护、补偿和可重试状态。
-- 已提供数据库迁移状态、Qdrant collection 兼容检查、灾难恢复文档和备份工件 verifier；待在独立参考部署中保留真实备份恢复演练证据。
+- 已提供数据库迁移状态、Qdrant collection 兼容检查、灾难恢复文档、备份工件 verifier 和本地隔离的 PostgreSQL + Qdrant 完整备份恢复演练（恢复后以带引用查询和 trace 验证）；待在独立参考部署中保留真实备份恢复演练证据。
 - 已为 ingestion、query、evaluation 和 release 写入口定义独立的 fail-fast 并发预算与 deadline，满载返回可退避的 `429`、超时返回 `504` 并向下游传播取消；待在多副本试点中以真实容量和 provider 配额校准全局限流与重试策略。
 
 ### 安全与租户边界

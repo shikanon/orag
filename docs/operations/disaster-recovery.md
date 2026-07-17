@@ -103,6 +103,25 @@ shell.
 Run the first restore into a separate project, host, or namespace. Never
 overwrite production volumes before the restored data passes the checks below.
 
+For a repeatable local proof of this exact source-to-target path, run:
+
+```bash
+make backup-restore-drill
+```
+
+The runner requires Docker Compose, `curl`, `jq`, `tar`, `shasum`, and Go. It
+uses only fixed test credentials and local temporary ports.
+
+The runner starts two temporary PostgreSQL + Qdrant Compose projects, uses the
+deterministic mock API to seed a cited document and trace, exports a PostgreSQL
+dump plus primary/semantic-cache collection snapshots, verifies the existing
+backup manifest, restores into the empty target, and requires a cited target
+query plus target trace lookup. It writes non-secret evidence and diagnostics
+under `.tmp/backup-restore-drill/run.*`; its cleanup removes only its own
+Compose projects and volumes. It does not read `.env`, provider credentials,
+or production storage, and it is not evidence of a production RPO/RTO or an
+independent reference deployment.
+
 1. Verify `SHA256SUMS` before extracting any artifact.
 2. Start PostgreSQL and Qdrant with empty restore volumes.
 3. Restore PostgreSQL, then run the release's migrations:
