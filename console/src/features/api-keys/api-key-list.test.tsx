@@ -37,4 +37,20 @@ describe('APIKeyList', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     expect(screen.getByText('已撤销')).toBeVisible()
   })
+
+  it('rotates an active key and displays the replacement secret once', async () => {
+    const user = userEvent.setup()
+    const rotated = vi.fn()
+    server.use(http.post('/v1/api-keys/:apiKeyId/rotate', ({ params }) => { rotated(params.apiKeyId); return HttpResponse.json({ api_key: { id: 'key_rotated', tenant_id: 'tenant_a', name: 'Active runner', prefix: 'orag_sk_key_rotated', role: 'project_editor', project_id: 'prj_a', created_by: 'user:admin', created_at: '2026-07-11T00:00:00Z', rotated_from_key_id: params.apiKeyId }, secret: 'orag_sk_key_rotated_secret' }, { status: 201 }) }))
+    renderApp('/api-keys')
+
+    await user.click(await screen.findByRole('button', { name: '轮换' }))
+    const dialog = screen.getByRole('alertdialog')
+    expect(within(dialog).getByText(/立即撤销当前密钥/)).toBeVisible()
+    await user.click(within(dialog).getByRole('button', { name: '确认轮换' }))
+    await waitFor(() => expect(rotated).toHaveBeenCalledWith('key_active'))
+    expect(await screen.findByTestId('rotated-api-key-secret')).toHaveTextContent('orag_sk_key_rotated_secret')
+    await user.click(screen.getByRole('button', { name: '我已安全保存' }))
+    expect(screen.queryByText('orag_sk_key_rotated_secret')).not.toBeInTheDocument()
+  })
 })

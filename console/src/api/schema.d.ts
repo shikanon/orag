@@ -377,6 +377,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/api-keys/{api_key_id}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                api_key_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Atomically creates a successor and immediately revokes the source key. The full replacement secret is returned exactly once. */
+        post: operations["rotateAPIKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects": {
         parameters: {
             query?: never;
@@ -1350,6 +1369,8 @@ export interface components {
             revoked_at?: string;
             /** Format: date-time */
             last_used_at?: string;
+            /** @description Source key ID when this key was created by rotation. */
+            rotated_from_key_id?: string;
         };
         CreateAPIKeyResponse: {
             api_key: components["schemas"]["APIKey"];
@@ -4040,6 +4061,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    rotateAPIKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                api_key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Replacement API key metadata and its one-time secret. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateAPIKeyResponse"];
+                };
             };
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];

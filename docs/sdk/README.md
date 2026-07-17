@@ -88,7 +88,7 @@ Credentials belong in a secret manager or process environment, never in source c
 The beta surface covers:
 
 - projects: `CreateProject`, `ListProjects`, `GetProject`, `UpdateProject`;
-- API keys: `CreateAPIKey`, `ListAPIKeys`, `RevokeAPIKey`, `AuthenticateAPIKey`;
+- API keys: `CreateAPIKey`, `ListAPIKeys`, `RotateAPIKey`, `RevokeAPIKey`, `AuthenticateAPIKey`;
 - knowledge bases: `CreateKnowledgeBase`, `ListKnowledgeBases`, `GetKnowledgeBase`, `DeleteKnowledgeBase`;
 - ingestion: `IngestText`, `IngestFile`, `GetIngestionJob`;
 - retrieval and generation: `Query`, `StreamQuery`;
@@ -99,7 +99,7 @@ The beta surface covers:
 
 Requests use the client tenant unless `TenantID` is explicitly set on the request. Treat a client as tenant-scoped and avoid sharing it across unrelated trust boundaries.
 
-`CreateAPIKey` returns the complete secret exactly once. Store it in a secret manager immediately; do not log it. `ListAPIKeys` returns metadata only and its public type has no secret or hash field. Project-scoped keys use `RoleProjectEditor` or `RoleProjectViewer`; tenant-wide administration uses `RoleTenantAdmin`. Embedded applications can verify a presented secret with `AuthenticateAPIKey`; service deployments normally let the HTTP authentication middleware do that work.
+`CreateAPIKey` and `RotateAPIKey` return the complete secret exactly once. Rotation atomically creates the successor and immediately revokes the source, so distribute the replacement before changing downstream callers. Store secrets in a secret manager immediately; do not log them. `ListAPIKeys` returns metadata only and its public type has no secret or hash field. Project-scoped keys use `RoleProjectEditor` or `RoleProjectViewer`; tenant-wide administration uses `RoleTenantAdmin`. Embedded applications can verify a presented secret with `AuthenticateAPIKey`; service deployments normally let the HTTP authentication middleware do that work.
 
 ## Typed stream semantics
 

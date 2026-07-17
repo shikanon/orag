@@ -53,10 +53,20 @@ func TestSDKProjectAndAPIKeyLifecycle(t *testing.T) {
 	if err != nil || len(keys) != 1 || keys[0].ID != createdKey.APIKey.ID {
 		t.Fatalf("ListAPIKeys() keys=%#v err=%v", keys, err)
 	}
-	if err := client.RevokeAPIKey(ctx, orag.RevokeAPIKeyRequest{ID: createdKey.APIKey.ID}); err != nil {
-		t.Fatalf("RevokeAPIKey() error=%v", err)
+	rotatedKey, err := client.RotateAPIKey(ctx, orag.RotateAPIKeyRequest{ID: createdKey.APIKey.ID})
+	if err != nil || rotatedKey.Secret == "" || rotatedKey.APIKey.RotatedFromKeyID != createdKey.APIKey.ID {
+		t.Fatalf("RotateAPIKey() result=%#v err=%v", rotatedKey, err)
 	}
 	if _, err := client.AuthenticateAPIKey(ctx, orag.AuthenticateAPIKeyRequest{Secret: createdKey.Secret}); !errors.Is(err, orag.ErrUnauthorized) {
+		t.Fatalf("AuthenticateAPIKey() rotated source error=%v, want ErrUnauthorized", err)
+	}
+	if principal, err := client.AuthenticateAPIKey(ctx, orag.AuthenticateAPIKeyRequest{Secret: rotatedKey.Secret}); err != nil || principal.SubjectID != rotatedKey.APIKey.ID {
+		t.Fatalf("AuthenticateAPIKey() rotated replacement principal=%#v err=%v", principal, err)
+	}
+	if err := client.RevokeAPIKey(ctx, orag.RevokeAPIKeyRequest{ID: rotatedKey.APIKey.ID}); err != nil {
+		t.Fatalf("RevokeAPIKey() error=%v", err)
+	}
+	if _, err := client.AuthenticateAPIKey(ctx, orag.AuthenticateAPIKeyRequest{Secret: rotatedKey.Secret}); !errors.Is(err, orag.ErrUnauthorized) {
 		t.Fatalf("AuthenticateAPIKey() after revoke error=%v, want ErrUnauthorized", err)
 	}
 }

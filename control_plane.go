@@ -68,17 +68,18 @@ type UpdateProjectRequest struct {
 
 // APIKey is API key metadata. It never contains the key hash or secret.
 type APIKey struct {
-	ID         string
-	TenantID   string
-	ProjectID  string
-	Name       string
-	Prefix     string
-	Role       Role
-	CreatedBy  string
-	CreatedAt  time.Time
-	ExpiresAt  *time.Time
-	RevokedAt  *time.Time
-	LastUsedAt *time.Time
+	ID               string
+	TenantID         string
+	ProjectID        string
+	Name             string
+	Prefix           string
+	Role             Role
+	CreatedBy        string
+	CreatedAt        time.Time
+	ExpiresAt        *time.Time
+	RevokedAt        *time.Time
+	LastUsedAt       *time.Time
+	RotatedFromKeyID string
 }
 
 type CreateAPIKeyRequest struct {
@@ -102,6 +103,13 @@ type ListAPIKeysRequest struct{ TenantID string }
 type RevokeAPIKeyRequest struct {
 	TenantID string
 	ID       string
+}
+
+// RotateAPIKeyRequest identifies an active key to replace immediately.
+type RotateAPIKeyRequest struct {
+	TenantID  string
+	ID        string
+	RotatedBy string
 }
 
 type AuthenticateAPIKeyRequest struct{ Secret string }
@@ -213,6 +221,26 @@ func (c *Client) RevokeAPIKey(ctx context.Context, req RevokeAPIKeyRequest) erro
 	return nil
 }
 
+// RotateAPIKey creates a replacement key and atomically revokes the source.
+// The returned secret is available only in this result.
+func (c *Client) RotateAPIKey(ctx context.Context, req RotateAPIKeyRequest) (CreateAPIKeyResult, error) {
+	if err := c.requireOpen("rotate_api_key"); err != nil {
+		return CreateAPIKeyResult{}, err
+	}
+	if strings.TrimSpace(req.ID) == "" {
+		return CreateAPIKeyResult{}, newError(CodeInvalidArgument, "rotate_api_key", "api_key", "", false, errors.New("id is required"))
+	}
+	rotatedBy := strings.TrimSpace(req.RotatedBy)
+	if rotatedBy == "" {
+		rotatedBy = "sdk"
+	}
+	created, err := c.app.APIKeys.Rotate(ctx, auth.APIKeyRotateInput{TenantID: c.tenant(req.TenantID), KeyID: strings.TrimSpace(req.ID), RotatedBy: rotatedBy})
+	if err != nil {
+		return CreateAPIKeyResult{}, controlPlaneError("rotate_api_key", req.ID, err)
+	}
+	return CreateAPIKeyResult{APIKey: fromAPIKey(created.APIKey), Secret: created.Secret}, nil
+}
+
 // AuthenticateAPIKey verifies a secret against the embedded control-plane
 // store. It is useful for applications embedding ORAG without the HTTP layer.
 func (c *Client) AuthenticateAPIKey(ctx context.Context, req AuthenticateAPIKeyRequest) (Principal, error) {
@@ -234,7 +262,7 @@ func fromProject(item project.Project) Project {
 }
 
 func fromAPIKey(item auth.APIKey) APIKey {
-	return APIKey{ID: item.ID, TenantID: item.TenantID, ProjectID: item.ProjectID, Name: item.Name, Prefix: item.Prefix, Role: Role(item.Role), CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt, ExpiresAt: item.ExpiresAt, RevokedAt: item.RevokedAt, LastUsedAt: item.LastUsedAt}
+	return APIKey{ID: item.ID, TenantID: item.TenantID, ProjectID: item.ProjectID, Name: item.Name, Prefix: item.Prefix, Role: Role(item.Role), CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt, ExpiresAt: item.ExpiresAt, RevokedAt: item.RevokedAt, LastUsedAt: item.LastUsedAt, RotatedFromKeyID: item.RotatedFromKeyID}
 }
 
 func controlPlaneError(operation, resource string, err error) error {

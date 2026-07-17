@@ -520,6 +520,40 @@ func TestAPIKeyCreateValidatesRoleAndProject(t *testing.T) {
 	assertErrorResponse(t, missingKey, 404, "api_key_not_found", "trace_key_missing")
 }
 
+func TestAPIKeyRotationImmediatelyRevokesSource(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	adminToken := issueToken(t, application, "tenant_a")
+
+	projectResponse := performJSON(h, "POST", "/v1/projects", `{"name":"Rotation"}`, adminToken)
+	var item project.Project
+	if err := json.Unmarshal([]byte(projectResponse.Body), &item); err != nil {
+		t.Fatal(err)
+	}
+	createdResponse := performJSON(h, "POST", "/v1/api-keys", `{"name":"rotation runner","role":"project_viewer","project_id":"`+item.ID+`"}`, adminToken)
+	var created auth.APIKeyCreateResult
+	if err := json.Unmarshal([]byte(createdResponse.Body), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	rotatedResponse := performJSON(h, "POST", "/v1/api-keys/"+created.APIKey.ID+"/rotate", "", adminToken)
+	if rotatedResponse.Code != 201 || strings.Contains(rotatedResponse.Body, "key_hash") {
+		t.Fatalf("rotate status=%d body=%s", rotatedResponse.Code, rotatedResponse.Body)
+	}
+	var rotated auth.APIKeyCreateResult
+	if err := json.Unmarshal([]byte(rotatedResponse.Body), &rotated); err != nil {
+		t.Fatal(err)
+	}
+	if rotated.Secret == "" || rotated.APIKey.RotatedFromKeyID != created.APIKey.ID || rotated.APIKey.ProjectID != item.ID || rotated.APIKey.Role != auth.RoleProjectViewer {
+		t.Fatalf("rotated response=%#v", rotated)
+	}
+	assertErrorResponse(t, performJSONWithTrace(h, "GET", "/v1/projects/"+item.ID, "", created.Secret, "trace_rotated_source"), 401, "invalid_bearer_token", "trace_rotated_source")
+	if response := performJSON(h, "GET", "/v1/projects/"+item.ID, "", rotated.Secret); response.Code != 200 {
+		t.Fatalf("replacement key status=%d body=%s", response.Code, response.Body)
+	}
+	assertErrorResponse(t, performJSONWithTrace(h, "POST", "/v1/api-keys/"+created.APIKey.ID+"/rotate", "", adminToken, "trace_rotated_again"), 404, "api_key_not_found", "trace_rotated_again")
+}
+
 func TestProjectHandlersReturnStableErrors(t *testing.T) {
 	h, app, closeApp := newTestHertzWithApp(t)
 	defer closeApp()
