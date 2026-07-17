@@ -149,7 +149,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 ### 安全与租户边界
 
 - 增加面向机器调用的 API Key、最小 RBAC 和项目级授权；默认管理员账号只用于 bootstrap。
-- 对 secret 注入、轮换、日志脱敏、prompt/文档记录和多租户查询进行威胁建模与测试；`ORAG_ENV=production` 启动门禁已拒绝 demo/弱凭据、debug/mock 执行、mock storage 和非 HTTPS 本机 URL，轮换演练与独立威胁模型评审仍待完成。
+- 对 secret 注入、轮换、日志脱敏、prompt/文档记录和多租户查询进行威胁建模与测试；已发布可审阅的[威胁模型](./docs/security/threat-model.md)与无真实 Key 的隔离 API Key immediate-cutover 演练，`ORAG_ENV=production` 启动门禁拒绝 demo/弱凭据、debug/mock 执行、mock storage 和非 HTTPS 本机 URL。独立参考部署的服务端 JWT/pepper 轮换演练和外部威胁模型评审仍待完成。
 - CI 增加 CodeQL、`govulncheck`、npm audit、secret scanning、容器扫描和 OpenSSF Scorecard。
 
 ### 可观测和质量门禁
