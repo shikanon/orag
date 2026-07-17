@@ -2,7 +2,7 @@ APP_NAME := orag-api
 GOFLAGS ?= -tags=stdjson,gjson
 CGO_ENABLED ?= 0
 
-.PHONY: run test vet fmt tidy sdk-check console-dev console-build console-test console-api-generate console-real-e2e console-real-tutorial-clone-e2e console-real-tutorial-benchmark-e2e backup-restore-drill credential-rotation-drill benchmark-report-run benchmark-report-verify performance-baseline-evidence-verify docs-build dev-up dev-down demo demo-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down tutorial-pack-build tutorial-pack-verify tutorial-pack-publish video-protocol-verify video-protocol-publish
+.PHONY: run test vet fmt tidy sdk-check compatibility-audit console-dev console-build console-test console-api-generate console-real-e2e console-real-tutorial-clone-e2e console-real-tutorial-benchmark-e2e backup-restore-drill credential-rotation-drill benchmark-report-run benchmark-report-verify performance-baseline-evidence-verify docs-build dev-up dev-down demo demo-down migrate openapi-validate agent-sync agent-sync-check agent-artifact-tests agent-gate mcp-self-check-smoke install-mcp install-skills-codex install-skills-trae install-skills install-agent docker-build docker-run test-integration test-integration-up test-integration-down tutorial-pack-build tutorial-pack-verify tutorial-pack-publish video-protocol-verify video-protocol-publish
 
 TUTORIAL_PACK_SOURCE ?=
 TUTORIAL_PACK_OUTPUT ?= .tmp/tutorial-packs
@@ -21,6 +21,10 @@ sdk-check:
 	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go test . ./tests/contract -run 'Test(PublicSDK|SDK)' -v
 	cd tests/consumer && GOWORK=off CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go test ./...
 	cd tests/consumer && GOWORK=off CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go vet ./...
+
+compatibility-audit:
+	@test -n "$(COMPATIBILITY_BASE)" || (echo "COMPATIBILITY_BASE must name the previous published tag"; exit 2)
+	CGO_ENABLED="$(CGO_ENABLED)" GOFLAGS="$(GOFLAGS)" go run ./cmd/oragctl compatibility-audit --base "$(COMPATIBILITY_BASE)"
 
 fmt:
 	gofmt -w $$(find . -name '*.go' -not -path './vendor/*')

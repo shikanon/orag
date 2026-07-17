@@ -195,7 +195,7 @@ Latest progress: the Pack-declared P2 `p2_recursive_400_80` is now a direct chil
 
 - A dependency-free public `extensions` Beta contract and `extensions/conformance` suite now cover parsers, chunkers, embeddings, retrievers, rerankers, generators, and storage with deterministic fixtures. The runtime keeps its built-in composition boundary until real downstream demand justifies dynamic registration.
 - Expand integrations only in response to real users. Separate certified, community, and experimental integrations in the support matrix.
-- Publish SDK/API compatibility policy, deprecation windows, upgrade tooling, and long-term support scope.
+- The SDK/API compatibility policy, deprecation windows and upgrade guidance are published. Release tags now structurally audit the current OpenAPI and public Go SDK against the preceding published tag; only exact Beta exceptions with migration guidance may pass. Long-term support scope remains a `v1.0` planning decision.
 
 ### Community governance and awareness
 

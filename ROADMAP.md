@@ -195,7 +195,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 
 - 已发布依赖无关的公共 `extensions` Beta 契约与 `extensions/conformance` 套件，覆盖 parser、chunker、embedding、retriever、reranker、generator 和 storage；套件以确定性 fixture 验证最小行为。现有运行时仍使用内置装配，待真实下游需求证明后才开放动态注册。
 - 只根据真实用户需求扩大集成面；官方支持矩阵区分 certified、community 和 experimental。
-- 发布 SDK/API 兼容政策、弃用周期、升级工具和长期支持范围。
+- 已发布 SDK/API 兼容政策、弃用周期和升级指引；release tag 现在会将当前 OpenAPI 与公共 Go SDK 和上一发布 tag 做结构兼容审计，只有带迁移说明的精确 Beta 例外才可放行。长期支持范围仍随 `v1.0` 计划确定。
 
 ### 社区治理与传播
 

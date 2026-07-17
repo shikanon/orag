@@ -73,6 +73,10 @@ func main() {
 		if err := backupVerifyCmd(os.Args[2:], os.Stdout); err != nil {
 			log.Fatalf("backup-verify: %v", err)
 		}
+	case "compatibility-audit":
+		if err := compatibilityAuditCmd(os.Args[2:], os.Stdout); err != nil {
+			log.Fatalf("compatibility-audit: %v", err)
+		}
 	case "generate-agent-artifacts", "generate-skills":
 		if err := generateAgentArtifactsCmd(os.Args[2:], os.Stdout); err != nil {
 			log.Fatalf("%s: %v", os.Args[1], err)
@@ -469,5 +473,5 @@ func (f optionalBoolFlag) IsBoolFlag() bool {
 }
 
 func usage() {
-	fmt.Println("usage: oragctl [migrate [--status]|eval|token|trace|benchmark-run|benchmark-report|generate-agent-artifacts|generate-skills]")
+	fmt.Println("usage: oragctl [migrate [--status]|eval|token|trace|benchmark-run|benchmark-report|backup-verify|compatibility-audit|generate-agent-artifacts|generate-skills]")
 }
