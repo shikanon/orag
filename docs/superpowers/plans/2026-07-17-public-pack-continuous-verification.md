@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Continuously verify the anonymous public `text-rag/1.1.0` Pack without credentials or mutable writes.
+**Goal:** Continuously verify the anonymous public text Pack, visual Recipe, and video Protocol without credentials or mutable writes.
 
 **Architecture:** Add strict HTTP metadata checks to the existing Go public verifier, wrap it in a temporary-directory shell entry point, and run that entry point in a separate scheduled/manual GitHub Actions workflow. PR CI remains independent from the external object store.
 
@@ -45,6 +45,6 @@
 - Modify: `ROADMAP.md`
 - Modify: `ROADMAP_EN.md`
 
-- [x] Create a read-only workflow triggered by `workflow_dispatch` and daily cron; set a bounded timeout, Go 1.26.5, and run the make target.
+- [x] Create a read-only matrix workflow triggered by `workflow_dispatch` and daily cron; set a bounded timeout, Go 1.26.5, and run the make target for text, visual, and video releases.
 - [x] Document that this is ongoing public artifact health evidence, not a second public benchmark or a production-performance claim.
 - [x] Run `git diff --check`, the focused Go test, the public make target, and the docs build; commit the completed implementation.
