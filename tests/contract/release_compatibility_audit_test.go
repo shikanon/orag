@@ -26,3 +26,24 @@ func TestReleaseCompatibilityAuditIsWired(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseRequiresPublicMultiArchitectureImages(t *testing.T) {
+	body, err := os.ReadFile("../../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, phrase := range []string{
+		"public-images:",
+		"needs: images",
+		"https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull",
+		"docker-content-digest",
+		"application/vnd.oci.image.index.v1+json",
+		".platform.architecture == \"amd64\"",
+		".platform.architecture == \"arm64\"",
+		"needs: [images, public-images]",
+	} {
+		if !strings.Contains(string(body), phrase) {
+			t.Errorf("release workflow missing public image contract %q", phrase)
+		}
+	}
+}

@@ -82,6 +82,7 @@ ORAG 不以“支持最多模型或最多页面”为目标。项目优先解决
 - 在 OpenAPI operation 和 schema 上增加统一的 `x-orag-maturity`，只接受 `experimental`、`beta`、`stable`。
 - 在 capability manifest 中复用同一成熟度枚举，并增加契约测试防止 README、OpenAPI 和生成产物漂移。
 - 建立 SemVer、弃用、迁移和 release notes 规则；实验能力的变更也必须进入 changelog。
+- 每个 release tag 在创建 GitHub prerelease 前，以匿名 GHCR manifest 请求核验 API/Console 的不可变 digest 与 `linux/amd64`、`linux/arm64` 平台；该门禁不替代真实生产部署验证。
 - 建立 `CHANGELOG.md` 和公开 roadmap 更新流程。每次 minor release 更新能力矩阵，并在优先级或项目状态变化时审阅本文件。
 
 ### 阶段退出门槛
