@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -108,15 +109,30 @@ func VerifyPublic(ctx context.Context, releaseRoot, publicBaseURL string) error 
 	if err != nil {
 		return err
 	}
-	sums, err := os.ReadFile(filepath.Join(releaseRoot, "SHA256SUMS"))
-	if err != nil {
-		return err
-	}
 	base, err := url.Parse(strings.TrimRight(publicBaseURL, "/") + "/" + prefix + "/")
 	if err != nil {
 		return err
 	}
-	client := &http.Client{Timeout: 2 * time.Minute}
+	if base.Scheme != "https" || base.Host == "" {
+		return fmt.Errorf("public base URL must be absolute HTTPS: %q", publicBaseURL)
+	}
+	client := &http.Client{
+		Timeout: 2 * time.Minute,
+		CheckRedirect: func(request *http.Request, _ []*http.Request) error {
+			if request.URL.Scheme != "https" {
+				return fmt.Errorf("public redirect must remain HTTPS: %s", request.URL)
+			}
+			return nil
+		},
+	}
+	return verifyPublicWithClient(ctx, releaseRoot, base, client)
+}
+
+func verifyPublicWithClient(ctx context.Context, releaseRoot string, base *url.URL, client *http.Client) error {
+	sums, err := os.ReadFile(filepath.Join(releaseRoot, "SHA256SUMS"))
+	if err != nil {
+		return err
+	}
 	for _, line := range strings.Split(strings.TrimSpace(string(sums)), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
@@ -125,6 +141,9 @@ func VerifyPublic(ctx context.Context, releaseRoot, publicBaseURL string) error 
 		target, err := base.Parse(fields[1])
 		if err != nil {
 			return err
+		}
+		if target.Scheme != "https" || target.Host == "" {
+			return fmt.Errorf("public artifact URL must be absolute HTTPS: %q", target)
 		}
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 		if err != nil {
@@ -138,14 +157,30 @@ func VerifyPublic(ctx context.Context, releaseRoot, publicBaseURL string) error 
 			response.Body.Close()
 			return fmt.Errorf("fetch %s: status %d", target, response.StatusCode)
 		}
+		if response.Request.URL.Scheme != "https" {
+			response.Body.Close()
+			return fmt.Errorf("fetch %s: final URL is not HTTPS: %s", target, response.Request.URL)
+		}
+		mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
+		if parseErr != nil || mediaType != contentType(fields[1]) {
+			response.Body.Close()
+			return fmt.Errorf("fetch %s: content type %q does not match %q", target, response.Header.Get("Content-Type"), contentType(fields[1]))
+		}
+		if response.ContentLength < 0 {
+			response.Body.Close()
+			return fmt.Errorf("fetch %s: missing content length", target)
+		}
 		digest := sha256.New()
-		_, copyErr := io.Copy(digest, response.Body)
+		bytesRead, copyErr := io.Copy(digest, response.Body)
 		closeErr := response.Body.Close()
 		if copyErr != nil {
 			return copyErr
 		}
 		if closeErr != nil {
 			return closeErr
+		}
+		if bytesRead != response.ContentLength {
+			return fmt.Errorf("fetch %s: read %d bytes, expected %d", target, bytesRead, response.ContentLength)
 		}
 		if hex.EncodeToString(digest.Sum(nil)) != fields[0] {
 			return fmt.Errorf("public checksum mismatch for %s", fields[1])

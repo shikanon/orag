@@ -24,3 +24,11 @@ shasum -a 256 -c SHA256SUMS
 ```
 
 发布器位于 `cmd/orag-pack-release`。构建与发布分离；发布只从环境变量读取对象存储凭证，使用禁止覆盖写入，并在 Manifest 最后上传。发布完成后应运行 `-verify-public`，它会匿名下载所有 `SHA256SUMS` 中的文件并逐个验证摘要。
+
+仓库每天还会运行独立的 `public pack verification` workflow。任何人无需凭据均可复现相同检查：
+
+```bash
+make tutorial-pack-public-verify
+```
+
+该检查要求 HTTPS、HTTP 200、对象 MIME、声明长度和 SHA-256 都符合公开清单；它是发布物可用性证据，不是模型质量、生产性能或第二个公开 benchmark 的结论。

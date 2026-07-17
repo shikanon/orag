@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,17 +95,86 @@ func TestVerifyPublicUsesChecksumContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTestFile(t, filepath.Join(root, "SHA256SUMS"), hash+"  nested/artifact.txt\n")
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/tutorial-packs/text-rag/1.1.0/nested/artifact.txt" {
 			http.NotFound(w, r)
 			return
 		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("public artifact"))
 	}))
 	defer server.Close()
-	if err := VerifyPublic(t.Context(), root, server.URL+"/tutorial-packs"); err != nil {
+	if err := verifyPublicWithClient(t.Context(), root, mustParseURL(t, server.URL+"/tutorial-packs/text-rag/1.1.0/"), server.Client()); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestVerifyPublicRejectsMetadataDrift(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "text-rag", "1.1.0")
+	writeTestFile(t, filepath.Join(root, "artifact.json"), `{"valid":true}`)
+	hash, err := hashFile(filepath.Join(root, "artifact.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(root, "SHA256SUMS"), hash+"  artifact.json\n")
+	for name, handler := range map[string]http.HandlerFunc{
+		"mime": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte(`{"valid":true}`))
+		},
+		"length": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Length", "99")
+			_, _ = w.Write([]byte(`{"valid":true}`))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewTLSServer(handler)
+			defer server.Close()
+			if err := verifyPublicWithClient(t.Context(), root, mustParseURL(t, server.URL+"/tutorial-packs/text-rag/1.1.0/"), server.Client()); err == nil {
+				t.Fatal("expected verification failure")
+			}
+		})
+	}
+}
+
+func TestVerifyPublicRequiresHTTPS(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "text-rag", "1.1.0")
+	writeTestFile(t, filepath.Join(root, "SHA256SUMS"), "")
+	if err := VerifyPublic(t.Context(), root, "http://example.test/tutorial-packs"); err == nil {
+		t.Fatal("expected HTTP public base to be rejected")
+	}
+}
+
+func TestVerifyPublicRejectsHTTPSRedirectToHTTP(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "text-rag", "1.1.0")
+	writeTestFile(t, filepath.Join(root, "artifact.txt"), "public artifact")
+	hash, err := hashFile(filepath.Join(root, "artifact.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(root, "SHA256SUMS"), hash+"  artifact.txt\n")
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("public artifact"))
+	}))
+	defer httpServer.Close()
+	httpsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		http.Redirect(w, request, httpServer.URL, http.StatusFound)
+	}))
+	defer httpsServer.Close()
+	if err := verifyPublicWithClient(t.Context(), root, mustParseURL(t, httpsServer.URL+"/tutorial-packs/text-rag/1.1.0/"), httpsServer.Client()); err == nil {
+		t.Fatal("expected HTTP redirect to be rejected")
+	}
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed
 }
 
 func TestReleaseFilesOrdersManifestLast(t *testing.T) {
