@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0-beta.3] - 2026-07-17
+
+### Added
+
+- Published the release-compatible public Go SDK and current API/Console
+  distribution as `v0.1.0-beta.3`.
+- Added a release-stage anonymous GHCR manifest gate that verifies the exact
+  immutable digest and both `linux/amd64` and `linux/arm64` platforms before
+  creating a prerelease.
+- Added a release-stage structural compatibility audit against the preceding
+  public OpenAPI and root Go SDK contracts.
+
 ### Added
 
 - Added `oragctl backup-verify`, a read-only verifier for versioned PostgreSQL/Qdrant backup manifests, required artifacts, SHA-256 integrity, migration provenance, and credential-leakage boundaries before a restore drill.
@@ -90,6 +102,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Deterministic mock providers are for walkthroughs and tests only. Production deployments require explicit provider and storage configuration.
 - The public Go SDK is intentionally pre-1.0 and follows the migration rules in `docs/compatibility.md`.
 
-[Unreleased]: https://github.com/shikanon/orag/compare/v0.1.0-beta.2...HEAD
+[Unreleased]: https://github.com/shikanon/orag/compare/v0.1.0-beta.3...HEAD
+[0.1.0-beta.3]: https://github.com/shikanon/orag/releases/tag/v0.1.0-beta.3
 [0.1.0-beta.2]: https://github.com/shikanon/orag/releases/tag/v0.1.0-beta.2
 [0.1.0-beta.1]: https://github.com/shikanon/orag/releases/tag/v0.1.0-beta.1

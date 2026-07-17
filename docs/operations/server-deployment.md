@@ -61,9 +61,9 @@ Start from the repository example and replace every demo value. At minimum,
 set:
 
 ```dotenv
-ORAG_VERSION=v0.1.0-beta.2
-ORAG_API_IMAGE=ghcr.io/shikanon/orag-api:v0.1.0-beta.2
-ORAG_CONSOLE_IMAGE=ghcr.io/shikanon/orag-console:v0.1.0-beta.2
+ORAG_VERSION=v0.1.0-beta.3
+ORAG_API_IMAGE=ghcr.io/shikanon/orag-api:v0.1.0-beta.3
+ORAG_CONSOLE_IMAGE=ghcr.io/shikanon/orag-console:v0.1.0-beta.3
 ORAG_ENV=production
 PUBLIC_BASE_URL=https://orag.tensorbytes.com
 POSTGRES_IMAGE=postgres:16-alpine
@@ -101,7 +101,7 @@ through the GitHub release before starting the stack:
 
 ```bash
 curl --fail --location --output docker-compose.yml \
-  https://raw.githubusercontent.com/shikanon/orag/v0.1.0-beta.2/deployments/docker-compose.yml
+  https://raw.githubusercontent.com/shikanon/orag/v0.1.0-beta.3/deployments/docker-compose.yml
 ```
 
 ## 3. Start and verify the stack
