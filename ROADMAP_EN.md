@@ -82,6 +82,7 @@ Phases advance according to quality gates and available capacity, without target
 - Add a shared `x-orag-maturity` OpenAPI extension accepting only `experimental`, `beta`, or `stable`.
 - Reuse the same maturity enum in the capability manifest and add contract tests that prevent drift across README, OpenAPI, and generated artifacts.
 - Define SemVer, deprecation, migration, and release-note policy; experimental changes still appear in the changelog.
+- Before creating a GitHub prerelease, verify each release tag through an anonymous GHCR manifest request for its immutable API/Console digest and both `linux/amd64` and `linux/arm64` platforms; this gate does not replace real production-deployment validation.
 - Add `CHANGELOG.md` and a public roadmap update process. Refresh the capability matrix at every minor release and review this file when priorities or project status change.
 
 ### Phase exit criteria

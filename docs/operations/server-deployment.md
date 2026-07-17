@@ -91,7 +91,10 @@ error. Keep `ORAG_ENV=development` for the local no-key walkthrough only.
 If the host cannot reach Docker Hub, replace `POSTGRES_IMAGE` and
 `QDRANT_IMAGE` with organization-approved mirrors before pulling. The API and
 Console images remain pinned to GHCR release tags (and should be recorded by
-digest after the pull).
+digest after the pull). A GitHub prerelease is created only after an
+unauthenticated GHCR manifest read confirms that both tags resolve to their
+recorded digest and contain `linux/amd64` and `linux/arm64`; this verifies
+public image availability, not a production deployment.
 
 Download the exact Compose file from the release tag and verify its checksum
 through the GitHub release before starting the stack:
