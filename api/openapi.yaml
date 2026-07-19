@@ -1865,6 +1865,23 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /v1/evaluation-metrics:
+    get:
+      tags: [Evaluation]
+      operationId: listEvaluationMetrics
+      x-orag-maturity: experimental
+      description: Returns the server-owned evaluation metric catalog, including definitions, prerequisites and interpretation caveats.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Evaluation metric catalog.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvaluationMetricListResponse"
+        "401":
+          $ref: "#/components/responses/Error"
   /v1/evaluations/{id}:
     get:
       tags: [Evaluation]
@@ -1898,6 +1915,33 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/RunEvaluationResponse"
                   - $ref: "#/components/schemas/EvaluationDetail"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/evaluations/{id}/comparability:
+    get:
+      tags: [Evaluation]
+      operationId: compareEvaluation
+      x-orag-maturity: experimental
+      description: Checks whether two immutable evaluation runs can be compared safely.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - name: baseline_id
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Evaluation comparability result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvaluationComparabilityResponse"
+        "400":
+          $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Error"
         "404":
@@ -4118,8 +4162,14 @@ components:
           type: string
         dataset_id:
           type: string
+        knowledge_base_id:
+          type: string
+          description: Knowledge base evaluated by this immutable run manifest.
         profile:
           type: string
+        top_k:
+          type: integer
+          description: Effective retrieval top-K used by the run.
         total:
           type: integer
         hit_rate:
@@ -4153,6 +4203,18 @@ components:
           $ref: "#/components/schemas/HoldoutGateResult"
         metrics:
           $ref: "#/components/schemas/EvaluationMetrics"
+        metric_summaries:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/EvaluationMetricSummary"
+          description: Per-metric eligibility, annotation coverage and uncertainty summary.
+        dataset_snapshot:
+          $ref: "#/components/schemas/EvaluationDatasetSnapshot"
+        manifest:
+          $ref: "#/components/schemas/EvaluationManifest"
+        evaluation_fingerprint:
+          type: string
+          description: Stable hash of the immutable evaluation manifest.
         created_at:
           type: string
           format: date-time
@@ -4216,6 +4278,114 @@ components:
           format: double
         missing_split:
           type: boolean
+    EvaluationMetricSummary:
+      type: object
+      required: [value, eligible_sample_count, total_sample_count, annotation_coverage, weighted_sample_count, effective_sample_count]
+      properties:
+        value: {type: number, format: double}
+        eligible_sample_count: {type: integer}
+        total_sample_count: {type: integer}
+        annotation_coverage: {type: number, format: double}
+        weighted_sample_count: {type: number, format: double}
+        effective_sample_count: {type: number, format: double}
+        confidence_interval:
+          $ref: "#/components/schemas/EvaluationConfidenceInterval"
+    EvaluationConfidenceInterval:
+      type: object
+      required: [low, high, confidence_level, method]
+      properties:
+        low: {type: number, format: double}
+        high: {type: number, format: double}
+        confidence_level: {type: number, format: double}
+        method: {type: string, enum: [wilson, bootstrap]}
+    EvaluationDatasetSnapshot:
+      type: object
+      required: [dataset_id, content_hash, item_count]
+      properties:
+        dataset_id: {type: string}
+        version: {type: string}
+        split: {type: string, enum: [train, eval, holdout, gold]}
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/DatasetItem"}
+        content_hash: {type: string}
+        item_count: {type: integer}
+    EvaluationManifest:
+      type: object
+      required: [schema_version, dataset, knowledge_base_id]
+      properties:
+        schema_version: {type: string}
+        code_version: {type: string}
+        code_commit: {type: string}
+        dataset: {$ref: "#/components/schemas/EvaluationDatasetSnapshot"}
+        knowledge_base_id: {type: string}
+        project_id: {type: string}
+        profile: {$ref: "#/components/schemas/Profile"}
+        top_k: {type: integer}
+        scoped_shadow_item_id: {type: string}
+        judge_config_hash: {type: string}
+        qag_config_hash: {type: string}
+        pairwise_config_hash: {type: string}
+    EvaluationComparability:
+      type: object
+      required: [comparable]
+      properties:
+        comparable: {type: boolean}
+        hard_mismatches:
+          type: array
+          items: {type: string}
+        soft_mismatches:
+          type: array
+          items: {type: string}
+    EvaluationComparabilityResponse:
+      type: object
+      required: [baseline_id, candidate_id, comparability]
+      properties:
+        baseline_id: {type: string}
+        candidate_id: {type: string}
+        comparability: {$ref: "#/components/schemas/EvaluationComparability"}
+        metric_comparisons:
+          type: array
+          description: Paired candidate-minus-baseline deltas, returned only when comparable is true.
+          items: {$ref: "#/components/schemas/EvaluationPairedMetricComparison"}
+    EvaluationPairedMetricComparison:
+      type: object
+      required: [metric, baseline, candidate, absolute_delta, paired_sample_count, decision]
+      properties:
+        metric: {type: string}
+        baseline: {type: number, format: double}
+        candidate: {type: number, format: double}
+        absolute_delta: {type: number, format: double}
+        relative_delta: {type: number, format: double}
+        paired_sample_count: {type: integer}
+        confidence_interval: {$ref: "#/components/schemas/EvaluationConfidenceInterval"}
+        decision: {type: string, enum: [improved, regressed, inconclusive, insufficient_sample]}
+    EvaluationMetricDefinition:
+      type: object
+      required: [name, description, display_name]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        display_name: {type: string}
+        category: {type: string}
+        direction: {type: string, enum: [higher_is_better, lower_is_better, context_dependent]}
+        formula: {type: string}
+        requires:
+          type: array
+          items: {type: string}
+        caveats:
+          type: array
+          items: {type: string}
+        related_metrics:
+          type: array
+          items: {type: string}
+    EvaluationMetricListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/EvaluationMetricDefinition"}
     EvaluationMetrics:
       type: object
       description: |

@@ -31,6 +31,8 @@ func encodeEvaluationRunMetrics(result evalpkg.RunResult) ([]byte, error) {
 		"total":                   result.Total,
 		"hit_rate":                result.HitRate,
 		"accuracy":                result.Accuracy,
+		"knowledge_base_id":       result.KnowledgeBaseID,
+		"top_k":                   result.TopK,
 		"weighted_sample_count":   result.WeightedSampleCount,
 		"unweighted_sample_count": result.UnweightedSampleCount,
 		"missing_split":           result.MissingSplit,
@@ -43,6 +45,18 @@ func encodeEvaluationRunMetrics(result evalpkg.RunResult) ([]byte, error) {
 	}
 	if result.HoldoutGate.Enabled {
 		metrics["holdout_gate"] = result.HoldoutGate
+	}
+	if len(result.MetricSummaries) > 0 {
+		metrics["metric_summaries"] = result.MetricSummaries
+	}
+	if result.DatasetSnapshot.DatasetID != "" {
+		metrics["dataset_snapshot"] = result.DatasetSnapshot
+	}
+	if result.Manifest.SchemaVersion != "" {
+		metrics["manifest"] = result.Manifest
+	}
+	if result.EvaluationFingerprint != "" {
+		metrics["evaluation_fingerprint"] = result.EvaluationFingerprint
 	}
 	for key, value := range result.Metrics {
 		metrics[key] = value
@@ -388,27 +402,39 @@ func (r *Repository) judgeCalibrationRuns(ctx context.Context, tenantID, dataset
 
 func decodeEvaluationRunMetrics(metrics []byte, result *evalpkg.RunResult) {
 	var decoded struct {
-		Total                 int                             `json:"total"`
-		HitRate               float64                         `json:"hit_rate"`
-		Accuracy              float64                         `json:"accuracy"`
-		WeightedSampleCount   float64                         `json:"weighted_sample_count"`
-		UnweightedSampleCount int                             `json:"unweighted_sample_count"`
-		Split                 string                          `json:"split"`
-		SplitSummary          map[string]evalpkg.SplitSummary `json:"split_summary"`
-		MissingSplit          bool                            `json:"missing_split"`
-		HoldoutGate           evalpkg.HoldoutGateResult       `json:"holdout_gate"`
+		Total                 int                              `json:"total"`
+		HitRate               float64                          `json:"hit_rate"`
+		Accuracy              float64                          `json:"accuracy"`
+		KnowledgeBaseID       string                           `json:"knowledge_base_id"`
+		TopK                  int                              `json:"top_k"`
+		WeightedSampleCount   float64                          `json:"weighted_sample_count"`
+		UnweightedSampleCount int                              `json:"unweighted_sample_count"`
+		Split                 string                           `json:"split"`
+		SplitSummary          map[string]evalpkg.SplitSummary  `json:"split_summary"`
+		MissingSplit          bool                             `json:"missing_split"`
+		HoldoutGate           evalpkg.HoldoutGateResult        `json:"holdout_gate"`
+		MetricSummaries       map[string]evalpkg.MetricSummary `json:"metric_summaries"`
+		DatasetSnapshot       evalpkg.DatasetSnapshot          `json:"dataset_snapshot"`
+		Manifest              evalpkg.EvaluationManifest       `json:"manifest"`
+		EvaluationFingerprint string                           `json:"evaluation_fingerprint"`
 	}
 	_ = json.Unmarshal(metrics, &decoded)
 	metricMap := numericEvaluationMetrics(metrics)
 	result.Total = decoded.Total
 	result.HitRate = decoded.HitRate
 	result.Accuracy = decoded.Accuracy
+	result.KnowledgeBaseID = decoded.KnowledgeBaseID
+	result.TopK = decoded.TopK
 	result.WeightedSampleCount = decoded.WeightedSampleCount
 	result.UnweightedSampleCount = decoded.UnweightedSampleCount
 	result.Split = dataset.DatasetSplit(decoded.Split)
 	result.SplitSummary = decoded.SplitSummary
 	result.MissingSplit = decoded.MissingSplit
 	result.HoldoutGate = decoded.HoldoutGate
+	result.MetricSummaries = decoded.MetricSummaries
+	result.DatasetSnapshot = decoded.DatasetSnapshot
+	result.Manifest = decoded.Manifest
+	result.EvaluationFingerprint = decoded.EvaluationFingerprint
 	if result.WeightedSampleCount == 0 && result.Total > 0 {
 		result.WeightedSampleCount = float64(result.Total)
 	}

@@ -133,8 +133,10 @@ func (s *Server) Hertz() *server.Hertz {
 	v1.GET("/traces:stats", s.traceStats)
 	v1.GET("/traces/:trace_id", s.getTrace)
 	v1.POST("/datasets", s.createDataset)
+	v1.GET("/evaluation-metrics", s.listEvaluationMetrics)
 	v1.POST("/datasets/:id/items", s.addDatasetItem)
 	v1.POST("/evaluations", s.runEvaluation)
+	v1.GET("/evaluations/:id/comparability", s.compareEvaluation)
 	v1.GET("/evaluations/:id", s.getEvaluation)
 	v1.POST("/optimizations", s.optimize)
 	v1.GET("/optimizations/:id", s.getOptimization)
@@ -1116,6 +1118,10 @@ func (s *Server) getEvaluation(ctx context.Context, c *app.RequestContext) {
 		c.JSON(consts.StatusOK, detail)
 		return
 	}
+	// The persisted manifest is a complete replay artifact. Keep the default
+	// response compact; callers can opt into item details explicitly.
+	result.DatasetSnapshot.Items = nil
+	result.Manifest.Dataset.Items = nil
 	c.JSON(consts.StatusOK, result)
 }
 
