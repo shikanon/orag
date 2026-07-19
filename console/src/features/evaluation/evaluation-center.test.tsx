@@ -9,9 +9,10 @@ describe('EvaluationCenter', () => {
   it('creates a dataset, adds a sample, and runs a gate', async () => {
     server.use(
       http.get('/v1/knowledge-bases', () => HttpResponse.json({ items: [{ id: 'kb_a', project_id: 'prj_a', name: 'Support', description: '', tenant_id: 'tenant_a', created_at: '', updated_at: '' }] })),
+	  http.get('/v1/evaluation-metrics', () => HttpResponse.json({ items: [{ name: 'answer_accuracy', display_name: 'Answer accuracy', description: '回答命中参考答案的关键项。', category: 'answer_quality', direction: 'higher_is_better', formula: '关键项命中', requires: ['ground_truth'], caveats: ['不识别同义改写。'], related_metrics: [] }] })),
       http.post('/v1/datasets', () => HttpResponse.json({ id: 'ds_a', project_id: 'prj_a', tenant_id: 'tenant_a', name: 'Golden', kind: 'golden', version: '1', created_at: '' }, { status: 201 })),
       http.post('/v1/datasets/ds_a/items', () => HttpResponse.json({ id: 'item_a', dataset_id: 'ds_a', query: 'Q', ground_truth: 'A', relevant_doc_ids: [] }, { status: 201 })),
-      http.post('/v1/evaluations', () => HttpResponse.json({ id: 'eval_a', dataset_id: 'ds_a', profile: 'realtime', total: 1, accuracy: 1, hit_rate: 1, created_at: '', holdout_gate: { enabled: true, passed: true, quality: 1 } }, { status: 202 })),
+	  http.post('/v1/evaluations', () => HttpResponse.json({ id: 'eval_a', dataset_id: 'ds_a', profile: 'realtime', total: 1, accuracy: 1, hit_rate: 1, metrics: { answer_accuracy: 1 }, metric_summaries: { answer_accuracy: { value: 1, eligible_sample_count: 1, total_sample_count: 1, annotation_coverage: 1, weighted_sample_count: 1, effective_sample_count: 1 } }, created_at: '', holdout_gate: { enabled: true, passed: true, quality: 1 } }, { status: 202 })),
     )
     renderApp('/projects/prj_a/evaluations')
     await userEvent.type(await screen.findByLabelText('名称'), 'Golden')
@@ -24,6 +25,8 @@ describe('EvaluationCenter', () => {
     await userEvent.click(screen.getByRole('button', { name: '运行评测' }))
     expect(await screen.findByText('GATE PASSED')).toBeVisible()
     expect(screen.getAllByText('1.000')).not.toHaveLength(0)
+	await userEvent.click(await screen.findByRole('button', { name: '了解指标' }))
+	expect(await screen.findByText('计算方式：')).toBeVisible()
   })
 
   it('derives immutable environment evidence from selected server resources', async () => {

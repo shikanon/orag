@@ -1055,6 +1055,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/evaluation-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Returns the server-owned evaluation metric catalog, including definitions, prerequisites and interpretation caveats. */
+        get: operations["listEvaluationMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/evaluations/{id}": {
         parameters: {
             query?: never;
@@ -1063,6 +1080,23 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getEvaluation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/evaluations/{id}/comparability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Checks whether two immutable evaluation runs can be compared safely. */
+        get: operations["compareEvaluation"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2399,7 +2433,11 @@ export interface components {
             project_id?: string;
             id: string;
             dataset_id: string;
+            /** @description Knowledge base evaluated by this immutable run manifest. */
+            knowledge_base_id?: string;
             profile: string;
+            /** @description Effective retrieval top-K used by the run. */
+            top_k?: number;
             total: number;
             /**
              * Format: double
@@ -2431,6 +2469,14 @@ export interface components {
             missing_split?: boolean;
             holdout_gate?: components["schemas"]["HoldoutGateResult"];
             metrics?: components["schemas"]["EvaluationMetrics"];
+            /** @description Per-metric eligibility, annotation coverage and uncertainty summary. */
+            metric_summaries?: {
+                [key: string]: components["schemas"]["EvaluationMetricSummary"];
+            };
+            dataset_snapshot?: components["schemas"]["EvaluationDatasetSnapshot"];
+            manifest?: components["schemas"]["EvaluationManifest"];
+            /** @description Stable hash of the immutable evaluation manifest. */
+            evaluation_fingerprint?: string;
             /** Format: date-time */
             created_at: string;
         };
@@ -2467,6 +2513,94 @@ export interface components {
             /** Format: double */
             min_weighted_sample_count?: number;
             missing_split?: boolean;
+        };
+        EvaluationMetricSummary: {
+            /** Format: double */
+            value: number;
+            eligible_sample_count: number;
+            total_sample_count: number;
+            /** Format: double */
+            annotation_coverage: number;
+            /** Format: double */
+            weighted_sample_count: number;
+            /** Format: double */
+            effective_sample_count: number;
+            confidence_interval?: components["schemas"]["EvaluationConfidenceInterval"];
+        };
+        EvaluationConfidenceInterval: {
+            /** Format: double */
+            low: number;
+            /** Format: double */
+            high: number;
+            /** Format: double */
+            confidence_level: number;
+            /** @enum {string} */
+            method: "wilson" | "bootstrap";
+        };
+        EvaluationDatasetSnapshot: {
+            dataset_id: string;
+            version?: string;
+            /** @enum {string} */
+            split?: "train" | "eval" | "holdout" | "gold";
+            items?: components["schemas"]["DatasetItem"][];
+            content_hash: string;
+            item_count: number;
+        };
+        EvaluationManifest: {
+            schema_version: string;
+            code_version?: string;
+            code_commit?: string;
+            dataset: components["schemas"]["EvaluationDatasetSnapshot"];
+            knowledge_base_id: string;
+            project_id?: string;
+            profile?: components["schemas"]["Profile"];
+            top_k?: number;
+            scoped_shadow_item_id?: string;
+            judge_config_hash?: string;
+            qag_config_hash?: string;
+            pairwise_config_hash?: string;
+        };
+        EvaluationComparability: {
+            comparable: boolean;
+            hard_mismatches?: string[];
+            soft_mismatches?: string[];
+        };
+        EvaluationComparabilityResponse: {
+            baseline_id: string;
+            candidate_id: string;
+            comparability: components["schemas"]["EvaluationComparability"];
+            /** @description Paired candidate-minus-baseline deltas, returned only when comparable is true. */
+            metric_comparisons?: components["schemas"]["EvaluationPairedMetricComparison"][];
+        };
+        EvaluationPairedMetricComparison: {
+            metric: string;
+            /** Format: double */
+            baseline: number;
+            /** Format: double */
+            candidate: number;
+            /** Format: double */
+            absolute_delta: number;
+            /** Format: double */
+            relative_delta?: number;
+            paired_sample_count: number;
+            confidence_interval?: components["schemas"]["EvaluationConfidenceInterval"];
+            /** @enum {string} */
+            decision: "improved" | "regressed" | "inconclusive" | "insufficient_sample";
+        };
+        EvaluationMetricDefinition: {
+            name: string;
+            description: string;
+            display_name: string;
+            category?: string;
+            /** @enum {string} */
+            direction?: "higher_is_better" | "lower_is_better" | "context_dependent";
+            formula?: string;
+            requires?: string[];
+            caveats?: string[];
+            related_metrics?: string[];
+        };
+        EvaluationMetricListResponse: {
+            items: components["schemas"]["EvaluationMetricDefinition"][];
         };
         /** @description Aggregated evaluation metrics. Item-level metrics are weighted by
          *     dataset item `weight` when present; `latency_p95_ms` is the weighted
@@ -5248,6 +5382,27 @@ export interface operations {
             500: components["responses"]["Error"];
         };
     };
+    listEvaluationMetrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Evaluation metric catalog. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationMetricListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+        };
+    };
     getEvaluation: {
         parameters: {
             query?: {
@@ -5275,6 +5430,33 @@ export interface operations {
                     "application/json": components["schemas"]["RunEvaluationResponse"] | components["schemas"]["EvaluationDetail"];
                 };
             };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    compareEvaluation: {
+        parameters: {
+            query: {
+                baseline_id: string;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Evaluation comparability result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationComparabilityResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };

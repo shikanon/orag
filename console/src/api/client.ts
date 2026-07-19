@@ -28,6 +28,7 @@ export type CreateDatasetInput = components['schemas']['CreateDatasetRequest']
 export type CreateDatasetItemInput = components['schemas']['CreateDatasetItemRequest']
 export type RunEvaluationInput = components['schemas']['RunEvaluationRequest']
 export type EvaluationResult = components['schemas']['RunEvaluationResponse']
+export type EvaluationMetricDefinition = components['schemas']['EvaluationMetricDefinition']
 export type EvaluationPolicy = components['schemas']['EvaluationPolicy']
 export type EvaluationEvidence = components['schemas']['EvaluationEvidence']
 export type CreateEvaluationPolicyInput = components['schemas']['CreateEvaluationPolicyRequest']
@@ -133,6 +134,7 @@ export const evaluationApi = {
   addDatasetItem: (datasetId: string, input: CreateDatasetItemInput) => request<components['schemas']['DatasetItem']>(`/v1/datasets/${encodeURIComponent(datasetId)}/items`, { method: 'POST', body: JSON.stringify(input) }),
   run: (input: RunEvaluationInput) => request<EvaluationResult>('/v1/evaluations', { method: 'POST', body: JSON.stringify(input) }),
   get: (evaluationId: string) => request<EvaluationResult>(`/v1/evaluations/${encodeURIComponent(evaluationId)}`),
+  metricDefinitions: () => request<components['schemas']['EvaluationMetricListResponse']>('/v1/evaluation-metrics'),
 }
 
 export const evaluationPolicyApi = {
