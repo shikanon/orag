@@ -1,6 +1,7 @@
 # Video RAG private benchmark protocol
 
-`video-rag/1.0.0` publishes an immutable evaluation **Protocol**, not a data
+`video-rag/1.0.0` publishes an immutable evaluation **Protocol** grounded in the
+[Video-MME benchmark paper](https://openaccess.thecvf.com/content/CVPR2025/html/Fu_Video-MME_The_First-Ever_Comprehensive_Evaluation_Benchmark_of_Multi-modal_LLMs_in_CVPR_2025_paper.html), not a data
 pack. Video-MME's official terms prohibit redistributing or publishing its
 videos and benchmark material. ORAG therefore never downloads, mirrors,
 proxies, caches, or serves Video-MME video, subtitle, annotation, question, or

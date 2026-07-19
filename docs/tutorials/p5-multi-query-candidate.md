@@ -2,6 +2,8 @@
 
 `p5_multi_query_retrieval` 是文本 Quick Pack 的实验性、Pack 声明候选。它只能直接引用完成且兼容的 P0 `baseline`；不会继承 P1–P4 的结果。
 
+使用 LLM 扩展检索表达的代表性研究见 [Query2doc: Query Expansion with Large Language Models](https://arxiv.org/abs/2303.07678)。P5 采用 ORAG 固定的三路去重查询协议，不复现 Query2doc 的训练、prompt 或实验设置。
+
 P5 保持 P0 的 `basic` parser、800/120 分块、hybrid 检索器、评测集、`realtime` profile 与 Top-K，并复用同一个已完成 P0 知识库及其索引事实。唯一变化是在教程专用 evaluator 中固定生成三条检索查询：原始查询和最多两条模型生成的去重查询。
 
 浏览器只能提交 `variant=p5_multi_query_retrieval` 与幂等键，不能提交查询数量、rewrite、HyDE、rerank、检索器、模型、profile、Top-K、缓存或知识库坐标。P5 evaluator v5 会固定 Context Pack 为 5/6000、清空 Pipeline、语义缓存和 Query Router，并关闭 query rewrite、HyDE 与 rerank；这避免生产默认开关和缓存响应改变候选含义。

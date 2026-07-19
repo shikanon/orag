@@ -1,6 +1,6 @@
 # Text-RAG 1.1.0 公共数据包
 
-`text-rag/1.1.0` 是 CRUD-RAG 的可复现公开发布，包含可直接 Clone 的 Quick/Benchmark Pack，以及完整上游 `data/` 归档。所有文件均为匿名 HTTPS 读取，不需要访问密钥。
+`text-rag/1.1.0` 是 [CRUD-RAG](https://arxiv.org/abs/2401.17043) 的可复现公开发布，包含可直接 Clone 的 Quick/Benchmark Pack，以及完整上游 `data/` 归档。所有文件均为匿名 HTTPS 读取，不需要访问密钥。论文说明 benchmark 的 Create、Read、Update、Delete 场景与评测设计；ORAG Pack 的版本、转换和运行协议以本页及 Manifest 为准。
 
 公共根目录：`https://lensrhyme.tos-cn-hongkong.volces.com/tutorial-packs/text-rag/1.1.0/`
 

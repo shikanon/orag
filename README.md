@@ -56,6 +56,7 @@ See the [compatibility and capability maturity policy](./docs/compatibility.md) 
 - [Quick Start](#quick-start)
 - [Examples](#examples)
 - [Configuration](#configuration)
+- [Research Foundations](#research-foundations)
 - [Testing](#testing)
 - [Documentation](#documentation)
 - [Roadmap](./ROADMAP_EN.md)
@@ -223,6 +224,12 @@ The provider registry includes OpenAI, Azure OpenAI, Anthropic, Gemini, Google C
 
 `INGEST_PARSER_METHOD=basic` is the default parser. It extracts text from plain text, HTML, and Office ZIP documents in-process. PDF, images, and embedded DOCX images can be converted into Markdown descriptions through `ARK_MULTIMODAL_MODEL`. `INGEST_PARSER_METHOD=mineru` calls a MinerU-compatible `/file_parse` service. `INGEST_PARSER_METHOD=docling` calls Docling Serve through `/v1/convert/source` or `/v1alpha/convert/source`.
 
+## Research Foundations
+
+ORAG's design follows established RAG and information-retrieval research rather than treating method names as unsupported product labels. Representative sources include the original [RAG paper](https://arxiv.org/abs/2005.11401), [Dense Passage Retrieval](https://aclanthology.org/2020.emnlp-main.550/), [Reciprocal Rank Fusion](https://doi.org/10.1145/1571941.1572114), [HyDE](https://arxiv.org/abs/2212.10496), [RAPTOR](https://openreview.net/forum?id=GN921JHCRw), and [GraphRAG](https://arxiv.org/abs/2404.16130). Evaluation is informed by work such as [RAGAS](https://arxiv.org/abs/2309.15217) and [LLM-as-a-Judge](https://arxiv.org/abs/2306.05685).
+
+The tutorial catalog traces its datasets to the papers for [CRUD-RAG](https://arxiv.org/abs/2401.17043), [ViDoSeek / ViDoRAG](https://arxiv.org/abs/2502.18017), and [Video-MME](https://openaccess.thecvf.com/content/CVPR2025/html/Fu_Video-MME_The_First-Ever_Comprehensive_Evaluation_Benchmark_of_Multi-modal_LLMs_in_CVPR_2025_paper.html). See [Dataset and RAG research references](./docs/research-references.md) for the complete method-to-implementation map and the important distinction between research inspiration and exact reproduction.
+
 ## Testing
 
 Common local verification commands:
@@ -263,6 +270,7 @@ LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,
 | `docs/api/` | API consumers, SDK developers, frontend developers | Authentication, error model, knowledge bases, ingestion, query, and SSE. |
 | `docs/architecture/` | Backend developers and architecture reviewers | Module map, runtime dependencies, and RAG pipeline. |
 | `docs/evaluation/` | Evaluation, algorithm, and quality owners | Dataset structure, rule-based metrics, LLM-as-Judge/QAG, and the goal-driven optimizer. |
+| `docs/research-references.md` | Researchers, reviewers, and users interpreting benchmark results | Primary papers for datasets, RAG/retrieval methods, evaluation methods, and implementation boundaries. |
 | `docs/operations/` | Operators, SREs, deployment owners | Runtime dependencies, health checks, metrics, configuration security, and troubleshooting. |
 
 ## Project Scope
