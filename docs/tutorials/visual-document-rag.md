@@ -1,6 +1,7 @@
 # Visual-document RAG Recipe
 
-`visual-document-rag/1.0.1` is a reproducible **Recipe**, rather than a
+`visual-document-rag/1.0.1` is a reproducible **Recipe** based on the
+[ViDoSeek dataset introduced with ViDoRAG](https://arxiv.org/abs/2502.18017), rather than a
 redistributed data Pack. ORAG does not mirror ViDoSeek documents, annotations,
 page renders, or derived corpora.
 

@@ -2,6 +2,8 @@
 
 本目录面向质量评估、算法调参和回归门禁维护。ORAG 当前评估模块复用线上 RAG 查询路径，默认提供 deterministic rule-based metrics；请求携带 `judge`/`qag` 配置时会额外执行 LLM-as-Judge 和 QAG claim verification，避免线上线下漂移。
 
+评估方法的研究背景可从 [RAGAS](https://arxiv.org/abs/2309.15217)、[LLM-as-a-Judge](https://arxiv.org/abs/2306.05685)、[G-Eval](https://arxiv.org/abs/2303.16634) 和 [QAFactEval](https://aclanthology.org/2022.naacl-main.187/) 继续追溯。完整论文索引和“研究依据不等于严格复现”的边界见[数据集与 RAG 方法研究依据](../research-references.md)；ORAG 指标的权威定义仍以本页和当前代码为准。
+
 ## 当前能力
 
 | 能力 | 说明 |
@@ -40,7 +42,7 @@
 | `citation_hit_rate` | 响应中存在至少一个 citation 时命中。 | 只说明证据存在性，不证明答案正确。 |
 | `context_recall` | 检查 retrieved chunks 覆盖相关文档 ID 的比例。 | 只看文档 ID，不验证 chunk 内容是否真正支撑答案。 |
 | `citation_precision` | 检查引用文档 ID 是否落在相关文档列表中。 | 不验证引用位置与回答论断的一致性。 |
-| `ndcg_at_k` | 衡量相关文档在前 `top_k` 召回结果中的排名质量。 | 依赖 `relevant_doc_ids`，缺失标注时为 0。 |
+| `ndcg_at_k` | 衡量相关文档在前 `top_k` 召回结果中的排名质量；指标来源见 [Cumulated Gain-Based Evaluation of IR Techniques](https://doi.org/10.1145/582415.582418)。 | 依赖 `relevant_doc_ids`，缺失标注时为 0。 |
 | `recall_at_k` | 衡量前 `top_k` 覆盖相关文档的比例。 | 依赖 `relevant_doc_ids`，重复命中同一文档只计一次。 |
 | `mrr` | 第一个相关文档的 reciprocal rank。 | 依赖 `relevant_doc_ids`，无相关召回时为 0。 |
 | `map` | 对相关文档命中位置的 precision 做平均。 | 依赖 `relevant_doc_ids`，未标注时为 0。 |
@@ -49,7 +51,7 @@
 | `redundancy_rate` | 重复召回结果比例。 | 不依赖人工标注，重复判定基于 chunk ID、hash/dedupe key 或规范化文本。 |
 | `duplicate_count` | 重复召回结果数量。 | 无召回结果时为 0。 |
 | `deduped_top_k_count` | 去重后的召回结果数量。 | 用于判断 top_k 是否被重复内容浪费。 |
-| `alpha_ndcg` | 多样性敏感 NDCG，对重复覆盖同一 aspect/subquestion 的收益做衰减。 | 依赖 `diversity_annotations`，缺少有效标注时跳过。 |
+| `alpha_ndcg` | 多样性敏感 NDCG，对重复覆盖同一 aspect/subquestion 的收益做衰减；来源见 [Novelty and Diversity in Information Retrieval Evaluation](https://doi.org/10.1145/1390334.1390446)。 | 依赖 `diversity_annotations`，缺少有效标注时跳过。 |
 | `aspect_coverage` | 召回证据覆盖 aspect/subquestion 的比例。 | 依赖 `diversity_annotations`，缺少有效标注时跳过。 |
 | `latency_p95_ms` | 本次评估内样本查询延迟 P95。 | 来自 RAG 响应的 `LatencyMS`。 |
 | `cache_hit_rate` | `CacheStatus == "hit"` 的样本比例。 | 依赖语义缓存状态。 |

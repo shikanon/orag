@@ -2,6 +2,8 @@
 
 评估模块复用线上 RAG 服务路径，避免线上线下漂移。当前实现提供数据集创建、数据项写入、规则评估、可选 LLM-as-Judge/QAG 明细、评估查询和目标驱动异步优化。
 
+评估方法的研究背景可从 [RAGAS](https://arxiv.org/abs/2309.15217)、[LLM-as-a-Judge](https://arxiv.org/abs/2306.05685)、[G-Eval](https://arxiv.org/abs/2303.16634) 和 [QAFactEval](https://aclanthology.org/2022.naacl-main.187/) 继续追溯。完整论文索引和实现边界见[数据集与 RAG 方法研究依据](./research-references.md)；ORAG 指标的实际含义仍以本页和当前代码为准。
+
 ## 数据集与评估结果存储
 
 默认 `qdrant_postgres` 后端会把数据集、评估运行和逐样本评估结果持久化到 PostgreSQL；`memory` 后端只服务单测和本地无依赖调试，进程结束后数据不保留。
@@ -58,7 +60,7 @@
 - `citation_hit_rate`：逐样本响应中存在至少一个 citation 时为 1，否则为 0；运行级指标是有 citation 样本数除以样本总数。
 - `context_recall`：当 `relevant_doc_ids` 非空时，统计 retrieved chunks 覆盖了多少不同的相关文档 ID；当 `relevant_doc_ids` 为空时，有任意 retrieved chunk 记为 1，否则为 0。
 - `citation_precision`：当响应有引用且 `relevant_doc_ids` 非空时，统计引用文档 ID 落在相关文档列表中的比例；没有引用时为 0，样本未标注 `relevant_doc_ids` 且存在引用时为 1。
-- `ndcg_at_k`：基于相关文档在前 `top_k` 召回结果中的排名计算归一化 DCG。越靠前命中相关文档分数越高。
+- `ndcg_at_k`：基于相关文档在前 `top_k` 召回结果中的排名计算归一化 DCG。越靠前命中相关文档分数越高；指标来源见 [Cumulated Gain-Based Evaluation of IR Techniques](https://doi.org/10.1145/582415.582418)。
 - `recall_at_k`：前 `top_k` 召回结果覆盖相关文档的比例。重复命中同一相关文档只计一次。
 - `mrr`：第一个相关文档的 reciprocal rank。
 - `map`：对相关文档命中位置的 precision 做平均，再按相关文档数归一。
@@ -67,7 +69,7 @@
 - `redundancy_rate`：重复 chunk 数除以召回结果数；重复判定优先使用 chunk ID，其次 metadata 中的 hash/dedupe key，再退化到规范化文本。
 - `duplicate_count`：召回结果中的重复条数。
 - `deduped_top_k_count`：去重后的召回结果数量。
-- `alpha_ndcg`：多样性敏感的 NDCG，对重复覆盖同一 aspect/subquestion 的增益做衰减。
+- `alpha_ndcg`：多样性敏感的 NDCG，对重复覆盖同一 aspect/subquestion 的增益做衰减；来源见 [Novelty and Diversity in Information Retrieval Evaluation](https://doi.org/10.1145/1390334.1390446)。
 - `aspect_coverage`：已召回证据覆盖的 aspect/subquestion 数占全部标注 aspect/subquestion 数的比例。
 - `weighted_sample_count` / `unweighted_sample_count`：参与本次评估的样本权重总和和样本条数；`split_summary` 会按 split 汇总全量数据集样本统计。
 - `holdout_gate`：启用时记录 `passed`、失败原因、质量指标、样本数和阈值；缺失 split、样本不足、指标缺失或质量低于阈值都会失败。
