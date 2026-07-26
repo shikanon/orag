@@ -188,6 +188,7 @@ func (wp *WorkerPool) leaseAndDispatch(ctx context.Context, poolName string, pw 
 
 func (wp *WorkerPool) executeTask(parentCtx context.Context, task Task, handler Handler, pw *poolWorker) {
 	taskCtx, taskCancel := context.WithCancel(parentCtx)
+	defer taskCancel()
 	// Transition to running before invoking the handler. Waiting for the first
 	// periodic heartbeat leaves a short but observable leased-only window and
 	// makes cancellation/timeline semantics needlessly ambiguous.
