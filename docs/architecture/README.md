@@ -14,6 +14,7 @@
 
 | 模块 | 路径 | 责任 |
 | --- | --- | --- |
+| 公共 Go SDK | [`../../client.go`](../../client.go)、[`../../knowledge.go`](../../knowledge.go)、[`../../ingestion.go`](../../ingestion.go)、[`../../query.go`](../../query.go)、[`../../trace.go`](../../trace.go) | 对外提供嵌入式客户端和按能力划分的稳定 DTO；实现继续委托给 `internal/`。 |
 | API 服务入口 | [`../../cmd/orag-api`](../../cmd/orag-api) | 启动 Hertz HTTP 服务。 |
 | CLI 工具 | [`../../cmd/oragctl`](../../cmd/oragctl) | 执行数据库迁移等运维动作。 |
 | HTTP 层 | [`../../internal/http`](../../internal/http) | 路由、鉴权中间件、错误响应、SSE。 |
@@ -26,6 +27,27 @@
 | 存储 | [`../../internal/storage`](../../internal/storage) | PostgreSQL、Qdrant 真实后端实现。 |
 | 评估 | [`../../internal/eval`](../../internal/eval) | 数据集、评估运行、metrics、optimizer。 |
 | 观测 | [`../../internal/observability`](../../internal/observability) | metrics 和 tracing 入口。 |
+
+## 贡献入口
+
+修改功能时，从下表横向定位公开契约、传输层、领域实现、持久化和测试。不要从
+`internal/app` 开始堆叠业务逻辑；该包只负责依赖组装和生命周期。
+
+| 想修改的能力 | 公共 SDK | HTTP 层 | 领域实现 | 存储实现 | 首选测试入口 |
+| --- | --- | --- | --- | --- | --- |
+| 客户端生命周期、配置 | `client.go`、`config.go` | `internal/http/model_readiness.go` | `internal/app`、`internal/config` | — | `orag_test.go`、`internal/app/*_test.go` |
+| 项目与 API Key | `control_plane.go` | `internal/http/projects.go`、`api_keys.go` | `internal/project`、`internal/auth` | `internal/storage/postgres/project.go`、`api_key.go` | `control_plane_test.go`、对应包内测试 |
+| 知识库 | `knowledge.go` | `internal/http/router.go` | `internal/kb` | `internal/storage/postgres`、`qdrant` | `workflow_test.go`、`internal/kb/*_test.go` |
+| 文档入库 | `ingestion.go` | `internal/http/router.go`、`chunk_preview.go` | `internal/ingest` | `internal/storage/postgres`、`qdrant` | `workflow_test.go`、`internal/ingest/*_test.go` |
+| 查询与生成 | `query.go`、`stream.go` | `internal/http/router.go`、`sse.go` | `internal/rag`、`internal/graph` | `internal/storage/qdrant` | `workflow_test.go`、`internal/rag/*_test.go` |
+| Trace | `trace.go` | `internal/http/router.go` | `internal/observability` | `internal/storage/postgres/trace.go` | `workflow_test.go`、Trace 相关包内测试 |
+| 数据集与评估 | `evaluation.go` | `internal/http/evaluation_*.go` | `internal/dataset`、`internal/eval` | `internal/storage/postgres/eval.go` | `evaluation_test.go`、`internal/eval/*_test.go` |
+| Pipeline 与发布 | `release.go` | `internal/http/pipelines.go`、`releases.go` | `internal/pipeline`、`internal/release` | `internal/storage/postgres/pipeline.go`、`release.go` | `release_sdk_test.go`、对应包内测试 |
+
+公共 Go SDK 只有一个正式入口：`github.com/shikanon/orag`。无外部依赖的示例也使用
+`orag.New(ctx, orag.MockConfig())`。`github.com/shikanon/orag/pkg/memory`
+仅作为旧调用方的 Deprecated 兼容适配层存在，不再维护独立的分块、检索、回答或
+Trace 实现。
 
 ## 运行时依赖
 
