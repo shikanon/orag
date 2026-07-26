@@ -18,7 +18,7 @@ Choose this scenario for feature discovery, launch readiness reviews, prompt or 
 - `demo-data.md` provides launch-readiness review material for the runnable demo.
 - `main.go` loads `demo-data.md`, runs an in-process ORAG memory demo, and prints product usage dimensions.
 - `expected-output.md` lists the observable success signals.
-- Commands below use the public `pkg/memory` facade instead of duplicating raw API calls.
+- Commands below use the root SDK with `orag.MockConfig()` instead of duplicating raw API calls.
 
 ## Run
 
@@ -30,7 +30,7 @@ GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples
 
 ## Demo Implementation
 
-- `main.go` creates an in-memory ORAG client through `pkg/memory`.
+- `main.go` creates an in-memory ORAG client through `orag.New` with `orag.MockConfig()`.
 - The demo imports `demo-data.md`, asks a launch-readiness question, and prints answer, citations, trace metadata, and product usage dimensions.
 - Use this as the code-level review demo before running live service evaluation and optimization scripts.
 
@@ -47,7 +47,7 @@ GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples
 - `examples/scenarios/product-team/main.go`
 - `examples/scenarios/product-team/demo-data.md`
 - `examples/scenarios/internal/demo/demo.go`
-- `pkg/memory/memory.go`
+- `ingestion.go`
 
 ## Expected Output
 
