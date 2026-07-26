@@ -155,8 +155,8 @@ func TestAsyncRecord_DoesNotBlock(t *testing.T) {
 }
 
 type slowRepository struct {
-	mu    sync.Mutex
-	delay time.Duration
+	mu     sync.Mutex
+	delay  time.Duration
 	events []AuditEvent
 }
 
@@ -463,8 +463,8 @@ func TestAuditService_AsyncBufferFull(t *testing.T) {
 }
 
 type bufferTrackingRepository struct {
-	mu     sync.Mutex
-	events []AuditEvent
+	mu      sync.Mutex
+	events  []AuditEvent
 	blocked bool
 	blockCh chan struct{}
 }

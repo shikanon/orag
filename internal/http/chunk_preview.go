@@ -27,11 +27,11 @@ type chunkPreviewRequest struct {
 }
 
 type chunkPreviewStrategySelectedResponse struct {
-	Strategy          string  `json:"strategy"`
-	Reason            string  `json:"reason"`
-	Confidence        float64 `json:"confidence"`
-	RecommendedSize   int     `json:"recommended_size"`
-	RecommendedOverlap int    `json:"recommended_overlap"`
+	Strategy           string  `json:"strategy"`
+	Reason             string  `json:"reason"`
+	Confidence         float64 `json:"confidence"`
+	RecommendedSize    int     `json:"recommended_size"`
+	RecommendedOverlap int     `json:"recommended_overlap"`
 }
 
 type chunkPreviewStatsResponse struct {
@@ -95,10 +95,10 @@ func (s *Server) chunkPreview(ctx context.Context, c *app.RequestContext) {
 
 	resp := chunkPreviewResponse{
 		StrategySelected: chunkPreviewStrategySelectedResponse{
-			Strategy:          result.StrategySelected.Strategy,
-			Reason:            result.StrategySelected.Reason,
-			Confidence:        result.StrategySelected.Confidence,
-			RecommendedSize:   result.StrategySelected.RecommendedSize,
+			Strategy:           result.StrategySelected.Strategy,
+			Reason:             result.StrategySelected.Reason,
+			Confidence:         result.StrategySelected.Confidence,
+			RecommendedSize:    result.StrategySelected.RecommendedSize,
 			RecommendedOverlap: result.StrategySelected.RecommendedOverlap,
 		},
 		Stats: chunkPreviewStatsResponse{
@@ -135,10 +135,10 @@ type chunkingImpactRequest struct {
 }
 
 type chunkingImpactResponse struct {
-	EstimatedAffectedDocuments  int    `json:"estimated_affected_documents"`
-	EstimatedChunkWrites        int    `json:"estimated_chunk_writes"`
-	AffectsProductionPipeline   bool   `json:"affects_production_pipeline"`
-	Note                        string `json:"note"`
+	EstimatedAffectedDocuments int    `json:"estimated_affected_documents"`
+	EstimatedChunkWrites       int    `json:"estimated_chunk_writes"`
+	AffectsProductionPipeline  bool   `json:"affects_production_pipeline"`
+	Note                       string `json:"note"`
 }
 
 func (s *Server) chunkingImpact(ctx context.Context, c *app.RequestContext) {

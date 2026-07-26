@@ -38,24 +38,24 @@ type langfuseIngestionBatch struct {
 }
 
 type langfuseObservation struct {
-	ID                 string         `json:"id"`
-	TraceID            string         `json:"traceId"`
-	ParentObservationID string        `json:"parentObservationId,omitempty"`
-	Type               string         `json:"type"`
-	Name               string         `json:"name"`
-	StartTime          string         `json:"startTime"`
-	EndTime            string         `json:"endTime"`
-	Latency            float64        `json:"latency"`
-	Model              string         `json:"model,omitempty"`
-	ModelParameters    map[string]any `json:"modelParameters,omitempty"`
-	Input              any            `json:"input,omitempty"`
-	Output             any            `json:"output,omitempty"`
-	Usage              langfuseUsage  `json:"usage,omitempty"`
-	Metadata           map[string]string `json:"metadata,omitempty"`
-	Tags               []string       `json:"tags,omitempty"`
-	Level              string         `json:"level,omitempty"`
-	StatusMessage      string         `json:"statusMessage,omitempty"`
-	Version            string         `json:"version,omitempty"`
+	ID                  string            `json:"id"`
+	TraceID             string            `json:"traceId"`
+	ParentObservationID string            `json:"parentObservationId,omitempty"`
+	Type                string            `json:"type"`
+	Name                string            `json:"name"`
+	StartTime           string            `json:"startTime"`
+	EndTime             string            `json:"endTime"`
+	Latency             float64           `json:"latency"`
+	Model               string            `json:"model,omitempty"`
+	ModelParameters     map[string]any    `json:"modelParameters,omitempty"`
+	Input               any               `json:"input,omitempty"`
+	Output              any               `json:"output,omitempty"`
+	Usage               langfuseUsage     `json:"usage,omitempty"`
+	Metadata            map[string]string `json:"metadata,omitempty"`
+	Tags                []string          `json:"tags,omitempty"`
+	Level               string            `json:"level,omitempty"`
+	StatusMessage       string            `json:"statusMessage,omitempty"`
+	Version             string            `json:"version,omitempty"`
 }
 
 type langfuseUsage struct {
@@ -276,7 +276,7 @@ func (e *LangfuseExporter) sendRequest(ctx context.Context, url string, body []b
 
 func (e *LangfuseExporter) mapObservation(obs LLMObservation) langfuseObservation {
 	result := langfuseObservation{
-		Name:    obs.Name,
+		Name:      obs.Name,
 		StartTime: obs.StartTime.UTC().Format(time.RFC3339Nano),
 		EndTime:   obs.EndTime.UTC().Format(time.RFC3339Nano),
 		Level:     obs.Level,

@@ -11,17 +11,17 @@ import (
 // markdown document so that a chunking strategy can be selected intelligently.
 type DocumentProfile struct {
 	HeadingCount       int
-	HeadingLevels    map[int]int
-	HasPageBreaks   bool
-	TableLikeLines   int
-	CodeBlocks       int
-	ListItems        int
-	TotalTokens      int
-	ParagraphCount   int
+	HeadingLevels      map[int]int
+	HasPageBreaks      bool
+	TableLikeLines     int
+	CodeBlocks         int
+	ListItems          int
+	TotalTokens        int
+	ParagraphCount     int
 	AvgParagraphTokens float64
-	LongParagraphs   int
-	LanguageHint     string
-	HasFrontMatter  bool
+	LongParagraphs     int
+	LanguageHint       string
+	HasFrontMatter     bool
 }
 
 // Profile analyzes a markdown document and returns a DocumentProfile containing

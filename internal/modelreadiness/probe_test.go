@@ -146,11 +146,11 @@ func TestProbeChat_Success(t *testing.T) {
 	svc := NewProbeService(mockClient, mockAudit, fc)
 
 	cfg := ProbeConfig{
-		Provider:      "test-provider",
-		ChatModel:     "gpt-test",
-		SkipEmbedding: true,
-		SkipRerank:    true,
-		SkipMultimodal: true,
+		Provider:         "test-provider",
+		ChatModel:        "gpt-test",
+		SkipEmbedding:    true,
+		SkipRerank:       true,
+		SkipMultimodal:   true,
 		SkipProviderAuth: true,
 	}
 

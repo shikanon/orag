@@ -156,10 +156,12 @@ func (s *ProbeService) RunProbes(ctx context.Context, cfg ProbeConfig) (*Readine
 
 	for _, p := range probes {
 		if p.skip {
+			mu.Lock()
 			results = append(results, ProbeResult{
 				Capability: string(p.capability),
 				Status:     ProbeStatusSkipped,
 			})
+			mu.Unlock()
 			continue
 		}
 		wg.Add(1)
