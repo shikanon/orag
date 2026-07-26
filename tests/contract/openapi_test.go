@@ -105,6 +105,21 @@ func TestOpenAPI(t *testing.T) {
 		{http.MethodGet, "/v1/optimization-items/{id}"},
 		{http.MethodPost, "/v1/optimization-items/{id}/{action}"},
 		{http.MethodPost, "/v1/optimization-items/revalidate"},
+		{http.MethodGet, "/v1/tasks"},
+		{http.MethodPost, "/v1/tasks"},
+		{http.MethodGet, "/v1/tasks:stats"},
+		{http.MethodGet, "/v1/tasks/{task_id}"},
+		{http.MethodPost, "/v1/tasks/{task_id}:cancel"},
+		{http.MethodPost, "/v1/tasks/{task_id}:retry"},
+		{http.MethodGet, "/v1/tasks/{task_id}/events"},
+		{http.MethodGet, "/v1/audit-events"},
+		{http.MethodGet, "/v1/projects/{project_id}/audit-events"},
+		{http.MethodGet, "/v1/knowledge-bases/{id}/audit-events"},
+		{http.MethodGet, "/v1/releases/{id}/audit-events"},
+		{http.MethodPost, "/v1/chunking:preview"},
+		{http.MethodPost, "/v1/knowledge-bases/{id}/chunking:impact"},
+		{http.MethodPost, "/v1/model-readiness:run"},
+		{http.MethodGet, "/v1/model-readiness/{run_id}"},
 	} {
 		item := doc.Paths.Find(route.path)
 		if item == nil {
@@ -158,6 +173,19 @@ func TestOpenAPI(t *testing.T) {
 		"RegressionResult",
 		"ProfileNeutrality",
 		"ProfileExperiment",
+		"TaskCreateRequest",
+		"TaskAcceptedResponse",
+		"Task",
+		"TaskListResponse",
+		"TaskEventListResponse",
+		"TaskStats",
+		"AuditEventListResponse",
+		"ChunkPreviewRequest",
+		"ChunkPreviewResponse",
+		"ChunkImpactRequest",
+		"ChunkImpactResponse",
+		"ModelReadinessRequest",
+		"ModelReadinessRun",
 	} {
 		if doc.Components.Schemas[schema] == nil {
 			t.Fatalf("missing schema %s", schema)

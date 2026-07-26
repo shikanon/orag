@@ -72,10 +72,16 @@ func projectScopedRouteSupported(c *app.RequestContext) bool {
 		"/v1/projects/:project_id/pipelines", "/v1/projects/:project_id/pipelines/:pipeline_id/draft", "/v1/projects/:project_id/pipelines/:pipeline_id/versions", "/v1/projects/:project_id/query:debug", "/v1/projects/:project_id/debug-runs/:run_id/save-case",
 		"/v1/knowledge-bases", "/v1/knowledge-bases/:id",
 		"/v1/knowledge-bases/:id/documents", "/v1/knowledge-bases/:id/documents:import",
-		"/v1/knowledge-bases/:id/uploads", "/v1/uploads/:id", "/v1/uploads/*action",
+		"/v1/knowledge-bases/:id/uploads", "/v1/knowledge-bases/:id/chunking:impact",
+		"/v1/uploads/:id", "/v1/uploads/*action",
 		"/v1/query", "/v1/query:stream", "/v1/datasets", "/v1/datasets/:id/items",
 		"/v1/evaluations", "/v1/evaluations/:id",
-		"/v1/optimizations", "/v1/optimizations/:id", "/v1/optimizations/*action":
+		"/v1/optimizations", "/v1/optimizations/:id", "/v1/optimizations/*action",
+		"/v1/tasks", "/v1/tasks:stats", "/v1/tasks/:task_id", "/v1/tasks/*action",
+		"/v1/tasks/:task_id/events",
+		"/v1/audit-events", "/v1/projects/:project_id/audit-events",
+		"/v1/knowledge-bases/:id/audit-events",
+		"/v1/releases/:id/audit-events":
 		return true
 	default:
 		return false

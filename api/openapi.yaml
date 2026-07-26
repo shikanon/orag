@@ -17,6 +17,7 @@ tags:
   - name: Trace
   - name: Evaluation
   - name: OfflineKnowledge
+  - name: Governance
 x-orag-agent-capabilities:
   version: 1
   source: openapi
@@ -2388,6 +2389,248 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /v1/tasks:
+    get:
+      tags: [Governance]
+      operationId: listTasks
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Tenant-scoped task page.
+          content: {application/json: {schema: {$ref: "#/components/schemas/TaskListResponse"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [Governance]
+      operationId: createTask
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/TaskCreateRequest"}}}
+      responses:
+        "201":
+          description: Task enqueued.
+          content: {application/json: {schema: {$ref: "#/components/schemas/TaskAcceptedResponse"}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /v1/tasks:stats:
+    get:
+      tags: [Governance]
+      operationId: getTaskStats
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Queue counts by pool and state.
+          content: {application/json: {schema: {$ref: "#/components/schemas/TaskStats"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /v1/tasks/{task_id}:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      tags: [Governance]
+      operationId: getTask
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Task state and metadata. Payload content is tenant-scoped.
+          content: {application/json: {schema: {$ref: "#/components/schemas/Task"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /v1/tasks/{task_id}:cancel:
+    post:
+      tags: [Governance]
+      operationId: cancelTask
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Cancellation requested or completed.
+          content: {application/json: {schema: {$ref: "#/components/schemas/TaskAcceptedResponse"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /v1/tasks/{task_id}:retry:
+    post:
+      tags: [Governance]
+      operationId: retryTask
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Terminal task was returned to the queue.
+          content: {application/json: {schema: {$ref: "#/components/schemas/TaskAcceptedResponse"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /v1/tasks/{task_id}/events:
+    get:
+      tags: [Governance]
+      operationId: listTaskEvents
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Append-only task event timeline.
+          content: {application/json: {schema: {$ref: "#/components/schemas/TaskEventListResponse"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /v1/audit-events:
+    get:
+      tags: [Governance]
+      operationId: listAuditEvents
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Append-only tenant audit activity.
+          content: {application/json: {schema: {$ref: "#/components/schemas/AuditEventListResponse"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /v1/projects/{project_id}/audit-events:
+    get:
+      tags: [Governance]
+      operationId: listProjectAuditEvents
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200": {description: Project audit activity, content: {application/json: {schema: {$ref: "#/components/schemas/AuditEventListResponse"}}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /v1/knowledge-bases/{id}/audit-events:
+    get:
+      tags: [Governance]
+      operationId: listKnowledgeBaseAuditEvents
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200": {description: Knowledge base audit activity, content: {application/json: {schema: {$ref: "#/components/schemas/AuditEventListResponse"}}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /v1/releases/{id}/audit-events:
+    get:
+      tags: [Governance]
+      operationId: listReleaseAuditEvents
+      x-orag-maturity: experimental
+      description: Release-scoped audit activity. This view is available to tenant-wide operators; project-scoped callers should use project audit activity.
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200": {description: Release audit activity, content: {application/json: {schema: {$ref: "#/components/schemas/AuditEventListResponse"}}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /v1/chunking:preview:
+    post:
+      tags: [Governance]
+      operationId: previewChunking
+      x-orag-maturity: experimental
+      description: Read-only preview. It does not write storage or call embedding providers.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ChunkPreviewRequest"}}}
+      responses:
+        "200":
+          description: Chunks, selected strategy, and estimated statistics.
+          content: {application/json: {schema: {$ref: "#/components/schemas/ChunkPreviewResponse"}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+  /v1/knowledge-bases/{id}/chunking:impact:
+    post:
+      tags: [Governance]
+      operationId: getChunkingImpact
+      x-orag-maturity: experimental
+      description: Read-only configuration impact estimate for a knowledge base.
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ChunkImpactRequest"}}}
+      responses:
+        "200":
+          description: Estimated document/chunk write impact.
+          content: {application/json: {schema: {$ref: "#/components/schemas/ChunkImpactResponse"}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /v1/model-readiness:run:
+    post:
+      tags: [Governance]
+      operationId: runModelReadiness
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ModelReadinessRequest"}}}
+      responses:
+        "200":
+          description: Capability probe results. Prompts and provider keys are not returned.
+          content: {application/json: {schema: {$ref: "#/components/schemas/ModelReadinessRun"}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+  /v1/model-readiness/{run_id}:
+    get:
+      tags: [Governance]
+      operationId: getModelReadinessRun
+      x-orag-maturity: experimental
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Tenant-scoped model readiness run.
+          content: {application/json: {schema: {$ref: "#/components/schemas/ModelReadinessRun"}}}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
 components:
   securitySchemes:
     bearerAuth:
@@ -5682,3 +5925,163 @@ components:
         updated_at:
           type: string
           format: date-time
+    TaskCreateRequest:
+      type: object
+      required: [type, pool]
+      properties:
+        type: {type: string, example: document.import}
+        pool: {type: string, example: ingestion_core}
+        project_id: {type: string}
+        payload: {type: object, additionalProperties: true}
+        idempotency_key: {type: string}
+        max_attempts: {type: integer, minimum: 1}
+        priority: {type: integer}
+        run_after: {type: string, format: date-time}
+        locked_resource_type: {type: string}
+        locked_resource_id: {type: string}
+    TaskAcceptedResponse:
+      type: object
+      required: [task_id, status, created_at]
+      properties:
+        task_id: {type: string}
+        status: {type: string, enum: [queued, leased, running, cancelling, cancelled, succeeded, failed_retryable, failed_terminal, dead_letter]}
+        created_at: {type: string, format: date-time}
+    Task:
+      type: object
+      required: [id, tenant_id, type, pool, status, attempt, max_attempts, created_at, updated_at]
+      properties:
+        id: {type: string}
+        tenant_id: {type: string}
+        project_id: {type: string}
+        type: {type: string}
+        pool: {type: string}
+        status: {type: string}
+        payload: {type: object, additionalProperties: true}
+        attempt: {type: integer}
+        max_attempts: {type: integer}
+        priority: {type: integer}
+        run_after: {type: string, format: date-time}
+        trace_id: {type: string}
+        error_code: {type: string}
+        error_message: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+    TaskListResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {type: array, items: {$ref: "#/components/schemas/Task"}}
+        next_cursor: {type: string}
+    TaskEventListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required: [id, task_id, type, created_at]
+            properties:
+              id: {type: string}
+              task_id: {type: string}
+              type: {type: string}
+              message: {type: string}
+              created_at: {type: string, format: date-time}
+        next_cursor: {type: string}
+    TaskStats:
+      type: object
+      properties:
+        pools:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              queued: {type: integer}
+              running: {type: integer}
+              succeeded: {type: integer}
+              failed: {type: integer}
+              dead_letter: {type: integer}
+    AuditEventListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              tenant_id: {type: string}
+              project_id: {type: string}
+              action: {type: string}
+              resource_type: {type: string}
+              resource_id: {type: string}
+              outcome: {type: string}
+              trace_id: {type: string}
+              task_id: {type: string}
+              created_at: {type: string, format: date-time}
+        next_cursor: {type: string}
+    ChunkPreviewRequest:
+      type: object
+      required: [text]
+      properties:
+        text: {type: string}
+        strategy: {type: string, enum: [auto, heading, heuristic, legacy]}
+        size_tokens: {type: integer, minimum: 1}
+        overlap_tokens: {type: integer, minimum: 0}
+        parent_child: {type: boolean}
+        parent_size_tokens: {type: integer}
+        child_size_tokens: {type: integer}
+        sample_count: {type: integer}
+    ChunkPreviewResponse:
+      type: object
+      properties:
+        strategy_selected: {type: object, additionalProperties: true}
+        stats: {type: object, additionalProperties: true}
+        sample_chunks: {type: array, items: {type: object, additionalProperties: true}}
+        warnings: {type: array, items: {type: string}}
+    ChunkImpactRequest:
+      type: object
+      properties:
+        strategy: {type: string, enum: [auto, heading, heuristic, legacy]}
+        size_tokens: {type: integer, minimum: 1}
+        overlap_tokens: {type: integer, minimum: 0}
+    ChunkImpactResponse:
+      type: object
+      required: [estimated_affected_documents, estimated_chunk_writes, affects_production_pipeline, note]
+      properties:
+        estimated_affected_documents: {type: integer}
+        estimated_chunk_writes: {type: integer}
+        affects_production_pipeline: {type: boolean}
+        note: {type: string}
+    ModelReadinessRequest:
+      type: object
+      required: [provider, capabilities]
+      properties:
+        provider: {type: string}
+        capabilities: {type: array, items: {type: string, enum: [chat, embedding, rerank, multimodal, provider_auth]}}
+        expected_embedding_dimensions: {type: integer}
+        timeout_seconds: {type: integer, minimum: 1}
+    ModelReadinessRun:
+      type: object
+      required: [run_id, provider, overall_status, results]
+      properties:
+        run_id: {type: string}
+        provider: {type: string}
+        overall_status: {type: string, enum: [pass, fail, skipped]}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              capability: {type: string}
+              status: {type: string, enum: [pass, fail, skipped]}
+              latency_ms: {type: integer}
+              model: {type: string}
+              dimensions: {type: integer}
+              error_category: {type: string}
+              error_message: {type: string}
+              warnings: {type: array, items: {type: string}}

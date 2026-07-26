@@ -32,6 +32,39 @@ func main() {
 		return
 	}
 	switch os.Args[1] {
+	case "schema":
+		if err := governanceSchemaCmd(os.Stdout); err != nil {
+			log.Fatalf("schema: %v", err)
+		}
+	case "doctor":
+		cfg := mustConfig()
+		app := mustApp(cfg)
+		defer app.Close()
+		if err := doctorCmd(context.Background(), app, os.Stdout); err != nil {
+			log.Fatalf("doctor: %v", err)
+		}
+	case "task":
+		if len(os.Args) < 3 || os.Args[2] != "wait" {
+			usage()
+			return
+		}
+		cfg := mustConfig()
+		app := mustApp(cfg)
+		defer app.Close()
+		if err := taskWaitCmd(context.Background(), app, os.Args[3:], os.Stdout); err != nil {
+			log.Fatalf("task wait: %v", err)
+		}
+	case "doc":
+		if len(os.Args) < 3 || os.Args[2] != "wait" {
+			usage()
+			return
+		}
+		cfg := mustConfig()
+		app := mustApp(cfg)
+		defer app.Close()
+		if err := docWaitCmd(context.Background(), app, os.Args[3:], os.Stdout); err != nil {
+			log.Fatalf("doc wait: %v", err)
+		}
 	case "migrate":
 		cfg := mustConfig()
 		if err := migrateCmd(cfg, os.Args[2:], os.Stdout); err != nil {
@@ -473,5 +506,5 @@ func (f optionalBoolFlag) IsBoolFlag() bool {
 }
 
 func usage() {
-	fmt.Println("usage: oragctl [migrate [--status]|eval|token|trace|benchmark-run|benchmark-report|backup-verify|compatibility-audit|generate-agent-artifacts|generate-skills]")
+	fmt.Println("usage: oragctl [schema|doctor|task wait|doc wait|migrate [--status]|eval|token|trace|benchmark-run|benchmark-report|backup-verify|compatibility-audit|generate-agent-artifacts|generate-skills]")
 }
