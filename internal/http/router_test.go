@@ -81,6 +81,98 @@ func TestTutorialCatalogRoutes(t *testing.T) {
 	}
 }
 
+func TestDocumentImportRespondAsyncCreatesAndCompletesTask(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	token := issueToken(t, application, "tenant_async")
+
+	created := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"Async import"}`, token)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create knowledge base status=%d body=%s", created.Code, created.Body)
+	}
+	var kb struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(created.Body), &kb); err != nil || kb.ID == "" {
+		t.Fatalf("decode knowledge base: id=%q err=%v", kb.ID, err)
+	}
+
+	accepted := performJSONWithHeaders(h, "POST", "/v1/knowledge-bases/"+kb.ID+"/documents:import", `{"name":"async.md","content":"# Async\nThe worker should index this document."}`, token, ut.Header{Key: "Prefer", Value: "respond-async"})
+	if accepted.Code != http.StatusAccepted {
+		t.Fatalf("async import status=%d body=%s", accepted.Code, accepted.Body)
+	}
+	var payload struct {
+		TaskID string `json:"task_id"`
+	}
+	if err := json.Unmarshal([]byte(accepted.Body), &payload); err != nil || payload.TaskID == "" {
+		t.Fatalf("decode task response: id=%q err=%v", payload.TaskID, err)
+	}
+
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		task, found, err := application.TaskQueue.Get(context.Background(), "tenant_async", payload.TaskID)
+		if err != nil || !found {
+			t.Fatalf("get task: found=%t err=%v", found, err)
+		}
+		if task.Status == "succeeded" {
+			return
+		}
+		if task.Status == "failed_terminal" || task.Status == "dead_letter" {
+			t.Fatalf("async import task failed: %+v", task)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("async import task did not complete")
+}
+
+func TestEvaluationRespondAsyncCreatesAndCompletesTask(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	token := issueToken(t, application, "tenant_default")
+
+	created := performJSON(h, "POST", "/v1/datasets", `{"name":"Async evaluation","kind":"golden"}`, token)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create dataset status=%d body=%s", created.Code, created.Body)
+	}
+	var ds struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(created.Body), &ds); err != nil || ds.ID == "" {
+		t.Fatalf("decode dataset: id=%q err=%v", ds.ID, err)
+	}
+	item := performJSON(h, "POST", "/v1/datasets/"+ds.ID+"/items", `{"query":"What is ORAG?","ground_truth":"Insufficient context."}`, token)
+	if item.Code != http.StatusCreated {
+		t.Fatalf("create item status=%d body=%s", item.Code, item.Body)
+	}
+
+	accepted := performJSONWithHeaders(h, "POST", "/v1/evaluations", `{"dataset_id":"`+ds.ID+`","knowledge_base_id":"kb_default","profile":"realtime"}`, token, ut.Header{Key: "Prefer", Value: "respond-async"})
+	if accepted.Code != http.StatusAccepted {
+		t.Fatalf("async evaluation status=%d body=%s", accepted.Code, accepted.Body)
+	}
+	var payload struct {
+		TaskID string `json:"task_id"`
+	}
+	if err := json.Unmarshal([]byte(accepted.Body), &payload); err != nil || payload.TaskID == "" {
+		t.Fatalf("decode task response: id=%q err=%v", payload.TaskID, err)
+	}
+
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		task, found, err := application.TaskQueue.Get(context.Background(), "tenant_default", payload.TaskID)
+		if err != nil || !found {
+			t.Fatalf("get task: found=%t err=%v", found, err)
+		}
+		if task.Status == "succeeded" {
+			return
+		}
+		if task.Status == "failed_terminal" || task.Status == "dead_letter" {
+			t.Fatalf("async evaluation task failed: %+v", task)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("async evaluation task did not complete")
+}
+
 func TestTutorialCloneRoutesCreatePollAndExposeNoStorageDetails(t *testing.T) {
 	pack := []byte(`{"service":{"port":8080,"name":"ORAG"}}`)
 	checksum := "bdb62ea22175c8ad0f316fb554a4e8884c2ea3ae0df9c1cdf8def49b523b79ce"
