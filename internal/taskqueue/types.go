@@ -3,6 +3,8 @@ package taskqueue
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 )
 
@@ -65,6 +67,7 @@ type Task struct {
 	LastHeartbeatAt    time.Time       `json:"last_heartbeat_at,omitempty"`
 	LeaseExpiresAt     time.Time       `json:"lease_expires_at,omitempty"`
 	LeaseHolder        string          `json:"lease_holder,omitempty"`
+	LeaseGeneration    int64           `json:"lease_generation,omitempty"`
 }
 
 // TaskResult contains the result of a successfully completed task.
@@ -109,6 +112,27 @@ type PoolStats struct {
 	DeadLetter int `json:"dead_letter"`
 }
 
+// ErrLeaseLost identifies a queue mutation attempted by a stale lease owner.
+var ErrLeaseLost = errors.New("task lease lost")
+
+// LeaseLostError records which task rejected a stale lease mutation.
+type LeaseLostError struct {
+	TaskID string
+}
+
+func (e *LeaseLostError) Error() string {
+	return fmt.Sprintf("%s: task %s", ErrLeaseLost, e.TaskID)
+}
+
+func (e *LeaseLostError) Unwrap() error {
+	return ErrLeaseLost
+}
+
+// NewLeaseLostError creates an error that callers can match with ErrLeaseLost.
+func NewLeaseLostError(taskID string) error {
+	return &LeaseLostError{TaskID: taskID}
+}
+
 // QueueRepository defines the interface for task queue storage operations.
 type QueueRepository interface {
 	// Enqueue adds a new task to the queue.
@@ -117,14 +141,14 @@ type QueueRepository interface {
 	// Lease acquires a task from the queue for processing.
 	Lease(ctx context.Context, pool, leaseHolder string, leaseDuration time.Duration, maxTasks int) ([]Task, error)
 
-	// Heartbeat renews the lease on a task to indicate it's still being processed.
-	Heartbeat(ctx context.Context, taskID, leaseHolder string, leaseDuration time.Duration) error
+	// Heartbeat renews an active lease when its holder, generation, and attempt match.
+	Heartbeat(ctx context.Context, taskID, leaseHolder string, leaseGeneration int64, attempt int, leaseDuration time.Duration) error
 
-	// Complete marks a task as successfully completed.
-	Complete(ctx context.Context, taskID string, result TaskResult) error
+	// Complete marks a task as successfully completed when its active lease matches.
+	Complete(ctx context.Context, taskID, leaseHolder string, leaseGeneration int64, attempt int, result TaskResult) error
 
-	// Fail marks a task as failed.
-	Fail(ctx context.Context, taskID string, failure TaskFailure) error
+	// Fail marks a task as failed when its active lease matches.
+	Fail(ctx context.Context, taskID, leaseHolder string, leaseGeneration int64, attempt int, failure TaskFailure) error
 
 	// Cancel requests cancellation of a task.
 	Cancel(ctx context.Context, taskID string) error

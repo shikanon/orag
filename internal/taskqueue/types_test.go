@@ -2,6 +2,7 @@ package taskqueue
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -75,8 +76,11 @@ func TestTaskStatusStateMachine_Success(t *testing.T) {
 	if leased[0].Attempt != 1 {
 		t.Errorf("expected attempt 1, got %d", leased[0].Attempt)
 	}
+	if leased[0].LeaseGeneration != 1 {
+		t.Errorf("expected lease generation 1, got %d", leased[0].LeaseGeneration)
+	}
 
-	err = repo.Heartbeat(ctx, leased[0].ID, "worker-1", 30*time.Second)
+	err = repo.Heartbeat(ctx, leased[0].ID, "worker-1", leased[0].LeaseGeneration, leased[0].Attempt, 30*time.Second)
 	if err != nil {
 		t.Fatalf("Heartbeat failed: %v", err)
 	}
@@ -85,7 +89,7 @@ func TestTaskStatusStateMachine_Success(t *testing.T) {
 		t.Errorf("expected status %s after heartbeat, got %s", TaskStatusRunning, got.Status)
 	}
 
-	err = repo.Complete(ctx, leased[0].ID, TaskResult{})
+	err = repo.Complete(ctx, leased[0].ID, "worker-1", leased[0].LeaseGeneration, leased[0].Attempt, TaskResult{})
 	if err != nil {
 		t.Fatalf("Complete failed: %v", err)
 	}
@@ -108,7 +112,7 @@ func TestTaskStatusStateMachine_FailedRetryable(t *testing.T) {
 		t.Fatalf("expected 1 leased task")
 	}
 
-	err := repo.Fail(ctx, leased[0].ID, TaskFailure{
+	err := repo.Fail(ctx, leased[0].ID, "worker-1", leased[0].LeaseGeneration, leased[0].Attempt, TaskFailure{
 		Retryable: true,
 		ErrorCode: "temporary_error",
 		Message:   "temporary failure",
@@ -139,7 +143,7 @@ func TestTaskStatusStateMachine_FailedTerminal(t *testing.T) {
 	task, _ := repo.Enqueue(ctx, newTestTask("default", ""))
 	leased, _ := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 1)
 
-	err := repo.Fail(ctx, leased[0].ID, TaskFailure{
+	err := repo.Fail(ctx, leased[0].ID, "worker-1", leased[0].LeaseGeneration, leased[0].Attempt, TaskFailure{
 		Retryable: false,
 		ErrorCode: "permanent_error",
 		Message:   "permanent failure",
@@ -165,7 +169,7 @@ func TestTaskStatusStateMachine_DeadLetter(t *testing.T) {
 	task, _ = repo.Enqueue(ctx, task)
 
 	leased, _ := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 1)
-	repo.Fail(ctx, leased[0].ID, TaskFailure{Retryable: true, Message: "fail 1"})
+	repo.Fail(ctx, leased[0].ID, "worker-1", leased[0].LeaseGeneration, leased[0].Attempt, TaskFailure{Retryable: true, Message: "fail 1"})
 	fc.Add(300 * time.Millisecond)
 
 	leased, _ = repo.Lease(ctx, "default", "worker-2", 30*time.Second, 1)
@@ -176,7 +180,7 @@ func TestTaskStatusStateMachine_DeadLetter(t *testing.T) {
 		t.Errorf("expected attempt 2, got %d", leased[0].Attempt)
 	}
 
-	repo.Fail(ctx, leased[0].ID, TaskFailure{Retryable: true, Message: "fail 2"})
+	repo.Fail(ctx, leased[0].ID, "worker-2", leased[0].LeaseGeneration, leased[0].Attempt, TaskFailure{Retryable: true, Message: "fail 2"})
 
 	got, _, _ := repo.Get(ctx, task.ID)
 	if got.Status != TaskStatusDeadLetter {
@@ -259,6 +263,48 @@ func TestLeaseExpiry(t *testing.T) {
 	if leased3[0].Attempt != 2 {
 		t.Errorf("expected attempt 2, got %d", leased3[0].Attempt)
 	}
+	if leased3[0].LeaseGeneration != 2 {
+		t.Errorf("expected lease generation 2, got %d", leased3[0].LeaseGeneration)
+	}
+}
+
+func TestLeaseGenerationSurvivesManualAttemptReset(t *testing.T) {
+	repo := NewMemoryQueueRepository()
+	ctx := context.Background()
+
+	task, err := repo.Enqueue(ctx, newTestTask("default", ""))
+	if err != nil {
+		t.Fatalf("Enqueue failed: %v", err)
+	}
+	leased, err := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 1)
+	if err != nil || len(leased) != 1 {
+		t.Fatalf("first Lease = %#v, %v", leased, err)
+	}
+	if err := repo.Fail(ctx, task.ID, "worker-1", leased[0].LeaseGeneration, leased[0].Attempt, TaskFailure{Message: "terminal"}); err != nil {
+		t.Fatalf("Fail failed: %v", err)
+	}
+
+	retried, err := repo.Retry(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("Retry failed: %v", err)
+	}
+	if retried.Attempt != 0 {
+		t.Fatalf("attempt after Retry = %d, want 0", retried.Attempt)
+	}
+	if retried.LeaseGeneration != 1 {
+		t.Fatalf("lease generation after Retry = %d, want 1", retried.LeaseGeneration)
+	}
+
+	leased, err = repo.Lease(ctx, "default", "worker-2", 30*time.Second, 1)
+	if err != nil || len(leased) != 1 {
+		t.Fatalf("second Lease = %#v, %v", leased, err)
+	}
+	if leased[0].Attempt != 1 {
+		t.Errorf("attempt after second Lease = %d, want 1", leased[0].Attempt)
+	}
+	if leased[0].LeaseGeneration != 2 {
+		t.Errorf("lease generation after second Lease = %d, want 2", leased[0].LeaseGeneration)
+	}
 }
 
 func TestCancelQueuedTask(t *testing.T) {
@@ -289,7 +335,7 @@ func TestCancelRunningTask(t *testing.T) {
 
 	task, _ := repo.Enqueue(ctx, newTestTask("default", ""))
 	leased, _ := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 1)
-	repo.Heartbeat(ctx, leased[0].ID, "worker-1", 30*time.Second)
+	repo.Heartbeat(ctx, leased[0].ID, "worker-1", leased[0].LeaseGeneration, leased[0].Attempt, 30*time.Second)
 
 	err := repo.Cancel(ctx, task.ID)
 	if err != nil {
@@ -434,10 +480,103 @@ func TestHeartbeatWrongHolder(t *testing.T) {
 	task, _ := repo.Enqueue(ctx, newTestTask("default", ""))
 	leased, _ := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 1)
 
-	err := repo.Heartbeat(ctx, leased[0].ID, "worker-2", 30*time.Second)
-	if err == nil {
-		t.Error("expected error for wrong lease holder")
+	err := repo.Heartbeat(ctx, leased[0].ID, "worker-2", leased[0].LeaseGeneration, leased[0].Attempt, 30*time.Second)
+	if !errors.Is(err, ErrLeaseLost) {
+		t.Errorf("error = %v, want ErrLeaseLost", err)
 	}
 
 	_ = task
+}
+
+func TestLeaseGenerationCASRejectsStaleOwner(t *testing.T) {
+	startTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	fc := newFakeClock(startTime)
+	repo := NewMemoryQueueRepository()
+	repo.SetClock(fc)
+	ctx := context.Background()
+
+	task, err := repo.Enqueue(ctx, newTestTask("default", ""))
+	if err != nil {
+		t.Fatalf("Enqueue failed: %v", err)
+	}
+	leaseA, err := repo.Lease(ctx, "default", "shared-worker", 30*time.Second, 1)
+	if err != nil || len(leaseA) != 1 {
+		t.Fatalf("lease A = %#v, %v", leaseA, err)
+	}
+
+	fc.Add(31 * time.Second)
+	leaseB, err := repo.Lease(ctx, "default", "shared-worker", 30*time.Second, 1)
+	if err != nil || len(leaseB) != 1 {
+		t.Fatalf("lease B = %#v, %v", leaseB, err)
+	}
+	if leaseA[0].LeaseGeneration == leaseB[0].LeaseGeneration {
+		t.Fatalf("lease generation was reused: %d", leaseA[0].LeaseGeneration)
+	}
+
+	eventsBefore, _, err := repo.ListEvents(ctx, task.ID, "", 100)
+	if err != nil {
+		t.Fatalf("ListEvents before stale mutations failed: %v", err)
+	}
+	staleCalls := []struct {
+		name string
+		call func() error
+	}{
+		{
+			name: "heartbeat",
+			call: func() error {
+				return repo.Heartbeat(ctx, task.ID, leaseA[0].LeaseHolder, leaseA[0].LeaseGeneration, leaseA[0].Attempt, 30*time.Second)
+			},
+		},
+		{
+			name: "complete",
+			call: func() error {
+				return repo.Complete(ctx, task.ID, leaseA[0].LeaseHolder, leaseA[0].LeaseGeneration, leaseA[0].Attempt, TaskResult{})
+			},
+		},
+		{
+			name: "fail",
+			call: func() error {
+				return repo.Fail(ctx, task.ID, leaseA[0].LeaseHolder, leaseA[0].LeaseGeneration, leaseA[0].Attempt, TaskFailure{Message: "stale failure"})
+			},
+		},
+	}
+	for _, tc := range staleCalls {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.call()
+			if !errors.Is(err, ErrLeaseLost) {
+				t.Fatalf("error = %v, want ErrLeaseLost", err)
+			}
+			var leaseErr *LeaseLostError
+			if !errors.As(err, &leaseErr) || leaseErr.TaskID != task.ID {
+				t.Fatalf("error = %#v, want LeaseLostError for task %s", err, task.ID)
+			}
+		})
+	}
+
+	got, ok, err := repo.Get(ctx, task.ID)
+	if err != nil || !ok {
+		t.Fatalf("Get after stale mutations = %#v, %v", got, err)
+	}
+	if got.Status != TaskStatusLeased ||
+		got.LeaseHolder != leaseB[0].LeaseHolder ||
+		got.LeaseGeneration != leaseB[0].LeaseGeneration ||
+		got.Attempt != leaseB[0].Attempt ||
+		!got.LeaseExpiresAt.Equal(leaseB[0].LeaseExpiresAt) {
+		t.Fatalf("stale mutations changed lease B: got %#v, want %#v", got, leaseB[0])
+	}
+	eventsAfter, _, err := repo.ListEvents(ctx, task.ID, "", 100)
+	if err != nil {
+		t.Fatalf("ListEvents after stale mutations failed: %v", err)
+	}
+	if len(eventsAfter) != len(eventsBefore) {
+		t.Fatalf("stale mutations appended events: before=%d after=%d", len(eventsBefore), len(eventsAfter))
+	}
+
+	if err := repo.Complete(ctx, task.ID, leaseB[0].LeaseHolder, leaseB[0].LeaseGeneration, leaseB[0].Attempt, TaskResult{}); err != nil {
+		t.Fatalf("lease B Complete failed: %v", err)
+	}
+	got, ok, err = repo.Get(ctx, task.ID)
+	if err != nil || !ok || got.Status != TaskStatusSucceeded {
+		t.Fatalf("lease B terminal state = %#v, found=%v, err=%v", got, ok, err)
+	}
 }

@@ -414,3 +414,92 @@ func TestWorkerPool_Cancel(t *testing.T) {
 		t.Errorf("unexpected task status after cancel: %s", got.Status)
 	}
 }
+
+func TestWorkerPool_LeaseLossCancelsAndDiscardsExecution(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		handlerErr error
+	}{
+		{name: "success"},
+		{name: "failure", handlerErr: errors.New("stale handler failure")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			startTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+			fc := newFakeClock(startTime)
+			repo := NewMemoryQueueRepository()
+			repo.SetClock(fc)
+			ctx := context.Background()
+
+			enqueued, err := repo.Enqueue(ctx, newTestTask("default", ""))
+			if err != nil {
+				t.Fatalf("Enqueue failed: %v", err)
+			}
+			leaseA, err := repo.Lease(ctx, "default", "worker-a", time.Second, 1)
+			if err != nil || len(leaseA) != 1 {
+				t.Fatalf("lease A = %#v, %v", leaseA, err)
+			}
+
+			handlerStarted := make(chan struct{})
+			handlerCancelled := make(chan struct{})
+			handler := newTestHandler(func(ctx context.Context, _ Task, _ ProgressReporter) error {
+				close(handlerStarted)
+				<-ctx.Done()
+				close(handlerCancelled)
+				return tc.handlerErr
+			})
+			wp := NewWorkerPool(repo, slog.Default())
+			pw := &poolWorker{config: PoolConfig{
+				Name:              "default",
+				LeaseDuration:     time.Second,
+				HeartbeatInterval: 5 * time.Millisecond,
+			}}
+			executionDone := make(chan struct{})
+			go func() {
+				defer close(executionDone)
+				wp.executeTask(ctx, leaseA[0], handler, pw)
+			}()
+
+			select {
+			case <-handlerStarted:
+			case <-time.After(time.Second):
+				t.Fatal("handler did not start")
+			}
+
+			fc.Add(2 * time.Second)
+			leaseB, err := repo.Lease(ctx, "default", "worker-b", time.Second, 1)
+			if err != nil || len(leaseB) != 1 {
+				t.Fatalf("lease B = %#v, %v", leaseB, err)
+			}
+
+			select {
+			case <-handlerCancelled:
+			case <-time.After(time.Second):
+				t.Fatal("lease loss did not cancel handler context")
+			}
+			select {
+			case <-executionDone:
+			case <-time.After(time.Second):
+				t.Fatal("stale execution did not stop")
+			}
+
+			got, ok, err := repo.Get(ctx, enqueued.ID)
+			if err != nil || !ok {
+				t.Fatalf("Get after lease loss = %#v, found=%v, err=%v", got, ok, err)
+			}
+			if got.Status != TaskStatusLeased ||
+				got.LeaseHolder != leaseB[0].LeaseHolder ||
+				got.LeaseGeneration != leaseB[0].LeaseGeneration ||
+				got.Attempt != leaseB[0].Attempt {
+				t.Fatalf("stale execution changed lease B: got %#v, want %#v", got, leaseB[0])
+			}
+
+			if err := repo.Complete(ctx, got.ID, got.LeaseHolder, got.LeaseGeneration, got.Attempt, TaskResult{}); err != nil {
+				t.Fatalf("lease B Complete failed: %v", err)
+			}
+			got, ok, err = repo.Get(ctx, enqueued.ID)
+			if err != nil || !ok || got.Status != TaskStatusSucceeded {
+				t.Fatalf("lease B terminal state = %#v, found=%v, err=%v", got, ok, err)
+			}
+		})
+	}
+}
