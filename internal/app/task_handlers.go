@@ -38,6 +38,18 @@ type documentImportTaskHandler struct {
 	}
 }
 
+type nonRetryableDocumentImportError struct {
+	message string
+}
+
+func (e nonRetryableDocumentImportError) Error() string {
+	return e.message
+}
+
+func (nonRetryableDocumentImportError) Retryable() bool {
+	return false
+}
+
 func (h documentImportTaskHandler) Handle(ctx context.Context, task taskqueue.Task, _ taskqueue.ProgressReporter) error {
 	var payload DocumentImportTaskPayload
 	if err := json.Unmarshal(task.Payload, &payload); err != nil {
@@ -45,6 +57,19 @@ func (h documentImportTaskHandler) Handle(ctx context.Context, task taskqueue.Ta
 	}
 	if strings.TrimSpace(payload.KnowledgeBaseID) == "" || strings.TrimSpace(payload.Name) == "" || payload.ContentBase64 == "" {
 		return fmt.Errorf("document import payload is incomplete")
+	}
+	if h.ingest == nil || h.ingest.KnowledgeBases == nil {
+		return nonRetryableDocumentImportError{message: "document import knowledge base repository is not configured"}
+	}
+	knowledgeBase, found, err := h.ingest.KnowledgeBases.GetKnowledgeBase(ctx, task.TenantID, payload.KnowledgeBaseID)
+	if err != nil {
+		return fmt.Errorf("load document import knowledge base: %w", err)
+	}
+	if !found {
+		return nonRetryableDocumentImportError{message: "document import knowledge base does not exist"}
+	}
+	if knowledgeBase.ProjectID != task.ProjectID {
+		return nonRetryableDocumentImportError{message: "document import knowledge base project does not match task project"}
 	}
 	content, err := base64.StdEncoding.DecodeString(payload.ContentBase64)
 	if err != nil {

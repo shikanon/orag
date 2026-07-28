@@ -1336,6 +1336,236 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listTasks"];
+        put?: never;
+        /** @description Enqueues a typed document import. The payload must identify an existing knowledge base in the caller's tenant. The server authorizes the caller against that knowledge base's actual project and derives the task project and resource lock. Optional project and lock fields are accepted only as consistency assertions. */
+        post: operations["createTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks:stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getTaskStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getTask"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{task_id}:cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{task_id}:retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retryTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{task_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listTaskEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/audit-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAuditEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/audit-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listProjectAuditEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/knowledge-bases/{id}/audit-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listKnowledgeBaseAuditEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/releases/{id}/audit-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Release-scoped audit activity. This view is available to tenant-wide operators; project-scoped callers should use project audit activity. */
+        get: operations["listReleaseAuditEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chunking:preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Read-only preview. It does not write storage or call embedding providers. */
+        post: operations["previewChunking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/knowledge-bases/{id}/chunking:impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Read-only configuration impact estimate for a knowledge base. */
+        post: operations["getChunkingImpact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/model-readiness:run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["runModelReadiness"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/model-readiness/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getModelReadinessRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3455,6 +3685,179 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        TaskCreateRequest: {
+            /**
+             * @description The only task type accepted by the public task creation endpoint.
+             * @enum {string}
+             */
+            type: "document.import";
+            /**
+             * @description Document imports always run in the ingestion core pool.
+             * @enum {string}
+             */
+            pool: "ingestion_core";
+            /** @description Optional assertion that must match the target knowledge base project; the server derives the stored value. */
+            project_id?: string;
+            payload: components["schemas"]["DocumentImportTaskPayload"];
+            idempotency_key?: string;
+            max_attempts?: number;
+            priority?: number;
+            /** Format: date-time */
+            run_after?: string;
+            /**
+             * @description Optional assertion; the server derives knowledge_base as the stored value.
+             * @enum {string}
+             */
+            locked_resource_type?: "knowledge_base";
+            /** @description Optional assertion that must match payload.knowledge_base_id; the server derives the stored value. */
+            locked_resource_id?: string;
+        };
+        DocumentImportTaskPayload: {
+            knowledge_base_id: string;
+            source_uri?: string;
+            name: string;
+            /**
+             * Format: byte
+             * @description Base64-encoded, non-empty document content.
+             */
+            content_base64: string;
+        };
+        TaskAcceptedResponse: {
+            task_id: string;
+            /** @enum {string} */
+            status: "queued" | "leased" | "running" | "cancelling" | "cancelled" | "succeeded" | "failed_retryable" | "failed_terminal" | "dead_letter";
+            /** Format: date-time */
+            created_at: string;
+        };
+        Task: {
+            id: string;
+            tenant_id: string;
+            project_id?: string;
+            type: string;
+            pool: string;
+            status: string;
+            payload?: {
+                [key: string]: unknown;
+            };
+            attempt: number;
+            max_attempts: number;
+            priority?: number;
+            /** Format: date-time */
+            run_after?: string;
+            trace_id?: string;
+            error_code?: string;
+            error_message?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            completed_at?: string;
+        };
+        TaskListResponse: {
+            data: components["schemas"]["Task"][];
+            next_cursor?: string;
+        };
+        TaskEventListResponse: {
+            data: {
+                id: string;
+                task_id: string;
+                type: string;
+                message?: string;
+                /** Format: date-time */
+                created_at: string;
+            }[];
+            next_cursor?: string;
+        };
+        TaskStats: {
+            pools?: {
+                [key: string]: {
+                    queued?: number;
+                    running?: number;
+                    succeeded?: number;
+                    failed?: number;
+                    dead_letter?: number;
+                };
+            };
+        };
+        AuditEventListResponse: {
+            data: {
+                id?: string;
+                tenant_id?: string;
+                project_id?: string;
+                action?: string;
+                resource_type?: string;
+                resource_id?: string;
+                outcome?: string;
+                trace_id?: string;
+                task_id?: string;
+                /** Format: date-time */
+                created_at?: string;
+            }[];
+            next_cursor?: string;
+        };
+        ChunkPreviewRequest: {
+            text: string;
+            /** @enum {string} */
+            strategy?: "auto" | "heading" | "heuristic" | "legacy";
+            size_tokens?: number;
+            overlap_tokens?: number;
+            parent_child?: boolean;
+            parent_size_tokens?: number;
+            child_size_tokens?: number;
+            sample_count?: number;
+        };
+        ChunkPreviewResponse: {
+            strategy_selected?: {
+                [key: string]: unknown;
+            };
+            stats?: {
+                [key: string]: unknown;
+            };
+            sample_chunks?: {
+                [key: string]: unknown;
+            }[];
+            warnings?: string[];
+        };
+        ChunkImpactRequest: {
+            /** @enum {string} */
+            strategy?: "auto" | "heading" | "heuristic" | "legacy";
+            size_tokens?: number;
+            overlap_tokens?: number;
+        };
+        ChunkImpactResponse: {
+            estimated_affected_documents: number;
+            estimated_chunk_writes: number;
+            affects_production_pipeline: boolean;
+            note: string;
+        };
+        ModelReadinessRequest: {
+            provider: string;
+            capabilities: ("chat" | "embedding" | "rerank" | "multimodal" | "provider_auth")[];
+            expected_embedding_dimensions?: number;
+            timeout_seconds?: number;
+        };
+        ModelReadinessRun: {
+            run_id: string;
+            provider: string;
+            /** @enum {string} */
+            overall_status: "pass" | "fail" | "skipped";
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            completed_at?: string;
+            results: {
+                capability?: string;
+                /** @enum {string} */
+                status?: "pass" | "fail" | "skipped";
+                latency_ms?: number;
+                model?: string;
+                dimensions?: number;
+                error_category?: string;
+                error_message?: string;
+                warnings?: string[];
+            }[];
         };
     };
     responses: {
@@ -5862,6 +6265,404 @@ export interface operations {
             404: components["responses"]["Error"];
             500: components["responses"]["Error"];
             503: components["responses"]["Error"];
+        };
+    };
+    listTasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tenant-scoped task page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Task enqueued. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAcceptedResponse"];
+                };
+            };
+            /** @description Invalid public task type, pool, document import payload, or project/lock assertion. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            /** @description The caller cannot write to the target knowledge base's actual project. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The target knowledge base does not exist in the caller's tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getTaskStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queue counts by pool and state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskStats"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    getTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task state and metadata. Payload content is tenant-scoped. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    cancelTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancellation requested or completed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAcceptedResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    retryTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Terminal task was returned to the queue. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAcceptedResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    listTaskEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Append-only task event timeline. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskEventListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listAuditEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Append-only tenant audit activity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    listProjectAuditEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project audit activity */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    listKnowledgeBaseAuditEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Knowledge base audit activity */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listReleaseAuditEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Release audit activity */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventListResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    previewChunking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChunkPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Chunks, selected strategy, and estimated statistics. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChunkPreviewResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+        };
+    };
+    getChunkingImpact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChunkImpactRequest"];
+            };
+        };
+        responses: {
+            /** @description Estimated document/chunk write impact. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChunkImpactResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    runModelReadiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelReadinessRequest"];
+            };
+        };
+        responses: {
+            /** @description Capability probe results. Prompts and provider keys are not returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelReadinessRun"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+        };
+    };
+    getModelReadinessRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tenant-scoped model readiness run. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelReadinessRun"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
 }

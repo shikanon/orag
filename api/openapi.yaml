@@ -2405,6 +2405,12 @@ paths:
       tags: [Governance]
       operationId: createTask
       x-orag-maturity: experimental
+      description: >-
+        Enqueues a typed document import. The payload must identify an existing
+        knowledge base in the caller's tenant. The server authorizes the caller
+        against that knowledge base's actual project and derives the task
+        project and resource lock. Optional project and lock fields are accepted
+        only as consistency assertions.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -2413,9 +2419,16 @@ paths:
         "201":
           description: Task enqueued.
           content: {application/json: {schema: {$ref: "#/components/schemas/TaskAcceptedResponse"}}}
-        "400": {$ref: "#/components/responses/Error"}
+        "400":
+          description: Invalid public task type, pool, document import payload, or project/lock assertion.
+          content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}
         "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
+        "403":
+          description: The caller cannot write to the target knowledge base's actual project.
+          content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}
+        "404":
+          description: The target knowledge base does not exist in the caller's tenant.
+          content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}
   /v1/tasks:stats:
     get:
       tags: [Governance]
@@ -5927,18 +5940,49 @@ components:
           format: date-time
     TaskCreateRequest:
       type: object
-      required: [type, pool]
+      required: [type, pool, payload]
       properties:
-        type: {type: string, example: document.import}
-        pool: {type: string, example: ingestion_core}
-        project_id: {type: string}
-        payload: {type: object, additionalProperties: true}
+        type:
+          type: string
+          enum: [document.import]
+          description: The only task type accepted by the public task creation endpoint.
+        pool:
+          type: string
+          enum: [ingestion_core]
+          description: Document imports always run in the ingestion core pool.
+        project_id:
+          type: string
+          description: Optional assertion that must match the target knowledge base project; the server derives the stored value.
+        payload:
+          $ref: "#/components/schemas/DocumentImportTaskPayload"
         idempotency_key: {type: string}
         max_attempts: {type: integer, minimum: 1}
         priority: {type: integer}
         run_after: {type: string, format: date-time}
-        locked_resource_type: {type: string}
-        locked_resource_id: {type: string}
+        locked_resource_type:
+          type: string
+          enum: [knowledge_base]
+          description: Optional assertion; the server derives knowledge_base as the stored value.
+        locked_resource_id:
+          type: string
+          description: Optional assertion that must match payload.knowledge_base_id; the server derives the stored value.
+    DocumentImportTaskPayload:
+      type: object
+      required: [knowledge_base_id, name, content_base64]
+      properties:
+        knowledge_base_id:
+          type: string
+          minLength: 1
+        source_uri:
+          type: string
+        name:
+          type: string
+          minLength: 1
+        content_base64:
+          type: string
+          format: byte
+          minLength: 1
+          description: Base64-encoded, non-empty document content.
     TaskAcceptedResponse:
       type: object
       required: [task_id, status, created_at]

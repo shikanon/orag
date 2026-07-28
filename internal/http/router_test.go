@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -12,11 +13,13 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/common/ut"
 	"github.com/cloudwego/hertz/pkg/route"
 	"github.com/getkin/kin-openapi/openapi3"
 	core "github.com/shikanon/orag/internal/app"
+	"github.com/shikanon/orag/internal/audit"
 	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/config"
 	"github.com/shikanon/orag/internal/dataset"
@@ -29,8 +32,8 @@ import (
 	"github.com/shikanon/orag/internal/platform/logger"
 	"github.com/shikanon/orag/internal/project"
 	"github.com/shikanon/orag/internal/rag"
+	"github.com/shikanon/orag/internal/taskqueue"
 	"github.com/shikanon/orag/internal/tutorial"
-	"time"
 )
 
 func TestTutorialCatalogRoutes(t *testing.T) {
@@ -123,6 +126,222 @@ func TestDocumentImportRespondAsyncCreatesAndCompletesTask(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatal("async import task did not complete")
+}
+
+func TestCreateTaskDocumentImportProjectAuthorization(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	const tenantID = "tenant_task_authorization"
+	adminToken := issueToken(t, application, tenantID)
+
+	createProject := func(name string) project.Project {
+		t.Helper()
+		response := performJSON(h, "POST", "/v1/projects", `{"name":"`+name+`"}`, adminToken)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("create project %q status=%d body=%s", name, response.Code, response.Body)
+		}
+		var item project.Project
+		if err := json.Unmarshal([]byte(response.Body), &item); err != nil {
+			t.Fatal(err)
+		}
+		return item
+	}
+	createKnowledgeBase := func(name, projectID string) kb.KnowledgeBase {
+		t.Helper()
+		response := performJSON(h, "POST", "/v1/knowledge-bases", `{"name":"`+name+`","project_id":"`+projectID+`"}`, adminToken)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("create knowledge base %q status=%d body=%s", name, response.Code, response.Body)
+		}
+		var item kb.KnowledgeBase
+		if err := json.Unmarshal([]byte(response.Body), &item); err != nil {
+			t.Fatal(err)
+		}
+		return item
+	}
+
+	projectA := createProject("Task project A")
+	projectB := createProject("Task project B")
+	knowledgeBaseA := createKnowledgeBase("Task KB A", projectA.ID)
+	knowledgeBaseB := createKnowledgeBase("Task KB B", projectB.ID)
+	editorResponse := performJSON(h, "POST", "/v1/api-keys", `{"name":"task project editor","role":"project_editor","project_id":"`+projectA.ID+`"}`, adminToken)
+	if editorResponse.Code != http.StatusCreated {
+		t.Fatalf("create editor key status=%d body=%s", editorResponse.Code, editorResponse.Body)
+	}
+	var editor auth.APIKeyCreateResult
+	if err := json.Unmarshal([]byte(editorResponse.Body), &editor); err != nil {
+		t.Fatal(err)
+	}
+
+	jobs := &countingJobStore{delegate: application.Ingest.Jobs}
+	indexer := &countingDocumentIndexer{delegate: application.Ingest.Indexer}
+	application.Ingest.Jobs = jobs
+	application.Ingest.Indexer = indexer
+	chunkSource := application.KBStore.(kb.ChunkSource)
+	initialBChunks := len(chunkSource.Chunks(tenantID, knowledgeBaseB.ID))
+	initialTasks := taskCount(t, application, tenantID)
+
+	deniedBody := documentImportCreateTaskBody(t, knowledgeBaseB.ID, func(req *createTaskRequest) {
+		req.ProjectID = projectA.ID
+	})
+	denied := performJSONWithTrace(h, "POST", "/v1/tasks", deniedBody, editor.Secret, "trace_task_cross_project")
+	assertErrorResponse(t, denied, http.StatusForbidden, "forbidden", "trace_task_cross_project")
+	if got := taskCount(t, application, tenantID); got != initialTasks {
+		t.Fatalf("task count after denied request=%d want=%d", got, initialTasks)
+	}
+	if jobs.createCalls != 0 {
+		t.Fatalf("denied request created %d ingestion jobs", jobs.createCalls)
+	}
+	if indexer.storeCalls != 0 {
+		t.Fatalf("denied request called indexer Store %d times", indexer.storeCalls)
+	}
+	if got := len(chunkSource.Chunks(tenantID, knowledgeBaseB.ID)); got != initialBChunks {
+		t.Fatalf("denied request changed B chunks from %d to %d", initialBChunks, got)
+	}
+
+	accepted := performJSON(h, "POST", "/v1/tasks", documentImportCreateTaskBody(t, knowledgeBaseA.ID, nil), editor.Secret)
+	if accepted.Code != http.StatusCreated {
+		t.Fatalf("same-project task status=%d body=%s", accepted.Code, accepted.Body)
+	}
+	var response struct {
+		TaskID string `json:"task_id"`
+	}
+	if err := json.Unmarshal([]byte(accepted.Body), &response); err != nil || response.TaskID == "" {
+		t.Fatalf("decode task response: id=%q err=%v", response.TaskID, err)
+	}
+	task, found, err := application.TaskQueue.Get(context.Background(), tenantID, response.TaskID)
+	if err != nil || !found {
+		t.Fatalf("get task: found=%t err=%v", found, err)
+	}
+	if task.ProjectID != projectA.ID || task.Pool != core.IngestionCorePool ||
+		task.LockedResourceType != audit.ResourceTypeKnowledgeBase || task.LockedResourceID != knowledgeBaseA.ID {
+		t.Fatalf("server-derived task fields=%+v", task)
+	}
+
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		task, found, err = application.TaskQueue.Get(context.Background(), tenantID, response.TaskID)
+		if err != nil || !found {
+			t.Fatalf("get task: found=%t err=%v", found, err)
+		}
+		if task.Status == taskqueue.TaskStatusSucceeded {
+			break
+		}
+		if task.Status == taskqueue.TaskStatusFailedTerminal || task.Status == taskqueue.TaskStatusDeadLetter {
+			t.Fatalf("same-project task failed: %+v", task)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if task.Status != taskqueue.TaskStatusSucceeded {
+		t.Fatalf("same-project task status=%s want=%s", task.Status, taskqueue.TaskStatusSucceeded)
+	}
+	if jobs.createCalls != 1 || indexer.storeCalls != 1 {
+		t.Fatalf("successful task calls: CreateJob=%d Store=%d", jobs.createCalls, indexer.storeCalls)
+	}
+	if chunks := chunkSource.Chunks(tenantID, knowledgeBaseA.ID); len(chunks) == 0 {
+		t.Fatal("same-project task did not store chunks")
+	}
+}
+
+func TestCreateTaskDocumentImportValidation(t *testing.T) {
+	h, application, closeApp := newTestHertzWithApp(t)
+	defer closeApp()
+	token := issueToken(t, application, "tenant_default")
+
+	tests := []struct {
+		name   string
+		mutate func(*createTaskRequest)
+	}{
+		{
+			name: "unknown type",
+			mutate: func(req *createTaskRequest) {
+				req.Type = "evaluation.run"
+			},
+		},
+		{
+			name: "wrong pool",
+			mutate: func(req *createTaskRequest) {
+				req.Pool = "evaluation"
+			},
+		},
+		{
+			name: "malformed payload",
+			mutate: func(req *createTaskRequest) {
+				req.Payload = json.RawMessage(`[]`)
+			},
+		},
+		{
+			name: "incomplete payload",
+			mutate: func(req *createTaskRequest) {
+				req.Payload = json.RawMessage(`{"knowledge_base_id":"kb_default"}`)
+			},
+		},
+		{
+			name: "project mismatch",
+			mutate: func(req *createTaskRequest) {
+				req.ProjectID = "prj_other"
+			},
+		},
+		{
+			name: "lock type mismatch",
+			mutate: func(req *createTaskRequest) {
+				req.LockedResourceType = "document"
+			},
+		},
+		{
+			name: "lock id mismatch",
+			mutate: func(req *createTaskRequest) {
+				req.LockedResourceID = "kb_other"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			before := taskCount(t, application, "tenant_default")
+			response := performJSON(h, "POST", "/v1/tasks", documentImportCreateTaskBody(t, "kb_default", test.mutate), token)
+			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body, `"code":"invalid_request"`) {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body)
+			}
+			if after := taskCount(t, application, "tenant_default"); after != before {
+				t.Fatalf("task count after invalid request=%d want=%d", after, before)
+			}
+		})
+	}
+}
+
+func documentImportCreateTaskBody(t *testing.T, knowledgeBaseID string, mutate func(*createTaskRequest)) string {
+	t.Helper()
+	payload, err := json.Marshal(core.DocumentImportTaskPayload{
+		KnowledgeBaseID: knowledgeBaseID,
+		SourceURI:       "test://public-task",
+		Name:            "public-task.md",
+		ContentBase64:   base64.StdEncoding.EncodeToString([]byte("# Public task\nAuthorized content.")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := createTaskRequest{
+		Type:    core.DocumentImportTaskType,
+		Pool:    core.IngestionCorePool,
+		Payload: payload,
+	}
+	if mutate != nil {
+		mutate(&request)
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
+func taskCount(t *testing.T, application *core.App, tenantID string) int {
+	t.Helper()
+	tasks, _, err := application.TaskQueue.List(context.Background(), tenantID, taskqueue.TaskFilter{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(tasks)
 }
 
 func TestEvaluationRespondAsyncCreatesAndCompletesTask(t *testing.T) {
@@ -2907,6 +3126,16 @@ func (s *countingJobStore) UpdateJob(ctx context.Context, job ingest.Job) error 
 
 func (s *countingJobStore) GetJob(ctx context.Context, tenantID, id string) (ingest.Job, bool, error) {
 	return s.delegate.GetJob(ctx, tenantID, id)
+}
+
+type countingDocumentIndexer struct {
+	delegate   kb.Indexer
+	storeCalls int
+}
+
+func (i *countingDocumentIndexer) Store(ctx context.Context, document kb.Document, chunks []kb.Chunk) error {
+	i.storeCalls++
+	return i.delegate.Store(ctx, document, chunks)
 }
 
 type countingPipeline struct {
