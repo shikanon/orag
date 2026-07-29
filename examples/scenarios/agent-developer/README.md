@@ -18,7 +18,7 @@ Choose this scenario for MCP client integration, Ralph Loop verification, read-o
 - `demo-data.md` provides agent integration requirements for the runnable demo.
 - `main.go` loads `demo-data.md`, runs an in-process ORAG memory demo, and prints agent-developer usage dimensions.
 - `expected-output.md` lists the observable success signals.
-- Commands below use the public `pkg/memory` facade instead of duplicating raw API calls.
+- Commands below use the root SDK with `orag.MockConfig()` instead of duplicating raw API calls.
 
 ## Run
 
@@ -32,7 +32,7 @@ For copyable client configuration, inspect `examples/mcp/stdio-client-config.jso
 
 ## Demo Implementation
 
-- `main.go` creates an in-memory ORAG client through `pkg/memory`.
+- `main.go` creates an in-memory ORAG client through `orag.New` with `orag.MockConfig()`.
 - The demo imports `demo-data.md`, asks an agent tooling question, and prints answer, citations, trace metadata, and agent-developer usage dimensions.
 - Use this as the code-level tool-response demo before running MCP discovery, self-check smoke, and `make agent-sync-check`.
 
@@ -49,7 +49,7 @@ For copyable client configuration, inspect `examples/mcp/stdio-client-config.jso
 - `examples/scenarios/agent-developer/main.go`
 - `examples/scenarios/agent-developer/demo-data.md`
 - `examples/scenarios/internal/demo/demo.go`
-- `pkg/memory/memory.go`
+- `ingestion.go`
 - `examples/mcp/README.md`
 - `examples/mcp/stdio-client-config.json`
 - `examples/mcp/ralph-loop-stdio-smoke.jsonl`

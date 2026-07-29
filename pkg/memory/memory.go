@@ -2,40 +2,36 @@ package memory
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
-	"fmt"
-	"sort"
 	"strings"
-	"sync"
 	"time"
+
+	orag "github.com/shikanon/orag"
 )
 
 const (
 	defaultTenantID        = "tenant_default"
 	defaultKnowledgeBaseID = "kb_default"
-	defaultTopK            = 3
-	defaultProfile         = "realtime"
 )
 
-// Client is a small in-memory ORAG facade intended for examples and local demos.
+// Client adapts the legacy memory API to the root ORAG SDK.
+//
+// Deprecated: use orag.Client with orag.MockConfig.
 type Client struct {
-	mu          sync.RWMutex
-	tenantID    string
-	kbID        string
-	documents   map[string]DocumentRecord
-	chunks      map[string]Chunk
-	traceSeq    int
-	traces      map[string]TraceRecord
-	clock       func() time.Time
-	idGenerator func(prefix, seed string) string
+	sdk      *orag.Client
+	initErr  error
+	tenantID string
+	kbID     string
+	sdkKBID  string
 }
 
 // Option customizes a Client.
+//
+// Deprecated: configure orag.Config directly.
 type Option func(*Client)
 
 // WithTenantID overrides the default tenant identifier used by the memory client.
+//
+// Deprecated: set orag.Config.TenantID.
 func WithTenantID(tenantID string) Option {
 	return func(c *Client) {
 		if strings.TrimSpace(tenantID) != "" {
@@ -44,7 +40,10 @@ func WithTenantID(tenantID string) Option {
 	}
 }
 
-// WithKnowledgeBaseID overrides the default knowledge base identifier.
+// WithKnowledgeBaseID overrides the legacy knowledge base identifier exposed
+// by compatibility responses.
+//
+// Deprecated: create or select a knowledge base through orag.Client.
 func WithKnowledgeBaseID(kbID string) Option {
 	return func(c *Client) {
 		if strings.TrimSpace(kbID) != "" {
@@ -53,24 +52,30 @@ func WithKnowledgeBaseID(kbID string) Option {
 	}
 }
 
-// New creates a dependency-free in-memory client.
+// New creates a dependency-free compatibility client backed by orag.MockConfig.
+//
+// Deprecated: call orag.New(ctx, orag.MockConfig()).
 func New(opts ...Option) *Client {
 	c := &Client{
-		tenantID:  defaultTenantID,
-		kbID:      defaultKnowledgeBaseID,
-		documents: map[string]DocumentRecord{},
-		chunks:    map[string]Chunk{},
-		traces:    map[string]TraceRecord{},
-		clock:     func() time.Time { return time.Now().UTC() },
-		idGenerator: func(prefix, seed string) string {
-			sum := sha256.Sum256([]byte(seed))
-			return prefix + "_" + hex.EncodeToString(sum[:])[:16]
-		},
+		tenantID: defaultTenantID,
+		kbID:     defaultKnowledgeBaseID,
+		sdkKBID:  defaultKnowledgeBaseID,
 	}
 	for _, opt := range opts {
 		opt(c)
 	}
+	cfg := orag.MockConfig()
+	cfg.TenantID = c.tenantID
+	c.sdk, c.initErr = orag.New(context.Background(), cfg)
 	return c
+}
+
+// Close releases resources owned by the underlying root SDK client.
+func (c *Client) Close() error {
+	if c == nil || c.sdk == nil {
+		return nil
+	}
+	return c.sdk.Close()
 }
 
 // Document is a text document to add to the in-memory knowledge base.
@@ -115,7 +120,7 @@ type QueryRequest struct {
 	Profile string
 }
 
-// QueryResponse contains a deterministic answer and response metadata.
+// QueryResponse contains an answer and response metadata from the root SDK.
 type QueryResponse struct {
 	Answer          string
 	Citations       []Citation
@@ -165,7 +170,7 @@ type TraceRecord struct {
 	NodeSpans  []TraceNodeSpan
 }
 
-// TraceNodeSpan describes one logical step in the example memory pipeline.
+// TraceNodeSpan describes one logical step in the memory pipeline.
 type TraceNodeSpan struct {
 	ID        string
 	NodeName  string
@@ -177,333 +182,141 @@ type TraceNodeSpan struct {
 	CreatedAt time.Time
 }
 
-// AddDocument stores a text document and splits it into simple searchable chunks.
+// AddDocument stores a text document through the root SDK ingestion service.
 func (c *Client) AddDocument(ctx context.Context, doc Document) (DocumentRecord, error) {
-	if err := ctx.Err(); err != nil {
+	if c.initErr != nil {
+		return DocumentRecord{}, c.initErr
+	}
+	result, err := c.sdk.IngestText(ctx, orag.IngestTextRequest{
+		TenantID:        c.tenantID,
+		KnowledgeBaseID: c.sdkKBID,
+		Name:            doc.Title,
+		SourceURI:       doc.SourceURI,
+		Text:            doc.Content,
+	})
+	if err != nil {
 		return DocumentRecord{}, err
 	}
-	content := strings.TrimSpace(doc.Content)
-	if content == "" {
-		return DocumentRecord{}, errors.New("memory: document content is required")
-	}
-
-	now := c.clock()
-	docID := strings.TrimSpace(doc.ID)
-	if docID == "" {
-		docID = c.idGenerator("doc", doc.Title+"\n"+doc.SourceURI+"\n"+content)
-	}
 	record := DocumentRecord{
-		ID:              docID,
+		ID:              result.Document.ID,
 		TenantID:        c.tenantID,
 		KnowledgeBaseID: c.kbID,
-		Title:           strings.TrimSpace(doc.Title),
-		SourceURI:       strings.TrimSpace(doc.SourceURI),
-		ContentHash:     stableHash(content),
+		Title:           result.Document.Title,
+		SourceURI:       result.Document.SourceURI,
+		ContentHash:     result.Document.ContentHash,
 		Metadata:        cloneMap(doc.Metadata),
-		CreatedAt:       now,
+		CreatedAt:       result.Document.CreatedAt,
+		Chunks:          make([]Chunk, len(result.Chunks)),
 	}
-	record.Chunks = c.splitChunks(record, content)
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.documents[record.ID] = record
-	for _, chunk := range record.Chunks {
-		c.chunks[chunk.ID] = chunk
+	for index := range result.Chunks {
+		record.Chunks[index] = fromSDKChunk(result.Chunks[index], c.kbID, doc.Metadata)
 	}
-	return copyDocument(record), nil
+	return record, nil
 }
 
-// Query retrieves relevant chunks and creates a deterministic answer.
+// Query runs the root SDK query workflow with deterministic mock providers.
 func (c *Client) Query(ctx context.Context, req QueryRequest) (QueryResponse, error) {
-	if err := ctx.Err(); err != nil {
+	if c.initErr != nil {
+		return QueryResponse{}, c.initErr
+	}
+	result, err := c.sdk.Query(ctx, orag.QueryRequest{
+		TenantID:        c.tenantID,
+		KnowledgeBaseID: c.sdkKBID,
+		Query:           req.Query,
+		Profile:         req.Profile,
+		TopK:            req.TopK,
+		TraceID:         req.TraceID,
+	})
+	if err != nil {
 		return QueryResponse{}, err
 	}
-	query := strings.TrimSpace(req.Query)
-	if query == "" {
-		return QueryResponse{}, errors.New("memory: query is required")
+	response := QueryResponse{
+		Answer:          result.Answer,
+		TraceID:         result.TraceID,
+		CacheStatus:     result.CacheStatus,
+		Profile:         result.Profile,
+		Warnings:        append([]string(nil), result.Warnings...),
+		LatencyMS:       result.LatencyMS,
+		CreatedAt:       result.CreatedAt,
+		Citations:       make([]Citation, len(result.Citations)),
+		RetrievedChunks: make([]SearchResult, len(result.RetrievedChunks)),
 	}
-
-	start := c.clock()
-	traceID := strings.TrimSpace(req.TraceID)
-	if traceID == "" {
-		traceID = c.nextTraceID(query)
+	if result.TraceSummary != nil {
+		response.TraceSummary = TraceSummary{
+			NodeCount:        result.TraceSummary.NodeCount,
+			SlowestNode:      result.TraceSummary.SlowestNode,
+			SlowestLatencyMS: result.TraceSummary.SlowestLatencyMS,
+		}
+	} else if trace, found, traceErr := c.sdk.GetTrace(ctx, orag.GetTraceRequest{TenantID: c.tenantID, ID: result.TraceID}); traceErr == nil && found {
+		response.TraceSummary = summarizeSDKSpans(trace.NodeSpans)
 	}
-	profile := strings.TrimSpace(req.Profile)
-	if profile == "" {
-		profile = defaultProfile
+	for index, citation := range result.Citations {
+		response.Citations[index] = Citation{
+			ChunkID: citation.ChunkID, DocumentID: citation.DocumentID,
+			SourceURI: citation.SourceURI, Section: citation.Section, Quote: citation.Quote,
+		}
 	}
-	topK := req.TopK
-	if topK <= 0 {
-		topK = defaultTopK
+	for index, item := range result.RetrievedChunks {
+		response.RetrievedChunks[index] = SearchResult{
+			Chunk: fromSDKChunk(item.Chunk, c.kbID, item.Chunk.Metadata),
+			Score: item.Score, Rank: item.Rank, From: item.From,
+		}
 	}
-
-	retrieveStart := c.clock()
-	results := c.retrieve(query, topK)
-	retrieveLatency := elapsedMillis(retrieveStart, c.clock())
-
-	generateStart := c.clock()
-	resp := QueryResponse{
-		RetrievedChunks: results,
-		TraceID:         traceID,
-		CacheStatus:     "disabled",
-		Profile:         profile,
-		CreatedAt:       c.clock(),
-	}
-	if len(results) == 0 {
-		resp.Answer = "No matching memory documents found."
-		resp.Warnings = []string{"no_retrieved_context"}
-	} else {
-		resp.Citations = citationsFor(results)
-		resp.Answer = answerFor(query, results)
-	}
-	generateLatency := elapsedMillis(generateStart, c.clock())
-
-	resp.LatencyMS = elapsedMillis(start, c.clock())
-	spans := []TraceNodeSpan{
-		c.newSpan(traceID, 1, "retrieve", retrieveStart, retrieveLatency, ""),
-		c.newSpan(traceID, 2, "generate_answer", generateStart, generateLatency, ""),
-	}
-	resp.TraceSummary = summarizeTrace(spans)
-	c.storeTrace(TraceRecord{
-		ID:        traceID,
-		TenantID:  c.tenantID,
-		Profile:   profile,
-		LatencyMS: resp.LatencyMS,
-		CreatedAt: resp.CreatedAt,
-		NodeSpans: spans,
-	})
-	return resp, nil
+	return response, nil
 }
 
-// Trace returns a previously recorded query trace.
-func (c *Client) Trace(_ context.Context, traceID string) (TraceRecord, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	trace, ok := c.traces[strings.TrimSpace(traceID)]
-	if !ok {
+// Trace returns a trace recorded by the root SDK.
+func (c *Client) Trace(ctx context.Context, traceID string) (TraceRecord, bool) {
+	if c.initErr != nil {
 		return TraceRecord{}, false
 	}
-	return copyTrace(trace), true
-}
-
-func (c *Client) splitChunks(doc DocumentRecord, content string) []Chunk {
-	sections := splitSections(content)
-	chunks := make([]Chunk, 0, len(sections))
-	for i, section := range sections {
-		chunkID := c.idGenerator("chunk", fmt.Sprintf("%s/%d/%s", doc.ID, i+1, section))
-		chunks = append(chunks, Chunk{
-			ID:              chunkID,
-			TenantID:        doc.TenantID,
-			KnowledgeBaseID: doc.KnowledgeBaseID,
-			DocumentID:      doc.ID,
-			Content:         section,
-			SourceURI:       doc.SourceURI,
-			Section:         fmt.Sprintf("section-%d", i+1),
-			Metadata:        cloneMap(doc.Metadata),
-		})
+	result, found, err := c.sdk.GetTrace(ctx, orag.GetTraceRequest{TenantID: c.tenantID, ID: traceID})
+	if err != nil || !found {
+		return TraceRecord{}, false
 	}
-	return chunks
-}
-
-func (c *Client) retrieve(query string, topK int) []SearchResult {
-	terms := queryTerms(query)
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	results := make([]SearchResult, 0, len(c.chunks))
-	for _, chunk := range c.chunks {
-		score := scoreChunk(terms, chunk.Content)
-		if score <= 0 {
-			continue
-		}
-		results = append(results, SearchResult{Chunk: copyChunk(chunk), Score: score, From: "memory"})
+	trace := TraceRecord{
+		ID: result.ID, TenantID: result.TenantID, Profile: result.Profile,
+		LatencyMS: result.LatencyMS, CreatedAt: result.CreatedAt,
+		HasError: result.HasError, ErrorCount: result.ErrorCount,
+		NodeSpans: make([]TraceNodeSpan, len(result.NodeSpans)),
 	}
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].Score != results[j].Score {
-			return results[i].Score > results[j].Score
-		}
-		return results[i].Chunk.ID < results[j].Chunk.ID
-	})
-	if len(results) > topK {
-		results = results[:topK]
-	}
-	for i := range results {
-		results[i].Rank = i + 1
-	}
-	return results
-}
-
-func (c *Client) nextTraceID(query string) string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.traceSeq++
-	return c.idGenerator("trace", fmt.Sprintf("%d/%s", c.traceSeq, query))
-}
-
-func (c *Client) newSpan(traceID string, sequence int, nodeName string, startedAt time.Time, latencyMS int64, errText string) TraceNodeSpan {
-	endedAt := startedAt.Add(time.Duration(latencyMS) * time.Millisecond)
-	return TraceNodeSpan{
-		ID:        c.idGenerator("span", fmt.Sprintf("%s/%d/%s", traceID, sequence, nodeName)),
-		NodeName:  nodeName,
-		Sequence:  sequence,
-		LatencyMS: latencyMS,
-		Error:     errText,
-		StartedAt: startedAt,
-		EndedAt:   endedAt,
-		CreatedAt: c.clock(),
-	}
-}
-
-func (c *Client) storeTrace(trace TraceRecord) {
-	trace.HasError, trace.ErrorCount = traceErrors(trace.NodeSpans)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.traces[trace.ID] = copyTrace(trace)
-}
-
-func splitSections(content string) []string {
-	paragraphs := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n\n")
-	sections := make([]string, 0, len(paragraphs))
-	for _, paragraph := range paragraphs {
-		section := strings.Join(strings.Fields(paragraph), " ")
-		if section != "" {
-			sections = append(sections, section)
+	for index, span := range result.NodeSpans {
+		trace.NodeSpans[index] = TraceNodeSpan{
+			ID: span.ID, NodeName: span.NodeName, Sequence: span.Sequence,
+			LatencyMS: span.LatencyMS, Error: span.Error,
+			StartedAt: span.StartedAt, EndedAt: span.EndedAt, CreatedAt: span.CreatedAt,
 		}
 	}
-	if len(sections) == 0 {
-		return []string{strings.Join(strings.Fields(content), " ")}
-	}
-	return sections
+	return trace, true
 }
 
-func queryTerms(query string) []string {
-	fields := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
-	})
-	seen := map[string]bool{}
-	terms := make([]string, 0, len(fields))
-	for _, field := range fields {
-		if len(field) < 2 || seen[field] {
-			continue
-		}
-		seen[field] = true
-		terms = append(terms, field)
+func fromSDKChunk(chunk orag.Chunk, knowledgeBaseID string, fallbackMetadata map[string]string) Chunk {
+	metadata := chunk.Metadata
+	if len(metadata) == 0 {
+		metadata = fallbackMetadata
 	}
-	return terms
+	return Chunk{
+		ID: chunk.ID, TenantID: chunk.TenantID, KnowledgeBaseID: knowledgeBaseID,
+		DocumentID: chunk.DocumentID, Content: chunk.Content, SourceURI: chunk.SourceURI,
+		Section: chunk.Section, Metadata: cloneMap(metadata),
+	}
 }
 
-func scoreChunk(terms []string, content string) float64 {
-	if len(terms) == 0 {
-		return 0
-	}
-	lower := strings.ToLower(content)
-	var score float64
-	for _, term := range terms {
-		if strings.Contains(lower, term) {
-			score++
-		}
-	}
-	return score / float64(len(terms))
-}
-
-func answerFor(query string, results []SearchResult) string {
-	top := results[0]
-	snippet := top.Chunk.Content
-	if len(snippet) > 160 {
-		snippet = strings.TrimSpace(snippet[:160]) + "..."
-	}
-	return fmt.Sprintf("Found %d relevant memory chunk(s) for %q. Top source: %s. Snippet: %s [%s]",
-		len(results), query, sourceLabel(top.Chunk), snippet, top.Chunk.ID)
-}
-
-func citationsFor(results []SearchResult) []Citation {
-	citations := make([]Citation, 0, len(results))
-	for _, result := range results {
-		quote := result.Chunk.Content
-		if len(quote) > 120 {
-			quote = strings.TrimSpace(quote[:120]) + "..."
-		}
-		citations = append(citations, Citation{
-			ChunkID:    result.Chunk.ID,
-			DocumentID: result.Chunk.DocumentID,
-			SourceURI:  result.Chunk.SourceURI,
-			Section:    result.Chunk.Section,
-			Quote:      quote,
-		})
-	}
-	return citations
-}
-
-func summarizeTrace(spans []TraceNodeSpan) TraceSummary {
-	var summary TraceSummary
+func summarizeSDKSpans(spans []orag.TraceNodeSpan) TraceSummary {
+	summary := TraceSummary{NodeCount: len(spans)}
 	for _, span := range spans {
-		summary.NodeCount++
 		if span.LatencyMS >= summary.SlowestLatencyMS {
-			summary.SlowestLatencyMS = span.LatencyMS
 			summary.SlowestNode = span.NodeName
+			summary.SlowestLatencyMS = span.LatencyMS
 		}
 	}
 	return summary
 }
 
-func traceErrors(spans []TraceNodeSpan) (bool, int) {
-	var count int
-	for _, span := range spans {
-		if span.Error != "" {
-			count++
-		}
+func cloneMap(input map[string]string) map[string]string {
+	output := make(map[string]string, len(input))
+	for key, value := range input {
+		output[key] = value
 	}
-	return count > 0, count
-}
-
-func sourceLabel(chunk Chunk) string {
-	if chunk.SourceURI != "" {
-		return chunk.SourceURI
-	}
-	return chunk.DocumentID
-}
-
-func elapsedMillis(start, end time.Time) int64 {
-	if end.Before(start) {
-		return 0
-	}
-	return end.Sub(start).Milliseconds()
-}
-
-func stableHash(content string) string {
-	sum := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(sum[:])
-}
-
-func cloneMap(in map[string]string) map[string]string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-func copyDocument(in DocumentRecord) DocumentRecord {
-	out := in
-	out.Metadata = cloneMap(in.Metadata)
-	out.Chunks = make([]Chunk, len(in.Chunks))
-	for i, chunk := range in.Chunks {
-		out.Chunks[i] = copyChunk(chunk)
-	}
-	return out
-}
-
-func copyChunk(in Chunk) Chunk {
-	out := in
-	out.Metadata = cloneMap(in.Metadata)
-	return out
-}
-
-func copyTrace(in TraceRecord) TraceRecord {
-	out := in
-	out.NodeSpans = append([]TraceNodeSpan(nil), in.NodeSpans...)
-	return out
+	return output
 }
