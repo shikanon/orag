@@ -2,6 +2,8 @@
 
 `p6_rerank_retrieval` 是 Text Quick Pack 的实验性、Pack 声明候选。它只能直接引用完成且兼容的 P0 `baseline`；不会继承 P1–P5 的结果。
 
+“先召回、再用模型重排”的代表性研究见 [Document Ranking with a Pretrained Sequence-to-Sequence Model (monoT5)](https://aclanthology.org/2020.findings-emnlp.63/)。P6 调用 ORAG provider registry 中配置的 reranker，并不表示使用或复现 monoT5。
+
 P6 保持 P0 的 `basic` parser、800/120 分块、hybrid 检索、评测集、`realtime` profile 与 Top-K，并复用相同 P0 知识库和测量索引事实。唯一变化是启用服务端固定的既有 reranker。
 
 教程 evaluator v5 对 P0–P5 显式禁用 rerank，并显式使用 hybrid retriever，同时固定 Context Pack 为 5/6000、移除 Pipeline、语义缓存和 Query Router，关闭 GraphBuilder、RAPTOR、rewrite 与 HyDE。P6 仅将 `DisableRerank` 设为 false；生产服务保留原有零值 rerank 行为，不受此教程隔离开关影响。

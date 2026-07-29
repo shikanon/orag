@@ -2,6 +2,8 @@
 
 本文说明 ORAG 中一次查询的主要执行链路，帮助开发者定位问题应该从 HTTP、检索、重排、生成、缓存还是存储层切入。
 
+各检索方法的论文与官方技术来源集中在[数据集与 RAG 方法研究依据](../research-references.md)。这些引用用于说明设计脉络；除非文档明确声明，ORAG 的工程实现不等同于对论文算法和实验设置的逐项复现。
+
 ## 查询路径
 
 ```text
@@ -87,10 +89,10 @@ Store(false) -> Prepare(Qdrant) -> Commit(PostgreSQL) -> Finalize(Qdrant cleanup
 | 语义缓存 | [`../../internal/rag/semantic_cache.go`](../../internal/rag/semantic_cache.go)、[`../../internal/storage/qdrant/semantic_cache.go`](../../internal/storage/qdrant/semantic_cache.go) | 查询相似历史问题，命中时可减少生成成本。 |
 | dense retrieval | [`../../internal/kb/retrievers.go`](../../internal/kb/retrievers.go)、[`../../internal/storage/qdrant`](../../internal/storage/qdrant) | 从 Qdrant 主 collection 检索候选，并由 PostgreSQL `chunks.searchable` 批量授权后返回。 |
 | sparse retrieval | [`../../internal/storage/postgres/fts.go`](../../internal/storage/postgres/fts.go) | 使用 PostgreSQL FTS 检索文本候选；启用 Contextual Retrieval 时查询 `contextual_text + content` 生成的 search vector。 |
-| RAPTOR 摘要层 | [`../../internal/ingest/raptor.go`](../../internal/ingest/raptor.go) | 可选生成递归摘要 chunk；摘要随普通 chunk 一起进入 embedding 和 FTS 检索。 |
-| 图扩展 | [`../../internal/kb/graph.go`](../../internal/kb/graph.go)、[`../../internal/ingest/graph.go`](../../internal/ingest/graph.go) | 可选抽取 chunk 内实体共现关系，检索时按查询实体扩展相关 chunk。 |
-| 融合 | [`../../internal/kb/rrf.go`](../../internal/kb/rrf.go) | 使用 RRF 合并 dense 和 sparse 候选。 |
-| 重排 | [`../../internal/llm/ark`](../../internal/llm/ark) | 通过 Ark rerank 或 mock rerank 调整候选顺序。 |
+| RAPTOR 摘要层 | [`../../internal/ingest/raptor.go`](../../internal/ingest/raptor.go) | 可选生成递归摘要 chunk；摘要随普通 chunk 一起进入 embedding 和 FTS 检索。研究来源：[RAPTOR](https://openreview.net/forum?id=GN921JHCRw)；当前实现不是论文算法的完整复刻。 |
+| 图扩展 | [`../../internal/kb/graph.go`](../../internal/kb/graph.go)、[`../../internal/ingest/graph.go`](../../internal/ingest/graph.go) | 可选抽取 chunk 内实体共现关系，检索时按查询实体扩展相关 chunk。[GraphRAG](https://arxiv.org/abs/2404.16130) 提供相关研究背景，但 ORAG 不实现其社区摘要和 global search。 |
+| 融合 | [`../../internal/kb/rrf.go`](../../internal/kb/rrf.go) | 使用 [Reciprocal Rank Fusion](https://doi.org/10.1145/1571941.1572114) 合并 dense 和 sparse 候选。 |
+| 重排 | [`../../internal/llm/ark`](../../internal/llm/ark) | 通过 Ark rerank 或 mock rerank 调整候选顺序；二阶段模型重排的代表性来源见 [monoT5](https://aclanthology.org/2020.findings-emnlp.63/)。 |
 | 上下文打包 | [`../../internal/rag/context_pack.go`](../../internal/rag/context_pack.go) | 控制上下文数量和 token 预算。 |
 | 引用 | [`../../internal/rag/citation.go`](../../internal/rag/citation.go) | 将检索证据整理为 citations。 |
 | 指标 | [`../../internal/observability`](../../internal/observability) | 更新查询次数、错误计数、cache hit/miss 和延迟 histogram。 |
@@ -105,7 +107,7 @@ Store(false) -> Prepare(Qdrant) -> Commit(PostgreSQL) -> Finalize(Qdrant cleanup
 | `realtime` | 默认 profile，偏主路径和低延迟。 |
 | `high_precision` | 用于质量优先的查询和评估对比。 |
 
-`high_precision` 会启用查询改写、多查询扩展（`RAG_MULTI_QUERY_COUNT`，默认 3）和 HyDE，并对多路检索结果做 RRF 融合后再重排。profile 与 `top_k` 会影响候选规模、召回质量和延迟。optimizer 当前只对 `profiles` 和 `top_ks` 做确定性网格搜索。
+`high_precision` 会启用查询改写、多查询扩展（`RAG_MULTI_QUERY_COUNT`，默认 3）和 [HyDE](https://arxiv.org/abs/2212.10496)，并对多路检索结果做 RRF 融合后再重排。LLM query expansion 的代表性研究见 [Query2doc](https://arxiv.org/abs/2303.07678)。profile 与 `top_k` 会影响候选规模、召回质量和延迟。optimizer 当前只对 `profiles` 和 `top_ks` 做确定性网格搜索。
 
 ## Cache 状态
 

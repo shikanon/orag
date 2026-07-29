@@ -3,8 +3,13 @@ package taskqueue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 )
+
+// ErrLeaseLost indicates that a worker no longer owns the lease generation
+// required to mutate a task.
+var ErrLeaseLost = errors.New("task queue lease lost")
 
 // TaskStatus represents the current state of a task in the queue.
 type TaskStatus string
@@ -65,6 +70,7 @@ type Task struct {
 	LastHeartbeatAt    time.Time       `json:"last_heartbeat_at,omitempty"`
 	LeaseExpiresAt     time.Time       `json:"lease_expires_at,omitempty"`
 	LeaseHolder        string          `json:"lease_holder,omitempty"`
+	LeaseGeneration    int64           `json:"lease_generation"`
 }
 
 // TaskResult contains the result of a successfully completed task.
@@ -118,19 +124,19 @@ type QueueRepository interface {
 	Lease(ctx context.Context, pool, leaseHolder string, leaseDuration time.Duration, maxTasks int) ([]Task, error)
 
 	// Heartbeat renews the lease on a task to indicate it's still being processed.
-	Heartbeat(ctx context.Context, taskID, leaseHolder string, leaseDuration time.Duration) error
+	Heartbeat(ctx context.Context, taskID, leaseHolder string, leaseGeneration int64, leaseDuration time.Duration) error
 
 	// Complete marks a task as successfully completed.
-	Complete(ctx context.Context, taskID string, result TaskResult) error
+	Complete(ctx context.Context, taskID, leaseHolder string, leaseGeneration int64, result TaskResult) error
 
 	// Fail marks a task as failed.
-	Fail(ctx context.Context, taskID string, failure TaskFailure) error
+	Fail(ctx context.Context, taskID, leaseHolder string, leaseGeneration int64, failure TaskFailure) error
 
 	// Cancel requests cancellation of a task.
 	Cancel(ctx context.Context, taskID string) error
 
 	// MarkCancelled finalizes a task after its handler acknowledges cancellation.
-	MarkCancelled(ctx context.Context, taskID string) error
+	MarkCancelled(ctx context.Context, taskID, leaseHolder string, leaseGeneration int64) error
 
 	// Retry manually returns a terminal task to the queue.
 	Retry(ctx context.Context, taskID string) (Task, error)

@@ -56,6 +56,7 @@ ORAG 使用 `experimental`、`beta`、`stable` 标注每项公共能力的兼容
 - [快速开始](#快速开始)
 - [示例](#示例)
 - [配置](#配置)
+- [研究依据](#研究依据)
 - [验证](#验证)
 - [文档](#文档)
 - [Roadmap](./ROADMAP.md)
@@ -233,6 +234,12 @@ go run ./examples/go/sdk
 
 `INGEST_RAPTOR_ENABLED=true` 会在入库时生成递归摘要 chunk，摘要带 `raptor_summary` metadata 并与原始 chunk 一起进入 embedding/FTS 检索层。`RAG_QUERY_ROUTER_ENABLED=true` 会按 direct、single retrieval、multi-step retrieval 路由查询；direct 查询绕过检索直接生成，complex 查询会走高精检索扩展。`RAG_GRAPH_RETRIEVAL_ENABLED=true` 会在入库时抽取轻量实体关系，并在检索后按查询实体扩展相关 chunk。
 
+## 研究依据
+
+ORAG 的设计沿用了可追溯的 RAG 与信息检索研究脉络，而不是把方法名当作缺少出处的产品标签。代表性来源包括 [RAG 原始论文](https://arxiv.org/abs/2005.11401)、[Dense Passage Retrieval](https://aclanthology.org/2020.emnlp-main.550/)、[Reciprocal Rank Fusion](https://doi.org/10.1145/1571941.1572114)、[HyDE](https://arxiv.org/abs/2212.10496)、[RAPTOR](https://openreview.net/forum?id=GN921JHCRw) 和 [GraphRAG](https://arxiv.org/abs/2404.16130)；评估方法参考了 [RAGAS](https://arxiv.org/abs/2309.15217)、[LLM-as-a-Judge](https://arxiv.org/abs/2306.05685) 等工作。
+
+教程目录中的数据集可追溯到 [CRUD-RAG](https://arxiv.org/abs/2401.17043)、[ViDoSeek / ViDoRAG](https://arxiv.org/abs/2502.18017) 和 [Video-MME](https://openaccess.thecvf.com/content/CVPR2025/html/Fu_Video-MME_The_First-Ever_Comprehensive_Evaluation_Benchmark_of_Multi-modal_LLMs_in_CVPR_2025_paper.html) 的原始论文。完整的方法—实现对应关系，以及“研究启发”与“严格复现”的边界，见[数据集与 RAG 方法研究依据](./docs/research-references.md)。
+
 ## Agent MCP 与 Skills 管理
 
 ORAG 的 MCP 工具定义和 Agent Skills 统一存放在 `agent/` 目录中，作为版本控制的单一事实来源（SSOT）。各客户端（Codex、Claude Code、Trae）使用时，通过 `make install-*` 命令拷贝到对应的隐藏配置目录。
@@ -338,6 +345,7 @@ LIVE_ARK_TESTS=1 ARK_API_KEY="$ARK_API_KEY" CGO_ENABLED=0 GOFLAGS=-tags=stdjson,
 | `docs/api/` | API 调用方、SDK/前端开发者 | 认证、错误模型、知识库、入库、查询和 SSE。 |
 | `docs/architecture/` | 后端开发者、架构评审者 | 模块地图、运行时依赖和 RAG pipeline。 |
 | `docs/evaluation/` | 评估/算法/质量负责人 | 数据集结构、rule-based metrics、LLM-as-Judge/QAG 和目标驱动 optimizer。 |
+| `docs/research-references.md` | 研究者、评审者、评测结果使用者 | 数据集、RAG/检索方法和评估方法的原始论文，以及实现边界。 |
 | `docs/operations/` | 运维、SRE、部署负责人 | 部署依赖、健康检查、metrics、配置安全和故障排查。 |
 
 ## 项目边界

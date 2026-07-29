@@ -2,6 +2,8 @@
 
 `p7_graph_retrieval` 是 Text Quick Pack 的实验性、Pack 声明候选。它只能直接引用完成且兼容的 P0 `baseline`；不会继承 P1–P6 的结果。
 
+图式 RAG 的代表性研究背景见 [From Local to Global: A Graph RAG Approach to Query-Focused Summarization](https://arxiv.org/abs/2404.16130)。P7 只实现轻量实体共现关系和查询实体扩展，不复现论文的社区检测、社区摘要或 global search。
+
 P7 保持 P0 的 `basic` parser、800/120 分块、评测集、`realtime` profile 与 Top-K，但会创建独立候选 Knowledge Base。候选入库只启用服务端固定的轻量图关系构建器；评测只把同一 hybrid 基础检索器包装为 `GraphRetriever`，在常规召回后按查询实体扩展图结果。
 
 教程 evaluator v5 对 P0–P6 显式使用 app 创建的 hybrid retriever，固定 Context Pack 为 5/6000，并关闭 GraphBuilder、RAPTOR、Pipeline、语义缓存和 Query Router，同时关闭 rewrite、HyDE、rerank 和 realtime multi-query。P7 仅启用固定 GraphBuilder 与 GraphRetriever；生产服务的图开关保持原有行为，不受教程隔离影响。

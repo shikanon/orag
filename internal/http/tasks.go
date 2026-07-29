@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	core "github.com/shikanon/orag/internal/app"
+	"github.com/shikanon/orag/internal/audit"
 	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/taskqueue"
 )
@@ -74,33 +77,75 @@ func (s *Server) createTask(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 
-	if strings.TrimSpace(req.Type) == "" {
-		writeError(c, consts.StatusBadRequest, "invalid_request", "type is required")
+	taskType := strings.TrimSpace(req.Type)
+	if taskType != core.DocumentImportTaskType {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "type must be document.import")
 		return
 	}
-	if strings.TrimSpace(req.Pool) == "" {
-		writeError(c, consts.StatusBadRequest, "invalid_request", "pool is required")
+	pool := strings.TrimSpace(req.Pool)
+	if pool != core.IngestionCorePool {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "pool must be ingestion_core")
 		return
 	}
 
+	var payload core.DocumentImportTaskPayload
+	if err := json.Unmarshal(req.Payload, &payload); err != nil {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "payload must be a document import payload")
+		return
+	}
+	payload.KnowledgeBaseID = strings.TrimSpace(payload.KnowledgeBaseID)
+	payload.Name = strings.TrimSpace(payload.Name)
+	if payload.KnowledgeBaseID == "" || payload.Name == "" || payload.ContentBase64 == "" {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "payload knowledge_base_id, name, and content_base64 are required")
+		return
+	}
+	if content, err := base64.StdEncoding.DecodeString(payload.ContentBase64); err != nil || len(content) == 0 {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "payload content_base64 must encode non-empty content")
+		return
+	}
+	if s.App == nil || s.App.KBStore == nil {
+		writeError(c, consts.StatusInternalServerError, "knowledge_base_lookup_failed", "knowledge base repository is not configured")
+		return
+	}
+	knowledgeBase, found, err := s.App.KBStore.GetKnowledgeBase(ctx, principal.TenantID, payload.KnowledgeBaseID)
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "knowledge_base_lookup_failed", err.Error())
+		return
+	}
+	if !found {
+		writeKnowledgeBaseNotFound(c)
+		return
+	}
+	if !authorizeRequest(c, auth.ActionResourceWrite, principal.TenantID, knowledgeBase.ProjectID) {
+		return
+	}
+	if (req.ProjectID != "" && req.ProjectID != knowledgeBase.ProjectID) ||
+		(req.LockedResourceType != "" && req.LockedResourceType != audit.ResourceTypeKnowledgeBase) ||
+		(req.LockedResourceID != "" && req.LockedResourceID != knowledgeBase.ID) {
+		writeError(c, consts.StatusBadRequest, "invalid_request", "project and locked resource assertions must match the target knowledge base")
+		return
+	}
+	canonicalPayload, err := json.Marshal(payload)
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "task_payload_encode_failed", err.Error())
+		return
+	}
 	task := taskqueue.Task{
 		TenantID:           principal.TenantID,
-		ProjectID:          strings.TrimSpace(req.ProjectID),
-		Type:               strings.TrimSpace(req.Type),
-		Pool:               strings.TrimSpace(req.Pool),
-		Payload:            req.Payload,
+		ProjectID:          knowledgeBase.ProjectID,
+		Type:               taskType,
+		Pool:               pool,
+		Payload:            canonicalPayload,
 		IdempotencyKey:     strings.TrimSpace(req.IdempotencyKey),
 		MaxAttempts:        req.MaxAttempts,
 		Priority:           req.Priority,
-		LockedResourceType: strings.TrimSpace(req.LockedResourceType),
-		LockedResourceID:   strings.TrimSpace(req.LockedResourceID),
+		LockedResourceType: audit.ResourceTypeKnowledgeBase,
+		LockedResourceID:   knowledgeBase.ID,
+		TraceID:            requestTraceID(c),
 		CreatedBy:          string(principal.Kind) + ":" + principal.SubjectID,
 	}
 	if req.RunAfter != nil {
 		task.RunAfter = *req.RunAfter
-	}
-	if !authorizeRequest(c, auth.ActionResourceWrite, principal.TenantID, task.ProjectID) {
-		return
 	}
 
 	created, err := s.taskService().EnqueueTask(ctx, principal.TenantID, task)

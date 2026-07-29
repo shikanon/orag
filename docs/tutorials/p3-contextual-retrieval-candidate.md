@@ -2,6 +2,8 @@
 
 `p3_contextual_retrieval` 是文本 Quick Pack 的实验性、Pack 声明候选。它只能直接引用完成且兼容的 P0 `baseline`；不会继承 P1 解析或 P2 分块。
 
+方法背景见 Anthropic 的官方技术说明 [Introducing Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)。该来源不是同行评审论文；P3 只验证 ORAG 自身的 chunk 上下文生成和索引实现，不宣称复现来源中的模型、语料或效果数字。
+
 ## 单变量边界
 
 P3 保持 P0 的 `basic` parser 和 800/120 递归分块，仅为每个 chunk 生成服务器拥有的上下文。固定提示词、长度上限、聊天模型和 `fail` 策略由服务端构建；生成失败会使运行失败，绝不把未上下文化的索引误标为 P3。P0/P1/P2 明确不启用上下文化。

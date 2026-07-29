@@ -13,6 +13,7 @@
 | 接入 HTTP API 或 MCP | [`api/README.md`](./api/README.md) -> [`api/auth-and-errors.md`](./api/auth-and-errors.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) -> [`api/agent-integrations.md`](./api/agent-integrations.md) -> [`../api/openapi.yaml`](../api/openapi.yaml) | 对齐认证、请求体、响应体、错误码、主业务 API、Ralph Loop MCP 和 Skill 集成。 |
 | 理解 RAG 内部链路 | [`architecture/README.md`](./architecture/README.md) -> [`architecture/rag-pipeline.md`](./architecture/rag-pipeline.md) -> [`Go-RAG-框架技术方案.md`](./Go-RAG-框架技术方案.md) | 理解 HTTP、检索、重排、生成、引用、缓存和存储边界。 |
 | 做 RAG 质量回归 | [`evaluation/README.md`](./evaluation/README.md) -> [`api/ingestion-and-query.md`](./api/ingestion-and-query.md) | 理解数据集、评估运行、deterministic/Judge/QAG 指标和 optimizer 行为。 |
+| 追溯数据集与方法来源 | [`research-references.md`](./research-references.md) -> [`architecture/rag-pipeline.md`](./architecture/rag-pipeline.md) -> [`evaluation/README.md`](./evaluation/README.md) | 查看 CRUD-RAG、ViDoSeek、Video-MME 及 RAG、RRF、HyDE、RAPTOR、GraphRAG、Judge/QAG 等方法的原始来源和实现边界。 |
 | 学习工程模块效果 | 控制台 `/tutorials` -> [`tutorials/clone-and-pack-install.md`](./tutorials/clone-and-pack-install.md) -> [`tutorials/text-rag-benchmark-run.md`](./tutorials/text-rag-benchmark-run.md) -> [`benchmarks/performance-baseline-contract.md`](./benchmarks/performance-baseline-contract.md) -> [`tutorials/text-rag-official-replay.md`](./tutorials/text-rag-official-replay.md) | `text-rag` Quick/Benchmark 可在冻结输入下运行 P0–P8；性能报告只有固定环境、build 与负载后才可比较；`video-rag` 支持所有者授权的私有导入、时序证据与 temporal P0。官方 text-rag Replay 是固定环境的只读快照；视觉 Live Run/Replay 与视频公开 Replay 尚未发布。 |
 | 判断能力兼容性 | [`compatibility.md`](./compatibility.md) -> [`../ROADMAP.md`](../ROADMAP.md) | 区分 `experimental`、`beta`、`stable`，理解 pre-1.0 弃用和迁移规则。 |
 | 部署或排障 | [`operations/README.md`](./operations/README.md) -> [`operations/troubleshooting.md`](./operations/troubleshooting.md) -> [`development.md`](./development.md) | 明确依赖、配置、健康检查、metrics 和常见故障处理。 |
@@ -27,6 +28,7 @@
 | [`extensions.md`](./extensions.md) | 扩展契约 | Parser、Chunker、Embedder、Retriever、Reranker、Generator、Storage 的公共 Beta 契约与合规套件。 |
 | [`architecture/`](./architecture) | 架构设计 | 模块地图、运行时依赖、RAG pipeline 和排查切入点。 |
 | [`evaluation/`](./evaluation) | 评估与优化 | 数据集、评估运行、rule-based metrics、LLM-as-Judge/QAG 和目标驱动 optimizer。 |
+| [`research-references.md`](./research-references.md) | 研究依据 | 数据集、RAG/检索方法、评估方法的论文链接，以及研究启发与严格复现的边界。 |
 | [`operations/`](./operations) | 运维排障 | 健康检查、metrics、部署检查清单、Docker 配置和故障排查。 |
 
 ## 兼容长文
