@@ -2,6 +2,11 @@
 
 ORAG provides an embedded Go SDK at `github.com/shikanon/orag`. It runs the same project, API key, ingestion, RAG, dataset, evaluation, readiness, and trace services used by the HTTP API, but exposes only public DTOs. No `internal/*` package appears in the caller contract.
 
+This root package is the single public SDK entry point. The historical
+`github.com/shikanon/orag/pkg/memory` package is deprecated and now only adapts
+legacy calls to `orag.MockConfig`; new examples and integrations should not use
+it.
+
 The SDK is currently **beta**. Its core workflow is tested from a standalone downstream Go module, but pre-1.0 compatibility rules still apply. The HTTP API remains the appropriate boundary when clients are not Go programs or need process isolation and centralized authentication.
 
 ## Install

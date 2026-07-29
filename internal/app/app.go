@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shikanon/orag/internal/audit"
 	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/config"
 	"github.com/shikanon/orag/internal/dataset"
@@ -21,6 +22,7 @@ import (
 	"github.com/shikanon/orag/internal/kb"
 	"github.com/shikanon/orag/internal/llm/ark"
 	modelprovider "github.com/shikanon/orag/internal/llm/provider"
+	"github.com/shikanon/orag/internal/modelreadiness"
 	"github.com/shikanon/orag/internal/observability"
 	"github.com/shikanon/orag/internal/offlineknowledge"
 	"github.com/shikanon/orag/internal/optimizer"
@@ -33,6 +35,7 @@ import (
 	"github.com/shikanon/orag/internal/release"
 	"github.com/shikanon/orag/internal/storage/postgres"
 	qdrantstore "github.com/shikanon/orag/internal/storage/qdrant"
+	"github.com/shikanon/orag/internal/taskqueue"
 	"github.com/shikanon/orag/internal/tutorial"
 )
 
@@ -65,6 +68,10 @@ type App struct {
 	ProductionQuery     rag.QueryRunner
 	Metrics             *observability.Metrics
 	Traces              TraceRepository
+	TaskQueue           *taskqueue.Service
+	Audit               *audit.AuditService
+	ModelReadiness      *modelreadiness.ProbeService
+	TaskWorker          *taskqueue.WorkerPool
 
 	Postgres *pgxpool.Pool
 	Qdrant   *qdrantstore.Client
@@ -104,6 +111,18 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	if err != nil {
 		return nil, err
 	}
+	var queueRepo taskqueue.QueueRepository
+	var auditRepo audit.AuditRepository
+	if cfg.Storage.Backend == "memory" {
+		queueRepo = taskqueue.NewMemoryQueueRepository()
+		auditRepo = audit.NewMemoryAuditRepository()
+	} else {
+		queueRepo = postgres.NewTaskQueueRepository(backend.pool)
+		auditRepo = postgres.NewAuditRepository(backend.pool)
+	}
+	auditSvc := audit.NewAuditService(auditRepo, nil, 0)
+	taskSvc := taskqueue.NewService(queueRepo, auditSvc)
+	modelReadinessSvc := modelreadiness.NewProbeService(model, auditSvc, nil)
 	hybrid := kb.HybridRetriever{
 		Dense:      backend.dense,
 		Sparse:     backend.sparse,
@@ -291,6 +310,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	offlineKnowledgeSvc := offlineknowledge.NewService(backend.offlineKnowledgeRepo, offlineKnowledgeOptions)
 	offlineScheduler := buildOfflineKnowledgeScheduler(cfg, offlineKnowledgeSvc, logger)
 	closers := append([]func() error{otlpCloser, otlpMetricsCloser}, backend.closers...)
+	taskWorker := taskqueue.NewWorkerPool(queueRepo, logger)
+	taskWorker.RegisterPool(taskqueue.PoolConfig{Name: IngestionCorePool, Concurrency: 4})
+	taskWorker.RegisterPool(taskqueue.PoolConfig{Name: EvaluationPool, Concurrency: 2})
+	taskWorker.RegisterHandler(DocumentImportTaskType, documentImportTaskHandler{ingest: ingestSvc, audit: auditSvc})
+	taskWorker.RegisterHandler(EvaluationRunTaskType, evaluationTaskHandler{runner: evalRunner, audit: auditSvc})
+	taskWorker.Start(context.Background())
+	closers = append(closers, func() error { taskWorker.Stop(); return nil })
 	otlpNeedsCleanup = false // closers own the OTLP provider on all subsequent paths.
 	otlpMetricsNeedsCleanup = false
 	if offlineScheduler != nil && offlineScheduler.Enabled() {
@@ -356,6 +382,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		ProductionQuery:  productionQuery,
 		Metrics:          metrics,
 		Traces:           backend.traceRepo,
+		TaskQueue:        taskSvc,
+		Audit:            auditSvc,
+		ModelReadiness:   modelReadinessSvc,
+		TaskWorker:       taskWorker,
 		Postgres:         backend.pool,
 		Qdrant:           backend.qdrant,
 		closers:          closers,
