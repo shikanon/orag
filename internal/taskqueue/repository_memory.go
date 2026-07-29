@@ -2,7 +2,6 @@ package taskqueue
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -62,6 +61,7 @@ func (r *MemoryQueueRepository) Enqueue(_ context.Context, task Task) (Task, err
 	if task.MaxAttempts == 0 {
 		task.MaxAttempts = 3
 	}
+	task.LeaseGeneration = 0
 	task.CreatedAt = now
 	task.UpdatedAt = now
 
@@ -127,6 +127,7 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 		task.Status = TaskStatusLeased
 		task.LeaseHolder = leaseHolder
 		task.LeaseExpiresAt = leaseExpiresAt
+		task.LeaseGeneration++
 		task.UpdatedAt = now
 		if task.Attempt == 0 {
 			task.Attempt = 1
@@ -145,21 +146,17 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 }
 
 // Heartbeat renews the lease on a task.
-func (r *MemoryQueueRepository) Heartbeat(_ context.Context, taskID, leaseHolder string, leaseDuration time.Duration) error {
+func (r *MemoryQueueRepository) Heartbeat(_ context.Context, taskID, leaseHolder string, leaseGeneration int64, leaseDuration time.Duration) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	task, ok := r.tasks[taskID]
 	if !ok {
-		return apperrors.New(apperrors.CodeNotFound, "task not found")
+		return ErrLeaseLost
 	}
 
-	if task.LeaseHolder != leaseHolder {
-		return apperrors.New(apperrors.CodeForbidden, "lease holder mismatch")
-	}
-
-	if task.Status != TaskStatusLeased && task.Status != TaskStatusRunning {
-		return apperrors.New(apperrors.CodeConflict, fmt.Sprintf("cannot heartbeat task in status %s", task.Status))
+	if err := r.requireLeaseLocked(task, leaseHolder, leaseGeneration, TaskStatusLeased, TaskStatusRunning, TaskStatusCancelling); err != nil {
+		return err
 	}
 
 	now := r.clock.Now()
@@ -176,13 +173,16 @@ func (r *MemoryQueueRepository) Heartbeat(_ context.Context, taskID, leaseHolder
 }
 
 // Complete marks a task as successfully completed.
-func (r *MemoryQueueRepository) Complete(_ context.Context, taskID string, _ TaskResult) error {
+func (r *MemoryQueueRepository) Complete(_ context.Context, taskID, leaseHolder string, leaseGeneration int64, _ TaskResult) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	task, ok := r.tasks[taskID]
 	if !ok {
-		return apperrors.New(apperrors.CodeNotFound, "task not found")
+		return ErrLeaseLost
+	}
+	if err := r.requireLeaseLocked(task, leaseHolder, leaseGeneration, TaskStatusLeased, TaskStatusRunning); err != nil {
+		return err
 	}
 
 	now := r.clock.Now()
@@ -197,13 +197,16 @@ func (r *MemoryQueueRepository) Complete(_ context.Context, taskID string, _ Tas
 }
 
 // Fail marks a task as failed.
-func (r *MemoryQueueRepository) Fail(_ context.Context, taskID string, failure TaskFailure) error {
+func (r *MemoryQueueRepository) Fail(_ context.Context, taskID, leaseHolder string, leaseGeneration int64, failure TaskFailure) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	task, ok := r.tasks[taskID]
 	if !ok {
-		return apperrors.New(apperrors.CodeNotFound, "task not found")
+		return ErrLeaseLost
+	}
+	if err := r.requireLeaseLocked(task, leaseHolder, leaseGeneration, TaskStatusLeased, TaskStatusRunning); err != nil {
+		return err
 	}
 
 	now := r.clock.Now()
@@ -268,15 +271,15 @@ func (r *MemoryQueueRepository) Cancel(_ context.Context, taskID string) error {
 	return nil
 }
 
-func (r *MemoryQueueRepository) MarkCancelled(_ context.Context, taskID string) error {
+func (r *MemoryQueueRepository) MarkCancelled(_ context.Context, taskID, leaseHolder string, leaseGeneration int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	task, ok := r.tasks[taskID]
 	if !ok {
-		return apperrors.New(apperrors.CodeNotFound, "task not found")
+		return ErrLeaseLost
 	}
-	if task.Status != TaskStatusCancelling {
-		return nil
+	if err := r.requireLeaseLocked(task, leaseHolder, leaseGeneration, TaskStatusCancelling); err != nil {
+		return err
 	}
 	now := r.clock.Now()
 	task.Status = TaskStatusCancelled
@@ -286,6 +289,22 @@ func (r *MemoryQueueRepository) MarkCancelled(_ context.Context, taskID string) 
 	task.LeaseExpiresAt = time.Time{}
 	r.appendEventLocked(taskID, "cancelled", nil, now)
 	return nil
+}
+
+func (r *MemoryQueueRepository) requireLeaseLocked(task *Task, leaseHolder string, leaseGeneration int64, allowedStatuses ...TaskStatus) error {
+	now := r.clock.Now()
+	if task.LeaseHolder != leaseHolder ||
+		task.LeaseGeneration != leaseGeneration ||
+		task.LeaseExpiresAt.IsZero() ||
+		!task.LeaseExpiresAt.After(now) {
+		return ErrLeaseLost
+	}
+	for _, status := range allowedStatuses {
+		if task.Status == status {
+			return nil
+		}
+	}
+	return ErrLeaseLost
 }
 
 func (r *MemoryQueueRepository) Retry(_ context.Context, taskID string) (Task, error) {

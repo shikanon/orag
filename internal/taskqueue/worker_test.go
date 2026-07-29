@@ -47,6 +47,23 @@ type retryableErr struct {
 	retryable bool
 }
 
+type leaseLostOnHeartbeatRepository struct {
+	QueueRepository
+	heartbeatCalls int32
+}
+
+func (r *leaseLostOnHeartbeatRepository) Heartbeat(
+	ctx context.Context,
+	taskID, leaseHolder string,
+	leaseGeneration int64,
+	leaseDuration time.Duration,
+) error {
+	if atomic.AddInt32(&r.heartbeatCalls, 1) > 1 {
+		return ErrLeaseLost
+	}
+	return r.QueueRepository.Heartbeat(ctx, taskID, leaseHolder, leaseGeneration, leaseDuration)
+}
+
 func (e *retryableErr) Error() string {
 	return e.msg
 }
@@ -195,6 +212,81 @@ func TestWorkerPool_Heartbeat(t *testing.T) {
 	}
 	if got.Attempt != 1 {
 		t.Errorf("expected attempt 1 (no retry due to heartbeat), got %d", got.Attempt)
+	}
+}
+
+func TestWorkerPool_LeaseLossCancelsHandler(t *testing.T) {
+	baseRepo := NewMemoryQueueRepository()
+	ctx := context.Background()
+	enqueued, err := baseRepo.Enqueue(ctx, Task{
+		TenantID:    "test-tenant",
+		ProjectID:   "test-project",
+		Type:        "test-task",
+		Pool:        "default",
+		MaxAttempts: 3,
+	})
+	if err != nil {
+		t.Fatalf("Enqueue failed: %v", err)
+	}
+
+	leased, err := baseRepo.Lease(ctx, "default", "worker-a", time.Minute, 1)
+	if err != nil {
+		t.Fatalf("Lease failed: %v", err)
+	}
+	if len(leased) != 1 || leased[0].ID != enqueued.ID {
+		t.Fatalf("leased tasks = %v, want task %s", leased, enqueued.ID)
+	}
+
+	repo := &leaseLostOnHeartbeatRepository{QueueRepository: baseRepo}
+	wp := NewWorkerPool(repo, slog.Default())
+	handlerCancelled := make(chan error, 1)
+	handler := newTestHandler(func(ctx context.Context, task Task, reporter ProgressReporter) error {
+		select {
+		case <-ctx.Done():
+			handlerCancelled <- ctx.Err()
+			return ctx.Err()
+		case <-time.After(time.Second):
+			return errors.New("handler context was not cancelled after lease loss")
+		}
+	})
+	pw := &poolWorker{config: PoolConfig{
+		LeaseDuration:     time.Minute,
+		HeartbeatInterval: 10 * time.Millisecond,
+	}}
+
+	executionDone := make(chan struct{})
+	go func() {
+		defer close(executionDone)
+		wp.executeTask(ctx, leased[0], handler, pw)
+	}()
+
+	select {
+	case err := <-handlerCancelled:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("handler context error = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler was not cancelled after heartbeat reported lease loss")
+	}
+
+	select {
+	case <-executionDone:
+	case <-time.After(time.Second):
+		t.Fatal("task execution did not stop after handler cancellation")
+	}
+
+	if calls := atomic.LoadInt32(&repo.heartbeatCalls); calls < 2 {
+		t.Fatalf("heartbeat calls = %d, want at least 2", calls)
+	}
+	got, ok, err := baseRepo.Get(ctx, enqueued.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if !ok {
+		t.Fatal("task not found")
+	}
+	if got.Status != TaskStatusRunning {
+		t.Fatalf("task status = %s, want %s (lease loss must not submit a terminal result)", got.Status, TaskStatusRunning)
 	}
 }
 

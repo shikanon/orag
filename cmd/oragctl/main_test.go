@@ -73,7 +73,14 @@ func TestTaskWaitCmdReturnsTerminalTaskEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Complete(context.Background(), task.ID, taskqueue.TaskResult{}); err != nil {
+	leased, err := repo.Lease(context.Background(), "ingestion_core", "test-worker", time.Minute, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leased) != 1 {
+		t.Fatalf("leased tasks = %d, want 1", len(leased))
+	}
+	if err := repo.Complete(context.Background(), task.ID, leased[0].LeaseHolder, leased[0].LeaseGeneration, taskqueue.TaskResult{}); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
