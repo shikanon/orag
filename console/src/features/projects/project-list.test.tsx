@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen } from '@testing-library/dom'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { server } from '../../test/handlers'

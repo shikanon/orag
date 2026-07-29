@@ -2,6 +2,7 @@ package taskqueue
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -163,7 +164,7 @@ func (wp *WorkerPool) leaseAndDispatch(ctx context.Context, poolName string, pw 
 
 		if !ok {
 			wp.logger.Warn("no handler registered for task type", "task_type", task.Type, "task_id", task.ID)
-			wp.repo.Fail(ctx, task.ID, TaskFailure{
+			wp.repo.Fail(ctx, task.ID, task.LeaseHolder, task.LeaseGeneration, task.Attempt, TaskFailure{
 				Retryable: false,
 				ErrorCode: "no_handler",
 				Message:   "no handler registered for task type: " + task.Type,
@@ -187,26 +188,29 @@ func (wp *WorkerPool) leaseAndDispatch(ctx context.Context, poolName string, pw 
 }
 
 func (wp *WorkerPool) executeTask(parentCtx context.Context, task Task, handler Handler, pw *poolWorker) {
-	taskCtx, taskCancel := context.WithCancel(parentCtx)
-	defer taskCancel()
+	taskCtx, taskCancel := context.WithCancelCause(parentCtx)
+	defer taskCancel(nil)
 	// Transition to running before invoking the handler. Waiting for the first
 	// periodic heartbeat leaves a short but observable leased-only window and
 	// makes cancellation/timeline semantics needlessly ambiguous.
-	if err := wp.repo.Heartbeat(taskCtx, task.ID, wp.workerID, pw.config.LeaseDuration); err != nil {
+	if err := wp.repo.Heartbeat(taskCtx, task.ID, task.LeaseHolder, task.LeaseGeneration, task.Attempt, pw.config.LeaseDuration); err != nil {
 		wp.logger.Error("failed to start task lease", "task_id", task.ID, "error", err)
 		return
 	}
 
-	heartbeatDone := make(chan struct{})
+	heartbeatDone := make(chan error, 1)
 	go func() {
-		defer close(heartbeatDone)
-		wp.runHeartbeat(taskCtx, task.ID, pw.config.LeaseDuration, pw.config.HeartbeatInterval)
+		err := wp.runHeartbeat(taskCtx, task, pw.config.LeaseDuration, pw.config.HeartbeatInterval)
+		if errors.Is(err, ErrLeaseLost) {
+			taskCancel(err)
+		}
+		heartbeatDone <- err
 	}()
 
 	cancelMonitorDone := make(chan struct{})
 	go func() {
 		defer close(cancelMonitorDone)
-		wp.monitorCancellation(taskCtx, task.ID, taskCancel)
+		wp.monitorCancellation(taskCtx, task, taskCancel)
 	}()
 
 	reporter := &taskProgressReporter{repo: wp.repo}
@@ -217,9 +221,14 @@ func (wp *WorkerPool) executeTask(parentCtx context.Context, task Task, handler 
 
 	isCancelled := taskCtx.Err() == context.Canceled
 
-	taskCancel()
-	<-heartbeatDone
+	taskCancel(nil)
+	heartbeatErr := <-heartbeatDone
 	<-cancelMonitorDone
+
+	if errors.Is(heartbeatErr, ErrLeaseLost) || errors.Is(context.Cause(taskCtx), ErrLeaseLost) {
+		wp.logger.Debug("discarding execution after lease loss", "task_id", task.ID)
+		return
+	}
 
 	if isCancelled {
 		wp.handleCancelledTask(parentCtx, task.ID)
@@ -235,19 +244,28 @@ func (wp *WorkerPool) executeTask(parentCtx context.Context, task Task, handler 
 			Message:   handlerErr.Error(),
 		}
 
-		if err := wp.repo.Fail(parentCtx, task.ID, failure); err != nil {
+		if err := wp.repo.Fail(parentCtx, task.ID, task.LeaseHolder, task.LeaseGeneration, task.Attempt, failure); err != nil {
+			if errors.Is(err, ErrLeaseLost) {
+				wp.logger.Debug("discarding failed execution after lease loss", "task_id", task.ID)
+				return
+			}
 			wp.logger.Error("failed to mark task as failed", "task_id", task.ID, "error", err)
 		}
 		return
 	}
 
-	if err := wp.repo.Complete(parentCtx, task.ID, TaskResult{}); err != nil {
+	if err := wp.repo.Complete(parentCtx, task.ID, task.LeaseHolder, task.LeaseGeneration, task.Attempt, TaskResult{}); err != nil {
+		if errors.Is(err, ErrLeaseLost) {
+			wp.logger.Debug("discarding successful execution after lease loss", "task_id", task.ID)
+			return
+		}
 		wp.logger.Error("failed to mark task as complete", "task_id", task.ID, "error", err)
+		return
 	}
 	wp.logger.Debug("task completed", "task_id", task.ID)
 }
 
-func (wp *WorkerPool) monitorCancellation(ctx context.Context, taskID string, cancelFunc context.CancelFunc) {
+func (wp *WorkerPool) monitorCancellation(ctx context.Context, task Task, cancelFunc context.CancelCauseFunc) {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -256,13 +274,20 @@ func (wp *WorkerPool) monitorCancellation(ctx context.Context, taskID string, ca
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			task, ok, err := wp.repo.Get(ctx, taskID)
+			current, ok, err := wp.repo.Get(ctx, task.ID)
 			if err != nil || !ok {
 				return
 			}
-			if task.Status == TaskStatusCancelling {
-				wp.logger.Debug("task cancellation detected", "task_id", taskID)
-				cancelFunc()
+			if current.LeaseHolder != task.LeaseHolder ||
+				current.LeaseGeneration != task.LeaseGeneration ||
+				current.Attempt != task.Attempt {
+				wp.logger.Debug("task lease loss detected", "task_id", task.ID)
+				cancelFunc(NewLeaseLostError(task.ID))
+				return
+			}
+			if current.Status == TaskStatusCancelling {
+				wp.logger.Debug("task cancellation detected", "task_id", task.ID)
+				cancelFunc(context.Canceled)
 				return
 			}
 		}
@@ -282,19 +307,21 @@ func (wp *WorkerPool) handleCancelledTask(ctx context.Context, taskID string) {
 	}
 }
 
-func (wp *WorkerPool) runHeartbeat(ctx context.Context, taskID string, leaseDuration, interval time.Duration) {
+func (wp *WorkerPool) runHeartbeat(ctx context.Context, task Task, leaseDuration, interval time.Duration) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case <-ticker.C:
-			err := wp.repo.Heartbeat(ctx, taskID, wp.workerID, leaseDuration)
+			err := wp.repo.Heartbeat(ctx, task.ID, task.LeaseHolder, task.LeaseGeneration, task.Attempt, leaseDuration)
 			if err != nil {
-				wp.logger.Debug("heartbeat failed", "task_id", taskID, "error", err)
-				return
+				wp.logger.Debug("heartbeat failed", "task_id", task.ID, "error", err)
+				if errors.Is(err, ErrLeaseLost) {
+					return err
+				}
 			}
 		}
 	}

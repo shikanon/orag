@@ -2,7 +2,6 @@ package taskqueue
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -62,6 +61,9 @@ func (r *MemoryQueueRepository) Enqueue(_ context.Context, task Task) (Task, err
 	if task.MaxAttempts == 0 {
 		task.MaxAttempts = 3
 	}
+	// Lease generations are repository-owned fencing identities. New tasks
+	// always start before their first lease, regardless of caller input.
+	task.LeaseGeneration = 0
 	task.CreatedAt = now
 	task.UpdatedAt = now
 
@@ -126,6 +128,7 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 
 		task.Status = TaskStatusLeased
 		task.LeaseHolder = leaseHolder
+		task.LeaseGeneration++
 		task.LeaseExpiresAt = leaseExpiresAt
 		task.UpdatedAt = now
 		if task.Attempt == 0 {
@@ -144,22 +147,30 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 	return leased, nil
 }
 
+func leaseMatches(task *Task, leaseHolder string, leaseGeneration int64, attempt int, allowCancelling bool) bool {
+	if task.LeaseHolder != leaseHolder ||
+		task.LeaseGeneration != leaseGeneration ||
+		task.Attempt != attempt {
+		return false
+	}
+	switch task.Status {
+	case TaskStatusLeased, TaskStatusRunning:
+		return true
+	case TaskStatusCancelling:
+		return allowCancelling
+	default:
+		return false
+	}
+}
+
 // Heartbeat renews the lease on a task.
-func (r *MemoryQueueRepository) Heartbeat(_ context.Context, taskID, leaseHolder string, leaseDuration time.Duration) error {
+func (r *MemoryQueueRepository) Heartbeat(_ context.Context, taskID, leaseHolder string, leaseGeneration int64, attempt int, leaseDuration time.Duration) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	task, ok := r.tasks[taskID]
-	if !ok {
-		return apperrors.New(apperrors.CodeNotFound, "task not found")
-	}
-
-	if task.LeaseHolder != leaseHolder {
-		return apperrors.New(apperrors.CodeForbidden, "lease holder mismatch")
-	}
-
-	if task.Status != TaskStatusLeased && task.Status != TaskStatusRunning {
-		return apperrors.New(apperrors.CodeConflict, fmt.Sprintf("cannot heartbeat task in status %s", task.Status))
+	if !ok || !leaseMatches(task, leaseHolder, leaseGeneration, attempt, true) {
+		return NewLeaseLostError(taskID)
 	}
 
 	now := r.clock.Now()
@@ -176,13 +187,13 @@ func (r *MemoryQueueRepository) Heartbeat(_ context.Context, taskID, leaseHolder
 }
 
 // Complete marks a task as successfully completed.
-func (r *MemoryQueueRepository) Complete(_ context.Context, taskID string, _ TaskResult) error {
+func (r *MemoryQueueRepository) Complete(_ context.Context, taskID, leaseHolder string, leaseGeneration int64, attempt int, _ TaskResult) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	task, ok := r.tasks[taskID]
-	if !ok {
-		return apperrors.New(apperrors.CodeNotFound, "task not found")
+	if !ok || !leaseMatches(task, leaseHolder, leaseGeneration, attempt, false) {
+		return NewLeaseLostError(taskID)
 	}
 
 	now := r.clock.Now()
@@ -197,13 +208,13 @@ func (r *MemoryQueueRepository) Complete(_ context.Context, taskID string, _ Tas
 }
 
 // Fail marks a task as failed.
-func (r *MemoryQueueRepository) Fail(_ context.Context, taskID string, failure TaskFailure) error {
+func (r *MemoryQueueRepository) Fail(_ context.Context, taskID, leaseHolder string, leaseGeneration int64, attempt int, failure TaskFailure) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	task, ok := r.tasks[taskID]
-	if !ok {
-		return apperrors.New(apperrors.CodeNotFound, "task not found")
+	if !ok || !leaseMatches(task, leaseHolder, leaseGeneration, attempt, false) {
+		return NewLeaseLostError(taskID)
 	}
 
 	now := r.clock.Now()

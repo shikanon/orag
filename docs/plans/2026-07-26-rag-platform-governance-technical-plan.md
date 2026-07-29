@@ -221,14 +221,17 @@ type Task struct {
     TraceID            string
     CreatedBy          string
     RunAfter           time.Time
+    LeaseExpiresAt     time.Time
+    LeaseHolder        string
+    LeaseGeneration    int64
 }
 
 type QueueRepository interface {
     Enqueue(ctx context.Context, task Task) (Task, error)
-    Lease(ctx context.Context, pool string, workerID string, now time.Time) (Task, bool, error)
-    Heartbeat(ctx context.Context, taskID, workerID string, now time.Time) error
-    Complete(ctx context.Context, taskID, workerID string, result TaskResult) error
-    Fail(ctx context.Context, taskID, workerID string, failure TaskFailure) error
+    Lease(ctx context.Context, pool, leaseHolder string, leaseDuration time.Duration, maxTasks int) ([]Task, error)
+    Heartbeat(ctx context.Context, taskID, leaseHolder string, leaseGeneration int64, attempt int, leaseDuration time.Duration) error
+    Complete(ctx context.Context, taskID, leaseHolder string, leaseGeneration int64, attempt int, result TaskResult) error
+    Fail(ctx context.Context, taskID, leaseHolder string, leaseGeneration int64, attempt int, failure TaskFailure) error
     Cancel(ctx context.Context, tenantID, taskID, actorID string) error
     Get(ctx context.Context, tenantID, taskID string) (Task, bool, error)
     List(ctx context.Context, filter TaskFilter) ([]Task, Cursor, error)
@@ -238,6 +241,13 @@ type Handler interface {
     Handle(ctx context.Context, task Task, reporter ProgressReporter) error
 }
 ```
+
+`LeaseGeneration` is a repository-issued, monotonically increasing fencing token
+for each task lease and is not derived from the pool-level worker identity.
+`Heartbeat`, `Complete`, and `Fail` must compare the task ID, lease holder,
+generation, attempt, and allowed active status atomically. A zero-row update
+returns the typed `ErrLeaseLost`; workers cancel the stale handler context and
+must not publish its success or failure.
 
 ### HTTP API
 
