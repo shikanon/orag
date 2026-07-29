@@ -18,7 +18,7 @@ Choose this scenario for incident triage, on-call handoff, architecture lookup, 
 - `demo-data.md` provides runbook and escalation source material for the runnable demo.
 - `main.go` loads `demo-data.md`, runs an in-process ORAG memory demo, and prints engineering usage dimensions.
 - `expected-output.md` lists the observable success signals.
-- Commands below use the public `pkg/memory` facade instead of duplicating raw API calls.
+- Commands below use the root SDK with `orag.MockConfig()` instead of duplicating raw API calls.
 
 ## Run
 
@@ -32,7 +32,7 @@ For read-only operational checks, inspect `examples/skills/self-check-diagnose-o
 
 ## Demo Implementation
 
-- `main.go` creates an in-memory ORAG client through `pkg/memory`.
+- `main.go` creates an in-memory ORAG client through `orag.New` with `orag.MockConfig()`.
 - The demo imports `demo-data.md`, asks a latency-triage question, and prints answer, citations, trace metadata, and engineering usage dimensions.
 - Use this as a code-level pattern before wiring the same flow to a live ORAG service and incident system.
 
@@ -49,7 +49,7 @@ For read-only operational checks, inspect `examples/skills/self-check-diagnose-o
 - `examples/scenarios/engineering-runbook/main.go`
 - `examples/scenarios/engineering-runbook/demo-data.md`
 - `examples/scenarios/internal/demo/demo.go`
-- `pkg/memory/memory.go`
+- `ingestion.go`
 - `examples/skills/self-check-diagnose-ops.md`
 
 ## Expected Output

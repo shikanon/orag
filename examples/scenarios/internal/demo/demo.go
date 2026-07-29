@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shikanon/orag/pkg/memory"
+	orag "github.com/shikanon/orag"
 )
 
 // Dimension describes one usage dimension for a role-based ORAG scenario.
@@ -32,7 +32,7 @@ type Scenario struct {
 	RecommendedSteps []string
 }
 
-// Run executes the scenario through the public in-memory ORAG facade.
+// Run executes the scenario through the root SDK's dependency-free mock configuration.
 func Run(ctx context.Context, out io.Writer, scenario Scenario) error {
 	content, usedPath, err := readFirstFile(scenario.DemoDataPaths)
 	if err != nil {
@@ -45,38 +45,43 @@ func Run(ctx context.Context, out io.Writer, scenario Scenario) error {
 		return fmt.Errorf("scenario user question is required")
 	}
 
-	client := memory.New(
-		memory.WithTenantID("tenant_"+safeID(scenario.ID)),
-		memory.WithKnowledgeBaseID("kb_"+safeID(scenario.ID)),
-	)
-	doc, err := client.AddDocument(ctx, memory.Document{
-		Title:     scenario.Title + " Demo Data",
-		SourceURI: scenario.SourceURI,
-		Content:   content,
-		Metadata: map[string]string{
-			"scenario": scenario.ID,
-			"role":     scenario.Role,
-		},
+	cfg := orag.MockConfig()
+	cfg.TenantID = "tenant_" + safeID(scenario.ID)
+	client, err := orag.New(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	result, err := client.IngestText(ctx, orag.IngestTextRequest{
+		KnowledgeBaseID: "kb_default",
+		Name:            scenario.Title + " Demo Data",
+		SourceURI:       scenario.SourceURI,
+		Text:            content,
 	})
 	if err != nil {
 		return err
 	}
 
-	resp, err := client.Query(ctx, memory.QueryRequest{
-		Query:   scenario.UserQuestion,
-		TopK:    scenario.TopK,
-		TraceID: "trace_" + safeID(scenario.ID),
-		Profile: scenario.Profile,
+	resp, err := client.Query(ctx, orag.QueryRequest{
+		KnowledgeBaseID: "kb_default",
+		Query:           scenario.UserQuestion,
+		TopK:            scenario.TopK,
+		TraceID:         "trace_" + safeID(scenario.ID),
+		Profile:         scenario.Profile,
 	})
 	if err != nil {
 		return err
 	}
-	trace, ok := client.Trace(ctx, resp.TraceID)
+	trace, ok, err := client.GetTrace(ctx, orag.GetTraceRequest{ID: resp.TraceID})
+	if err != nil {
+		return err
+	}
 	if !ok {
 		return fmt.Errorf("trace %q was not recorded", resp.TraceID)
 	}
 
-	printScenario(out, scenario, usedPath, doc, resp, trace)
+	printScenario(out, scenario, usedPath, result, resp, trace)
 	return nil
 }
 
@@ -90,17 +95,25 @@ func readFirstFile(paths []string) (string, string, error) {
 	return "", "", fmt.Errorf("none of the demo data paths exist: %s", strings.Join(paths, ", "))
 }
 
-func printScenario(out io.Writer, scenario Scenario, dataPath string, doc memory.DocumentRecord, resp memory.QueryResponse, trace memory.TraceRecord) {
+func printScenario(out io.Writer, scenario Scenario, dataPath string, result orag.IngestResult, resp orag.QueryResponse, trace orag.TraceRecord) {
 	fmt.Fprintf(out, "scenario=%s\n", scenario.ID)
 	fmt.Fprintf(out, "title=%s\n", scenario.Title)
 	fmt.Fprintf(out, "role=%s\n", scenario.Role)
 	fmt.Fprintf(out, "business_goal=%s\n", scenario.BusinessGoal)
 	fmt.Fprintf(out, "demo_data=%s\n", dataPath)
-	fmt.Fprintf(out, "document_id=%s chunks=%d source=%s\n", doc.ID, len(doc.Chunks), doc.SourceURI)
+	fmt.Fprintf(out, "document_id=%s chunks=%d source=%s\n", result.Document.ID, len(result.Chunks), result.Document.SourceURI)
 	fmt.Fprintf(out, "question=%s\n", scenario.UserQuestion)
 	fmt.Fprintf(out, "answer=%s\n", resp.Answer)
 	fmt.Fprintf(out, "trace_id=%s profile=%s cache_status=%s latency_ms=%d\n", resp.TraceID, resp.Profile, resp.CacheStatus, resp.LatencyMS)
-	fmt.Fprintf(out, "trace_summary=node_count:%d slowest_node:%s spans:%d errors:%d\n", resp.TraceSummary.NodeCount, resp.TraceSummary.SlowestNode, len(trace.NodeSpans), trace.ErrorCount)
+	slowestNode := ""
+	var slowestLatency int64
+	for _, span := range trace.NodeSpans {
+		if span.LatencyMS >= slowestLatency {
+			slowestNode = span.NodeName
+			slowestLatency = span.LatencyMS
+		}
+	}
+	fmt.Fprintf(out, "trace_summary=node_count:%d slowest_node:%s spans:%d errors:%d\n", len(trace.NodeSpans), slowestNode, len(trace.NodeSpans), trace.ErrorCount)
 	fmt.Fprintf(out, "citations=%d retrieved_chunks=%d\n", len(resp.Citations), len(resp.RetrievedChunks))
 	if len(resp.Citations) > 0 {
 		first := resp.Citations[0]

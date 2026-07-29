@@ -27,7 +27,7 @@ func TestExamplesReadmeIndex(t *testing.T) {
 		"GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples/go/memory",
 		"GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make agent-sync-check",
 		"GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson make mcp-self-check-smoke",
-		"public `pkg/memory` facade",
+		"root SDK with `orag.MockConfig()`",
 		"ralph_loop_run",
 		"orag_check",
 	} {
@@ -128,7 +128,7 @@ func TestExamplesScenarioDemos(t *testing.T) {
 				"examples/scenarios/customer-support/main.go",
 				"examples/scenarios/customer-support/demo-data.md",
 				"examples/scenarios/internal/demo/demo.go",
-				"pkg/memory/memory.go",
+				"ingestion.go",
 			},
 		},
 		{
@@ -141,7 +141,7 @@ func TestExamplesScenarioDemos(t *testing.T) {
 				"examples/scenarios/engineering-runbook/main.go",
 				"examples/scenarios/engineering-runbook/demo-data.md",
 				"examples/scenarios/internal/demo/demo.go",
-				"pkg/memory/memory.go",
+				"ingestion.go",
 				"examples/skills/self-check-diagnose-ops.md",
 			},
 		},
@@ -155,7 +155,7 @@ func TestExamplesScenarioDemos(t *testing.T) {
 				"examples/scenarios/platform-team/main.go",
 				"examples/scenarios/platform-team/demo-data.md",
 				"examples/scenarios/internal/demo/demo.go",
-				"pkg/memory/memory.go",
+				"ingestion.go",
 				"examples/mcp/README.md",
 				"examples/skills/README.md",
 			},
@@ -170,7 +170,7 @@ func TestExamplesScenarioDemos(t *testing.T) {
 				"examples/scenarios/product-team/main.go",
 				"examples/scenarios/product-team/demo-data.md",
 				"examples/scenarios/internal/demo/demo.go",
-				"pkg/memory/memory.go",
+				"ingestion.go",
 			},
 		},
 		{
@@ -183,7 +183,7 @@ func TestExamplesScenarioDemos(t *testing.T) {
 				"examples/scenarios/agent-developer/main.go",
 				"examples/scenarios/agent-developer/demo-data.md",
 				"examples/scenarios/internal/demo/demo.go",
-				"pkg/memory/memory.go",
+				"ingestion.go",
 				"examples/mcp/README.md",
 				"examples/mcp/stdio-client-config.json",
 				"examples/mcp/ralph-loop-stdio-smoke.jsonl",
@@ -315,8 +315,8 @@ func TestExamplesScenarioDemos(t *testing.T) {
 						t.Fatalf("%s missing Go demo marker %q", readmePath, want)
 					}
 				}
-				if scenario.memoryDemo && !strings.Contains(scenarioReadme, "pkg/memory") {
-					t.Fatalf("%s missing memory demo marker %q", readmePath, "pkg/memory")
+				if scenario.memoryDemo && !strings.Contains(scenarioReadme, "orag.MockConfig") {
+					t.Fatalf("%s missing root SDK mock marker %q", readmePath, "orag.MockConfig")
 				}
 			}
 		})

@@ -18,7 +18,7 @@ Choose this scenario when building an internal AI platform, offering RAG as a se
 - `demo-data.md` provides shared-service readiness material for the runnable demo.
 - `main.go` loads `demo-data.md`, runs an in-process ORAG memory demo, and prints platform usage dimensions.
 - `expected-output.md` lists the observable success signals.
-- Commands below use the public `pkg/memory` facade instead of duplicating raw API calls.
+- Commands below use the root SDK with `orag.MockConfig()` instead of duplicating raw API calls.
 
 ## Run
 
@@ -30,7 +30,7 @@ GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples
 
 ## Demo Implementation
 
-- `main.go` creates an in-memory ORAG client through `pkg/memory`.
+- `main.go` creates an in-memory ORAG client through `orag.New` with `orag.MockConfig()`.
 - The demo imports `demo-data.md`, asks a shared-service readiness question, and prints answer, citations, trace metadata, and platform usage dimensions.
 - Use this as the code-level onboarding demo before running live API smoke, evaluation, optimization, and `make agent-sync-check`.
 
@@ -47,7 +47,7 @@ GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 GOFLAGS=-tags=stdjson,gjson go run ./examples
 - `examples/scenarios/platform-team/main.go`
 - `examples/scenarios/platform-team/demo-data.md`
 - `examples/scenarios/internal/demo/demo.go`
-- `pkg/memory/memory.go`
+- `ingestion.go`
 - `examples/mcp/README.md`
 - `examples/skills/README.md`
 

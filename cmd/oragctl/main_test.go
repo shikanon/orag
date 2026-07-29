@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	core "github.com/shikanon/orag/internal/app"
 	"github.com/shikanon/orag/internal/rag"
 	"github.com/shikanon/orag/internal/storage/postgres"
+	"github.com/shikanon/orag/internal/taskqueue"
 )
 
 func TestRunTraceLookupFound(t *testing.T) {
@@ -45,6 +47,45 @@ func TestRunTraceLookupFound(t *testing.T) {
 	}
 	if got.TraceID != "" {
 		t.Fatalf("found output should not duplicate trace_id at top level: %#v", got)
+	}
+}
+
+func TestGovernanceSchemaCmdHasStableEnvelope(t *testing.T) {
+	var out bytes.Buffer
+	if err := governanceSchemaCmd(&out); err != nil {
+		t.Fatalf("governanceSchemaCmd() error = %v", err)
+	}
+	var envelope commandEnvelope
+	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode envelope: %v\n%s", err, out.String())
+	}
+	if !envelope.OK || envelope.Command != "schema" {
+		t.Fatalf("schema envelope = %#v", envelope)
+	}
+}
+
+func TestTaskWaitCmdReturnsTerminalTaskEnvelope(t *testing.T) {
+	repo := taskqueue.NewMemoryQueueRepository()
+	service := taskqueue.NewService(repo, nil)
+	task, err := service.Enqueue(context.Background(), "tenant_default", taskqueue.Task{
+		Type: "document.import", Pool: "ingestion_core",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Complete(context.Background(), task.ID, taskqueue.TaskResult{}); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := taskWaitCmd(context.Background(), &core.App{TaskQueue: service}, []string{"--id", task.ID, "--poll-interval", "1ms"}, &out); err != nil {
+		t.Fatalf("taskWaitCmd() error = %v", err)
+	}
+	var envelope commandEnvelope
+	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if !envelope.OK || envelope.Command != "task wait" {
+		t.Fatalf("task wait envelope = %#v", envelope)
 	}
 }
 
