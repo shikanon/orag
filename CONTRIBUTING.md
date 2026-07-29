@@ -57,6 +57,14 @@ If a check cannot run locally, explain why and identify the CI check that covers
 
 ## Change Requirements
 
+### Find the owning code
+
+Start with the [architecture contribution map](./docs/architecture/README.md#贡献入口).
+It maps each capability across the public Go SDK, HTTP handlers, domain
+packages, storage adapters, and focused tests. Keep public SDK changes in the
+capability-named root file (`knowledge.go`, `ingestion.go`, `query.go`,
+`trace.go`, and related files) instead of introducing another public facade.
+
 ### Tests first
 
 Behavior changes and bug fixes require a failing automated test that demonstrates the intended behavior before the implementation. Prefer narrow tests near the owning package, then add contract or integration coverage where boundaries are involved.

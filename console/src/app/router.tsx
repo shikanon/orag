@@ -15,6 +15,7 @@ const APIDebugger = lazy(() => import('../features/debugger/api-debugger').then(
 const EvaluationCenter = lazy(() => import('../features/evaluation/evaluation-center').then((module) => ({ default: module.EvaluationCenter })))
 const ReleaseCenter = lazy(() => import('../features/releases/release-center').then((module) => ({ default: module.ReleaseCenter })))
 const RAGStudio = lazy(() => import('../features/studio/rag-studio').then((module) => ({ default: module.RAGStudio })))
+const GovernanceCenter = lazy(() => import('../features/governance/governance-center').then((module) => ({ default: module.GovernanceCenter })))
 
 function projectLoader({ params }: { params: { projectId?: string } }) {
   if (!params.projectId?.trim()) throw new Response('Project ID is required', { status: 400 })
@@ -34,7 +35,7 @@ function RouteSkeleton() {
 
 function Overview() {
   const { projectId } = useParams()
-  return <main className="content"><header className="page-header"><div><h1>项目概览</h1><p>项目 <code>{projectId}</code> 的编排、评测和发布入口。</p></div><NavLink className="primary-button" to={`/projects/${projectId}/debug`}>打开 API Debugger</NavLink></header><section className="empty-state"><div className="empty-symbol">⌁</div><h2>先验证一条真实查询</h2><p>使用 API Debugger 检查答案、引用和 trace，再开始构建完整流程。</p><NavLink className="secondary-button" to={`/projects/${projectId}/debug`}>运行第一条查询</NavLink></section></main>
+  return <main className="content"><header className="page-header"><div><h1>项目概览</h1><p>项目 <code>{projectId}</code> 的编排、评测、治理和发布入口。</p></div><NavLink className="primary-button" to={`/projects/${projectId}/debug`}>打开 API Debugger</NavLink></header><section className="empty-state"><div className="empty-symbol">⌁</div><h2>先验证一条真实查询</h2><p>使用 API Debugger 检查答案、引用和 trace，再开始构建完整流程。</p><div className="overview-actions"><NavLink className="secondary-button" to={`/projects/${projectId}/debug`}>运行第一条查询</NavLink><NavLink className="secondary-button" to={`/projects/${projectId}/governance`}>打开任务治理</NavLink></div></section></main>
 }
 
 export function createAppRouter(initialEntries?: string[]) {
@@ -47,6 +48,7 @@ export function createAppRouter(initialEntries?: string[]) {
     { path: 'projects/:projectId/studio', loader: projectLoader, element: <RAGStudio /> },
     { path: 'projects/:projectId/evaluations', loader: projectLoader, element: <EvaluationCenter /> },
     { path: 'projects/:projectId/releases', loader: projectLoader, element: <ReleaseCenter /> },
+    { path: 'projects/:projectId/governance', loader: projectLoader, element: <GovernanceCenter /> },
     { path: 'api-keys', element: <APIKeyList /> },
     { path: 'tutorials', element: <TutorialList /> },
     { path: 'tutorials/:templateId', element: <TutorialDetail /> },

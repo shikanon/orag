@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	oragapi "github.com/shikanon/orag/api"
 	core "github.com/shikanon/orag/internal/app"
+	"github.com/shikanon/orag/internal/audit"
 	"github.com/shikanon/orag/internal/auth"
 	"github.com/shikanon/orag/internal/dataset"
 	"github.com/shikanon/orag/internal/eval"
@@ -30,12 +32,16 @@ import (
 	"github.com/shikanon/orag/internal/project"
 	"github.com/shikanon/orag/internal/rag"
 	"github.com/shikanon/orag/internal/storage/postgres"
+	"github.com/shikanon/orag/internal/taskqueue"
 	"github.com/shikanon/orag/pkg/buildinfo"
 )
 
 type Server struct {
 	App       *core.App
 	Execution *execution.Controller
+	Tasks     TaskService
+	Audit     AuditService
+	Readiness ModelReadinessService
 }
 
 const maxQueryTopK = 100
@@ -49,12 +55,24 @@ type queryRequest struct {
 }
 
 func NewServer(app *core.App) *Server {
-	return &Server{App: app, Execution: execution.New(map[execution.Operation]execution.Budget{
+	server := &Server{App: app, Execution: execution.New(map[execution.Operation]execution.Budget{
 		execution.Ingestion:  {Timeout: app.Config.Execution.IngestionTimeout, Concurrency: app.Config.Execution.IngestionConcurrency},
 		execution.Query:      {Timeout: app.Config.Execution.QueryTimeout, Concurrency: app.Config.Execution.QueryConcurrency},
 		execution.Evaluation: {Timeout: app.Config.Execution.EvaluationTimeout, Concurrency: app.Config.Execution.EvaluationConcurrency},
 		execution.Release:    {Timeout: app.Config.Execution.ReleaseTimeout, Concurrency: app.Config.Execution.ReleaseConcurrency},
 	})}
+	if app != nil {
+		if app.TaskQueue != nil {
+			server.Tasks = newTaskServiceAdapter(app.TaskQueue)
+		}
+		if app.Audit != nil {
+			server.Audit = newAuditServiceAdapter(app.Audit)
+		}
+		if app.ModelReadiness != nil {
+			server.Readiness = app.ModelReadiness
+		}
+	}
+	return server
 }
 
 func (s *Server) Hertz() *server.Hertz {
@@ -151,6 +169,25 @@ func (s *Server) Hertz() *server.Hertz {
 	v1.POST("/optimization-items/revalidate", s.bulkRevalidateOptimizationItems)
 	v1.GET("/optimization-items/:id", s.getOptimizationItem)
 	v1.POST("/optimization-items/:id/:action", s.optimizationItemAction)
+
+	v1.POST("/tasks", s.createTask)
+	v1.GET("/tasks", s.listTasks)
+	v1.GET("/tasks:stats", s.getTaskStats)
+	v1.GET("/tasks/:task_id", s.getTask)
+	v1.POST("/tasks/*action", s.taskAction)
+	v1.GET("/tasks/:task_id/events", s.listTaskEvents)
+
+	v1.GET("/audit-events", s.listAuditEvents)
+	v1.GET("/projects/:project_id/audit-events", s.listProjectAuditEvents)
+	v1.GET("/knowledge-bases/:id/audit-events", s.listKnowledgeBaseAuditEvents)
+	v1.GET("/releases/:id/audit-events", s.listReleaseAuditEvents)
+
+	v1.POST("/model-readiness:run", s.runModelReadiness)
+	v1.GET("/model-readiness/:run_id", s.getModelReadinessRun)
+
+	v1.POST("/chunking:preview", s.chunkPreview)
+	v1.POST("/knowledge-bases/:id/chunking:impact", s.chunkingImpact)
+
 	return h
 }
 
@@ -291,6 +328,14 @@ func (s *Server) createKnowledgeBase(ctx context.Context, c *app.RequestContext)
 		writeError(c, consts.StatusInternalServerError, "knowledge_base_create_failed", err.Error())
 		return
 	}
+	if s.App.Audit != nil {
+		principal, _ := requestPrincipal(c)
+		_ = s.App.Audit.Record(ctx, audit.AuditEvent{
+			TenantID: item.TenantID, ProjectID: item.ProjectID, ActorType: string(principal.Kind), ActorID: principal.SubjectID,
+			Action: audit.ActionKBCreated, ResourceType: audit.ResourceTypeKnowledgeBase, ResourceID: item.ID,
+			Outcome: audit.OutcomeSuccess, TraceID: requestTraceID(c),
+		})
+	}
 	c.JSON(consts.StatusCreated, item)
 }
 
@@ -344,7 +389,8 @@ func (s *Server) deleteKnowledgeBase(ctx context.Context, c *app.RequestContext)
 
 func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 	kbID := c.Param("id")
-	if _, ok := s.authorizedKnowledgeBase(ctx, c, kbID, auth.ActionResourceWrite); !ok {
+	item, ok := s.authorizedKnowledgeBase(ctx, c, kbID, auth.ActionResourceWrite)
+	if !ok {
 		return
 	}
 	fileHeader, err := c.FormFile("file")
@@ -368,6 +414,10 @@ func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 		writeError(c, http.StatusRequestEntityTooLarge, "payload_too_large", err.Error())
 		return
 	}
+	if prefersAsync(c) {
+		s.enqueueDocumentImport(ctx, c, item.ProjectID, kbID, "upload://"+fileHeader.Filename, fileHeader.Filename, body)
+		return
+	}
 	result, err := s.App.Ingest.Ingest(ctx, ingest.Request{
 		TenantID:        tenantID(c),
 		KnowledgeBaseID: kbID,
@@ -384,7 +434,8 @@ func (s *Server) uploadDocument(ctx context.Context, c *app.RequestContext) {
 
 func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 	kbID := c.Param("id")
-	if _, ok := s.authorizedKnowledgeBase(ctx, c, kbID, auth.ActionResourceWrite); !ok {
+	item, ok := s.authorizedKnowledgeBase(ctx, c, kbID, auth.ActionResourceWrite)
+	if !ok {
 		return
 	}
 	var req struct {
@@ -406,6 +457,10 @@ func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 		writeError(c, http.StatusRequestEntityTooLarge, "payload_too_large", "document exceeds max size")
 		return
 	}
+	if prefersAsync(c) {
+		s.enqueueDocumentImport(ctx, c, item.ProjectID, kbID, req.SourceURI, req.Name, []byte(req.Content))
+		return
+	}
 	result, err := s.App.Ingest.Ingest(ctx, ingest.Request{
 		TenantID:        tenantID(c),
 		KnowledgeBaseID: kbID,
@@ -418,6 +473,50 @@ func (s *Server) importDocument(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	c.JSON(consts.StatusAccepted, map[string]any{"document": result.Document, "chunks": len(result.Chunks), "job": result.Job})
+}
+
+func prefersAsync(c *app.RequestContext) bool {
+	for _, preference := range strings.Split(string(c.GetHeader("Prefer")), ",") {
+		if strings.EqualFold(strings.TrimSpace(preference), "respond-async") {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) enqueueDocumentImport(ctx context.Context, c *app.RequestContext, projectID, kbID, sourceURI, name string, content []byte) {
+	principal, ok := requestPrincipal(c)
+	if !ok {
+		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+		return
+	}
+	payload, err := json.Marshal(core.DocumentImportTaskPayload{
+		KnowledgeBaseID: kbID, SourceURI: sourceURI, Name: name, ContentBase64: base64.StdEncoding.EncodeToString(content),
+	})
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "task_payload_encode_failed", err.Error())
+		return
+	}
+	task, err := s.taskService().EnqueueTask(ctx, principal.TenantID, taskqueue.Task{
+		ProjectID: projectID, Type: core.DocumentImportTaskType, Pool: core.IngestionCorePool,
+		Payload: payload, IdempotencyKey: strings.TrimSpace(string(c.GetHeader("Idempotency-Key"))),
+		LockedResourceType: audit.ResourceTypeKnowledgeBase, LockedResourceID: kbID,
+		TraceID: requestTraceID(c), CreatedBy: string(principal.Kind) + ":" + principal.SubjectID,
+	})
+	if err != nil {
+		writeTaskError(c, err)
+		return
+	}
+	if s.App.Audit != nil {
+		_ = s.App.Audit.Record(ctx, audit.AuditEvent{
+			TenantID: principal.TenantID, ProjectID: projectID, ActorType: string(principal.Kind), ActorID: principal.SubjectID,
+			Action: audit.ActionDocumentImportRequested, ResourceType: audit.ResourceTypeKnowledgeBase, ResourceID: kbID,
+			Outcome: audit.OutcomeSuccess, TraceID: requestTraceID(c), TaskID: task.ID,
+			Metadata: map[string]string{"source_kind": "document_import"},
+		})
+	}
+	setMaturityHeader(c)
+	c.JSON(consts.StatusAccepted, map[string]any{"task_id": task.ID, "status": task.Status, "created_at": task.CreatedAt})
 }
 
 type createUploadRequest struct {
@@ -1063,6 +1162,7 @@ func (s *Server) runEvaluation(ctx context.Context, c *app.RequestContext) {
 		if !ok {
 			return
 		}
+		req.ProjectID = evaluationDataset.ProjectID
 	}
 	if strings.TrimSpace(req.DatasetID) != "" && strings.TrimSpace(req.KnowledgeBaseID) != "" {
 		knowledgeBase, ok := s.authorizedKnowledgeBase(ctx, c, req.KnowledgeBaseID, auth.ActionResourceRead)
@@ -1075,6 +1175,10 @@ func (s *Server) runEvaluation(ctx context.Context, c *app.RequestContext) {
 		}
 		req.ProjectID = firstNonEmpty(evaluationDataset.ProjectID, knowledgeBase.ProjectID)
 	}
+	if prefersAsync(c) {
+		s.enqueueEvaluation(ctx, c, req)
+		return
+	}
 	resp, err := s.App.Eval.Run(ctx, req)
 	if err != nil {
 		if errors.Is(err, dataset.ErrDatasetNotFound) {
@@ -1085,6 +1189,43 @@ func (s *Server) runEvaluation(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	c.JSON(consts.StatusAccepted, resp)
+}
+
+func (s *Server) enqueueEvaluation(ctx context.Context, c *app.RequestContext, req eval.RunRequest) {
+	principal, ok := requestPrincipal(c)
+	if !ok {
+		writeError(c, consts.StatusForbidden, "forbidden", "request is not authorized")
+		return
+	}
+	payload, err := json.Marshal(core.EvaluationTaskPayload{Request: req})
+	if err != nil {
+		writeError(c, consts.StatusInternalServerError, "task_payload_encode_failed", err.Error())
+		return
+	}
+	task, err := s.taskService().EnqueueTask(ctx, principal.TenantID, taskqueue.Task{
+		ProjectID:          req.ProjectID,
+		Type:               core.EvaluationRunTaskType,
+		Pool:               core.EvaluationPool,
+		Payload:            payload,
+		IdempotencyKey:     strings.TrimSpace(string(c.GetHeader("Idempotency-Key"))),
+		LockedResourceType: "evaluation_project",
+		LockedResourceID:   req.ProjectID,
+		TraceID:            requestTraceID(c),
+		CreatedBy:          string(principal.Kind) + ":" + principal.SubjectID,
+	})
+	if err != nil {
+		writeTaskError(c, err)
+		return
+	}
+	if s.App.Audit != nil {
+		_ = s.App.Audit.Record(ctx, audit.AuditEvent{
+			TenantID: principal.TenantID, ProjectID: req.ProjectID, ActorType: string(principal.Kind), ActorID: principal.SubjectID,
+			Action: audit.ActionEvaluationRequested, ResourceType: "evaluation", ResourceID: task.ID,
+			Outcome: audit.OutcomeSuccess, TraceID: requestTraceID(c), TaskID: task.ID,
+		})
+	}
+	setMaturityHeader(c)
+	c.JSON(consts.StatusAccepted, map[string]any{"task_id": task.ID, "status": task.Status, "created_at": task.CreatedAt})
 }
 
 func (s *Server) getEvaluation(ctx context.Context, c *app.RequestContext) {
