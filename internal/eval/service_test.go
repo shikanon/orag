@@ -614,9 +614,17 @@ func TestRunnerFiltersSplitAndWeightsRunAggregates(t *testing.T) {
 	assertMetric(t, result.Metrics, "latency_p95_ms", 30)
 	assertMetric(t, result.Metrics, "faithfulness", 0.8)
 	assertMetric(t, result.Metrics, "qag_score", 0.25)
-	assertMetric(t, result.Metrics, "prompt_tokens", 14)
-	assertMetric(t, result.Metrics, "total_tokens", 28)
-	assertMetric(t, result.Metrics, "cost_usd", 14)
+	// Cost and token totals reflect actual judge calls. Dataset weights affect
+	// quality aggregation, not how much a provider charged for the run.
+	assertMetric(t, result.Metrics, "prompt_tokens", 6)
+	assertMetric(t, result.Metrics, "total_tokens", 12)
+	assertMetric(t, result.Metrics, "cost_usd", 6)
+	if result.EvaluationFingerprint == "" || result.DatasetSnapshot.ItemCount != 2 || result.DatasetSnapshot.ContentHash == "" {
+		t.Fatalf("reproducibility fields = %#v", result)
+	}
+	if summary := result.MetricSummaries["answer_accuracy"]; summary.EligibleSampleCount != 2 || summary.TotalSampleCount != 2 || summary.ConfidenceInterval == nil {
+		t.Fatalf("answer accuracy summary = %#v", summary)
+	}
 
 	detail, ok, err := runner.GetDetail(ctx, "tenant_default", result.ID, EvaluationDetailOptions{IncludeItems: true})
 	if err != nil || !ok {

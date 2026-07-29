@@ -53,21 +53,27 @@ type RunRequest struct {
 }
 
 type RunResult struct {
-	ID                    string                  `json:"id"`
-	ProjectID             string                  `json:"project_id,omitempty"`
-	DatasetID             string                  `json:"dataset_id"`
-	Profile               string                  `json:"profile"`
-	Total                 int                     `json:"total"`
-	HitRate               float64                 `json:"hit_rate"`
-	Accuracy              float64                 `json:"accuracy"`
-	WeightedSampleCount   float64                 `json:"weighted_sample_count,omitempty"`
-	UnweightedSampleCount int                     `json:"unweighted_sample_count,omitempty"`
-	Split                 dataset.DatasetSplit    `json:"split,omitempty"`
-	SplitSummary          map[string]SplitSummary `json:"split_summary,omitempty"`
-	MissingSplit          bool                    `json:"missing_split,omitempty"`
-	HoldoutGate           HoldoutGateResult       `json:"holdout_gate,omitempty"`
-	Metrics               map[string]float64      `json:"metrics,omitempty"`
-	CreatedAt             time.Time               `json:"created_at"`
+	ID                    string                   `json:"id"`
+	ProjectID             string                   `json:"project_id,omitempty"`
+	DatasetID             string                   `json:"dataset_id"`
+	KnowledgeBaseID       string                   `json:"knowledge_base_id,omitempty"`
+	Profile               string                   `json:"profile"`
+	TopK                  int                      `json:"top_k,omitempty"`
+	Total                 int                      `json:"total"`
+	HitRate               float64                  `json:"hit_rate"`
+	Accuracy              float64                  `json:"accuracy"`
+	WeightedSampleCount   float64                  `json:"weighted_sample_count,omitempty"`
+	UnweightedSampleCount int                      `json:"unweighted_sample_count,omitempty"`
+	Split                 dataset.DatasetSplit     `json:"split,omitempty"`
+	SplitSummary          map[string]SplitSummary  `json:"split_summary,omitempty"`
+	MissingSplit          bool                     `json:"missing_split,omitempty"`
+	HoldoutGate           HoldoutGateResult        `json:"holdout_gate,omitempty"`
+	Metrics               map[string]float64       `json:"metrics,omitempty"`
+	MetricSummaries       map[string]MetricSummary `json:"metric_summaries,omitempty"`
+	DatasetSnapshot       DatasetSnapshot          `json:"dataset_snapshot,omitempty"`
+	Manifest              EvaluationManifest       `json:"manifest,omitempty"`
+	EvaluationFingerprint string                   `json:"evaluation_fingerprint,omitempty"`
+	CreatedAt             time.Time                `json:"created_at"`
 }
 
 type SplitSummary struct {
@@ -236,9 +242,12 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	}
 
 	runID := id.New("eval")
+	snapshot := snapshotDataset(datasetItem, requestedSplit, items)
+	manifest := evaluationManifest(datasetItem, snapshot, req)
 	latencies := make([]weightedLatency, 0, len(items))
 	metricSums := map[string]float64{}
 	metricCounts := map[string]float64{}
+	metricObservations := map[string][]metricObservation{}
 	type itemResult struct {
 		itemID  string
 		answer  string
@@ -277,6 +286,8 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			Profile:            req.Profile,
 			TopK:               req.TopK,
 			ScopedShadowItemID: req.ScopedShadowItemID,
+			DatasetID:          req.DatasetID,
+			EvaluationRunID:    runID,
 		})
 		if err != nil {
 			return RunResult{}, err
@@ -351,7 +362,13 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			if err != nil {
 				return RunResult{}, err
 			}
-			itemMetrics[PrimaryMetricPairwiseAccuracy] = pairwiseWinScore(out.Winner)
+			// A position-swap disagreement is evidence of judge instability. Keep it
+			// in the audit trail and stability metric, but do not let it affect the
+			// primary pairwise score.
+			itemMetrics["pairwise_stability_rate"] = boolScore(out.Stable)
+			if out.Stable {
+				itemMetrics[PrimaryMetricPairwiseAccuracy] = pairwiseWinScore(out.Winner)
+			}
 			addUsageMetrics(itemMetrics, out.TokenUsage, out.CostUSD)
 			judgeUsage = addTokenUsage(judgeUsage, out.TokenUsage)
 			judgeCost += out.CostUSD
@@ -361,15 +378,16 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			return RunResult{}, err
 		}
 		for name, value := range itemMetrics {
-			if shouldAggregateItemMetric(name) {
+			if shouldAggregateItemMetric(name) && metricEligible(name, item) {
 				metricSums[name] += value * weight
 				metricCounts[name] += weight
+				metricObservations[name] = append(metricObservations[name], metricObservation{value: value, weight: weight})
 			}
 		}
-		metricSums["prompt_tokens"] += itemMetrics["prompt_tokens"] * weight
-		metricSums["completion_tokens"] += itemMetrics["completion_tokens"] * weight
-		metricSums["total_tokens"] += itemMetrics["total_tokens"] * weight
-		metricSums["cost_usd"] += itemMetrics["cost_usd"] * weight
+		metricSums["prompt_tokens"] += itemMetrics["prompt_tokens"]
+		metricSums["completion_tokens"] += itemMetrics["completion_tokens"]
+		metricSums["total_tokens"] += itemMetrics["total_tokens"]
+		metricSums["cost_usd"] += itemMetrics["cost_usd"]
 		itemResults = append(itemResults, itemResult{itemID: item.ID, answer: resp.Answer, metrics: itemMetrics})
 	}
 
@@ -412,6 +430,13 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if _, ok := metricCounts[PrimaryMetricPairwiseAccuracy]; ok {
 		metrics[PrimaryMetricPairwiseAccuracy] = weightedAverage(metricSums[PrimaryMetricPairwiseAccuracy], metricCounts[PrimaryMetricPairwiseAccuracy])
 	}
+	metricSummaries := summarizeMetrics(metricObservations, total, runID)
+	copyMetricSummary(metricSummaries, "answer_accuracy", []string{"accuracy", "hit_rate", PrimaryMetricDeterministicAnswerMatch})
+	copyMetricSummary(metricSummaries, "cache_hit", []string{"cache_hit_rate"})
+	metricSummaries["latency_p95_ms"] = MetricSummary{
+		Value: float64(weightedP95(latencies)), EligibleSampleCount: total, TotalSampleCount: total,
+		AnnotationCoverage: 1, WeightedSampleCount: weightedSampleCount, EffectiveSampleCount: effectiveSampleCount(items),
+	}
 	if err := ValidateMetricMap(metrics); err != nil {
 		return RunResult{}, err
 	}
@@ -420,7 +445,9 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		ID:                    runID,
 		ProjectID:             req.ProjectID,
 		DatasetID:             req.DatasetID,
+		KnowledgeBaseID:       req.KnowledgeBaseID,
 		Profile:               string(req.Profile),
+		TopK:                  req.TopK,
 		Total:                 total,
 		HitRate:               answerScore,
 		Accuracy:              answerScore,
@@ -430,6 +457,10 @@ func (r Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		SplitSummary:          splitSummary,
 		MissingSplit:          false,
 		Metrics:               metrics,
+		MetricSummaries:       metricSummaries,
+		DatasetSnapshot:       snapshot,
+		Manifest:              manifest,
+		EvaluationFingerprint: stableJSONHash(manifest),
 		CreatedAt:             time.Now().UTC(),
 	}
 	if holdoutGateEnabled(req.HoldoutGate) {
@@ -566,8 +597,10 @@ func pairwiseJudgeResultRecordFromOutput(judgeRunID, itemID string, out Pairwise
 
 func pairwiseWinScore(winner string) float64 {
 	switch strings.ToLower(strings.TrimSpace(winner)) {
-	case "a", "tie":
+	case "a":
 		return 1
+	case "tie":
+		return 0.5
 	default:
 		return 0
 	}
@@ -626,6 +659,18 @@ func (r Runner) GetDetail(ctx context.Context, tenantID, id string, options Eval
 		return EvaluationDetail{}, false, nil
 	}
 	return r.Repository.GetEvaluationDetail(ctx, tenantID, id, options)
+}
+
+func (r Runner) Compare(ctx context.Context, tenantID, baselineID, candidateID string) (Comparability, bool, error) {
+	baseline, baselineFound, err := r.Get(ctx, tenantID, baselineID)
+	if err != nil || !baselineFound {
+		return Comparability{}, false, err
+	}
+	candidate, candidateFound, err := r.Get(ctx, tenantID, candidateID)
+	if err != nil || !candidateFound {
+		return Comparability{}, false, err
+	}
+	return CompareRuns(baseline, candidate), true, nil
 }
 
 type MemoryRepository struct {

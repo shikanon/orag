@@ -8,9 +8,17 @@ import (
 )
 
 type MetricDefinition struct {
-	Name        string
-	Description string
-	Aggregate   bool
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Aggregate   bool     `json:"-"`
+	DisplayName string   `json:"display_name,omitempty"`
+	Category    string   `json:"category,omitempty"`
+	Direction   string   `json:"direction,omitempty"`
+	Formula     string   `json:"formula,omitempty"`
+	Requires    []string `json:"requires,omitempty"`
+	Caveats     []string `json:"caveats,omitempty"`
+	Related     []string `json:"related_metrics,omitempty"`
+	Hidden      bool     `json:"-"`
 }
 
 type MetricRegistry struct {
@@ -23,6 +31,7 @@ var DefaultMetricRegistry = NewMetricRegistry([]MetricDefinition{
 	{Name: "accuracy", Description: "Backward-compatible answer accuracy alias.", Aggregate: true},
 	{Name: "hit_rate", Description: "Run-level answer hit rate."},
 	{Name: PrimaryMetricPairwiseAccuracy, Description: "Real pairwise judge win-rate/accuracy metric; accepted for historical results and real pairwise judge output.", Aggregate: true},
+	{Name: "pairwise_stability_rate", Description: "Share of pairwise verdicts that remained stable under the configured order-swap check.", Aggregate: true},
 	{Name: "citation_hit_rate", Description: "Whether an item returned at least one citation.", Aggregate: true},
 	{Name: "context_recall", Description: "Share of relevant documents retrieved for an item.", Aggregate: true},
 	{Name: "citation_precision", Description: "Share of citations pointing to relevant documents.", Aggregate: true},
@@ -68,6 +77,10 @@ func NewMetricRegistry(defs []MetricDefinition) MetricRegistry {
 		if def.Name == "" {
 			continue
 		}
+		def = enrichMetricDefinition(def)
+		if def.DisplayName == "" {
+			def.DisplayName = fallbackDisplayName(def.Name)
+		}
 		registry.metrics[def.Name] = def
 	}
 	return registry
@@ -90,6 +103,29 @@ func (r MetricRegistry) Names() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// Definitions is the public metric catalog used by the HTTP API and console.
+// It intentionally omits compatibility aliases from the default display.
+func (r MetricRegistry) Definitions() []MetricDefinition {
+	definitions := make([]MetricDefinition, 0, len(r.metrics))
+	for _, definition := range r.metrics {
+		if definition.Hidden {
+			continue
+		}
+		definition.Aggregate = false
+		definitions = append(definitions, definition)
+	}
+	sort.Slice(definitions, func(i, j int) bool { return definitions[i].Name < definitions[j].Name })
+	return definitions
+}
+
+func (r MetricRegistry) Definition(name string) (MetricDefinition, bool) {
+	definition, ok := r.metrics[name]
+	if ok {
+		definition.Aggregate = false
+	}
+	return definition, ok
 }
 
 func ValidateMetricMap(metrics map[string]float64) error {

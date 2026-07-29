@@ -28,6 +28,7 @@ export type CreateDatasetInput = components['schemas']['CreateDatasetRequest']
 export type CreateDatasetItemInput = components['schemas']['CreateDatasetItemRequest']
 export type RunEvaluationInput = components['schemas']['RunEvaluationRequest']
 export type EvaluationResult = components['schemas']['RunEvaluationResponse']
+export type EvaluationMetricDefinition = components['schemas']['EvaluationMetricDefinition']
 export type EvaluationPolicy = components['schemas']['EvaluationPolicy']
 export type EvaluationEvidence = components['schemas']['EvaluationEvidence']
 export type CreateEvaluationPolicyInput = components['schemas']['CreateEvaluationPolicyRequest']
@@ -49,6 +50,11 @@ export type PipelineDebugResponse = components['schemas']['PipelineDebugResponse
 export type CreatePipelineInput = components['schemas']['CreatePipelineRequest']
 export type SavePipelineDraftInput = components['schemas']['SavePipelineDraftRequest']
 export type CreatePipelineVersionFromDraftInput = components['schemas']['CreatePipelineVersionFromDraftRequest']
+
+export type GovernanceTask = { id: string; tenant_id: string; project_id?: string; type: string; pool: string; status: 'queued' | 'leased' | 'running' | 'succeeded' | 'failed_retryable' | 'failed_terminal' | 'cancelling' | 'cancelled' | 'dead_letter'; attempt: number; max_attempts: number; created_at: string; updated_at: string; error_code?: string; error_message?: string }
+export type TaskEvent = { id: string; task_id: string; type: string; status?: string; message?: string; created_at: string }
+export type AuditEvent = { id: string; project_id?: string; actor_type: string; actor_id: string; action: string; resource_type: string; resource_id: string; outcome: string; task_id?: string; error_code?: string; error_message?: string; created_at: string }
+export type TaskPoolStats = { queued: number; running: number; succeeded: number; failed: number; dead_letter: number }
 
 export class ApiError extends Error {
   constructor(public readonly status: number) {
@@ -133,6 +139,7 @@ export const evaluationApi = {
   addDatasetItem: (datasetId: string, input: CreateDatasetItemInput) => request<components['schemas']['DatasetItem']>(`/v1/datasets/${encodeURIComponent(datasetId)}/items`, { method: 'POST', body: JSON.stringify(input) }),
   run: (input: RunEvaluationInput) => request<EvaluationResult>('/v1/evaluations', { method: 'POST', body: JSON.stringify(input) }),
   get: (evaluationId: string) => request<EvaluationResult>(`/v1/evaluations/${encodeURIComponent(evaluationId)}`),
+  metricDefinitions: () => request<components['schemas']['EvaluationMetricListResponse']>('/v1/evaluation-metrics'),
 }
 
 export const evaluationPolicyApi = {
@@ -162,4 +169,20 @@ export const pipelineApi = {
   createVersionFromDraft: (projectId: string, pipelineId: string, input: CreatePipelineVersionFromDraftInput) => request<{ version: PipelineVersion; draft_revision: number }>(`/v1/projects/${encodeURIComponent(projectId)}/pipelines/${encodeURIComponent(pipelineId)}/versions`, { method: 'POST', body: JSON.stringify(input) }),
   debug: (projectId: string, input: PipelineDebugRequest) => request<PipelineDebugResponse>(`/v1/projects/${encodeURIComponent(projectId)}/query:debug`, { method: 'POST', body: JSON.stringify(input) }),
   saveCase: (projectId: string, runId: string, input: { dataset_id: string; query: string; ground_truth: string; expected_evidence?: string[] }) => request<{ run_id: string; item: components['schemas']['DatasetItem'] }>(`/v1/projects/${encodeURIComponent(projectId)}/debug-runs/${encodeURIComponent(runId)}/save-case`, { method: 'POST', body: JSON.stringify(input) }),
+}
+
+function queryString(values: Record<string, string | number | undefined>) {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== '') search.set(key, String(value))
+  const encoded = search.toString()
+  return encoded ? `?${encoded}` : ''
+}
+
+export const governanceApi = {
+  listTasks: (projectId: string, filter: { status?: string; pool?: string } = {}) => request<{ data: GovernanceTask[]; next_cursor?: string }>(`/v1/tasks${queryString({ project_id: projectId, status: filter.status, pool: filter.pool, limit: 100 })}`),
+  taskStats: () => request<{ pools: Record<string, TaskPoolStats> }>('/v1/tasks:stats'),
+  taskEvents: (taskId: string) => request<{ data: TaskEvent[]; next_cursor?: string }>(`/v1/tasks/${encodeURIComponent(taskId)}/events`),
+  cancelTask: (taskId: string) => request<{ task_id: string; status: string }>(`/v1/tasks/${encodeURIComponent(taskId)}:cancel`, { method: 'POST' }),
+  retryTask: (taskId: string) => request<{ task_id: string; status: string }>(`/v1/tasks/${encodeURIComponent(taskId)}:retry`, { method: 'POST' }),
+  projectAudit: (projectId: string) => request<{ data: AuditEvent[]; next_cursor?: string }>(`/v1/projects/${encodeURIComponent(projectId)}/audit-events?limit=12`),
 }

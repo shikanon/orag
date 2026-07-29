@@ -236,6 +236,68 @@ func itemWeight(item dataset.Item) float64 {
 	return item.Weight
 }
 
+// metricEligible prevents unlabeled cases from silently behaving as zero-score
+// cases for metrics that require annotations. Compatibility metrics are still
+// emitted, while MetricSummary reports the evidence coverage explicitly.
+func metricEligible(name string, item dataset.Item) bool {
+	item = dataset.NormalizeItemMetadata(item)
+	switch name {
+	case "answer_accuracy", "accuracy", PrimaryMetricDeterministicAnswerMatch, "hit_rate":
+		return strings.TrimSpace(item.GroundTruth) != ""
+	case "context_recall", "citation_precision", "ndcg_at_k", "recall_at_k", "mrr", "map", "coverage", "retrieval_failure_rate":
+		return len(item.RelevantDocIDs) > 0
+	case "alpha_ndcg", "aspect_coverage":
+		return len(item.DiversityAnnotations) > 0
+	case "qag_claim_coverage":
+		return len(item.ExpectedEvidence) > 0
+	default:
+		return true
+	}
+}
+
+func summarizeMetrics(observations map[string][]metricObservation, total int, runID string) map[string]MetricSummary {
+	if len(observations) == 0 {
+		return map[string]MetricSummary{}
+	}
+	out := make(map[string]MetricSummary, len(observations))
+	for name, values := range observations {
+		out[name] = summarizeMetric(values, total, int64(stableMetricSeed(runID, name)))
+	}
+	return out
+}
+
+func stableMetricSeed(runID, name string) uint64 {
+	value := stableJSONHash([]string{runID, name})
+	var seed uint64
+	for _, char := range value {
+		seed = seed*131 + uint64(char)
+	}
+	return seed
+}
+
+func copyMetricSummary(summaries map[string]MetricSummary, source string, targets []string) {
+	summary, ok := summaries[source]
+	if !ok {
+		return
+	}
+	for _, target := range targets {
+		summaries[target] = summary
+	}
+}
+
+func effectiveSampleCount(items []dataset.Item) float64 {
+	var total, squared float64
+	for _, item := range items {
+		weight := itemWeight(item)
+		total += weight
+		squared += weight * weight
+	}
+	if squared == 0 {
+		return 0
+	}
+	return total * total / squared
+}
+
 func splitWeight(items []dataset.Item) float64 {
 	var total float64
 	for _, item := range items {
