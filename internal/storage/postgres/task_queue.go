@@ -32,11 +32,9 @@ const taskQueueSelect = `
 	       attempt, max_attempts, COALESCE(locked_resource_type,''),
 	       COALESCE(locked_resource_id,''), COALESCE(trace_id,''),
 	       COALESCE(created_by,''), priority, run_after, created_at,
-	       updated_at, COALESCE(started_at, '-infinity'::timestamptz),
-	       COALESCE(completed_at, '-infinity'::timestamptz),
+	       updated_at, started_at, completed_at,
 	       COALESCE(error_code,''), COALESCE(error_message,''),
-	       COALESCE(last_heartbeat_at, '-infinity'::timestamptz),
-	       COALESCE(lease_expires_at, '-infinity'::timestamptz),
+	       last_heartbeat_at, lease_expires_at,
 	       COALESCE(lease_holder,''), lease_generation
 	FROM task_queue`
 
@@ -48,7 +46,7 @@ func scanTask(row taskQueueScanner) (taskqueue.Task, error) {
 	var t taskqueue.Task
 	var status string
 	var payload []byte
-	var startedAt, completedAt, lastHeartbeatAt, leaseExpiresAt time.Time
+	var startedAt, completedAt, lastHeartbeatAt, leaseExpiresAt *time.Time
 	err := row.Scan(
 		&t.ID, &t.TenantID, &t.ProjectID, &t.Type, &t.Pool, &status,
 		&payload, &t.IdempotencyKey, &t.Attempt, &t.MaxAttempts,
@@ -65,17 +63,17 @@ func scanTask(row taskQueueScanner) (taskqueue.Task, error) {
 	if len(payload) > 0 {
 		t.Payload = json.RawMessage(payload)
 	}
-	if !isZeroOrInfinity(startedAt) {
-		t.StartedAt = startedAt
+	if startedAt != nil && !isZeroOrInfinity(*startedAt) {
+		t.StartedAt = *startedAt
 	}
-	if !isZeroOrInfinity(completedAt) {
-		t.CompletedAt = completedAt
+	if completedAt != nil && !isZeroOrInfinity(*completedAt) {
+		t.CompletedAt = *completedAt
 	}
-	if !isZeroOrInfinity(lastHeartbeatAt) {
-		t.LastHeartbeatAt = lastHeartbeatAt
+	if lastHeartbeatAt != nil && !isZeroOrInfinity(*lastHeartbeatAt) {
+		t.LastHeartbeatAt = *lastHeartbeatAt
 	}
-	if !isZeroOrInfinity(leaseExpiresAt) {
-		t.LeaseExpiresAt = leaseExpiresAt
+	if leaseExpiresAt != nil && !isZeroOrInfinity(*leaseExpiresAt) {
+		t.LeaseExpiresAt = *leaseExpiresAt
 	}
 	return t, nil
 }
