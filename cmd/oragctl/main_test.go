@@ -73,7 +73,15 @@ func TestTaskWaitCmdReturnsTerminalTaskEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Complete(context.Background(), task.ID, taskqueue.TaskResult{}); err != nil {
+	leased, err := repo.Lease(context.Background(), task.Pool, "test-worker", time.Minute, 1)
+	if err != nil || len(leased) != 1 {
+		t.Fatalf("Lease() tasks=%d error=%v", len(leased), err)
+	}
+	token := leased[0].LeaseToken()
+	if err := repo.Heartbeat(context.Background(), task.ID, token, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Complete(context.Background(), task.ID, token, taskqueue.TaskResult{}); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer

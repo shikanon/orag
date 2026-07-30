@@ -3,6 +3,7 @@ package taskqueue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -65,7 +66,27 @@ type Task struct {
 	LastHeartbeatAt    time.Time       `json:"last_heartbeat_at,omitempty"`
 	LeaseExpiresAt     time.Time       `json:"lease_expires_at,omitempty"`
 	LeaseHolder        string          `json:"lease_holder,omitempty"`
+	LeaseGeneration    int64           `json:"-"`
 }
+
+// LeaseToken fences worker state updates to the specific lease attempt that
+// produced it.
+type LeaseToken struct {
+	Holder     string
+	Generation int64
+}
+
+// LeaseToken returns the fencing token for this leased task.
+func (t Task) LeaseToken() LeaseToken {
+	return LeaseToken{
+		Holder:     t.LeaseHolder,
+		Generation: t.LeaseGeneration,
+	}
+}
+
+// ErrLeaseLost indicates that a worker no longer owns the lease attempt it
+// tried to update.
+var ErrLeaseLost = errors.New("task lease lost")
 
 // TaskResult contains the result of a successfully completed task.
 type TaskResult struct {
@@ -118,19 +139,19 @@ type QueueRepository interface {
 	Lease(ctx context.Context, pool, leaseHolder string, leaseDuration time.Duration, maxTasks int) ([]Task, error)
 
 	// Heartbeat renews the lease on a task to indicate it's still being processed.
-	Heartbeat(ctx context.Context, taskID, leaseHolder string, leaseDuration time.Duration) error
+	Heartbeat(ctx context.Context, taskID string, token LeaseToken, leaseDuration time.Duration) error
 
 	// Complete marks a task as successfully completed.
-	Complete(ctx context.Context, taskID string, result TaskResult) error
+	Complete(ctx context.Context, taskID string, token LeaseToken, result TaskResult) error
 
 	// Fail marks a task as failed.
-	Fail(ctx context.Context, taskID string, failure TaskFailure) error
+	Fail(ctx context.Context, taskID string, token LeaseToken, failure TaskFailure) error
 
 	// Cancel requests cancellation of a task.
 	Cancel(ctx context.Context, taskID string) error
 
 	// MarkCancelled finalizes a task after its handler acknowledges cancellation.
-	MarkCancelled(ctx context.Context, taskID string) error
+	MarkCancelled(ctx context.Context, taskID string, token LeaseToken) error
 
 	// Retry manually returns a terminal task to the queue.
 	Retry(ctx context.Context, taskID string) (Task, error)
