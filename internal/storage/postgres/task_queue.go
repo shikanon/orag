@@ -37,7 +37,7 @@ const taskQueueSelect = `
 	       COALESCE(error_code,''), COALESCE(error_message,''),
 	       COALESCE(last_heartbeat_at, '-infinity'::timestamptz),
 	       COALESCE(lease_expires_at, '-infinity'::timestamptz),
-	       COALESCE(lease_holder,'')
+	       COALESCE(lease_holder,''), lease_generation
 	FROM task_queue`
 
 type taskQueueScanner interface {
@@ -56,7 +56,7 @@ func scanTask(row taskQueueScanner) (taskqueue.Task, error) {
 		&t.CreatedBy, &t.Priority, &t.RunAfter, &t.CreatedAt,
 		&t.UpdatedAt, &startedAt, &completedAt,
 		&t.ErrorCode, &t.ErrorMessage, &lastHeartbeatAt,
-		&leaseExpiresAt, &t.LeaseHolder,
+		&leaseExpiresAt, &t.LeaseHolder, &t.LeaseGeneration,
 	)
 	if err != nil {
 		return t, err
@@ -246,20 +246,24 @@ func (r *TaskQueueRepository) Lease(ctx context.Context, pool, leaseHolder strin
 	}
 
 	for _, id := range taskIDs {
-		_, err := tx.Exec(ctx, `
+		var generation int64
+		err := tx.QueryRow(ctx, `
 			UPDATE task_queue
 			SET status='leased',
 			    lease_expires_at = NOW() + $2::interval,
 			    lease_holder = $3,
 			    updated_at = NOW(),
 			    attempt = attempt + 1,
+			    lease_generation = lease_generation + 1,
 			    started_at = CASE WHEN status = 'queued' THEN NOW() ELSE started_at END
-			WHERE id=$1`, id, intervalStr, leaseHolder)
+			WHERE id=$1
+			RETURNING lease_generation`, id, intervalStr, leaseHolder).Scan(&generation)
 		if err != nil {
 			return nil, err
 		}
 		if err := insertTaskEvent(ctx, tx, id, "leased", map[string]any{
 			"lease_holder": leaseHolder,
+			"generation":   generation,
 		}); err != nil {
 			return nil, err
 		}
@@ -297,36 +301,44 @@ func formatInterval(d time.Duration) string {
 	return fmt.Sprintf("%f seconds", seconds)
 }
 
-// Heartbeat renews the lease on a task to indicate it's still being processed.
-// Returns nil if the task is not found or not owned by the given leaseHolder.
-func (r *TaskQueueRepository) Heartbeat(ctx context.Context, taskID, leaseHolder string, leaseDuration time.Duration) error {
+// Heartbeat renews the lease and transitions a newly leased task to running.
+func (r *TaskQueueRepository) Heartbeat(ctx context.Context, taskID string, token taskqueue.LeaseToken, leaseDuration time.Duration) error {
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	intervalStr := formatInterval(leaseDuration)
-	tag, err := r.pool.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		UPDATE task_queue
-		SET last_heartbeat_at = NOW(),
-		    lease_expires_at = NOW() + $3::interval,
+		SET status = 'running',
+		    last_heartbeat_at = NOW(),
+		    lease_expires_at = NOW() + $4::interval,
 		    updated_at = NOW()
 		WHERE id=$1
 		  AND lease_holder=$2
-		  AND status IN ('leased','running','cancelling')`,
-		taskID, leaseHolder, intervalStr)
+		  AND lease_generation=$3
+		  AND status IN ('leased','running')`,
+		taskID, token.Holder, token.Generation, intervalStr)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return nil
+		return taskqueue.ErrLeaseLost
 	}
 
-	_, err = r.pool.Exec(ctx, `
-		INSERT INTO task_events(task_id, event_type, event_data)
-		VALUES($1, 'heartbeat', $2)`, taskID, mustJSON(map[string]any{
-		"lease_holder": leaseHolder,
-	}))
-	return err
+	if err := insertTaskEvent(ctx, tx, taskID, "heartbeat", map[string]any{
+		"lease_holder": token.Holder,
+		"generation":   token.Generation,
+	}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // Complete marks a task as successfully completed and stores the result data.
-func (r *TaskQueueRepository) Complete(ctx context.Context, taskID string, result taskqueue.TaskResult) error {
+func (r *TaskQueueRepository) Complete(ctx context.Context, taskID string, token taskqueue.LeaseToken, result taskqueue.TaskResult) error {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -342,22 +354,27 @@ func (r *TaskQueueRepository) Complete(ctx context.Context, taskID string, resul
 		UPDATE task_queue
 		SET status='succeeded',
 		    completed_at = NOW(),
-		    result_data = $2,
+		    result_data = $4,
 		    error_code = NULL,
 		    error_message = NULL,
 		    lease_expires_at = NULL,
 		    lease_holder = NULL,
 		    updated_at = NOW()
-		WHERE id=$1`, taskID, resultData)
+		WHERE id=$1
+		  AND lease_holder=$2
+		  AND lease_generation=$3
+		  AND status='running'`,
+		taskID, token.Holder, token.Generation, resultData)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return nil
+		return taskqueue.ErrLeaseLost
 	}
 
 	if err := insertTaskEvent(ctx, tx, taskID, "succeeded", map[string]any{
 		"has_result": result.Data != nil,
+		"generation": token.Generation,
 	}); err != nil {
 		return err
 	}
@@ -368,7 +385,7 @@ func (r *TaskQueueRepository) Complete(ctx context.Context, taskID string, resul
 // Fail marks a task as failed. If the failure is retryable and the task has
 // remaining attempts, it will be scheduled for retry with exponential backoff.
 // If retries are exhausted, the task moves to dead letter status.
-func (r *TaskQueueRepository) Fail(ctx context.Context, taskID string, failure taskqueue.TaskFailure) error {
+func (r *TaskQueueRepository) Fail(ctx context.Context, taskID string, token taskqueue.LeaseToken, failure taskqueue.TaskFailure) error {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -376,22 +393,23 @@ func (r *TaskQueueRepository) Fail(ctx context.Context, taskID string, failure t
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	row := tx.QueryRow(ctx, `
-		SELECT attempt, max_attempts, status
+		SELECT attempt, max_attempts
 		FROM task_queue
 		WHERE id=$1
-		FOR UPDATE`, taskID)
+		  AND lease_holder=$2
+		  AND lease_generation=$3
+		  AND status IN ('leased','running')
+		FOR UPDATE`, taskID, token.Holder, token.Generation)
 	var attempt, maxAttempts int
-	var currentStatus string
-	if err := row.Scan(&attempt, &maxAttempts, &currentStatus); err != nil {
+	if err := row.Scan(&attempt, &maxAttempts); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
+			return taskqueue.ErrLeaseLost
 		}
 		return err
 	}
 
 	var newStatus string
 	var runAfter time.Time
-	var clearLease bool
 
 	if failure.Retryable && attempt < maxAttempts {
 		newStatus = string(taskqueue.TaskStatusFailedRetryable)
@@ -400,40 +418,33 @@ func (r *TaskQueueRepository) Fail(ctx context.Context, taskID string, failure t
 			backoff = 1 * time.Hour
 		}
 		runAfter = time.Now().Add(backoff)
-		clearLease = true
 	} else if failure.Retryable && attempt >= maxAttempts {
 		newStatus = string(taskqueue.TaskStatusDeadLetter)
-		clearLease = true
 	} else {
 		newStatus = string(taskqueue.TaskStatusFailedTerminal)
-		clearLease = true
 	}
 
-	query := `
+	tag, err := tx.Exec(ctx, `
 		UPDATE task_queue
 		SET status=$2,
 		    error_code=$3,
 		    error_message=$4,
 		    updated_at=NOW(),
-		    completed_at=CASE WHEN $2 IN ('failed_terminal','dead_letter','cancelled') THEN NOW() ELSE completed_at END`
-	args := []any{taskID, newStatus, failure.ErrorCode, failure.Message}
-	argIdx := 5
-
-	if clearLease {
-		query += ", lease_expires_at=NULL, lease_holder=NULL"
-	}
-
-	if newStatus == string(taskqueue.TaskStatusFailedRetryable) {
-		query += fmt.Sprintf(", run_after=$%d", argIdx)
-		args = append(args, runAfter)
-		argIdx++
-	}
-
-	query += " WHERE id=$1"
-
-	_, err = tx.Exec(ctx, query, args...)
+		    completed_at=CASE WHEN $2 IN ('failed_terminal','dead_letter') THEN NOW() ELSE completed_at END,
+		    run_after=CASE WHEN $2='failed_retryable' THEN $5 ELSE run_after END,
+		    lease_expires_at=NULL,
+		    lease_holder=NULL
+		WHERE id=$1
+		  AND lease_holder=$6
+		  AND lease_generation=$7
+		  AND status IN ('leased','running')`,
+		taskID, newStatus, failure.ErrorCode, failure.Message, runAfter,
+		token.Holder, token.Generation)
 	if err != nil {
 		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return taskqueue.ErrLeaseLost
 	}
 
 	eventType := "failed"
@@ -448,6 +459,7 @@ func (r *TaskQueueRepository) Fail(ctx context.Context, taskID string, failure t
 		"error_code": failure.ErrorCode,
 		"message":    failure.Message,
 		"attempt":    attempt,
+		"generation": token.Generation,
 	}); err != nil {
 		return err
 	}
@@ -519,7 +531,7 @@ func (r *TaskQueueRepository) Cancel(ctx context.Context, taskID string) error {
 // MarkCancelled transitions an acknowledged cancellation into its terminal
 // state. It is intentionally separate from Cancel so handlers have a chance
 // to release downstream resources first.
-func (r *TaskQueueRepository) MarkCancelled(ctx context.Context, taskID string) error {
+func (r *TaskQueueRepository) MarkCancelled(ctx context.Context, taskID string, token taskqueue.LeaseToken) error {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -529,14 +541,21 @@ func (r *TaskQueueRepository) MarkCancelled(ctx context.Context, taskID string) 
 		UPDATE task_queue
 		SET status='cancelled', completed_at=NOW(), lease_expires_at=NULL,
 		    lease_holder=NULL, updated_at=NOW()
-		WHERE id=$1 AND status='cancelling'`, taskID)
+		WHERE id=$1
+		  AND lease_holder=$2
+		  AND lease_generation=$3
+		  AND status='cancelling'`,
+		taskID, token.Holder, token.Generation)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() > 0 {
-		if err := insertTaskEvent(ctx, tx, taskID, "cancelled", nil); err != nil {
-			return err
-		}
+	if tag.RowsAffected() == 0 {
+		return taskqueue.ErrLeaseLost
+	}
+	if err := insertTaskEvent(ctx, tx, taskID, "cancelled", map[string]any{
+		"generation": token.Generation,
+	}); err != nil {
+		return err
 	}
 	return tx.Commit(ctx)
 }
