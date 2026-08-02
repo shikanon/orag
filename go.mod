@@ -11,7 +11,7 @@ require (
 	github.com/getkin/kin-openapi v0.145.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/qdrant/go-client v1.18.3
-	github.com/volcengine/ve-tos-golang-sdk/v2 v2.9.7
+	github.com/volcengine/ve-tos-golang-sdk/v2 v2.9.8
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.44.0
@@ -19,7 +19,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.44.0
 	go.opentelemetry.io/otel/sdk/metric v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
-	google.golang.org/grpc v1.82.1
+	google.golang.org/grpc v1.83.0
 )
 
 require (
