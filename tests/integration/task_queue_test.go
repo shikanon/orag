@@ -12,6 +12,178 @@ import (
 	"github.com/shikanon/orag/internal/taskqueue"
 )
 
+func TestPostgresTaskQueueResourceLockLease(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	repo := postgres.NewTaskQueueRepository(app.Postgres)
+	enqueue := func(t *testing.T, pool, taskID, resourceType, resourceID string, priority int) {
+		t.Helper()
+		now := time.Now().UTC().Add(-time.Minute)
+		if _, err := repo.Enqueue(ctx, taskqueue.Task{
+			ID:                 taskID,
+			TenantID:           testTenantID,
+			Type:               "integration-resource-lock",
+			Pool:               pool,
+			MaxAttempts:        3,
+			LockedResourceType: resourceType,
+			LockedResourceID:   resourceID,
+			Priority:           priority,
+			RunAfter:           now,
+			CreatedAt:          now,
+			UpdatedAt:          now,
+		}); err != nil {
+			t.Fatalf("enqueue task %q: %v", taskID, err)
+		}
+	}
+
+	t.Run("batch keeps one task per resource", func(t *testing.T) {
+		scenarioID := id.New("resource_lock_batch")
+		pool := "integration-" + scenarioID
+		resourceID := "resource-" + scenarioID
+		firstID := id.New("task")
+		secondID := id.New("task")
+		enqueue(t, pool, firstID, "document", resourceID, 2)
+		enqueue(t, pool, secondID, "document", resourceID, 1)
+
+		leased, err := repo.Lease(ctx, pool, "batch-worker-"+scenarioID, time.Minute, 2)
+		if err != nil {
+			t.Fatalf("lease batch: %v", err)
+		}
+		if len(leased) != 1 {
+			t.Fatalf("leased %d tasks for one resource with maxTasks=2, want 1", len(leased))
+		}
+		if leased[0].ID != firstID {
+			t.Fatalf("leased task %q, want higher-priority task %q", leased[0].ID, firstID)
+		}
+	})
+
+	t.Run("concurrent workers have one winner", func(t *testing.T) {
+		const iterations = 8
+		for iteration := 0; iteration < iterations; iteration++ {
+			scenarioID := id.New("resource_lock_concurrent")
+			pools := []string{
+				"integration-a-" + scenarioID,
+				"integration-b-" + scenarioID,
+			}
+			resourceID := "resource-" + scenarioID
+			enqueue(t, pools[0], id.New("task"), "document", resourceID, 0)
+			enqueue(t, pools[1], id.New("task"), "document", resourceID, 0)
+
+			type leaseResult struct {
+				tasks []taskqueue.Task
+				err   error
+			}
+			start := make(chan struct{})
+			ready := make(chan struct{}, 2)
+			results := make(chan leaseResult, 2)
+			for _, workerPool := range pools {
+				go func() {
+					ready <- struct{}{}
+					<-start
+					tasks, err := repo.Lease(
+						ctx,
+						workerPool,
+						id.New("concurrent_worker"),
+						time.Minute,
+						1,
+					)
+					results <- leaseResult{tasks: tasks, err: err}
+				}()
+			}
+			<-ready
+			<-ready
+			close(start)
+
+			totalLeased := 0
+			var leaseErrors []error
+			for worker := 0; worker < 2; worker++ {
+				result := <-results
+				totalLeased += len(result.tasks)
+				if result.err != nil {
+					leaseErrors = append(leaseErrors, result.err)
+				}
+			}
+			if err := errors.Join(leaseErrors...); err != nil {
+				t.Fatalf("iteration %d concurrent lease errors: %v", iteration, err)
+			}
+			if totalLeased != 1 {
+				t.Fatalf("iteration %d concurrent workers leased %d tasks total, want 1", iteration, totalLeased)
+			}
+		}
+	})
+
+	t.Run("completion releases resource", func(t *testing.T) {
+		scenarioID := id.New("resource_lock_release")
+		pool := "integration-" + scenarioID
+		resourceID := "resource-" + scenarioID
+		firstID := id.New("task")
+		secondID := id.New("task")
+		enqueue(t, pool, firstID, "document", resourceID, 2)
+		enqueue(t, pool, secondID, "document", resourceID, 1)
+
+		first, err := repo.Lease(ctx, pool, "first-worker-"+scenarioID, time.Minute, 2)
+		if err != nil {
+			t.Fatalf("lease first task: %v", err)
+		}
+		if len(first) != 1 || first[0].ID != firstID {
+			t.Fatalf("first lease = %#v, want task %q", first, firstID)
+		}
+		if err := repo.Heartbeat(ctx, first[0].ID, first[0].LeaseToken(), time.Minute); err != nil {
+			t.Fatalf("heartbeat first task: %v", err)
+		}
+		if err := repo.Complete(ctx, first[0].ID, first[0].LeaseToken(), taskqueue.TaskResult{}); err != nil {
+			t.Fatalf("complete first task: %v", err)
+		}
+
+		second, err := repo.Lease(ctx, pool, "second-worker-"+scenarioID, time.Minute, 1)
+		if err != nil {
+			t.Fatalf("lease second task: %v", err)
+		}
+		if len(second) != 1 || second[0].ID != secondID {
+			t.Fatalf("lease after completion = %#v, want task %q", second, secondID)
+		}
+	})
+
+	t.Run("independent tasks remain leasable", func(t *testing.T) {
+		scenarioID := id.New("resource_lock_compatibility")
+		pool := "integration-" + scenarioID
+		firstID := id.New("task")
+		independentIDs := []string{id.New("task"), id.New("task"), id.New("task"), id.New("task")}
+		enqueue(t, pool, firstID, "document", "resource-a-"+scenarioID, 2)
+		enqueue(t, pool, independentIDs[0], "document", "resource-b-"+scenarioID, 1)
+		enqueue(t, pool, independentIDs[1], "", "", 1)
+		enqueue(t, pool, independentIDs[2], "document", "", 1)
+		enqueue(t, pool, independentIDs[3], "", "resource-c-"+scenarioID, 1)
+
+		first, err := repo.Lease(ctx, pool, "compatibility-worker-a-"+scenarioID, time.Minute, 1)
+		if err != nil {
+			t.Fatalf("lease first resource: %v", err)
+		}
+		if len(first) != 1 || first[0].ID != firstID {
+			t.Fatalf("first compatibility lease = %#v, want task %q", first, firstID)
+		}
+
+		independent, err := repo.Lease(ctx, pool, "compatibility-worker-b-"+scenarioID, time.Minute, len(independentIDs))
+		if err != nil {
+			t.Fatalf("lease independent tasks: %v", err)
+		}
+		if len(independent) != len(independentIDs) {
+			t.Fatalf("leased %d independent tasks while another resource is active, want %d", len(independent), len(independentIDs))
+		}
+		leasedIDs := make(map[string]bool, len(independent))
+		for _, task := range independent {
+			leasedIDs[task.ID] = true
+		}
+		for _, taskID := range independentIDs {
+			if !leasedIDs[taskID] {
+				t.Errorf("independent task %q was not leased", taskID)
+			}
+		}
+	})
+}
+
 func TestPostgresTaskQueueLeaseFencing(t *testing.T) {
 	app := newIntegrationApp(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
