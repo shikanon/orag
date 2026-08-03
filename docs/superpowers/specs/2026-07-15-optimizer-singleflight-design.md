@@ -32,7 +32,7 @@ The required invariant is:
 
 ## Non-goals
 
-- Distributed leases, heartbeats, or automatic recovery of a process that died while a run remains `running`.
+- The original implementation did not include distributed recovery. That historical gap is closed by the [durable task-queue crash-recovery design](2026-08-03-optimizer-taskqueue-crash-recovery-design.md); this document continues to define the state-level single-flight rules.
 - Re-running a `completed` optimization.
 - Changing candidate scoring, budget accounting, holdout selection, or cleanup policy.
 - Serializing different optimization runs.
@@ -62,7 +62,7 @@ The existing unconditional update methods remain for post-acquisition progress w
 
 `Resume` first reads the run for tenant validation and request reconstruction, validates the immutable candidate-defining configuration, then performs CAS using the status it read. An explicitly non-resumable status is rejected before mutation. Concurrent resumes that both read the same resumable state race at CAS; exactly one succeeds.
 
-The execution goroutine rereads the run and CAS-claims `queued -> running`. This protects both auto-start and repeated `RunPending` calls, including calls originating from different ORAG replicas.
+The leased optimizer task handler rereads the run and CAS-claims `queued -> running`. This protects durable execution and repeated `RunPending` calls, including calls originating from different ORAG replicas.
 
 ### Candidate acquisition
 
@@ -112,9 +112,9 @@ An advisory lock couples service lifecycle to a database connection and provides
 
 Returning `202` to every caller hides whether a new execution was accepted. A `409` gives clients and operators a truthful concurrency signal while preserving exactly-once acquisition.
 
-### Reclaim `running` candidates
+### Reclaim `running` candidates without a lease
 
-Blindly changing `running -> running` or `running -> queued` can duplicate an executor that is still alive. Safe crash recovery needs a lease/attempt generation and is intentionally deferred.
+Blindly changing `running -> running` or `running -> queued` can duplicate an executor that is still alive. Recovery is therefore permitted only when a higher durable task lease generation has fenced the previous executor, as specified in the crash-recovery design.
 
 ## Testing Strategy
 
@@ -142,9 +142,7 @@ Blindly changing `running -> running` or `running -> queued` can duplicate an ex
 
 ## Rollout
 
-No schema migration is required. The change is compatible with existing status values and makes multi-replica execution safer immediately. Operators seeing `409` should fetch the run: an active/queued run is already owned, while a terminal run can be retried only after observing an allowed resumable state.
-
-Crash recovery for runs stranded in `running` should be addressed separately with leases or explicit operator recovery rather than weakening this single-flight invariant.
+The original CAS rollout required no schema migration. Migration `000043_optimizer_task_execution.sql` subsequently added durable task ownership without weakening these CAS rules. Operators seeing `409` should fetch the run: an active/queued run is already owned, while a terminal run can be retried only after observing an allowed resumable state.
 
 ## Validation
 

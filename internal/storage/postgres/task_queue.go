@@ -90,7 +90,11 @@ func isPgUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-func insertTaskEvent(ctx context.Context, tx taskQueueTx, taskID string, eventType string, eventData any) error {
+type taskQueueExecer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func insertTaskEvent(ctx context.Context, tx taskQueueExecer, taskID string, eventType string, eventData any) error {
 	var data []byte
 	if eventData != nil {
 		var err error
@@ -102,6 +106,29 @@ func insertTaskEvent(ctx context.Context, tx taskQueueTx, taskID string, eventTy
 	_, err := tx.Exec(ctx, `
 		INSERT INTO task_events(task_id, event_type, event_data)
 		VALUES($1, $2, $3)`, taskID, eventType, data)
+	return err
+}
+
+func insertTask(ctx context.Context, execer taskQueueExecer, task taskqueue.Task) error {
+	payload := []byte(task.Payload)
+	if len(payload) == 0 {
+		payload = []byte("{}")
+	}
+	_, err := execer.Exec(ctx, `
+		INSERT INTO task_queue(
+			id, tenant_id, project_id, type, pool, status, payload,
+			idempotency_key, attempt, max_attempts, locked_resource_type,
+			locked_resource_id, trace_id, created_by, priority,
+			run_after, created_at, updated_at
+		) VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,
+			NULLIF($8,''),$9,$10,NULLIF($11,''),
+			NULLIF($12,''),NULLIF($13,''),NULLIF($14,''),$15,
+			$16,$17,$18)`,
+		task.ID, task.TenantID, task.ProjectID, task.Type, task.Pool,
+		string(taskqueue.TaskStatusQueued), payload, task.IdempotencyKey,
+		task.Attempt, task.MaxAttempts, task.LockedResourceType,
+		task.LockedResourceID, task.TraceID, task.CreatedBy,
+		task.Priority, task.RunAfter, task.CreatedAt, task.UpdatedAt)
 	return err
 }
 
@@ -122,29 +149,7 @@ func (r *TaskQueueRepository) Enqueue(ctx context.Context, task taskqueue.Task) 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var payload []byte
-	if task.Payload != nil {
-		payload = []byte(task.Payload)
-	} else {
-		payload = []byte("{}")
-	}
-
-	_, err = tx.Exec(ctx, `
-		INSERT INTO task_queue(
-			id, tenant_id, project_id, type, pool, status, payload,
-			idempotency_key, attempt, max_attempts, locked_resource_type,
-			locked_resource_id, trace_id, created_by, priority,
-			run_after, created_at, updated_at
-		) VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,
-			NULLIF($8,''),$9,$10,NULLIF($11,''),
-			NULLIF($12,''),NULLIF($13,''),NULLIF($14,''),$15,
-			$16,$17,$18)`,
-		task.ID, task.TenantID, task.ProjectID, task.Type, task.Pool,
-		string(taskqueue.TaskStatusQueued), payload, task.IdempotencyKey,
-		task.Attempt, task.MaxAttempts, task.LockedResourceType,
-		task.LockedResourceID, task.TraceID, task.CreatedBy,
-		task.Priority, task.RunAfter, task.CreatedAt, task.UpdatedAt,
-	)
+	err = insertTask(ctx, tx, task)
 	if err != nil {
 		if isPgUniqueViolation(err) && task.IdempotencyKey != "" {
 			row := tx.QueryRow(ctx, taskQueueSelect+`

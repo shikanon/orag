@@ -168,6 +168,19 @@ func (r *MemoryQueueRepository) Heartbeat(_ context.Context, taskID string, toke
 	return nil
 }
 
+// OwnsActiveLease reports whether token still owns an unexpired execution
+// lease. It is used by in-memory durable coordinators to apply the same write
+// fencing as the PostgreSQL lease predicates.
+func (r *MemoryQueueRepository) OwnsActiveLease(_ context.Context, taskID string, token LeaseToken, allowCancelling bool) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	task, ok := r.tasks[taskID]
+	if !ok || !ownsLease(task, token) || task.LeaseExpiresAt.IsZero() || !task.LeaseExpiresAt.After(r.clock.Now()) {
+		return false
+	}
+	return task.Status == TaskStatusLeased || task.Status == TaskStatusRunning || (allowCancelling && task.Status == TaskStatusCancelling)
+}
+
 // Complete marks a task as successfully completed.
 func (r *MemoryQueueRepository) Complete(_ context.Context, taskID string, token LeaseToken, _ TaskResult) error {
 	r.mu.Lock()

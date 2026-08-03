@@ -11,9 +11,27 @@ import (
 	"github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/platform/apperrors"
 	"github.com/shikanon/orag/internal/rag"
+	"github.com/shikanon/orag/internal/taskqueue"
 )
 
-func TestServiceSubmitRunsAsyncAndEvaluatesHoldout(t *testing.T) {
+type optimizerTestClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *optimizerTestClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *optimizerTestClock) Add(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+func TestServiceRunPendingEvaluatesHoldout(t *testing.T) {
 	repo := newMemoryOptimizationRepository()
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -23,17 +41,25 @@ func TestServiceSubmitRunsAsyncAndEvaluatesHoldout(t *testing.T) {
 	}
 	service := &Service{Repository: repo, Runner: runner}
 
-	run, err := service.Submit(context.Background(), basicSubmitRequest())
+	req := basicSubmitRequest()
+	run, err := service.Submit(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Submit() error = %v", err)
 	}
 	if run.Status != RunStatusQueued {
 		t.Fatalf("Submit() status = %q, want queued", run.Status)
 	}
+	if got := runner.callCount(); got != 0 {
+		t.Fatalf("Submit() runner calls = %d, durable submit must not start a goroutine", got)
+	}
+	runResult := make(chan error, 1)
+	go func() {
+		runResult <- service.RunPending(context.Background(), "tenant_a", run.ID, req)
+	}()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
-		t.Fatal("runner did not start asynchronously")
+		t.Fatal("RunPending did not start runner")
 	}
 	status, ok, err := service.Get(context.Background(), "tenant_a", run.ID)
 	if err != nil || !ok {
@@ -43,6 +69,9 @@ func TestServiceSubmitRunsAsyncAndEvaluatesHoldout(t *testing.T) {
 		t.Fatalf("status while runner blocked = %q, want running", status.Run.Status)
 	}
 	close(release)
+	if err := <-runResult; err != nil {
+		t.Fatalf("RunPending() error = %v", err)
+	}
 
 	status = waitForRunStatus(t, service, run.ID, RunStatusCompleted)
 	bestID := candidateWithDenseTopK(status.Candidates, 2).ID
@@ -261,15 +290,20 @@ func TestServiceConcurrentResumeStartsOneRunner(t *testing.T) {
 	if accepted != 1 || conflicts != 1 {
 		t.Fatalf("Resume results accepted/conflicts = %d/%d, want 1/1", accepted, conflicts)
 	}
+	if got := runner.callCount(); got != 0 {
+		t.Fatalf("runner calls after Resume = %d, durable resume must not start a goroutine", got)
+	}
+	runResult := make(chan error, 1)
+	go func() { runResult <- service.RunPending(context.Background(), "tenant_a", run.ID, req) }()
 	select {
 	case <-runnerStarted:
 	case <-time.After(time.Second):
-		t.Fatal("accepted resume did not start runner")
-	}
-	if got := runner.callCount(); got != 1 {
-		t.Fatalf("runner calls = %d, want 1", got)
+		t.Fatal("durable task execution did not start runner")
 	}
 	close(runnerRelease)
+	if err := <-runResult; err != nil {
+		t.Fatalf("RunPending() error = %v", err)
+	}
 }
 
 func TestServiceConcurrentRunPendingClaimsRunOnce(t *testing.T) {
@@ -766,6 +800,158 @@ func TestServiceSubmitDoesNotPersistPartialRunWhenAtomicCreateFails(t *testing.T
 	}
 	if got := len(runner.selectionIDs()); got != 0 {
 		t.Fatalf("runner selection calls = %d, want 0", got)
+	}
+}
+
+func TestServiceSubmitPersistsOptimizationTask(t *testing.T) {
+	repo := NewMemoryRepository()
+	service := &Service{Repository: repo, Runner: &recordingCandidateRunner{}, DisableAutoStart: true}
+	run, err := service.Submit(context.Background(), basicSubmitRequest())
+	if err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	if run.CurrentTaskID == "" || run.ExecutionGeneration != 0 {
+		t.Fatalf("run task ownership = %q/%d, want task ID and generation zero", run.CurrentTaskID, run.ExecutionGeneration)
+	}
+	task, found, err := repo.TaskQueue().Get(context.Background(), run.CurrentTaskID)
+	if err != nil || !found {
+		t.Fatalf("Get(task) found=%v error=%v", found, err)
+	}
+	if task.Type != OptimizationTaskType || task.Pool != OptimizationPool || task.LockedResourceID != run.ID {
+		t.Fatalf("optimization task = %#v", task)
+	}
+	if !task.RunAfter.After(run.CreatedAt.Add(99 * 365 * 24 * time.Hour)) {
+		t.Fatalf("DisableAutoStart task run_after = %v, want durable but not consumable", task.RunAfter)
+	}
+}
+
+func TestServiceCancelQueuedTaskIsAtomicAndIdempotent(t *testing.T) {
+	repo := NewMemoryRepository()
+	service := &Service{Repository: repo, Runner: &recordingCandidateRunner{}}
+	run, err := service.Submit(context.Background(), basicSubmitRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		canceled, err := service.Cancel(context.Background(), run.TenantID, run.ID, "user requested")
+		if err != nil {
+			t.Fatalf("Cancel() error = %v", err)
+		}
+		if canceled.Status != RunStatusCanceled {
+			t.Fatalf("Cancel() status = %q, want canceled", canceled.Status)
+		}
+	}
+	task, found, err := repo.TaskQueue().Get(context.Background(), run.CurrentTaskID)
+	if err != nil || !found || task.Status != taskqueue.TaskStatusCancelled {
+		t.Fatalf("cancelled task = %#v found=%v error=%v", task, found, err)
+	}
+	leased, err := repo.TaskQueue().Lease(context.Background(), OptimizationPool, "worker", time.Minute, 1)
+	if err != nil || len(leased) != 0 {
+		t.Fatalf("Lease() after cancel = %#v error=%v", leased, err)
+	}
+}
+
+func TestServiceCancelLeasedTaskBeforeStartIsTerminal(t *testing.T) {
+	repo := NewMemoryRepository()
+	service := &Service{Repository: repo, Runner: &recordingCandidateRunner{}}
+	run, err := service.Submit(context.Background(), basicSubmitRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := repo.TaskQueue().Lease(context.Background(), OptimizationPool, "worker-before-start", time.Minute, 1)
+	if err != nil || len(leased) != 1 {
+		t.Fatalf("Lease() = %#v error=%v", leased, err)
+	}
+	canceled, err := service.Cancel(context.Background(), run.TenantID, run.ID, "cancel before heartbeat")
+	if err != nil || canceled.Status != RunStatusCanceled {
+		t.Fatalf("Cancel() = %#v error=%v", canceled, err)
+	}
+	task, found, err := repo.TaskQueue().Get(context.Background(), run.CurrentTaskID)
+	if err != nil || !found || task.Status != taskqueue.TaskStatusCancelled {
+		t.Fatalf("task after pre-start cancel = %#v found=%v error=%v", task, found, err)
+	}
+}
+
+func TestMemoryOptimizationExpiredLeaseRecoveryFencesStaleWrites(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 8, 3, 8, 0, 0, 0, time.UTC)
+	clock := &optimizerTestClock{now: now}
+	repo := NewMemoryRepository()
+	queue := repo.TaskQueue().(*taskqueue.MemoryQueueRepository)
+	queue.SetClock(clock)
+	runner := &recordingCandidateRunner{}
+	service := &Service{Repository: repo, Runner: runner, Now: clock.Now}
+	req := basicSubmitRequest()
+	req.HoldoutSplit = ""
+	run, err := service.Submit(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leasedA, err := queue.Lease(ctx, OptimizationPool, "worker-a", 30*time.Second, 1)
+	if err != nil || len(leasedA) != 1 {
+		t.Fatalf("worker A Lease() = %#v error=%v", leasedA, err)
+	}
+	if err := queue.Heartbeat(ctx, leasedA[0].ID, leasedA[0].LeaseToken(), 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	leaseA := ExecutionLease{TaskID: leasedA[0].ID, Holder: leasedA[0].LeaseHolder, Generation: leasedA[0].LeaseGeneration}
+	if err := repo.ClaimOptimizationExecution(ctx, run.TenantID, run.ProjectID, run.ID, leaseA); err != nil {
+		t.Fatal(err)
+	}
+	ctxA := ContextWithExecutionLease(ctx, leaseA)
+	stored, _, _ := repo.GetOptimizationRun(ctxA, run.TenantID, run.ID)
+	if err := service.claimRun(ctxA, &stored, RunStatusQueued, RunStatusRunning, "running", ""); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := repo.ListOptimizationCandidates(ctxA, run.TenantID, run.ID)
+	if err != nil || len(candidates) != 2 {
+		t.Fatalf("candidates = %#v error=%v", candidates, err)
+	}
+	firstID := candidates[0].ID
+	candidates[0].Status = CandidateStatusScored
+	candidates[0].Metrics = map[string]float64{"pairwise_accuracy": 0.5}
+	if err := repo.UpdateOptimizationCandidate(ctxA, candidates[0]); err != nil {
+		t.Fatal(err)
+	}
+	candidates[1].Status = CandidateStatusRunning
+	if err := repo.UpdateOptimizationCandidate(ctxA, candidates[1]); err != nil {
+		t.Fatal(err)
+	}
+	stored.CompletedCandidateCount = 1
+	stored.Checkpoint.markCompleted(firstID)
+	if err := repo.UpdateOptimizationRun(ctxA, stored); err != nil {
+		t.Fatal(err)
+	}
+
+	clock.Add(31 * time.Second)
+	candidates[1].Error = "stale write"
+	if err := repo.UpdateOptimizationCandidate(ctxA, candidates[1]); !errors.Is(err, ErrOptimizationOwnershipLost) {
+		t.Fatalf("stale candidate update error = %v, want ownership lost", err)
+	}
+	leasedB, err := queue.Lease(ctx, OptimizationPool, "worker-b", 30*time.Second, 1)
+	if err != nil || len(leasedB) != 1 {
+		t.Fatalf("worker B Lease() = %#v error=%v", leasedB, err)
+	}
+	if err := queue.Heartbeat(ctx, leasedB[0].ID, leasedB[0].LeaseToken(), 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	leaseB := ExecutionLease{TaskID: leasedB[0].ID, Holder: leasedB[0].LeaseHolder, Generation: leasedB[0].LeaseGeneration}
+	if err := repo.ClaimOptimizationExecution(ctx, run.TenantID, run.ProjectID, run.ID, leaseB); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.ClaimOptimizationExecution(ctx, run.TenantID, run.ProjectID, run.ID, leaseB); !errors.Is(err, ErrOptimizationOwnershipLost) {
+		t.Fatalf("duplicate generation claim error = %v, want ownership lost", err)
+	}
+	ctxB := ContextWithExecutionLease(ctx, leaseB)
+	if err := service.RunPending(ctxB, run.TenantID, run.ID, SubmitRequest{}); err != nil {
+		t.Fatalf("recovered RunPending() error = %v", err)
+	}
+	status, _, err := service.Get(ctx, run.TenantID, run.ID)
+	if err != nil || status.Run.Status != RunStatusCompleted {
+		t.Fatalf("recovered run = %#v error=%v", status.Run, err)
+	}
+	if runner.selectionCount(firstID) != 0 || runner.selectionCount(candidates[1].ID) != 1 {
+		t.Fatalf("recovery runner calls = %#v, completed candidate must not rerun", runner.calls)
 	}
 }
 

@@ -30,6 +30,7 @@ type WorkerPool struct {
 	mu       sync.RWMutex
 	running  bool
 	workerID string
+	cancel   context.CancelFunc
 }
 
 // poolWorker manages the scheduler and concurrency for a single pool.
@@ -101,10 +102,12 @@ func (wp *WorkerPool) Start(ctx context.Context) {
 		return
 	}
 	wp.running = true
+	runCtx, cancel := context.WithCancel(ctx)
+	wp.cancel = cancel
 
 	for name, pw := range wp.pools {
 		wp.wg.Add(1)
-		go wp.runScheduler(ctx, name, pw)
+		go wp.runScheduler(runCtx, name, pw)
 	}
 }
 
@@ -116,6 +119,10 @@ func (wp *WorkerPool) Stop() {
 		return
 	}
 	wp.running = false
+	if wp.cancel != nil {
+		wp.cancel()
+		wp.cancel = nil
+	}
 
 	for _, pw := range wp.pools {
 		close(pw.stopCh)
@@ -198,6 +205,7 @@ func (wp *WorkerPool) executeTask(parentCtx context.Context, task Task, handler 
 	// makes cancellation/timeline semantics needlessly ambiguous.
 	if err := wp.repo.Heartbeat(taskCtx, task.ID, token, pw.config.LeaseDuration); err != nil {
 		wp.logger.Error("failed to start task lease", "task_id", task.ID, "error", err)
+		wp.handleCancelledTask(parentCtx, task.ID, token)
 		return
 	}
 
