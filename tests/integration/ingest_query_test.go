@@ -264,6 +264,63 @@ func TestSuccessfulReplacementExposesOnlyPostgresAuthorizedVersion(t *testing.T)
 	}
 }
 
+func TestSuccessfulReplacementInvalidatesCachedV1Query(t *testing.T) {
+	app := newIntegrationApp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	kbID := createIntegrationKnowledgeBase(t, ctx, app, "cached-replacement")
+	source := "integration://cached-replacement"
+	v1 := ingestIntegrationDocument(t, ctx, app, kbID, source, "The active replacement value is version one.")
+	req := rag.QueryRequest{
+		TenantID:        testTenantID,
+		KnowledgeBaseID: kbID,
+		Query:           "Active replacement value?",
+		Profile:         rag.ProfileRealtime,
+		TopK:            8,
+	}
+
+	first, err := app.RAG.Query(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.CacheStatus != "miss" || !strings.Contains(first.Answer, "version one") {
+		t.Fatalf("v1 query cache_status=%q answer=%q, want miss with v1 answer", first.CacheStatus, first.Answer)
+	}
+	if !retrievedDocument(first, v1.Document.ID) || !citedDocument(first, v1.Document.ID) {
+		t.Fatalf("v1 query does not reference document %s: citations=%#v retrieved=%#v", v1.Document.ID, first.Citations, first.RetrievedChunks)
+	}
+
+	cached, err := app.RAG.Query(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cached.CacheStatus != "hit" || !retrievedDocument(cached, v1.Document.ID) || !citedDocument(cached, v1.Document.ID) {
+		t.Fatalf("repeated v1 query did not hit cached document %s: %#v", v1.Document.ID, cached)
+	}
+	if count := countQdrantSemanticCachePoints(t, ctx, app, kbID); count == 0 {
+		t.Fatal("v1 query did not persist a semantic-cache entry")
+	}
+
+	v2 := ingestIntegrationDocument(t, ctx, app, kbID, source, "The active replacement value is version two.")
+	if count := countQdrantSemanticCachePoints(t, ctx, app, kbID); count != 0 {
+		t.Fatalf("semantic-cache points after v2 activation = %d, want 0", count)
+	}
+
+	current, err := app.RAG.Query(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.CacheStatus != "miss" || !strings.Contains(current.Answer, "version two") || strings.Contains(current.Answer, "version one") {
+		t.Fatalf("v2 query cache_status=%q answer=%q, want miss with only v2 answer", current.CacheStatus, current.Answer)
+	}
+	if !retrievedDocument(current, v2.Document.ID) || retrievedDocument(current, v1.Document.ID) {
+		t.Fatalf("v2 retrieved chunks are stale: old=%s current=%s chunks=%#v", v1.Document.ID, v2.Document.ID, current.RetrievedChunks)
+	}
+	if len(v2.Chunks) == 0 || !citedChunk(current, v2.Chunks[0].ID) || citedDocument(current, v1.Document.ID) {
+		t.Fatalf("v2 citations are stale: old=%s current=%s citations=%#v", v1.Document.ID, v2.Document.ID, current.Citations)
+	}
+}
+
 func TestLegacyQdrantPointRequiresActivePostgresChunk(t *testing.T) {
 	app := newIntegrationApp(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -1006,6 +1063,15 @@ func assertNoPostgresIngestRows(t *testing.T, ctx context.Context, app *core.App
 func citedDocument(resp rag.QueryResponse, documentID string) bool {
 	for _, citation := range resp.Citations {
 		if citation.DocumentID == documentID {
+			return true
+		}
+	}
+	return false
+}
+
+func citedChunk(resp rag.QueryResponse, chunkID string) bool {
+	for _, citation := range resp.Citations {
+		if citation.ChunkID == chunkID {
 			return true
 		}
 	}

@@ -43,17 +43,19 @@ type fixedContextualizer struct {
 func TestNewVariantServiceUsesExplicitContextualizer(t *testing.T) {
 	baseContextualizer := &fixedContextualizer{contexts: []string{"base"}}
 	explicitContextualizer := &fixedContextualizer{contexts: []string{"variant"}}
+	cache := &recordingSemanticCacheInvalidator{}
 	base := &Service{
 		Embedder:         fakeEmbedder{},
 		Contextualizer:   baseContextualizer,
 		KnowledgeBases:   kb.NewMemoryStore(),
 		Indexer:          noopIndexer{},
+		SemanticCache:    cache,
 		Jobs:             NewMemoryJobStore(),
 		Uploads:          NewMemoryUploadStore(),
 		MaxDocumentBytes: 123,
 	}
 	variant := NewVariantService(base, parser.New(parser.Config{Method: parser.MethodBasic}), chunker.Recursive{SizeTokens: 800, OverlapTokens: 120}, explicitContextualizer)
-	if variant == nil || variant.Contextualizer != explicitContextualizer || variant.Embedder != base.Embedder || variant.KnowledgeBases != base.KnowledgeBases || variant.Indexer != base.Indexer || variant.MaxDocumentBytes != base.MaxDocumentBytes {
+	if variant == nil || variant.Contextualizer != explicitContextualizer || variant.Embedder != base.Embedder || variant.KnowledgeBases != base.KnowledgeBases || variant.Indexer != base.Indexer || variant.SemanticCache != cache || variant.MaxDocumentBytes != base.MaxDocumentBytes {
 		t.Fatalf("variant=%#v", variant)
 	}
 	withoutContext := NewVariantService(base, parser.New(parser.Config{Method: parser.MethodBasic}), chunker.Recursive{}, nil)
@@ -121,6 +123,39 @@ func (i *capturingIndexer) Store(_ context.Context, doc kb.Document, chunks []kb
 	i.docs = append(i.docs, doc)
 	copied := append([]kb.Chunk(nil), chunks...)
 	i.chunks = append(i.chunks, copied)
+	return nil
+}
+
+type orderedIndexer struct {
+	events *[]string
+	err    error
+}
+
+func (i orderedIndexer) Store(context.Context, kb.Document, []kb.Chunk) error {
+	*i.events = append(*i.events, "index")
+	return i.err
+}
+
+type recordingSemanticCacheInvalidator struct {
+	events          *[]string
+	tenantID        string
+	knowledgeBaseID string
+	calls           int
+	err             error
+	failuresLeft    int
+}
+
+func (i *recordingSemanticCacheInvalidator) DeleteKnowledgeBaseSemanticCache(_ context.Context, tenantID, knowledgeBaseID string) error {
+	i.calls++
+	i.tenantID = tenantID
+	i.knowledgeBaseID = knowledgeBaseID
+	if i.events != nil {
+		*i.events = append(*i.events, "invalidate")
+	}
+	if i.failuresLeft > 0 {
+		i.failuresLeft--
+		return i.err
+	}
 	return nil
 }
 
@@ -207,12 +242,14 @@ func TestIngestPostCommitCleanupWarningSucceeds(t *testing.T) {
 	ctx := context.Background()
 	cleanupErr := errors.New("qdrant old point cleanup failed")
 	jobs := NewMemoryJobStore()
+	cache := &recordingSemanticCacheInvalidator{}
 	svc := &Service{
-		Parser:   parser.BasicParser{},
-		Splitter: chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
-		Embedder: fakeEmbedder{},
-		Indexer:  cleanupWarningIndexer{err: cleanupErr},
-		Jobs:     jobs,
+		Parser:        parser.BasicParser{},
+		Splitter:      chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder:      fakeEmbedder{},
+		Indexer:       cleanupWarningIndexer{err: cleanupErr},
+		SemanticCache: cache,
+		Jobs:          jobs,
 	}
 
 	result, err := svc.Ingest(ctx, Request{
@@ -237,6 +274,112 @@ func TestIngestPostCommitCleanupWarningSucceeds(t *testing.T) {
 	}
 	if !strings.Contains(stored.Error, cleanupErr.Error()) {
 		t.Fatalf("stored warning = %q, want %q", stored.Error, cleanupErr)
+	}
+	if cache.calls != 1 || cache.tenantID != "tenant_1" || cache.knowledgeBaseID != "kb_1" {
+		t.Fatalf("cache invalidation calls=%d scope=%q/%q", cache.calls, cache.tenantID, cache.knowledgeBaseID)
+	}
+}
+
+func TestIngestInvalidatesSemanticCacheAfterSuccessfulActivation(t *testing.T) {
+	ctx := context.Background()
+	events := []string{}
+	cache := &recordingSemanticCacheInvalidator{events: &events}
+	svc := &Service{
+		Parser:        parser.BasicParser{},
+		Splitter:      chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder:      fakeEmbedder{},
+		Indexer:       orderedIndexer{events: &events},
+		SemanticCache: cache,
+		Jobs:          NewMemoryJobStore(),
+	}
+
+	result, err := svc.Ingest(ctx, Request{
+		TenantID: "tenant_1", KnowledgeBaseID: "kb_1", SourceURI: "memory://cache.md",
+		Name: "cache.md", Content: []byte("new active document content"),
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if result.Job.Status != JobStatusSucceeded {
+		t.Fatalf("job status = %q", result.Job.Status)
+	}
+	if cache.calls != 1 || cache.tenantID != "tenant_1" || cache.knowledgeBaseID != "kb_1" {
+		t.Fatalf("cache invalidation calls=%d scope=%q/%q", cache.calls, cache.tenantID, cache.knowledgeBaseID)
+	}
+	if got := strings.Join(events, ","); got != "index,invalidate" {
+		t.Fatalf("operation order = %q, want index,invalidate", got)
+	}
+}
+
+func TestIngestDoesNotInvalidateSemanticCacheWhenActivationFails(t *testing.T) {
+	ctx := context.Background()
+	activationErr := errors.New("index activation failed")
+	events := []string{}
+	cache := &recordingSemanticCacheInvalidator{events: &events}
+	svc := &Service{
+		Parser:        parser.BasicParser{},
+		Splitter:      chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder:      fakeEmbedder{},
+		Indexer:       orderedIndexer{events: &events, err: activationErr},
+		SemanticCache: cache,
+		Jobs:          NewMemoryJobStore(),
+	}
+
+	result, err := svc.Ingest(ctx, Request{
+		TenantID: "tenant_1", KnowledgeBaseID: "kb_1", SourceURI: "memory://failed-cache.md",
+		Name: "failed-cache.md", Content: []byte("content that does not activate"),
+	})
+	if !errors.Is(err, activationErr) {
+		t.Fatalf("Ingest() error = %v, want %v", err, activationErr)
+	}
+	if result.Job.Status != JobStatusFailed {
+		t.Fatalf("job status = %q", result.Job.Status)
+	}
+	if cache.calls != 0 {
+		t.Fatalf("cache invalidation calls = %d, want 0", cache.calls)
+	}
+	if got := strings.Join(events, ","); got != "index" {
+		t.Fatalf("operations = %q, want index only", got)
+	}
+}
+
+func TestIngestSemanticCacheInvalidationFailureIsRetryable(t *testing.T) {
+	ctx := context.Background()
+	invalidationErr := errors.New("semantic cache backend unavailable")
+	cache := &recordingSemanticCacheInvalidator{err: invalidationErr, failuresLeft: 1}
+	jobs := NewMemoryJobStore()
+	svc := &Service{
+		Parser:        parser.BasicParser{},
+		Splitter:      chunker.Recursive{SizeTokens: 20, OverlapTokens: 0},
+		Embedder:      fakeEmbedder{},
+		Indexer:       noopIndexer{},
+		SemanticCache: cache,
+		Jobs:          jobs,
+	}
+	req := Request{
+		TenantID: "tenant_1", KnowledgeBaseID: "kb_1", SourceURI: "memory://retry-cache.md",
+		Name: "retry-cache.md", Content: []byte("activated content awaiting cache invalidation"),
+	}
+
+	failed, err := svc.Ingest(ctx, req)
+	var retryableErr *SemanticCacheInvalidationError
+	if !errors.As(err, &retryableErr) || !retryableErr.Retryable() || !errors.Is(err, invalidationErr) {
+		t.Fatalf("Ingest() error = %T %v, want retryable invalidation error wrapping %v", err, err, invalidationErr)
+	}
+	if failed.Job.Status != JobStatusFailed || failed.Job.DocumentID == "" || failed.Job.ChunkCount == 0 {
+		t.Fatalf("failed job = %#v", failed.Job)
+	}
+	stored, ok, getErr := jobs.GetJob(ctx, "tenant_1", failed.Job.ID)
+	if getErr != nil || !ok || stored.Status != JobStatusFailed || !strings.Contains(stored.Error, invalidationErr.Error()) {
+		t.Fatalf("stored failed job=%#v ok=%v err=%v", stored, ok, getErr)
+	}
+
+	retried, err := svc.Ingest(ctx, req)
+	if err != nil {
+		t.Fatalf("retry Ingest() error = %v", err)
+	}
+	if retried.Job.Status != JobStatusSucceeded || cache.calls != 2 {
+		t.Fatalf("retry job=%#v cache calls=%d", retried.Job, cache.calls)
 	}
 }
 

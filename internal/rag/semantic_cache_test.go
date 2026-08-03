@@ -145,6 +145,77 @@ func TestInMemorySemanticCacheIsolatesNamespace(t *testing.T) {
 	}
 }
 
+func TestInMemorySemanticCacheDeletesOnlyKnowledgeBaseScope(t *testing.T) {
+	ctx := context.Background()
+	cache := NewSemanticCache(10)
+	entries := []SemanticCacheEntry{
+		{
+			Namespace:       "production",
+			TenantID:        "tenant_target",
+			KnowledgeBaseID: "kb_target",
+			Query:           "first query",
+			Profile:         ProfileRealtime,
+			TopK:            8,
+			Response:        QueryResponse{Answer: "target production"},
+		},
+		{
+			Namespace:       "optimizer_candidate:cand_a",
+			TenantID:        "tenant_target",
+			KnowledgeBaseID: "kb_target",
+			Query:           "second query",
+			Profile:         ProfileHighPrecision,
+			TopK:            16,
+			Response:        QueryResponse{Answer: "target candidate"},
+		},
+		{
+			TenantID:        "tenant_other",
+			KnowledgeBaseID: "kb_target",
+			Query:           "first query",
+			Profile:         ProfileRealtime,
+			TopK:            8,
+			Response:        QueryResponse{Answer: "other tenant"},
+		},
+		{
+			TenantID:        "tenant_target",
+			KnowledgeBaseID: "kb_other",
+			Query:           "first query",
+			Profile:         ProfileRealtime,
+			TopK:            8,
+			Response:        QueryResponse{Answer: "other knowledge base"},
+		},
+	}
+	for _, entry := range entries {
+		if err := cache.Store(ctx, entry); err != nil {
+			t.Fatalf("Store(%q) error = %v", entry.Response.Answer, err)
+		}
+	}
+
+	if err := cache.DeleteKnowledgeBaseSemanticCache(ctx, "tenant_target", "kb_target"); err != nil {
+		t.Fatalf("DeleteKnowledgeBaseSemanticCache() error = %v", err)
+	}
+
+	for _, entry := range entries {
+		resp, ok, err := cache.Lookup(ctx, SemanticCacheLookupRequest{
+			Namespace:       entry.Namespace,
+			TenantID:        entry.TenantID,
+			KnowledgeBaseID: entry.KnowledgeBaseID,
+			Query:           entry.Query,
+			Profile:         entry.Profile,
+			TopK:            entry.TopK,
+		})
+		if err != nil {
+			t.Fatalf("Lookup(%q) error = %v", entry.Response.Answer, err)
+		}
+		wantHit := entry.TenantID != "tenant_target" || entry.KnowledgeBaseID != "kb_target"
+		if ok != wantHit {
+			t.Fatalf("Lookup(%q) hit = %v, want %v", entry.Response.Answer, ok, wantHit)
+		}
+		if ok && resp.Answer != entry.Response.Answer {
+			t.Fatalf("Lookup(%q) answer = %q", entry.Response.Answer, resp.Answer)
+		}
+	}
+}
+
 func TestCacheKeyIncludesProfileAndTopK(t *testing.T) {
 	base := QueryRequest{
 		TenantID:        "tenant_default",
@@ -244,6 +315,10 @@ func (c *recordingSemanticCache) Store(_ context.Context, entry SemanticCacheEnt
 	return nil
 }
 
+func (c *recordingSemanticCache) DeleteKnowledgeBaseSemanticCache(context.Context, string, string) error {
+	return nil
+}
+
 func TestLookupSemanticCacheRejectsMismatchedStoredProfile(t *testing.T) {
 	service := Service{Cache: staticSemanticCacheStore{
 		resp: QueryResponse{
@@ -275,5 +350,9 @@ func (s staticSemanticCacheStore) Lookup(context.Context, SemanticCacheLookupReq
 }
 
 func (s staticSemanticCacheStore) Store(context.Context, SemanticCacheEntry) error {
+	return nil
+}
+
+func (s staticSemanticCacheStore) DeleteKnowledgeBaseSemanticCache(context.Context, string, string) error {
 	return nil
 }

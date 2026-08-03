@@ -177,6 +177,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		GraphBuilder:     buildGraphBuilder(cfg),
 		KnowledgeBases:   backend.store,
 		Indexer:          backend.indexer,
+		SemanticCache:    backend.cache,
 		Jobs:             backend.jobs,
 		Uploads:          ingest.NewMemoryUploadStore(),
 		MaxDocumentBytes: cfg.Ingestion.MaxDocumentBytes,

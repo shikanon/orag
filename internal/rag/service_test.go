@@ -637,6 +637,10 @@ func (s *semanticCacheStub) Store(_ context.Context, entry SemanticCacheEntry) e
 	return nil
 }
 
+func (s *semanticCacheStub) DeleteKnowledgeBaseSemanticCache(context.Context, string, string) error {
+	return nil
+}
+
 type recordingServiceRetriever struct {
 	requests []kb.SearchRequest
 }

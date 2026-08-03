@@ -40,6 +40,28 @@ type GraphBuilder interface {
 
 var ErrKnowledgeBaseNotFound = errors.New("knowledge base not found")
 
+type SemanticCacheInvalidator interface {
+	DeleteKnowledgeBaseSemanticCache(ctx context.Context, tenantID, knowledgeBaseID string) error
+}
+
+type SemanticCacheInvalidationError struct {
+	TenantID        string
+	KnowledgeBaseID string
+	Err             error
+}
+
+func (e *SemanticCacheInvalidationError) Error() string {
+	return fmt.Sprintf("semantic cache invalidation failed for tenant %q knowledge base %q: %v", e.TenantID, e.KnowledgeBaseID, e.Err)
+}
+
+func (e *SemanticCacheInvalidationError) Unwrap() error {
+	return e.Err
+}
+
+func (e *SemanticCacheInvalidationError) Retryable() bool {
+	return true
+}
+
 type Service struct {
 	Parser           parser.Parser
 	Splitter         chunker.Recursive
@@ -49,6 +71,7 @@ type Service struct {
 	GraphBuilder     GraphBuilder
 	KnowledgeBases   kb.KnowledgeBaseRepository
 	Indexer          kb.Indexer
+	SemanticCache    SemanticCacheInvalidator
 	Jobs             JobStore
 	Uploads          UploadStore
 	MaxDocumentBytes int64
@@ -72,6 +95,7 @@ func NewVariantService(base *Service, documentParser parser.Parser, splitter chu
 		GraphBuilder:     base.GraphBuilder,
 		KnowledgeBases:   base.KnowledgeBases,
 		Indexer:          base.Indexer,
+		SemanticCache:    base.SemanticCache,
 		Jobs:             base.Jobs,
 		Uploads:          base.Uploads,
 		MaxDocumentBytes: base.MaxDocumentBytes,
@@ -202,13 +226,22 @@ func (s *Service) Ingest(ctx context.Context, req Request) (Result, error) {
 		}
 		indexWarnings = append(indexWarnings, cleanupWarning.Error())
 	}
+	job.DocumentID = doc.ID
+	job.ChunkCount = len(chunks)
+	if s.SemanticCache != nil {
+		if err := s.SemanticCache.DeleteKnowledgeBaseSemanticCache(ctx, req.TenantID, req.KnowledgeBaseID); err != nil {
+			return fail(&SemanticCacheInvalidationError{
+				TenantID:        req.TenantID,
+				KnowledgeBaseID: req.KnowledgeBaseID,
+				Err:             err,
+			})
+		}
+	}
 	graphWarnings, err := s.storeGraphRelations(ctx, doc, chunks)
 	if err != nil {
 		graphWarnings = append(graphWarnings, fmt.Sprintf("graph indexing failed: %v", err))
 	}
 	job.Status = JobStatusSucceeded
-	job.DocumentID = doc.ID
-	job.ChunkCount = len(chunks)
 	warnings := append(append(append(contextualWarnings, raptorWarnings...), indexWarnings...), graphWarnings...)
 	if len(warnings) > 0 && job.Error == "" {
 		job.Error = strings.Join(warnings, "; ")

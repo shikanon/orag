@@ -52,6 +52,9 @@ func TestNewWiresProjectServiceForMemoryBackend(t *testing.T) {
 	if app.APIKeys == nil {
 		t.Fatal("APIKeys service is nil")
 	}
+	if app.Ingest.SemanticCache != app.RAG.Cache {
+		t.Fatal("ingest and RAG services do not share the application semantic cache")
+	}
 	if _, err := app.Projects.Create(context.Background(), "tenant_a", project.CreateInput{Name: "Console"}); err != nil {
 		t.Fatal(err)
 	}

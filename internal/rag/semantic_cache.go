@@ -13,6 +13,7 @@ const semanticCacheKeyVersion = "v2"
 type SemanticCacheStore interface {
 	Lookup(ctx context.Context, req SemanticCacheLookupRequest) (QueryResponse, bool, error)
 	Store(ctx context.Context, entry SemanticCacheEntry) error
+	DeleteKnowledgeBaseSemanticCache(ctx context.Context, tenantID, knowledgeBaseID string) error
 }
 
 type SemanticCacheLookupRequest struct {
@@ -39,9 +40,11 @@ type SemanticCacheEntry struct {
 }
 
 type CacheEntry struct {
-	Query     string
-	Response  QueryResponse
-	CreatedAt time.Time
+	Query           string
+	TenantID        string
+	KnowledgeBaseID string
+	Response        QueryResponse
+	CreatedAt       time.Time
 }
 
 type InMemorySemanticCache struct {
@@ -71,7 +74,22 @@ func (c *InMemorySemanticCache) Store(_ context.Context, entry SemanticCacheEntr
 	if resp.Profile == "" {
 		resp.Profile = profile
 	}
-	c.Put(namespacedCacheKey(entry.Namespace, entry.TenantID, entry.KnowledgeBaseID, profile, entry.TopK, entry.Query), resp)
+	c.put(namespacedCacheKey(entry.Namespace, entry.TenantID, entry.KnowledgeBaseID, profile, entry.TopK, entry.Query), CacheEntry{
+		TenantID:        entry.TenantID,
+		KnowledgeBaseID: entry.KnowledgeBaseID,
+		Response:        resp,
+	})
+	return nil
+}
+
+func (c *InMemorySemanticCache) DeleteKnowledgeBaseSemanticCache(_ context.Context, tenantID, knowledgeBaseID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for cacheKey, entry := range c.entries {
+		if entry.TenantID == tenantID && entry.KnowledgeBaseID == knowledgeBaseID {
+			delete(c.entries, cacheKey)
+		}
+	}
 	return nil
 }
 
@@ -83,6 +101,10 @@ func (c *InMemorySemanticCache) Get(query string) (QueryResponse, bool) {
 }
 
 func (c *InMemorySemanticCache) Put(query string, resp QueryResponse) {
+	c.put(query, CacheEntry{Response: resp})
+}
+
+func (c *InMemorySemanticCache) put(query string, entry CacheEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.entries) >= c.max {
@@ -91,7 +113,9 @@ func (c *InMemorySemanticCache) Put(query string, resp QueryResponse) {
 			break
 		}
 	}
-	c.entries[key(query)] = CacheEntry{Query: query, Response: resp, CreatedAt: time.Now().UTC()}
+	entry.Query = query
+	entry.CreatedAt = time.Now().UTC()
+	c.entries[key(query)] = entry
 }
 
 func CacheKey(req QueryRequest) string {

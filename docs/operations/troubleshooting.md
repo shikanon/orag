@@ -62,7 +62,21 @@ curl -fsS http://localhost:8080/readyz
 | `payload_too_large` | 文档内容超过 `INGEST_MAX_DOCUMENT_BYTES`。 | 减小输入或调大配置。 |
 | `knowledge_base_not_found` | 知识库 ID 不存在或不属于当前 tenant。 | 重新运行建库脚本。 |
 | job 失败 | parser、chunker、embedding、store 任一阶段失败。 | 使用 `GET /v1/ingestion-jobs/{id}` 查看 job 结果。 |
+| job 失败且 `error` 包含 `semantic cache invalidation failed` | 新文档和 chunks 已激活，但该 tenant/knowledge-base 的旧语义缓存未能清除。 | 按“入库后语义缓存失效失败”处理；不要将 job 手工改为 `succeeded`。 |
 | job 为 `succeeded` 但 `error` 非空 | PostgreSQL 已提交新版本，但 Qdrant 旧点清理或其它非关键后处理失败。 | 将该字段按 warning 处理；确认新 chunk 已授权，再安排清理重试，不要重新标记 job 为失败。 |
+
+### 入库后语义缓存失效失败
+
+语义缓存只在新索引成功激活后，才按 tenant 和 knowledge base 范围失效。因此 parser、embedding 或索引激活失败不会破坏仍然有效的缓存；反之，失效操作本身失败时，新文档已经可检索，不会回滚到旧版本。该知识库的旧缓存答案和引用在重试成功前仍可能命中，应将此状态视为入库未完成，而不是可忽略的 cleanup warning。失效范围不会影响其他 tenant 或 knowledge base。
+
+可观测信号与恢复步骤：
+
+1. 同步入库会返回 `500 ingest_failed`，对应 ingestion job 为 `failed`，`error` 包含 tenant、knowledge base 和原始缓存后端错误。异步 `document.import` task 会记录同样的 `error_message`，进入 `failed_retryable` 并按退避自动重试；超过 `max_attempts` 后进入 `dead_letter`。
+2. 从错误中确认 tenant/knowledge-base 范围，恢复 semantic cache 后端的连接、权限和 collection，并用 `/readyz` 确认 Qdrant 及 semantic cache collection 就绪。
+3. 同步入库重新发送完全相同的 source URI 和内容；异步任务在 `failed_retryable` 时等待自动重试，进入 `dead_letter` 后调用 `POST /v1/tasks/{task_id}:retry`。重试会再次执行完整入库；同源同内容的 document ID 稳定，缓存范围删除也是幂等的。
+4. 只有 ingestion job 或 task 成功后才视为恢复。随后查询该知识库，确认不再命中更新前的缓存结果，且引用的 chunk 属于当前文档版本。
+
+在重试成功前，不要使用重启 API 进程或手工修改 job/task 状态代替范围失效：Qdrant 缓存是持久化的，重启不能清除其中的旧条目，手工改状态则会丢失未完成的一致性信号。
 
 ### PostgreSQL/Qdrant 可见性不一致
 
@@ -71,7 +85,7 @@ curl -fsS http://localhost:8080/readyz
 1. 记录 ingestion job ID、tenant、knowledge base、source URI 和 document ID。
 2. 查询 PostgreSQL `chunks`，确认候选行的 `searchable` 状态；这是 dense/sparse 可见性的最终依据。
 3. 检查 Qdrant payload 中的 `document_id`、`ingestion_job_id` 和诊断性 `searchable`。
-4. 若 job 为 `failed`，候选不得有 PostgreSQL `searchable=true` 行；旧版本应继续可查。
+4. 若 job 为 `failed` 且不是语义缓存失效失败，候选不得有 PostgreSQL `searchable=true` 行；旧版本应继续可查。语义缓存失效失败发生在新版本激活后，按上一节处理。
 5. 若 job 为 `succeeded` 且带清理 warning，新版本应为 PostgreSQL 唯一 active 版本；残留旧 Qdrant 点不会通过 PostgreSQL 屏障，可安全进入后续清理流程。
 
 不要通过手工把 Qdrant `searchable` 改为 `true` 来恢复查询：该字段不是授权源。若 PostgreSQL 可见性查询失败，dense retrieval 会 fail closed；先恢复 PostgreSQL 连接和查询能力。
