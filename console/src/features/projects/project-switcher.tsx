@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -12,8 +12,19 @@ export function ProjectSwitcher() {
   const wrapper = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const options = useRef<Array<HTMLButtonElement | null>>([])
+  const queryClient = useQueryClient()
   const projectsQuery = useQuery({ queryKey: ['projects', 'list'], queryFn: projectApi.list })
-  const activeQuery = useQuery({ queryKey: ['projects', projectId], queryFn: () => projectApi.get(projectId!), enabled: Boolean(projectId) })
+  const projectItems = projectsQuery.data?.projects ?? []
+  const listedProject = projectItems.find((item) => item.id === projectId)
+  const activeQuery = useQuery({
+    queryKey: ['projects', projectId],
+    queryFn: () => projectApi.get(projectId!),
+    enabled: Boolean(projectId) && (projectsQuery.isError || (projectsQuery.isSuccess && !listedProject)),
+  })
+
+  useEffect(() => {
+    for (const project of projectItems) queryClient.setQueryData(['projects', project.id], project)
+  }, [projectItems, queryClient])
 
   useEffect(() => {
     if (!open) return
@@ -26,7 +37,6 @@ export function ProjectSwitcher() {
     if (open) options.current[activeIndex]?.focus()
   }, [activeIndex, open])
 
-  const projectItems = projectsQuery.data?.projects ?? []
   const openMenu = (index?: number) => {
     const selectedIndex = projectItems.findIndex((project) => project.id === projectId)
     setActiveIndex(index ?? Math.max(0, selectedIndex))
@@ -52,7 +62,7 @@ export function ProjectSwitcher() {
     if (next !== index) { event.preventDefault(); setActiveIndex(next) }
   }
 
-  const activeName = activeQuery.data?.name ?? projectsQuery.data?.projects.find((item) => item.id === projectId)?.name ?? '选择项目'
+  const activeName = activeQuery.data?.name ?? listedProject?.name ?? '选择项目'
   return <div className="project-switcher" ref={wrapper}>
     <span className="control-label">当前项目</span>
     <button ref={trigger} className="project-trigger" type="button" aria-haspopup="listbox" aria-expanded={open} onKeyDown={handleTriggerKeyDown} onClick={() => open ? closeMenu() : openMenu()}>

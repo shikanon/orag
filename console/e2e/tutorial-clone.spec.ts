@@ -27,6 +27,6 @@ test('clones a Quick Pack into a project and renders setup completion', async ({
   await page.getByRole('checkbox', { name: '我已确认数据许可' }).check()
   await page.getByRole('button', { name: '创建实验项目' }).click()
   await expect(page).toHaveURL(/\/projects\/prj_clone\/tutorial\/setup\?job=tclj_clone$/)
-  await expect(page.getByText('Pack 已安装，Live Run 即将开放。')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '数据包已安装' })).toBeVisible()
   await expect(page.getByText(/access key|manifest_url|object_key/i)).toHaveCount(0)
 })

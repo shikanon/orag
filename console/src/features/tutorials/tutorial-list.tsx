@@ -1,3 +1,4 @@
+import '../../tutorials.css'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { tutorialApi, type TutorialTemplate } from '../../api/client'

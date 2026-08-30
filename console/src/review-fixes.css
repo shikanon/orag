@@ -65,3 +65,14 @@ nav a.active {
 .skeleton-line.short { width: 62%; }
 @keyframes skeleton-shift { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton-line { animation: none; } }
+
+.eyebrow {
+  display: block;
+  color: var(--muted) !important;
+  font-size: 10px;
+  letter-spacing: .09em !important;
+  text-transform: uppercase;
+}
+
+.status-dot.syncing { background: #c09a4a; }
+.status-dot.offline { background: #b66d63; }

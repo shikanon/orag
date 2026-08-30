@@ -1,3 +1,4 @@
+import '../../tutorials.css'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { tutorialApi, type TutorialCloneJob } from '../../api/client'

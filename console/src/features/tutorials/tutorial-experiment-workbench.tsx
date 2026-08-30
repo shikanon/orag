@@ -1,3 +1,4 @@
+import '../../tutorials.css'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError, tutorialApi, type TutorialExperimentRun, type TutorialExperimentRunComparison, type TutorialExperimentVariant } from '../../api/client'

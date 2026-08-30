@@ -1,21 +1,55 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useSyncExternalStore } from 'react'
+import { useIsFetching } from '@tanstack/react-query'
 import { createBrowserRouter, createMemoryRouter, Navigate, NavLink, Outlet, useLocation, useParams } from 'react-router-dom'
 import { ProjectSwitcher } from '../features/projects/project-switcher'
 import { Login } from '../features/auth/login'
 import { clearSession, useSession } from '../features/auth/session'
 
-const ProjectList = lazy(() => import('../features/projects/project-list').then((module) => ({ default: module.ProjectList })))
-const ProjectForm = lazy(() => import('../features/projects/project-form').then((module) => ({ default: module.ProjectForm })))
-const APIKeyList = lazy(() => import('../features/api-keys/api-key-list').then((module) => ({ default: module.APIKeyList })))
-const TutorialList = lazy(() => import('../features/tutorials/tutorial-list').then((module) => ({ default: module.TutorialList })))
-const TutorialDetail = lazy(() => import('../features/tutorials/tutorial-detail').then((module) => ({ default: module.TutorialDetail })))
-const TutorialCloneProgress = lazy(() => import('../features/tutorials/tutorial-clone-progress').then((module) => ({ default: module.TutorialCloneProgress })))
-const TutorialExperimentWorkbench = lazy(() => import('../features/tutorials/tutorial-experiment-workbench').then((module) => ({ default: module.TutorialExperimentWorkbench })))
-const APIDebugger = lazy(() => import('../features/debugger/api-debugger').then((module) => ({ default: module.APIDebugger })))
-const EvaluationCenter = lazy(() => import('../features/evaluation/evaluation-center').then((module) => ({ default: module.EvaluationCenter })))
-const ReleaseCenter = lazy(() => import('../features/releases/release-center').then((module) => ({ default: module.ReleaseCenter })))
-const RAGStudio = lazy(() => import('../features/studio/rag-studio').then((module) => ({ default: module.RAGStudio })))
-const GovernanceCenter = lazy(() => import('../features/governance/governance-center').then((module) => ({ default: module.GovernanceCenter })))
+const loadProjectList = () => import('../features/projects/project-list')
+const loadProjectForm = () => import('../features/projects/project-form')
+const loadAPIKeyList = () => import('../features/api-keys/api-key-list')
+const loadTutorialList = () => import('../features/tutorials/tutorial-list')
+const loadTutorialDetail = () => import('../features/tutorials/tutorial-detail')
+const loadTutorialCloneProgress = () => import('../features/tutorials/tutorial-clone-progress')
+const loadTutorialExperimentWorkbench = () => import('../features/tutorials/tutorial-experiment-workbench')
+const loadAPIDebugger = () => import('../features/debugger/api-debugger')
+const loadEvaluationCenter = () => import('../features/evaluation/evaluation-center')
+const loadReleaseCenter = () => import('../features/releases/release-center')
+const loadRAGStudio = () => import('../features/studio/rag-studio')
+const loadGovernanceCenter = () => import('../features/governance/governance-center')
+
+const ProjectList = lazy(() => loadProjectList().then((module) => ({ default: module.ProjectList })))
+const ProjectForm = lazy(() => loadProjectForm().then((module) => ({ default: module.ProjectForm })))
+const APIKeyList = lazy(() => loadAPIKeyList().then((module) => ({ default: module.APIKeyList })))
+const TutorialList = lazy(() => loadTutorialList().then((module) => ({ default: module.TutorialList })))
+const TutorialDetail = lazy(() => loadTutorialDetail().then((module) => ({ default: module.TutorialDetail })))
+const TutorialCloneProgress = lazy(() => loadTutorialCloneProgress().then((module) => ({ default: module.TutorialCloneProgress })))
+const TutorialExperimentWorkbench = lazy(() => loadTutorialExperimentWorkbench().then((module) => ({ default: module.TutorialExperimentWorkbench })))
+const APIDebugger = lazy(() => loadAPIDebugger().then((module) => ({ default: module.APIDebugger })))
+const EvaluationCenter = lazy(() => loadEvaluationCenter().then((module) => ({ default: module.EvaluationCenter })))
+const ReleaseCenter = lazy(() => loadReleaseCenter().then((module) => ({ default: module.ReleaseCenter })))
+const RAGStudio = lazy(() => loadRAGStudio().then((module) => ({ default: module.RAGStudio })))
+const GovernanceCenter = lazy(() => loadGovernanceCenter().then((module) => ({ default: module.GovernanceCenter })))
+
+const preloadProjectList = () => { void loadProjectList() }
+const preloadTutorialList = () => { void loadTutorialList() }
+const preloadAPIKeyList = () => { void loadAPIKeyList() }
+const preloadRAGStudio = () => { void loadRAGStudio() }
+const preloadAPIDebugger = () => { void loadAPIDebugger() }
+const preloadEvaluationCenter = () => { void loadEvaluationCenter() }
+const preloadReleaseCenter = () => { void loadReleaseCenter() }
+const preloadGovernanceCenter = () => { void loadGovernanceCenter() }
+
+const subscribeToNetwork = (callback: () => void) => {
+  window.addEventListener('online', callback)
+  window.addEventListener('offline', callback)
+  return () => {
+    window.removeEventListener('online', callback)
+    window.removeEventListener('offline', callback)
+  }
+}
+
+const getNetworkSnapshot = () => navigator.onLine
 
 function projectLoader({ params }: { params: { projectId?: string } }) {
   if (!params.projectId?.trim()) throw new Response('Project ID is required', { status: 400 })
@@ -26,7 +60,15 @@ function Shell() {
   const session = useSession()
   const location = useLocation()
   if (!session) return <Navigate to="/login" replace state={{ from: location.pathname }} />
-  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects">项目</NavLink><NavLink to="/tutorials">教程实验室</NavLink><NavLink to="/api-keys">API Keys</NavLink><span className="nav-heading">工作区</span><NavLink to="/projects/default/studio">RAG Studio</NavLink><NavLink to="/projects/default/debug" className="debug-nav">API Debugger</NavLink><NavLink to="/projects/default/evaluations">评测中心</NavLink><NavLink to="/projects/default/releases">发布中心</NavLink></nav><footer><span className="status-dot" /> API connected</footer></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><div className="topbar-actions"><span className="environment">Development</span><button type="button" onClick={clearSession}>退出</button></div></div><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></section></div>
+  return <div className="app-shell"><aside className="rail"><a className="brand" href="/projects"><span>O</span><strong>ORAG</strong></a><ProjectSwitcher /><nav aria-label="主导航"><NavLink to="/projects" onPointerEnter={preloadProjectList} onFocus={preloadProjectList}>项目</NavLink><NavLink to="/tutorials" onPointerEnter={preloadTutorialList} onFocus={preloadTutorialList}>教程实验室</NavLink><NavLink to="/api-keys" onPointerEnter={preloadAPIKeyList} onFocus={preloadAPIKeyList}>API Keys</NavLink><span className="nav-heading">工作区</span><NavLink to="/projects/default/studio" onPointerEnter={preloadRAGStudio} onFocus={preloadRAGStudio}>RAG Studio</NavLink><NavLink to="/projects/default/debug" className="debug-nav" onPointerEnter={preloadAPIDebugger} onFocus={preloadAPIDebugger}>API Debugger</NavLink><NavLink to="/projects/default/evaluations" onPointerEnter={preloadEvaluationCenter} onFocus={preloadEvaluationCenter}>评测中心</NavLink><NavLink to="/projects/default/releases" onPointerEnter={preloadReleaseCenter} onFocus={preloadReleaseCenter}>发布中心</NavLink></nav><ConnectionStatus /></aside><section className="workspace"><div className="topbar"><span>ORAG Console</span><div className="topbar-actions"><span className="environment">Development</span><button type="button" onClick={clearSession}>退出</button></div></div><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></section></div>
+}
+
+function ConnectionStatus() {
+  const online = useSyncExternalStore(subscribeToNetwork, getNetworkSnapshot, () => true)
+  const fetching = useIsFetching()
+  const state = online ? fetching > 0 ? 'syncing' : 'online' : 'offline'
+  const label = state === 'syncing' ? '正在同步' : state === 'online' ? '网络在线' : '网络离线'
+  return <footer aria-live="polite"><span className={`status-dot ${state}`} />{label}</footer>
 }
 
 function RouteSkeleton() {
@@ -35,7 +77,7 @@ function RouteSkeleton() {
 
 function Overview() {
   const { projectId } = useParams()
-  return <main className="content"><header className="page-header"><div><h1>项目概览</h1><p>项目 <code>{projectId}</code> 的编排、评测、治理和发布入口。</p></div><NavLink className="primary-button" to={`/projects/${projectId}/debug`}>打开 API Debugger</NavLink></header><section className="empty-state"><div className="empty-symbol">⌁</div><h2>先验证一条真实查询</h2><p>使用 API Debugger 检查答案、引用和 trace，再开始构建完整流程。</p><div className="overview-actions"><NavLink className="secondary-button" to={`/projects/${projectId}/debug`}>运行第一条查询</NavLink><NavLink className="secondary-button" to={`/projects/${projectId}/governance`}>打开任务治理</NavLink></div></section></main>
+  return <main className="content"><header className="page-header"><div><h1>项目概览</h1><p>项目 <code>{projectId}</code> 的编排、评测、治理和发布入口。</p></div><NavLink className="primary-button" to={`/projects/${projectId}/debug`} onPointerEnter={preloadAPIDebugger} onFocus={preloadAPIDebugger}>打开 API Debugger</NavLink></header><section className="empty-state"><div className="empty-symbol">⌁</div><h2>先验证一条真实查询</h2><p>使用 API Debugger 检查答案、引用和 trace，再开始构建完整流程。</p><div className="overview-actions"><NavLink className="secondary-button" to={`/projects/${projectId}/debug`} onPointerEnter={preloadAPIDebugger} onFocus={preloadAPIDebugger}>运行第一条查询</NavLink><NavLink className="secondary-button" to={`/projects/${projectId}/governance`} onPointerEnter={preloadGovernanceCenter} onFocus={preloadGovernanceCenter}>打开任务治理</NavLink></div></section></main>
 }
 
 export function createAppRouter(initialEntries?: string[]) {
