@@ -12,24 +12,24 @@
     "api:generate": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts"
   },
   "dependencies": {
-    "@tanstack/react-query": "5.101.4",
+    "@tanstack/react-query": "5.102.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-router-dom": "6.30.4"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.0",
+    "@playwright/test": "1.62.1",
     "@testing-library/jest-dom": "6.6.3",
-    "@testing-library/react": "16.3.2",
-    "@testing-library/user-event": "14.6.1",
-    "@types/react": "19.2.17",
-    "@types/react-dom": "19.2.3",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.6",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
     "@vitejs/plugin-react": "4.3.4",
     "jsdom": "29.1.1",
     "msw": "2.15.0",
     "openapi-typescript": "7.13.0",
     "typescript": "5.7.2",
     "vite": "6.4.3",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   }
 }
