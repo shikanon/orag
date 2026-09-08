@@ -26,7 +26,8 @@ LABEL org.opencontainers.image.source="https://github.com/shikanon/orag" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.created="${BUILD_TIME}" \
       org.opencontainers.image.licenses="Apache-2.0"
-RUN apk add --no-cache ca-certificates curl && \
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates curl && \
     addgroup -S -g 10001 orag && \
     adduser -S -D -H -u 10001 -G orag orag && \
     mkdir -p /demo && chown 10001:10001 /demo
