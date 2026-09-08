@@ -192,6 +192,10 @@ func TestOptimizerSurvivesProcessRestart(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	runRepo := postgres.NewRepository(application.Postgres)
+	dataset, err := application.Datasets.Create(ctx, testTenantID, "optimizer restart", "golden")
+	if err != nil {
+		t.Fatalf("create optimizer restart dataset: %v", err)
+	}
 
 	for _, test := range []struct {
 		name      string
@@ -204,8 +208,10 @@ func TestOptimizerSurvivesProcessRestart(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			service := &optimizer.Service{Repository: runRepo, Runner: restartCandidateRunner{}}
 			run, err := service.Submit(ctx, optimizer.SubmitRequest{
-				TenantID:  testTenantID,
-				Objective: optimizer.ObjectiveSpec{Maximize: "pairwise_accuracy"},
+				TenantID:        testTenantID,
+				DatasetID:       dataset.ID,
+				KnowledgeBaseID: testKBID,
+				Objective:       optimizer.ObjectiveSpec{Maximize: "pairwise_accuracy"},
 				SearchSpace: optimizer.SearchSpace{Retrieval: optimizer.RetrievalSpace{
 					DenseTopK: []int{1, 2},
 				}},

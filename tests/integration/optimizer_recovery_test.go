@@ -47,14 +47,19 @@ func TestPostgresOptimizerExpiredLeaseRecoveredOnce(t *testing.T) {
 	runRepo := postgres.NewRepository(application.Postgres)
 	queueRepo := postgres.NewTaskQueueRepository(application.Postgres)
 	now := time.Now().UTC()
+	dataset, err := application.Datasets.Create(ctx, testTenantID, "optimizer recovery", "golden")
+	if err != nil {
+		t.Fatalf("create optimizer recovery dataset: %v", err)
+	}
 	runID := id.New("opt_recovery")
 	taskID := id.New("task_recovery")
 	firstID := id.New("cand_done")
 	secondID := id.New("cand_pending")
 	run := optimizer.OptimizationRun{
-		ID: runID, TenantID: testTenantID, Objective: optimizer.ObjectiveSpec{Maximize: "pairwise_accuracy"},
-		Config: optimizer.RunConfig{Objective: optimizer.ObjectiveSpec{Maximize: "pairwise_accuracy"}, SelectionSplit: "eval"},
-		Status: optimizer.RunStatusQueued, CurrentTaskID: taskID, SamplingStrategy: optimizer.SearchStrategyGrid,
+		ID: runID, TenantID: testTenantID, DatasetID: dataset.ID, KnowledgeBaseID: testKBID,
+		Objective: optimizer.ObjectiveSpec{Maximize: "pairwise_accuracy"},
+		Config:    optimizer.RunConfig{Objective: optimizer.ObjectiveSpec{Maximize: "pairwise_accuracy"}, SelectionSplit: "eval"},
+		Status:    optimizer.RunStatusQueued, CurrentTaskID: taskID, SamplingStrategy: optimizer.SearchStrategyGrid,
 		SearchSpaceSize: 2, SampledCandidateCount: 2, Checkpoint: optimizer.Checkpoint{Stage: "submitted"},
 		CreatedAt: now, UpdatedAt: now,
 	}
