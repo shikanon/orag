@@ -322,6 +322,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Concurrency:       cfg.Execution.OptimizerConcurrency,
 		LeaseDuration:     cfg.Execution.OptimizerLeaseDuration,
 		HeartbeatInterval: cfg.Execution.OptimizerHeartbeatInterval,
+		CancelOnStop:      true,
 	})
 	taskWorker.RegisterHandler(DocumentImportTaskType, documentImportTaskHandler{ingest: ingestSvc, audit: auditSvc})
 	taskWorker.RegisterHandler(EvaluationRunTaskType, evaluationTaskHandler{runner: evalRunner, audit: auditSvc})

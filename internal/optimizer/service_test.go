@@ -955,6 +955,154 @@ func TestMemoryOptimizationExpiredLeaseRecoveryFencesStaleWrites(t *testing.T) {
 	}
 }
 
+func TestMemoryOptimizationRecoveryRestartsInterruptedHoldout(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 8, 3, 8, 0, 0, 0, time.UTC)
+	clock := &optimizerTestClock{now: now}
+	repo := NewMemoryRepository()
+	queue := repo.TaskQueue().(*taskqueue.MemoryQueueRepository)
+	queue.SetClock(clock)
+	runner := &recordingCandidateRunner{}
+	service := &Service{Repository: repo, Runner: runner, Now: clock.Now}
+	run, err := service.Submit(ctx, basicSubmitRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	leasedA, err := queue.Lease(ctx, OptimizationPool, "worker-a", 30*time.Second, 1)
+	if err != nil || len(leasedA) != 1 {
+		t.Fatalf("first lease = %#v error=%v", leasedA, err)
+	}
+	if err := queue.Heartbeat(ctx, leasedA[0].ID, leasedA[0].LeaseToken(), 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	leaseA := ExecutionLease{TaskID: leasedA[0].ID, Holder: leasedA[0].LeaseHolder, Generation: leasedA[0].LeaseGeneration}
+	if err := repo.ClaimOptimizationExecution(ctx, run.TenantID, run.ProjectID, run.ID, leaseA); err != nil {
+		t.Fatal(err)
+	}
+	ctxA := ContextWithExecutionLease(ctx, leaseA)
+	run, _, _ = repo.GetOptimizationRun(ctxA, run.TenantID, run.ID)
+	run.Status = RunStatusRunning
+	candidates, err := repo.ListOptimizationCandidates(ctxA, run.TenantID, run.ID)
+	if err != nil || len(candidates) != 2 {
+		t.Fatalf("candidates = %#v error=%v", candidates, err)
+	}
+	bestID := candidates[0].ID
+	run.BestCandidateID = bestID
+	run.Checkpoint.BestCandidateID = bestID
+	run.CompletedCandidateCount = len(candidates)
+	for i := range candidates {
+		run.Checkpoint.markCompleted(candidates[i].ID)
+		candidates[i].Status = CandidateStatusScored
+		if candidates[i].ID == bestID {
+			candidates[i].Status = CandidateStatusRunning
+		}
+		if err := repo.UpdateOptimizationCandidate(ctxA, candidates[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := repo.UpdateOptimizationRun(ctxA, run); err != nil {
+		t.Fatal(err)
+	}
+
+	clock.Add(31 * time.Second)
+	leasedB, err := queue.Lease(ctx, OptimizationPool, "worker-b", 30*time.Second, 1)
+	if err != nil || len(leasedB) != 1 {
+		t.Fatalf("recovery lease = %#v error=%v", leasedB, err)
+	}
+	if err := queue.Heartbeat(ctx, leasedB[0].ID, leasedB[0].LeaseToken(), 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	leaseB := ExecutionLease{TaskID: leasedB[0].ID, Holder: leasedB[0].LeaseHolder, Generation: leasedB[0].LeaseGeneration}
+	if err := repo.ClaimOptimizationExecution(ctx, run.TenantID, run.ProjectID, run.ID, leaseB); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunPending(ContextWithExecutionLease(ctx, leaseB), run.TenantID, run.ID, SubmitRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	status, _, err := service.Get(ctx, run.TenantID, run.ID)
+	if err != nil || status.Run.Status != RunStatusCompleted || status.Run.HoldoutCandidateID != bestID {
+		t.Fatalf("recovered holdout run = %#v error=%v", status.Run, err)
+	}
+	if runner.selectionCount(bestID) != 0 || !runner.saw(bestID, PhaseHoldout, "holdout") {
+		t.Fatalf("runner calls = %#v, want only recovered holdout for %s", runner.calls, bestID)
+	}
+}
+
+func TestMemoryOptimizationCompletedRunReconcilesRetriedTask(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 8, 3, 8, 0, 0, 0, time.UTC)
+	clock := &optimizerTestClock{now: now}
+	repo := NewMemoryRepository()
+	queue := repo.TaskQueue().(*taskqueue.MemoryQueueRepository)
+	queue.SetClock(clock)
+	service := &Service{Repository: repo, Runner: &recordingCandidateRunner{}, Now: clock.Now}
+	run, err := service.Submit(ctx, basicSubmitRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	leasedA, err := queue.Lease(ctx, OptimizationPool, "worker-a", 30*time.Second, 1)
+	if err != nil || len(leasedA) != 1 {
+		t.Fatalf("first lease = %#v error=%v", leasedA, err)
+	}
+	if err := queue.Heartbeat(ctx, leasedA[0].ID, leasedA[0].LeaseToken(), 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	leaseA := ExecutionLease{TaskID: leasedA[0].ID, Holder: leasedA[0].LeaseHolder, Generation: leasedA[0].LeaseGeneration}
+	if err := repo.ClaimOptimizationExecution(ctx, run.TenantID, run.ProjectID, run.ID, leaseA); err != nil {
+		t.Fatal(err)
+	}
+	ctxA := ContextWithExecutionLease(ctx, leaseA)
+	run, _, _ = repo.GetOptimizationRun(ctxA, run.TenantID, run.ID)
+	run.Status = RunStatusCompleted
+	if err := repo.UpdateOptimizationRun(ctxA, run); err != nil {
+		t.Fatal(err)
+	}
+
+	clock.Add(31 * time.Second)
+	leasedB, err := queue.Lease(ctx, OptimizationPool, "worker-b", 30*time.Second, 1)
+	if err != nil || len(leasedB) != 1 {
+		t.Fatalf("recovery lease = %#v error=%v", leasedB, err)
+	}
+	if err := queue.Heartbeat(ctx, leasedB[0].ID, leasedB[0].LeaseToken(), 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.HandleTask(ctx, leasedB[0], nil); err != nil {
+		t.Fatalf("HandleTask() completed reconciliation error = %v", err)
+	}
+}
+
+func TestMemoryOptimizationResumeResetsInterruptedCandidate(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMemoryRepository()
+	service := &Service{Repository: repo, Runner: &recordingCandidateRunner{}}
+	run, err := service.Submit(ctx, basicSubmitRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.TaskQueue().Cancel(ctx, run.CurrentTaskID); err != nil {
+		t.Fatal(err)
+	}
+	run.Status = RunStatusCanceled
+	if err := repo.UpdateOptimizationRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := repo.ListOptimizationCandidates(ctx, run.TenantID, run.ID)
+	if err != nil || len(candidates) == 0 {
+		t.Fatalf("candidates = %#v error=%v", candidates, err)
+	}
+	candidates[0].Status = CandidateStatusRunning
+	if err := repo.UpdateOptimizationCandidate(ctx, candidates[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Resume(ctx, run.TenantID, run.ID, SubmitRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err = repo.ListOptimizationCandidates(ctx, run.TenantID, run.ID)
+	if err != nil || candidateByID(candidates, candidates[0].ID).Status != CandidateStatusQueued {
+		t.Fatalf("candidate after resume = %#v error=%v", candidates, err)
+	}
+}
+
 func basicSubmitRequest() SubmitRequest {
 	return SubmitRequest{
 		TenantID:        "tenant_a",

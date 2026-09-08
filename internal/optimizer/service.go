@@ -383,10 +383,12 @@ func (s *Service) run(ctx context.Context, runID string, req SubmitRequest) erro
 	if run.Status == RunStatusCanceled || run.Status == RunStatusBudgetStopped {
 		return nil
 	}
-	if err := s.scoreAndPromote(ctx, &run, req); err != nil {
-		return s.failRun(ctx, &run, err)
+	if run.BestCandidateID == "" {
+		if err := s.scoreAndPromote(ctx, &run, req); err != nil {
+			return s.failRun(ctx, &run, err)
+		}
 	}
-	if req.HoldoutSplit != "" && run.BestCandidateID != "" {
+	if req.HoldoutSplit != "" && run.BestCandidateID != "" && run.HoldoutCandidateID == "" {
 		if err := s.runHoldout(ctx, &run, req); err != nil {
 			return s.failRun(ctx, &run, err)
 		}

@@ -201,7 +201,7 @@ func (r *TaskQueueRepository) Lease(ctx context.Context, pool, leaseHolder strin
 		UPDATE task_queue
 		SET status='queued', lease_expires_at=NULL, lease_holder=NULL, updated_at=NOW()
 		WHERE pool=$1
-		  AND status IN ('leased','running')
+		  AND status IN ('leased','running','cancelling')
 		  AND lease_expires_at IS NOT NULL
 		  AND lease_expires_at <= NOW()`, pool); err != nil {
 		return nil, err

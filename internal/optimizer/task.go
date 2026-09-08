@@ -21,7 +21,12 @@ const (
 	optimizationPayloadVersion = 1
 )
 
-var ErrOptimizationOwnershipLost = errors.New("optimization execution ownership lost")
+var (
+	ErrOptimizationOwnershipLost    = errors.New("optimization execution ownership lost")
+	ErrOptimizationAlreadyCompleted = errors.New("optimization execution already completed")
+	ErrOptimizationAlreadyCanceled  = errors.New("optimization execution already canceled")
+	ErrOptimizationAlreadyFailed    = errors.New("optimization execution already failed")
+)
 
 type ExecutionTaskPayload struct {
 	Version int    `json:"version"`
@@ -37,6 +42,10 @@ type ExecutionLease struct {
 type terminalExecutionError struct{ error }
 
 func (terminalExecutionError) Retryable() bool { return false }
+
+type cancelledExecutionError struct{ error }
+
+func (cancelledExecutionError) Cancelled() bool { return true }
 
 type executionLeaseContextKey struct{}
 
@@ -119,7 +128,16 @@ func (s *Service) HandleTask(ctx context.Context, task taskqueue.Task, _ taskque
 		return errors.New("optimizer repository does not support durable execution")
 	}
 	if err := repository.ClaimOptimizationExecution(ctx, task.TenantID, task.ProjectID, payload.RunID, lease); err != nil {
-		return err
+		switch {
+		case errors.Is(err, ErrOptimizationAlreadyCompleted):
+			return nil
+		case errors.Is(err, ErrOptimizationAlreadyCanceled):
+			return cancelledExecutionError{err}
+		case errors.Is(err, ErrOptimizationAlreadyFailed):
+			return terminalExecutionError{err}
+		default:
+			return err
+		}
 	}
 	executionCtx := ContextWithExecutionLease(ctx, lease)
 	err = s.RunPending(executionCtx, task.TenantID, payload.RunID, SubmitRequest{})
@@ -133,8 +151,16 @@ func (s *Service) HandleTask(ctx context.Context, task taskqueue.Task, _ taskque
 		if getErr == nil && found && run.Status == RunStatusFailed {
 			return terminalExecutionError{err}
 		}
+		return err
 	}
-	return err
+	run, found, getErr := s.repo().GetOptimizationRun(context.WithoutCancel(executionCtx), task.TenantID, payload.RunID)
+	if getErr != nil {
+		return getErr
+	}
+	if found && run.Status == RunStatusCanceled {
+		return cancelledExecutionError{ErrOptimizationAlreadyCanceled}
+	}
+	return nil
 }
 
 func (s *Service) finalizeTaskCancellation(ctx context.Context, tenantID, runID string) error {

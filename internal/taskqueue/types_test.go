@@ -423,7 +423,7 @@ func TestMemoryQueueRepositoryResourceLockActiveStatusesBlock(t *testing.T) {
 }
 
 func TestMemoryQueueRepositoryResourceLockExpiredLeaseDoesNotBlock(t *testing.T) {
-	for _, status := range []TaskStatus{TaskStatusLeased, TaskStatusRunning} {
+	for _, status := range []TaskStatus{TaskStatusLeased, TaskStatusRunning, TaskStatusCancelling} {
 		t.Run(string(status), func(t *testing.T) {
 			startTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 			fc := newFakeClock(startTime)
@@ -446,6 +446,11 @@ func TestMemoryQueueRepositoryResourceLockExpiredLeaseDoesNotBlock(t *testing.T)
 			if status == TaskStatusRunning {
 				if err := repo.Heartbeat(ctx, blocker.ID, leased[0].LeaseToken(), 30*time.Second); err != nil {
 					t.Fatalf("Heartbeat failed: %v", err)
+				}
+			}
+			if status == TaskStatusCancelling {
+				if err := repo.Cancel(ctx, blocker.ID); err != nil {
+					t.Fatalf("Cancel failed: %v", err)
 				}
 			}
 
@@ -506,6 +511,36 @@ func TestLeaseExpiry(t *testing.T) {
 	}
 	if leased3[0].Attempt != 2 {
 		t.Errorf("expected attempt 2, got %d", leased3[0].Attempt)
+	}
+}
+
+func TestCancellingLeaseIsRecoverableAfterExpiry(t *testing.T) {
+	startTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	fc := newFakeClock(startTime)
+	repo := NewMemoryQueueRepository()
+	repo.SetClock(fc)
+	ctx := context.Background()
+	task, err := repo.Enqueue(ctx, newTestTask("default", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 1)
+	if err != nil || len(leased) != 1 {
+		t.Fatalf("first lease = %#v error=%v", leased, err)
+	}
+	if err := repo.Heartbeat(ctx, task.ID, leased[0].LeaseToken(), 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Cancel(ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	fc.Add(31 * time.Second)
+	recovered, err := repo.Lease(ctx, "default", "worker-2", 30*time.Second, 1)
+	if err != nil || len(recovered) != 1 {
+		t.Fatalf("recovered lease = %#v error=%v", recovered, err)
+	}
+	if recovered[0].LeaseGeneration <= leased[0].LeaseGeneration {
+		t.Fatalf("recovered generation = %d, want > %d", recovered[0].LeaseGeneration, leased[0].LeaseGeneration)
 	}
 }
 

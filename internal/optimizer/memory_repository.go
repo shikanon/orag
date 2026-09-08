@@ -90,6 +90,16 @@ func (r *MemoryRepository) ResumeOptimizationRunWithTask(ctx context.Context, ru
 	if _, err := r.taskQueue.Enqueue(ctx, task); err != nil {
 		return false, err
 	}
+	for candidateID, candidate := range r.candidates {
+		if candidate.OptimizationRunID != run.ID {
+			continue
+		}
+		if status, reset := recoveredCandidateStatus(current, candidate); reset {
+			candidate.Status = status
+			candidate.UpdatedAt = run.UpdatedAt
+			r.candidates[candidateID] = candidate
+		}
+	}
 	r.runs[run.ID] = run
 	return true, nil
 }
@@ -112,16 +122,13 @@ func (r *MemoryRepository) CancelOptimizationRunWithTask(ctx context.Context, te
 		return OptimizationRun{}, false, err
 	}
 	run.Status = RunStatusCanceling
-	if !found || task.Status == taskqueue.TaskStatusQueued || task.Status == taskqueue.TaskStatusFailedRetryable ||
-		task.Status == taskqueue.TaskStatusLeased || task.Status == taskqueue.TaskStatusCancelled ||
-		task.Status == taskqueue.TaskStatusFailedTerminal || task.Status == taskqueue.TaskStatusDeadLetter {
-		run.Status = RunStatusCanceled
-	}
+	immediate := !found || task.Status == taskqueue.TaskStatusQueued || task.Status == taskqueue.TaskStatusFailedRetryable ||
+		task.Status == taskqueue.TaskStatusCancelled || task.Status == taskqueue.TaskStatusFailedTerminal ||
+		task.Status == taskqueue.TaskStatusDeadLetter
 	run.StatusReason = reason
 	run.CancelRequestedAt = &now
 	run.Checkpoint.CancelRequestedAt = &now
 	run.Checkpoint.StatusReason = reason
-	run.Checkpoint.Stage = string(run.Status)
 	run.UpdatedAt = now
 	if found {
 		if err := r.taskQueue.Cancel(ctx, task.ID); err != nil {
@@ -129,10 +136,18 @@ func (r *MemoryRepository) CancelOptimizationRunWithTask(ctx context.Context, te
 		}
 		if task.Status == taskqueue.TaskStatusLeased {
 			if err := r.taskQueue.MarkCancelled(ctx, task.ID, task.LeaseToken()); err != nil {
-				return OptimizationRun{}, false, err
+				if !errors.Is(err, taskqueue.ErrLeaseLost) {
+					return OptimizationRun{}, false, err
+				}
+			} else {
+				immediate = true
 			}
 		}
 	}
+	if immediate {
+		run.Status = RunStatusCanceled
+	}
+	run.Checkpoint.Stage = string(run.Status)
 	r.runs[runID] = run
 	return run, true, nil
 }
@@ -163,19 +178,24 @@ func (r *MemoryRepository) ClaimOptimizationExecution(ctx context.Context, tenan
 	switch run.Status {
 	case RunStatusQueued, RunStatusCanceling:
 	case RunStatusRunning:
-		completed := run.Checkpoint.completedSet()
 		for candidateID, candidate := range r.candidates {
-			if candidate.OptimizationRunID == run.ID &&
-				(candidate.Status == CandidateStatusRunning || candidate.Status == CandidateStatusEvaluated || candidate.Status == CandidateStatusJudged) {
-				if _, done := completed[candidate.ID]; !done {
-					candidate.Status = CandidateStatusQueued
-					candidate.UpdatedAt = time.Now().UTC()
-					r.candidates[candidateID] = candidate
-				}
+			if candidate.OptimizationRunID != run.ID {
+				continue
+			}
+			if status, reset := recoveredCandidateStatus(run, candidate); reset {
+				candidate.Status = status
+				candidate.UpdatedAt = time.Now().UTC()
+				r.candidates[candidateID] = candidate
 			}
 		}
 		run.Status = RunStatusQueued
 		run.Checkpoint.Stage = "recovered"
+	case RunStatusCompleted, RunStatusBudgetStopped:
+		return ErrOptimizationAlreadyCompleted
+	case RunStatusCanceled:
+		return ErrOptimizationAlreadyCanceled
+	case RunStatusFailed:
+		return ErrOptimizationAlreadyFailed
 	default:
 		return ErrOptimizationOwnershipLost
 	}
@@ -183,6 +203,22 @@ func (r *MemoryRepository) ClaimOptimizationExecution(ctx context.Context, tenan
 	run.UpdatedAt = time.Now().UTC()
 	r.runs[run.ID] = run
 	return nil
+}
+
+func recoveredCandidateStatus(run OptimizationRun, candidate OptimizationCandidate) (CandidateStatus, bool) {
+	switch candidate.Status {
+	case CandidateStatusRunning, CandidateStatusEvaluated, CandidateStatusJudged,
+		CandidateStatusHoldoutEvaluated, CandidateStatusPromoted, CandidateStatusCleanupDone:
+	default:
+		return "", false
+	}
+	if run.Config.HoldoutSplit != "" && candidate.ID == run.BestCandidateID && run.HoldoutCandidateID == "" {
+		return CandidateStatusScored, true
+	}
+	if _, completed := run.Checkpoint.completedSet()[candidate.ID]; !completed {
+		return CandidateStatusQueued, true
+	}
+	return "", false
 }
 
 func (r *MemoryRepository) GetOptimizationRun(_ context.Context, tenantID, runID string) (OptimizationRun, bool, error) {

@@ -98,9 +98,7 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 		}
 
 		switch task.Status {
-		case TaskStatusCancelling:
-			activeResources[resource] = struct{}{}
-		case TaskStatusLeased, TaskStatusRunning:
+		case TaskStatusLeased, TaskStatusRunning, TaskStatusCancelling:
 			if task.LeaseExpiresAt.IsZero() || task.LeaseExpiresAt.After(now) {
 				activeResources[resource] = struct{}{}
 			}
@@ -120,7 +118,7 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 		switch task.Status {
 		case TaskStatusQueued:
 			readyTasks = append(readyTasks, task)
-		case TaskStatusLeased, TaskStatusRunning:
+		case TaskStatusLeased, TaskStatusRunning, TaskStatusCancelling:
 			if !task.LeaseExpiresAt.IsZero() && !task.LeaseExpiresAt.After(now) {
 				readyTasks = append(readyTasks, task)
 			}

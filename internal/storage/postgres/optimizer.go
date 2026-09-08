@@ -309,6 +309,25 @@ func (r *Repository) ResumeOptimizationRunWithTask(ctx context.Context, run opti
 	if tag.RowsAffected() == 0 {
 		return false, nil
 	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE optimization_candidates
+		SET status='queued', updated_at=$2
+		WHERE optimization_run_id=$1
+		  AND status IN ('running','evaluated','judged')
+		  AND NOT (COALESCE($3::jsonb->'completed_candidate_ids','[]'::jsonb) ? id)`,
+		run.ID, run.UpdatedAt, checkpoint); err != nil {
+		return false, err
+	}
+	if run.Config.HoldoutSplit != "" && run.BestCandidateID != "" && run.HoldoutCandidateID == "" {
+		if _, err := tx.Exec(ctx, `
+			UPDATE optimization_candidates
+			SET status='scored', updated_at=$2
+			WHERE optimization_run_id=$1 AND id=$3
+			  AND status IN ('running','evaluated','judged','holdout_evaluated','promoted','cleanup_done')`,
+			run.ID, run.UpdatedAt, run.BestCandidateID); err != nil {
+			return false, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return false, err
 	}
@@ -436,13 +455,35 @@ func (r *Repository) ClaimOptimizationExecution(ctx context.Context, tenantID, p
 	case optimizer.RunStatusQueued, optimizer.RunStatusCanceling:
 	case optimizer.RunStatusRunning:
 		if _, err := tx.Exec(ctx, `
-			UPDATE optimization_candidates c SET status='queued', updated_at=NOW()
+			UPDATE optimization_candidates c
+			SET status=CASE
+					WHEN c.id=r.best_candidate_id
+					 AND COALESCE(r.holdout_candidate_id,'')=''
+					 AND COALESCE(r.runner->'run_config'->>'holdout_split','')<>''
+					THEN 'scored'
+					ELSE 'queued'
+				END,
+				updated_at=NOW()
 			FROM optimization_runs r
-			WHERE c.optimization_run_id=r.id AND r.id=$1 AND c.status IN ('running','evaluated','judged')
-				AND NOT (COALESCE(r.checkpoint->'completed_candidate_ids','[]'::jsonb) ? c.id)`, runID); err != nil {
+			WHERE c.optimization_run_id=r.id AND r.id=$1
+			  AND (
+				(c.status IN ('running','evaluated','judged')
+				 AND NOT (COALESCE(r.checkpoint->'completed_candidate_ids','[]'::jsonb) ? c.id))
+				OR
+				(c.id=r.best_candidate_id
+				 AND COALESCE(r.holdout_candidate_id,'')=''
+				 AND COALESCE(r.runner->'run_config'->>'holdout_split','')<>''
+				 AND c.status IN ('running','evaluated','judged','holdout_evaluated','promoted','cleanup_done'))
+			  )`, runID); err != nil {
 			return err
 		}
 		status = optimizer.RunStatusQueued
+	case optimizer.RunStatusCompleted, optimizer.RunStatusBudgetStopped:
+		return optimizer.ErrOptimizationAlreadyCompleted
+	case optimizer.RunStatusCanceled:
+		return optimizer.ErrOptimizationAlreadyCanceled
+	case optimizer.RunStatusFailed:
+		return optimizer.ErrOptimizationAlreadyFailed
 	default:
 		return optimizer.ErrOptimizationOwnershipLost
 	}

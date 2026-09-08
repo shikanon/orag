@@ -1,7 +1,7 @@
 # Optimizer Task-Queue Crash Recovery Design
 
-**Status:** Implemented on 2026-08-03  
-**Issue:** #396  
+**Status:** Implemented on 2026-08-03
+**Issue:** #396
 **Depends on:** [Optimizer single-flight state transitions](2026-07-15-optimizer-singleflight-design.md)
 
 ## Outcome
