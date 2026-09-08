@@ -59,6 +59,51 @@ func TestPostgresTaskQueueResourceLockLease(t *testing.T) {
 		}
 	})
 
+	t.Run("locked rows do not consume batch capacity", func(t *testing.T) {
+		scenarioID := id.New("resource_lock_skip_locked")
+		pool := "integration-" + scenarioID
+		lockedIDs := []string{id.New("task"), id.New("task")}
+		availableIDs := []string{id.New("task"), id.New("task")}
+		for i, taskID := range append(lockedIDs, availableIDs...) {
+			enqueue(t, pool, taskID, "", "", 4-i)
+		}
+
+		tx, err := app.Postgres.Begin(ctx)
+		if err != nil {
+			t.Fatalf("begin row-lock transaction: %v", err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		rows, err := tx.Query(ctx, `
+			SELECT id
+			FROM task_queue
+			WHERE id = ANY($1)
+			FOR UPDATE`, lockedIDs)
+		if err != nil {
+			t.Fatalf("lock leading task rows: %v", err)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			t.Fatalf("read locked task rows: %v", err)
+		}
+
+		leased, err := repo.Lease(ctx, pool, "skip-locked-worker-"+scenarioID, time.Minute, 2)
+		if err != nil {
+			t.Fatalf("lease behind locked rows: %v", err)
+		}
+		if len(leased) != len(availableIDs) {
+			t.Fatalf("leased %d tasks behind locked rows, want %d", len(leased), len(availableIDs))
+		}
+		leasedIDs := make(map[string]bool, len(leased))
+		for _, task := range leased {
+			leasedIDs[task.ID] = true
+		}
+		for _, taskID := range availableIDs {
+			if !leasedIDs[taskID] {
+				t.Errorf("available task %q was not leased", taskID)
+			}
+		}
+	})
+
 	t.Run("concurrent workers have one winner", func(t *testing.T) {
 		const iterations = 8
 		for iteration := 0; iteration < iterations; iteration++ {

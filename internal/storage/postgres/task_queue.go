@@ -239,21 +239,18 @@ func (r *TaskQueueRepository) Lease(ctx context.Context, pool, leaseHolder strin
 					  AND active.id != candidate.id
 				)
 			  )
-		), batch AS MATERIALIZED (
-			SELECT id, priority, created_at
-			FROM ranked
-			WHERE resource_rank = 1
-			ORDER BY priority DESC, created_at, id
-			LIMIT $2
 		)
 		SELECT candidate.id,
 		       COALESCE(candidate.locked_resource_type, ''),
 		       COALESCE(candidate.locked_resource_id, '')
 		FROM task_queue candidate
-		JOIN batch ON batch.id = candidate.id
-		ORDER BY batch.priority DESC, batch.created_at, batch.id
+		JOIN ranked ON ranked.id = candidate.id
+		WHERE ranked.resource_rank = 1
+		ORDER BY ranked.priority DESC, ranked.created_at, ranked.id
+		LIMIT $2
 		-- Row locks prevent duplicate leasing of the same task while SKIP LOCKED
-		-- lets competing workers continue without waiting.
+		-- lets competing workers continue with later eligible rows. LIMIT belongs
+		-- after row locking so skipped rows do not consume the batch capacity.
 		FOR UPDATE OF candidate SKIP LOCKED`, pool, maxTasks)
 	if err != nil {
 		return nil, err
