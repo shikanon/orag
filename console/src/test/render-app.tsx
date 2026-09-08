@@ -9,6 +9,6 @@ export function renderApp(path: string, options: { authenticated?: boolean } = {
   else storeSession('test-access-token', 3600)
   const queryClient = createQueryClient()
   const router = createAppRouter([path])
-  render(<AppProviders queryClient={queryClient}><RouterProvider router={router} future={{ v7_startTransition: true }} /></AppProviders>)
+  render(<AppProviders queryClient={queryClient}><RouterProvider router={router} /></AppProviders>)
   return { queryClient, router }
 }

@@ -120,6 +120,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		queueRepo = postgres.NewTaskQueueRepository(backend.pool)
 		auditRepo = postgres.NewAuditRepository(backend.pool)
 	}
+	if memoryOptimizer, ok := backend.optimizerRepo.(*optimizer.MemoryRepository); ok {
+		memoryOptimizer.SetTaskQueue(queueRepo)
+	}
 	auditSvc := audit.NewAuditService(auditRepo, nil, 0)
 	taskSvc := taskqueue.NewService(queueRepo, auditSvc)
 	modelReadinessSvc := modelreadiness.NewProbeService(model, auditSvc, nil)
@@ -305,6 +308,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Repository: backend.evalRepo,
 		Namespaces: optimizer.NewTempNamespaceManager(nil),
 	}
+	optimizerSvc := &optimizer.Service{Repository: backend.optimizerRepo, Runner: optimizerRunner}
 	offlineKnowledgeOptions := buildOfflineKnowledgeOptions(cfg, backend, model, retriever, ragSvc, datasets, metrics)
 	configureRAGShadow(ragSvc, cfg.Maintenance.OfflineKnowledgeOrganizer, offlineKnowledgeOptions)
 	offlineKnowledgeSvc := offlineknowledge.NewService(backend.offlineKnowledgeRepo, offlineKnowledgeOptions)
@@ -313,8 +317,16 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	taskWorker := taskqueue.NewWorkerPool(queueRepo, logger)
 	taskWorker.RegisterPool(taskqueue.PoolConfig{Name: IngestionCorePool, Concurrency: 4})
 	taskWorker.RegisterPool(taskqueue.PoolConfig{Name: EvaluationPool, Concurrency: 2})
+	taskWorker.RegisterPool(taskqueue.PoolConfig{
+		Name:              OptimizerPool,
+		Concurrency:       cfg.Execution.OptimizerConcurrency,
+		LeaseDuration:     cfg.Execution.OptimizerLeaseDuration,
+		HeartbeatInterval: cfg.Execution.OptimizerHeartbeatInterval,
+		CancelOnStop:      true,
+	})
 	taskWorker.RegisterHandler(DocumentImportTaskType, documentImportTaskHandler{ingest: ingestSvc, audit: auditSvc})
 	taskWorker.RegisterHandler(EvaluationRunTaskType, evaluationTaskHandler{runner: evalRunner, audit: auditSvc})
+	taskWorker.RegisterHandler(OptimizerTaskType, optimizerTaskHandler{service: optimizerSvc})
 	taskWorker.Start(context.Background())
 	closers = append(closers, func() error { taskWorker.Stop(); return nil })
 	otlpNeedsCleanup = false // closers own the OTLP provider on all subsequent paths.
@@ -369,26 +381,23 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		VideoEvaluations:    videoEvaluations,
 		Eval:                evalRunner,
 		EvaluationPolicy:    evaluationPolicySvc,
-		Optimizer: &optimizer.Service{
-			Repository: backend.optimizerRepo,
-			Runner:     optimizerRunner,
-		},
-		OfflineKnowledge: offlineKnowledgeSvc,
-		OfflineScheduler: offlineScheduler,
-		Release:          releaseSvc,
-		Pipeline:         pipelineSvc,
-		PipelineCompiler: &pipelineCompiler,
-		PipelineDebug:    pipelineDebug,
-		ProductionQuery:  productionQuery,
-		Metrics:          metrics,
-		Traces:           backend.traceRepo,
-		TaskQueue:        taskSvc,
-		Audit:            auditSvc,
-		ModelReadiness:   modelReadinessSvc,
-		TaskWorker:       taskWorker,
-		Postgres:         backend.pool,
-		Qdrant:           backend.qdrant,
-		closers:          closers,
+		Optimizer:           optimizerSvc,
+		OfflineKnowledge:    offlineKnowledgeSvc,
+		OfflineScheduler:    offlineScheduler,
+		Release:             releaseSvc,
+		Pipeline:            pipelineSvc,
+		PipelineCompiler:    &pipelineCompiler,
+		PipelineDebug:       pipelineDebug,
+		ProductionQuery:     productionQuery,
+		Metrics:             metrics,
+		Traces:              backend.traceRepo,
+		TaskQueue:           taskSvc,
+		Audit:               auditSvc,
+		ModelReadiness:      modelReadinessSvc,
+		TaskWorker:          taskWorker,
+		Postgres:            backend.pool,
+		Qdrant:              backend.qdrant,
+		closers:             closers,
 	}
 	return app, nil
 }

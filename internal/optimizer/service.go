@@ -65,6 +65,8 @@ type OptimizationRun struct {
 	CostUSD                 float64
 	CostBudgetUSD           *float64
 	CancelRequestedAt       *time.Time
+	CurrentTaskID           string
+	ExecutionGeneration     int64
 	CreatedAt               time.Time
 	UpdatedAt               time.Time
 }
@@ -187,11 +189,20 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (OptimizationRu
 		}
 		candidates = append(candidates, candidate)
 	}
-	if err := s.repo().CreateOptimizationRunWithCandidates(ctx, run, candidates); err != nil {
+	task, err := NewExecutionTask(run, now)
+	if err != nil {
 		return OptimizationRun{}, err
 	}
-	if !s.DisableAutoStart {
-		go s.run(context.Background(), run.ID, req)
+	if s.DisableAutoStart {
+		task.RunAfter = now.Add(100 * 365 * 24 * time.Hour)
+	}
+	if repository, ok := s.repo().(ExecutionRepository); ok {
+		run.CurrentTaskID = task.ID
+		if err := repository.CreateOptimizationRunWithTask(ctx, run, candidates, task); err != nil {
+			return OptimizationRun{}, err
+		}
+	} else if err := s.repo().CreateOptimizationRunWithCandidates(ctx, run, candidates); err != nil {
+		return OptimizationRun{}, err
 	}
 	return run, nil
 }
@@ -234,6 +245,16 @@ func (s *Service) Cancel(ctx context.Context, tenantID, runID, reason string) (O
 		return OptimizationRun{}, ErrOptimizationNotFound
 	}
 	now := s.clock()
+	if repository, supported := s.repo().(ExecutionRepository); supported && run.CurrentTaskID != "" {
+		canceled, found, cancelErr := repository.CancelOptimizationRunWithTask(ctx, tenantID, runID, reason, now)
+		if cancelErr != nil {
+			return OptimizationRun{}, cancelErr
+		}
+		if !found {
+			return OptimizationRun{}, ErrOptimizationNotFound
+		}
+		return canceled, nil
+	}
 	run.Status = RunStatusCanceling
 	run.StatusReason = reason
 	run.CancelRequestedAt = &now
@@ -282,15 +303,26 @@ func (s *Service) Resume(ctx context.Context, tenantID, runID string, req Submit
 	run.Checkpoint.CancelRequestedAt = nil
 	run.Checkpoint.StatusReason = ""
 	run.UpdatedAt = now
-	swapped, err := s.repo().CompareAndSwapOptimizationRun(ctx, run, expectedStatus)
+	task, err := NewExecutionTask(run, now)
+	if err != nil {
+		return OptimizationRun{}, err
+	}
+	if s.DisableAutoStart {
+		task.RunAfter = now.Add(100 * 365 * 24 * time.Hour)
+	}
+	run.CurrentTaskID = task.ID
+	run.ExecutionGeneration = 0
+	var swapped bool
+	if repository, ok := s.repo().(ExecutionRepository); ok {
+		swapped, err = repository.ResumeOptimizationRunWithTask(ctx, run, expectedStatus, task)
+	} else {
+		swapped, err = s.repo().CompareAndSwapOptimizationRun(ctx, run, expectedStatus)
+	}
 	if err != nil {
 		return OptimizationRun{}, err
 	}
 	if !swapped {
 		return OptimizationRun{}, stateConflict("optimization run " + run.ID + " changed while resuming")
-	}
-	if !s.DisableAutoStart {
-		go s.run(context.Background(), run.ID, resumeReq)
 	}
 	return run, nil
 }
@@ -351,10 +383,12 @@ func (s *Service) run(ctx context.Context, runID string, req SubmitRequest) erro
 	if run.Status == RunStatusCanceled || run.Status == RunStatusBudgetStopped {
 		return nil
 	}
-	if err := s.scoreAndPromote(ctx, &run, req); err != nil {
-		return s.failRun(ctx, &run, err)
+	if run.BestCandidateID == "" {
+		if err := s.scoreAndPromote(ctx, &run, req); err != nil {
+			return s.failRun(ctx, &run, err)
+		}
 	}
-	if req.HoldoutSplit != "" && run.BestCandidateID != "" {
+	if req.HoldoutSplit != "" && run.BestCandidateID != "" && run.HoldoutCandidateID == "" {
 		if err := s.runHoldout(ctx, &run, req); err != nil {
 			return s.failRun(ctx, &run, err)
 		}

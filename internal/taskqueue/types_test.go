@@ -225,6 +225,256 @@ func TestLeaseConcurrency(t *testing.T) {
 	}
 }
 
+func TestMemoryQueueRepositoryResourceLockSelectsFirstTask(t *testing.T) {
+	startTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	fc := newFakeClock(startTime)
+	repo := NewMemoryQueueRepository()
+	repo.SetClock(fc)
+	ctx := context.Background()
+
+	for _, taskID := range []string{"task-b", "task-a"} {
+		task := newTestTask("default", taskID)
+		task.ID = taskID
+		task.LockedResourceType = "document"
+		task.LockedResourceID = "document-1"
+		if _, err := repo.Enqueue(ctx, task); err != nil {
+			t.Fatalf("Enqueue(%s) failed: %v", taskID, err)
+		}
+	}
+
+	leased, err := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 2)
+	if err != nil {
+		t.Fatalf("Lease failed: %v", err)
+	}
+	if len(leased) != 1 {
+		t.Fatalf("leased %d tasks, want 1", len(leased))
+	}
+	if leased[0].ID != "task-a" {
+		t.Fatalf("leased task %q, want deterministic first task %q", leased[0].ID, "task-a")
+	}
+}
+
+func TestMemoryQueueRepositoryResourceLockConcurrentLeaseHasOneWinner(t *testing.T) {
+	repo := NewMemoryQueueRepository()
+	ctx := context.Background()
+
+	for _, taskID := range []string{"task-a", "task-b"} {
+		task := newTestTask("default", taskID)
+		task.ID = taskID
+		task.LockedResourceType = "document"
+		task.LockedResourceID = "document-1"
+		if _, err := repo.Enqueue(ctx, task); err != nil {
+			t.Fatalf("Enqueue(%s) failed: %v", taskID, err)
+		}
+	}
+
+	const workers = 10
+	results := make(chan int, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			leased, err := repo.Lease(ctx, "default", string(rune('A'+worker)), 30*time.Second, 1)
+			if err != nil {
+				t.Errorf("Lease failed: %v", err)
+				return
+			}
+			results <- len(leased)
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+
+	total := 0
+	for leased := range results {
+		total += leased
+	}
+	if total != 1 {
+		t.Fatalf("concurrent leases returned %d tasks in total, want 1", total)
+	}
+}
+
+func TestMemoryQueueRepositoryResourceLockReleasedAfterCompletion(t *testing.T) {
+	repo := NewMemoryQueueRepository()
+	ctx := context.Background()
+
+	for _, taskID := range []string{"task-a", "task-b"} {
+		task := newTestTask("default", taskID)
+		task.ID = taskID
+		task.LockedResourceType = "document"
+		task.LockedResourceID = "document-1"
+		if _, err := repo.Enqueue(ctx, task); err != nil {
+			t.Fatalf("Enqueue(%s) failed: %v", taskID, err)
+		}
+	}
+
+	first, err := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 2)
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first Lease returned %d tasks, error=%v; want 1 task", len(first), err)
+	}
+	if err := repo.Heartbeat(ctx, first[0].ID, first[0].LeaseToken(), 30*time.Second); err != nil {
+		t.Fatalf("Heartbeat failed: %v", err)
+	}
+	blocked, err := repo.Lease(ctx, "default", "worker-2", 30*time.Second, 1)
+	if err != nil || len(blocked) != 0 {
+		t.Fatalf("Lease while first task is running returned %d tasks, error=%v; want 0", len(blocked), err)
+	}
+	if err := repo.Complete(ctx, first[0].ID, first[0].LeaseToken(), TaskResult{}); err != nil {
+		t.Fatalf("Complete failed: %v", err)
+	}
+
+	second, err := repo.Lease(ctx, "default", "worker-2", 30*time.Second, 1)
+	if err != nil || len(second) != 1 {
+		t.Fatalf("Lease after completion returned %d tasks, error=%v; want 1", len(second), err)
+	}
+	if second[0].ID != "task-b" {
+		t.Fatalf("leased task %q after completion, want %q", second[0].ID, "task-b")
+	}
+}
+
+func TestMemoryQueueRepositoryResourceLockBatchIncludesIndependentTasks(t *testing.T) {
+	repo := NewMemoryQueueRepository()
+	ctx := context.Background()
+
+	tasks := []Task{
+		{ID: "resource-a-first", LockedResourceType: "document", LockedResourceID: "a"},
+		{ID: "resource-a-second", LockedResourceType: "document", LockedResourceID: "a"},
+		{ID: "resource-b", LockedResourceType: "document", LockedResourceID: "b"},
+		{ID: "unlocked", LockedResourceType: "", LockedResourceID: ""},
+		{ID: "type-only", LockedResourceType: "document", LockedResourceID: ""},
+		{ID: "id-only", LockedResourceType: "", LockedResourceID: "c"},
+	}
+	for i := range tasks {
+		task := newTestTask("default", tasks[i].ID)
+		task.ID = tasks[i].ID
+		task.LockedResourceType = tasks[i].LockedResourceType
+		task.LockedResourceID = tasks[i].LockedResourceID
+		if _, err := repo.Enqueue(ctx, task); err != nil {
+			t.Fatalf("Enqueue(%s) failed: %v", task.ID, err)
+		}
+	}
+
+	leased, err := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 5)
+	if err != nil {
+		t.Fatalf("Lease failed: %v", err)
+	}
+	if len(leased) != 5 {
+		t.Fatalf("leased %d tasks, want a full batch of 5", len(leased))
+	}
+	leasedIDs := make(map[string]bool, len(leased))
+	for _, task := range leased {
+		leasedIDs[task.ID] = true
+	}
+	for _, taskID := range []string{"resource-a-first", "resource-b", "unlocked", "type-only", "id-only"} {
+		if !leasedIDs[taskID] {
+			t.Errorf("task %q was not leased", taskID)
+		}
+	}
+	if leasedIDs["resource-a-second"] {
+		t.Error("second task for resource a was leased in the same batch")
+	}
+}
+
+func TestMemoryQueueRepositoryResourceLockActiveStatusesBlock(t *testing.T) {
+	for _, status := range []TaskStatus{TaskStatusLeased, TaskStatusRunning, TaskStatusCancelling} {
+		t.Run(string(status), func(t *testing.T) {
+			repo := NewMemoryQueueRepository()
+			ctx := context.Background()
+
+			blocker := newTestTask("default", "blocker")
+			blocker.ID = "blocker"
+			blocker.LockedResourceType = "document"
+			blocker.LockedResourceID = "document-1"
+			if _, err := repo.Enqueue(ctx, blocker); err != nil {
+				t.Fatalf("Enqueue blocker failed: %v", err)
+			}
+			leased, err := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 1)
+			if err != nil || len(leased) != 1 {
+				t.Fatalf("Lease blocker returned %d tasks, error=%v; want 1", len(leased), err)
+			}
+			if status == TaskStatusRunning {
+				if err := repo.Heartbeat(ctx, blocker.ID, leased[0].LeaseToken(), 30*time.Second); err != nil {
+					t.Fatalf("Heartbeat failed: %v", err)
+				}
+			}
+			if status == TaskStatusCancelling {
+				if err := repo.Cancel(ctx, blocker.ID); err != nil {
+					t.Fatalf("Cancel failed: %v", err)
+				}
+			}
+
+			waiting := newTestTask("default", "waiting")
+			waiting.ID = "waiting"
+			waiting.LockedResourceType = "document"
+			waiting.LockedResourceID = "document-1"
+			if _, err := repo.Enqueue(ctx, waiting); err != nil {
+				t.Fatalf("Enqueue waiting task failed: %v", err)
+			}
+			got, err := repo.Lease(ctx, "default", "worker-2", 30*time.Second, 1)
+			if err != nil {
+				t.Fatalf("Lease waiting task failed: %v", err)
+			}
+			if len(got) != 0 {
+				t.Fatalf("Lease returned %d tasks while resource holder is %s, want 0", len(got), status)
+			}
+		})
+	}
+}
+
+func TestMemoryQueueRepositoryResourceLockExpiredLeaseDoesNotBlock(t *testing.T) {
+	for _, status := range []TaskStatus{TaskStatusLeased, TaskStatusRunning, TaskStatusCancelling} {
+		t.Run(string(status), func(t *testing.T) {
+			startTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+			fc := newFakeClock(startTime)
+			repo := NewMemoryQueueRepository()
+			repo.SetClock(fc)
+			ctx := context.Background()
+
+			blocker := newTestTask("default", "blocker")
+			blocker.ID = "blocker"
+			blocker.Priority = 1
+			blocker.LockedResourceType = "document"
+			blocker.LockedResourceID = "document-1"
+			if _, err := repo.Enqueue(ctx, blocker); err != nil {
+				t.Fatalf("Enqueue blocker failed: %v", err)
+			}
+			leased, err := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 1)
+			if err != nil || len(leased) != 1 {
+				t.Fatalf("Lease blocker returned %d tasks, error=%v; want 1", len(leased), err)
+			}
+			if status == TaskStatusRunning {
+				if err := repo.Heartbeat(ctx, blocker.ID, leased[0].LeaseToken(), 30*time.Second); err != nil {
+					t.Fatalf("Heartbeat failed: %v", err)
+				}
+			}
+			if status == TaskStatusCancelling {
+				if err := repo.Cancel(ctx, blocker.ID); err != nil {
+					t.Fatalf("Cancel failed: %v", err)
+				}
+			}
+
+			waiting := newTestTask("default", "waiting")
+			waiting.ID = "waiting"
+			waiting.Priority = 2
+			waiting.LockedResourceType = "document"
+			waiting.LockedResourceID = "document-1"
+			if _, err := repo.Enqueue(ctx, waiting); err != nil {
+				t.Fatalf("Enqueue waiting task failed: %v", err)
+			}
+			fc.Add(31 * time.Second)
+
+			got, err := repo.Lease(ctx, "default", "worker-2", 30*time.Second, 2)
+			if err != nil || len(got) != 1 {
+				t.Fatalf("Lease after expiry returned %d tasks, error=%v; want 1", len(got), err)
+			}
+			if got[0].ID != waiting.ID {
+				t.Fatalf("leased task %q after expiry, want higher-priority task %q", got[0].ID, waiting.ID)
+			}
+		})
+	}
+}
+
 func TestLeaseExpiry(t *testing.T) {
 	startTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	fc := newFakeClock(startTime)
@@ -261,6 +511,36 @@ func TestLeaseExpiry(t *testing.T) {
 	}
 	if leased3[0].Attempt != 2 {
 		t.Errorf("expected attempt 2, got %d", leased3[0].Attempt)
+	}
+}
+
+func TestCancellingLeaseIsRecoverableAfterExpiry(t *testing.T) {
+	startTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	fc := newFakeClock(startTime)
+	repo := NewMemoryQueueRepository()
+	repo.SetClock(fc)
+	ctx := context.Background()
+	task, err := repo.Enqueue(ctx, newTestTask("default", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := repo.Lease(ctx, "default", "worker-1", 30*time.Second, 1)
+	if err != nil || len(leased) != 1 {
+		t.Fatalf("first lease = %#v error=%v", leased, err)
+	}
+	if err := repo.Heartbeat(ctx, task.ID, leased[0].LeaseToken(), 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Cancel(ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	fc.Add(31 * time.Second)
+	recovered, err := repo.Lease(ctx, "default", "worker-2", 30*time.Second, 1)
+	if err != nil || len(recovered) != 1 {
+		t.Fatalf("recovered lease = %#v error=%v", recovered, err)
+	}
+	if recovered[0].LeaseGeneration <= leased[0].LeaseGeneration {
+		t.Fatalf("recovered generation = %d, want > %d", recovered[0].LeaseGeneration, leased[0].LeaseGeneration)
 	}
 }
 

@@ -20,6 +20,11 @@ type MemoryQueueRepository struct {
 	clock           clock.Clock
 }
 
+type resourceLock struct {
+	typeName string
+	id       string
+}
+
 // NewMemoryQueueRepository creates a new in-memory task queue repository.
 func NewMemoryQueueRepository() *MemoryQueueRepository {
 	return &MemoryQueueRepository{
@@ -85,6 +90,21 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 	}
 
 	now := r.clock.Now()
+	activeResources := make(map[resourceLock]struct{})
+	for _, task := range r.tasks {
+		resource, ok := taskResourceLock(task)
+		if !ok {
+			continue
+		}
+
+		switch task.Status {
+		case TaskStatusLeased, TaskStatusRunning, TaskStatusCancelling:
+			if task.LeaseExpiresAt.IsZero() || task.LeaseExpiresAt.After(now) {
+				activeResources[resource] = struct{}{}
+			}
+		}
+	}
+
 	var readyTasks []*Task
 
 	for _, task := range r.tasks {
@@ -98,7 +118,7 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 		switch task.Status {
 		case TaskStatusQueued:
 			readyTasks = append(readyTasks, task)
-		case TaskStatusLeased, TaskStatusRunning:
+		case TaskStatusLeased, TaskStatusRunning, TaskStatusCancelling:
 			if !task.LeaseExpiresAt.IsZero() && !task.LeaseExpiresAt.After(now) {
 				readyTasks = append(readyTasks, task)
 			}
@@ -111,16 +131,30 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 		if readyTasks[i].Priority != readyTasks[j].Priority {
 			return readyTasks[i].Priority > readyTasks[j].Priority
 		}
-		return readyTasks[i].CreatedAt.Before(readyTasks[j].CreatedAt)
+		if !readyTasks[i].CreatedAt.Equal(readyTasks[j].CreatedAt) {
+			return readyTasks[i].CreatedAt.Before(readyTasks[j].CreatedAt)
+		}
+		return readyTasks[i].ID < readyTasks[j].ID
 	})
 
 	var leased []Task
 	leaseExpiresAt := now.Add(leaseDuration)
 	count := 0
+	leasedResources := make(map[resourceLock]struct{})
 
 	for _, task := range readyTasks {
 		if count >= maxTasks {
 			break
+		}
+
+		resource, resourceLocked := taskResourceLock(task)
+		if resourceLocked {
+			if _, active := activeResources[resource]; active {
+				continue
+			}
+			if _, alreadyLeased := leasedResources[resource]; alreadyLeased {
+				continue
+			}
 		}
 
 		task.Status = TaskStatusLeased
@@ -138,10 +172,20 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 		r.appendEventLocked(task.ID, "leased", map[string]string{"lease_holder": leaseHolder}, now)
 
 		leased = append(leased, *task)
+		if resourceLocked {
+			leasedResources[resource] = struct{}{}
+		}
 		count++
 	}
 
 	return leased, nil
+}
+
+func taskResourceLock(task *Task) (resourceLock, bool) {
+	if task.LockedResourceType == "" || task.LockedResourceID == "" {
+		return resourceLock{}, false
+	}
+	return resourceLock{typeName: task.LockedResourceType, id: task.LockedResourceID}, true
 }
 
 // Heartbeat renews the lease on a task.
@@ -166,6 +210,19 @@ func (r *MemoryQueueRepository) Heartbeat(_ context.Context, taskID string, toke
 	}
 
 	return nil
+}
+
+// OwnsActiveLease reports whether token still owns an unexpired execution
+// lease. It is used by in-memory durable coordinators to apply the same write
+// fencing as the PostgreSQL lease predicates.
+func (r *MemoryQueueRepository) OwnsActiveLease(_ context.Context, taskID string, token LeaseToken, allowCancelling bool) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	task, ok := r.tasks[taskID]
+	if !ok || !ownsLease(task, token) || task.LeaseExpiresAt.IsZero() || !task.LeaseExpiresAt.After(r.clock.Now()) {
+		return false
+	}
+	return task.Status == TaskStatusLeased || task.Status == TaskStatusRunning || (allowCancelling && task.Status == TaskStatusCancelling)
 }
 
 // Complete marks a task as successfully completed.
