@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadTutorialCatalogBaseURL(t *testing.T) {
@@ -152,6 +153,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Ingestion.RAPTOR.Enabled {
 		t.Fatal("RAPTOR should default to disabled")
 	}
+	if cfg.Execution.OptimizerConcurrency != 1 || cfg.Execution.OptimizerLeaseDuration != 2*time.Minute || cfg.Execution.OptimizerHeartbeatInterval != 30*time.Second {
+		t.Fatalf("optimizer worker defaults = %#v", cfg.Execution)
+	}
 	if !cfg.RAG.QueryRewriteEnabled {
 		t.Fatal("expected query rewrite default to be enabled")
 	}
@@ -194,6 +198,51 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if !offline.EvidenceValidationEnabled || !offline.ConclusionJudgeEnabled || !offline.ShadowRetrievalEnabled {
 		t.Fatalf("offline knowledge feature toggles = %#v", offline)
+	}
+}
+
+func TestLoadOptimizerWorkerConfig(t *testing.T) {
+	t.Setenv("ARK_API_KEY", "ark-test-key")
+	t.Setenv("EXECUTION_OPTIMIZER_CONCURRENCY", "3")
+	t.Setenv("EXECUTION_OPTIMIZER_LEASE_DURATION", "4m")
+	t.Setenv("EXECUTION_OPTIMIZER_HEARTBEAT_INTERVAL", "45s")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Execution.OptimizerConcurrency != 3 || cfg.Execution.OptimizerLeaseDuration != 4*time.Minute || cfg.Execution.OptimizerHeartbeatInterval != 45*time.Second {
+		t.Fatalf("optimizer worker config = %#v", cfg.Execution)
+	}
+	env := cfg.RedactedEnv()
+	if env["EXECUTION_OPTIMIZER_CONCURRENCY"] != "3" || env["EXECUTION_OPTIMIZER_LEASE_DURATION"] != "4m0s" || env["EXECUTION_OPTIMIZER_HEARTBEAT_INTERVAL"] != "45s" {
+		t.Fatalf("optimizer worker env = %#v", env)
+	}
+}
+
+func TestLoadRejectsInvalidOptimizerWorkerConfig(t *testing.T) {
+	for _, test := range []struct {
+		name, lease, heartbeat, concurrency string
+	}{
+		{name: "zero concurrency", concurrency: "0"},
+		{name: "zero lease", concurrency: "1", lease: "0s"},
+		{name: "zero heartbeat", concurrency: "1", lease: "1m", heartbeat: "0s"},
+		{name: "heartbeat equals lease", concurrency: "1", lease: "30s", heartbeat: "30s"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("ARK_API_KEY", "ark-test-key")
+			if test.concurrency != "" {
+				t.Setenv("EXECUTION_OPTIMIZER_CONCURRENCY", test.concurrency)
+			}
+			if test.lease != "" {
+				t.Setenv("EXECUTION_OPTIMIZER_LEASE_DURATION", test.lease)
+			}
+			if test.heartbeat != "" {
+				t.Setenv("EXECUTION_OPTIMIZER_HEARTBEAT_INTERVAL", test.heartbeat)
+			}
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), "EXECUTION_OPTIMIZER") {
+				t.Fatalf("Load() error = %v, want optimizer worker validation", err)
+			}
+		})
 	}
 }
 
