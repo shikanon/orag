@@ -24,12 +24,26 @@ FROM optimization_runs r
 WHERE r.status IN ('queued', 'running');
 
 UPDATE optimization_candidates c
-SET status='queued', updated_at=NOW()
+SET status=CASE
+        WHEN c.id=r.best_candidate_id
+         AND COALESCE(r.holdout_candidate_id, '')=''
+         AND COALESCE(r.runner->'run_config'->>'holdout_split', '')<>''
+        THEN 'scored'
+        ELSE 'queued'
+    END,
+    updated_at=NOW()
 FROM optimization_runs r
 WHERE c.optimization_run_id=r.id
   AND r.status='running'
-  AND c.status IN ('running', 'evaluated', 'judged')
-  AND NOT (COALESCE(r.checkpoint->'completed_candidate_ids', '[]'::jsonb) ? c.id);
+  AND (
+    (c.status IN ('running', 'evaluated', 'judged')
+     AND NOT (COALESCE(r.checkpoint->'completed_candidate_ids', '[]'::jsonb) ? c.id))
+    OR
+    (c.id=r.best_candidate_id
+     AND COALESCE(r.holdout_candidate_id, '')=''
+     AND COALESCE(r.runner->'run_config'->>'holdout_split', '')<>''
+     AND c.status IN ('running', 'evaluated', 'judged', 'holdout_evaluated', 'promoted', 'cleanup_done'))
+  );
 
 UPDATE optimization_runs
 SET current_task_id='task_optimizer_recovery_' || md5(id),

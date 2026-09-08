@@ -139,6 +139,18 @@ func (r *MemoryRepository) CancelOptimizationRunWithTask(ctx context.Context, te
 				if !errors.Is(err, taskqueue.ErrLeaseLost) {
 					return OptimizationRun{}, false, err
 				}
+				current, currentFound, getErr := r.taskQueue.Get(ctx, task.ID)
+				if getErr != nil {
+					return OptimizationRun{}, false, getErr
+				}
+				if currentFound && current.Status == taskqueue.TaskStatusCancelling {
+					if err := r.taskQueue.MarkCancelled(ctx, current.ID, current.LeaseToken()); err != nil {
+						return OptimizationRun{}, false, err
+					}
+					immediate = true
+				} else if currentFound && current.Status == taskqueue.TaskStatusCancelled {
+					immediate = true
+				}
 			} else {
 				immediate = true
 			}
