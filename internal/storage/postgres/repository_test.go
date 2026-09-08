@@ -19,6 +19,7 @@ import (
 	"github.com/shikanon/orag/internal/kb"
 	optimizerpkg "github.com/shikanon/orag/internal/optimizer"
 	"github.com/shikanon/orag/internal/rag"
+	"github.com/shikanon/orag/internal/taskqueue"
 )
 
 func TestExtractGooseUp(t *testing.T) {
@@ -1148,6 +1149,74 @@ func TestRepositoryCreateOptimizationRunWithCandidatesRollsBackCandidateInsertFa
 	}
 }
 
+func TestRepositoryCreateOptimizationRunWithTaskCommitsAtomicBoundary(t *testing.T) {
+	tx := &fakeKnowledgeBaseTx{}
+	repo := &Repository{evalTxBeginner: &fakeEvaluationTxBeginner{tx: tx}}
+	now := time.Date(2026, 8, 3, 8, 0, 0, 0, time.UTC)
+	run := optimizerpkg.OptimizationRun{ID: "opt_task", TenantID: "tenant_1", Status: optimizerpkg.RunStatusQueued, CurrentTaskID: "task_opt", CreatedAt: now, UpdatedAt: now}
+	candidate := optimizerpkg.OptimizationCandidate{ID: "cand_1", OptimizationRunID: run.ID, Status: optimizerpkg.CandidateStatusQueued, CreatedAt: now, UpdatedAt: now}
+	task := taskqueue.Task{
+		ID: "task_opt", TenantID: run.TenantID, Type: optimizerpkg.OptimizationTaskType, Pool: optimizerpkg.OptimizationPool,
+		Payload: []byte(`{"version":1,"run_id":"opt_task"}`), LockedResourceType: optimizerpkg.OptimizationResourceType,
+		LockedResourceID: run.ID, MaxAttempts: 3, RunAfter: now, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := repo.CreateOptimizationRunWithTask(context.Background(), run, []optimizerpkg.OptimizationCandidate{candidate}, task); err != nil {
+		t.Fatal(err)
+	}
+	if tx.commitCalls != 1 || tx.rollbackCalls != 0 || len(tx.execSQLs) != 4 {
+		t.Fatalf("atomic transaction commit/rollback/exec = %d/%d/%d", tx.commitCalls, tx.rollbackCalls, len(tx.execSQLs))
+	}
+	for index, want := range []string{"INSERT INTO task_queue", "INSERT INTO task_events", "INSERT INTO optimization_runs", "INSERT INTO optimization_candidates"} {
+		if !strings.Contains(tx.execSQLs[index], want) {
+			t.Fatalf("atomic exec %d = %s, want %s", index, tx.execSQLs[index], want)
+		}
+	}
+}
+
+func TestRepositoryCreateOptimizationRunWithTaskRollsBackEventFailure(t *testing.T) {
+	want := errors.New("task event failed")
+	tx := &fakeKnowledgeBaseTx{execErrs: []error{nil, want}}
+	repo := &Repository{evalTxBeginner: &fakeEvaluationTxBeginner{tx: tx}}
+	now := time.Date(2026, 8, 3, 8, 0, 0, 0, time.UTC)
+	run := optimizerpkg.OptimizationRun{ID: "opt_task", TenantID: "tenant_1", Status: optimizerpkg.RunStatusQueued, CurrentTaskID: "task_opt", CreatedAt: now, UpdatedAt: now}
+	candidate := optimizerpkg.OptimizationCandidate{ID: "cand_1", OptimizationRunID: run.ID, Status: optimizerpkg.CandidateStatusQueued, CreatedAt: now, UpdatedAt: now}
+	task := taskqueue.Task{ID: "task_opt", TenantID: run.TenantID, Type: optimizerpkg.OptimizationTaskType, Pool: optimizerpkg.OptimizationPool, Payload: []byte(`{"version":1,"run_id":"opt_task"}`), RunAfter: now, CreatedAt: now, UpdatedAt: now}
+	if err := repo.CreateOptimizationRunWithTask(context.Background(), run, []optimizerpkg.OptimizationCandidate{candidate}, task); !errors.Is(err, want) {
+		t.Fatalf("CreateOptimizationRunWithTask() error = %v, want %v", err, want)
+	}
+	if tx.commitCalls != 0 || tx.rollbackCalls != 1 {
+		t.Fatalf("atomic failure commit/rollback = %d/%d", tx.commitCalls, tx.rollbackCalls)
+	}
+}
+
+func TestOptimizerTaskMigrationBackfillsRecoveryAndOwnership(t *testing.T) {
+	body, err := os.ReadFile("../../../migrations/000043_optimizer_task_execution.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"current_task_id", "execution_generation", "optimization.run", "migration_recovery", "status='canceled'"} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("optimizer task migration missing %q", want)
+		}
+	}
+}
+
+func TestRepositoryOptimizationWriteFencingRejectsLostLease(t *testing.T) {
+	queryer := &fakeKnowledgeBaseQueryer{execTag: pgconn.NewCommandTag("UPDATE 0")}
+	repo := &Repository{evalQueryer: queryer}
+	lease := optimizerpkg.ExecutionLease{TaskID: "task_1", Holder: "worker_old", Generation: 1}
+	ctx := optimizerpkg.ContextWithExecutionLease(context.Background(), lease)
+	run := optimizerpkg.OptimizationRun{ID: "opt_1", TenantID: "tenant_1", Status: optimizerpkg.RunStatusRunning, CurrentTaskID: lease.TaskID, ExecutionGeneration: lease.Generation}
+	if err := repo.UpdateOptimizationRun(ctx, run); !errors.Is(err, optimizerpkg.ErrOptimizationOwnershipLost) {
+		t.Fatalf("UpdateOptimizationRun() error = %v, want ownership lost", err)
+	}
+	for _, want := range []string{"lease_holder", "lease_generation", "lease_expires_at > NOW()"} {
+		if !strings.Contains(queryer.execSQL, want) {
+			t.Fatalf("fenced update SQL missing %q: %s", want, queryer.execSQL)
+		}
+	}
+}
+
 func TestRepositoryUpdateOptimizationRunIncludesReadbackFields(t *testing.T) {
 	queryer := &fakeKnowledgeBaseQueryer{}
 	repo := &Repository{evalQueryer: queryer}
@@ -1221,7 +1290,7 @@ func TestRepositoryCompareAndSwapOptimizationRunUsesExpectedStatus(t *testing.T)
 			if got != tt.want {
 				t.Fatalf("CompareAndSwapOptimizationRun() = %v, want %v", got, tt.want)
 			}
-			for _, wantSQL := range []string{"tenant_id=$1", "id=$2", "status=$23"} {
+			for _, wantSQL := range []string{"tenant_id=$1", "id=$2", "status=$25"} {
 				if !strings.Contains(queryer.execSQL, wantSQL) {
 					t.Fatalf("CAS SQL missing %q: %s", wantSQL, queryer.execSQL)
 				}

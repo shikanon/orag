@@ -139,6 +139,7 @@ type evalQueryer interface {
 
 type evalTx interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error
 }
