@@ -1,4 +1,4 @@
-FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS build
+FROM golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS build
 WORKDIR /src
 ARG GOFLAGS=-tags=stdjson,gjson
 ARG VERSION=dev
@@ -26,7 +26,8 @@ LABEL org.opencontainers.image.source="https://github.com/shikanon/orag" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.created="${BUILD_TIME}" \
       org.opencontainers.image.licenses="Apache-2.0"
-RUN apk add --no-cache ca-certificates curl && \
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates curl && \
     addgroup -S -g 10001 orag && \
     adduser -S -D -H -u 10001 -G orag orag && \
     mkdir -p /demo && chown 10001:10001 /demo
