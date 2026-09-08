@@ -208,73 +208,151 @@ func (r *TaskQueueRepository) Lease(ctx context.Context, pool, leaseHolder strin
 	}
 
 	rows, err := tx.Query(ctx, `
-		SELECT id
-		FROM task_queue
-		WHERE pool=$1
-		  AND status IN ('queued', 'failed_retryable')
-		  AND run_after <= NOW()
-		  AND (
-			locked_resource_type IS NULL
-			OR NOT EXISTS (
-				SELECT 1 FROM task_queue t2
-				WHERE t2.locked_resource_type = task_queue.locked_resource_type
-				  AND t2.locked_resource_id = task_queue.locked_resource_id
-				  AND t2.status IN ('leased','running','cancelling')
-				  AND t2.id != task_queue.id
-			)
-		  )
-		ORDER BY priority DESC, created_at
+		WITH ranked AS MATERIALIZED (
+			-- Batch de-duplication ranks complete resource keys before LIMIT;
+			-- tasks without both key parts remain independent candidates.
+			SELECT candidate.id,
+			       candidate.locked_resource_type,
+			       candidate.locked_resource_id,
+			       candidate.priority,
+			       candidate.created_at,
+			       CASE
+			         WHEN candidate.locked_resource_type IS NOT NULL
+			          AND candidate.locked_resource_type <> ''
+			          AND candidate.locked_resource_id IS NOT NULL
+			          AND candidate.locked_resource_id <> ''
+			         THEN ROW_NUMBER() OVER (
+			           PARTITION BY candidate.locked_resource_type, candidate.locked_resource_id
+			           ORDER BY candidate.priority DESC, candidate.created_at, candidate.id
+			         )
+			         ELSE 1
+			       END AS resource_rank
+			FROM task_queue candidate
+			WHERE candidate.pool=$1
+			  AND candidate.status IN ('queued', 'failed_retryable')
+			  AND candidate.run_after <= NOW()
+			  AND (
+				candidate.locked_resource_type IS NULL
+				OR candidate.locked_resource_type = ''
+				OR candidate.locked_resource_id IS NULL
+				OR candidate.locked_resource_id = ''
+				OR NOT EXISTS (
+					SELECT 1 FROM task_queue active
+					WHERE active.locked_resource_type = candidate.locked_resource_type
+					  AND active.locked_resource_id = candidate.locked_resource_id
+					  AND active.status IN ('leased','running','cancelling')
+					  AND active.id != candidate.id
+				)
+			  )
+		)
+		SELECT candidate.id,
+		       COALESCE(candidate.locked_resource_type, ''),
+		       COALESCE(candidate.locked_resource_id, '')
+		FROM task_queue candidate
+		JOIN ranked ON ranked.id = candidate.id
+		WHERE ranked.resource_rank = 1
+		ORDER BY ranked.priority DESC, ranked.created_at, ranked.id
 		LIMIT $2
-		FOR UPDATE SKIP LOCKED`, pool, maxTasks)
+		-- Row locks prevent duplicate leasing of the same task while SKIP LOCKED
+		-- lets competing workers continue with later eligible rows. LIMIT belongs
+		-- after row locking so skipped rows do not consume the batch capacity.
+		FOR UPDATE OF candidate SKIP LOCKED`, pool, maxTasks)
 	if err != nil {
 		return nil, err
 	}
 
-	var taskIDs []string
+	type leaseCandidate struct {
+		id           string
+		resourceType string
+		resourceID   string
+	}
+	var candidates []leaseCandidate
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var candidate leaseCandidate
+		if err := rows.Scan(&candidate.id, &candidate.resourceType, &candidate.resourceID); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		taskIDs = append(taskIDs, id)
+		candidates = append(candidates, candidate)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	if len(taskIDs) == 0 {
+	if len(candidates) == 0 {
 		return []taskqueue.Task{}, nil
 	}
 
-	for _, id := range taskIDs {
+	var taskIDs []string
+	for _, candidate := range candidates {
+		if candidate.resourceType != "" && candidate.resourceID != "" {
+			var resourceLocked bool
+			err := tx.QueryRow(ctx, `
+				-- The non-blocking transaction advisory lock serializes workers that
+				-- selected different task rows for the same global resource key. A JSON
+				-- array unambiguously serializes the two key parts before hashing.
+				SELECT pg_try_advisory_xact_lock(
+					hashtextextended(jsonb_build_array($1::text, $2::text)::text, 0)
+				)`, candidate.resourceType, candidate.resourceID).Scan(&resourceLocked)
+			if err != nil {
+				return nil, err
+			}
+			if !resourceLocked {
+				continue
+			}
+		}
+
 		var generation int64
 		err := tx.QueryRow(ctx, `
-			UPDATE task_queue
+			-- Re-check readiness and the active global resource state after row and
+			-- advisory locking so only still-eligible tasks transition to leased.
+			UPDATE task_queue AS candidate
 			SET status='leased',
 			    lease_expires_at = NOW() + $2::interval,
 			    lease_holder = $3,
 			    updated_at = NOW(),
 			    attempt = attempt + 1,
-			    lease_generation = lease_generation + 1,
+			    lease_generation = candidate.lease_generation + 1,
 			    started_at = CASE WHEN status = 'queued' THEN NOW() ELSE started_at END
-			WHERE id=$1
-			RETURNING lease_generation`, id, intervalStr, leaseHolder).Scan(&generation)
+			WHERE candidate.id=$1
+			  AND candidate.status IN ('queued', 'failed_retryable')
+			  AND candidate.run_after <= NOW()
+			  AND (
+				candidate.locked_resource_type IS NULL
+				OR candidate.locked_resource_type = ''
+				OR candidate.locked_resource_id IS NULL
+				OR candidate.locked_resource_id = ''
+				OR NOT EXISTS (
+					SELECT 1 FROM task_queue active
+					WHERE active.locked_resource_type = candidate.locked_resource_type
+					  AND active.locked_resource_id = candidate.locked_resource_id
+					  AND active.status IN ('leased','running','cancelling')
+					  AND active.id != candidate.id
+				)
+			  )
+			RETURNING candidate.lease_generation`, candidate.id, intervalStr, leaseHolder).Scan(&generation)
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				continue
+			}
 			return nil, err
 		}
-		if err := insertTaskEvent(ctx, tx, id, "leased", map[string]any{
+		taskIDs = append(taskIDs, candidate.id)
+		if err := insertTaskEvent(ctx, tx, candidate.id, "leased", map[string]any{
 			"lease_holder": leaseHolder,
 			"generation":   generation,
 		}); err != nil {
 			return nil, err
 		}
 	}
+	if len(taskIDs) == 0 {
+		return []taskqueue.Task{}, nil
+	}
 
 	taskRows, err := tx.Query(ctx, taskQueueSelect+`
 		WHERE id = ANY($1)
-		ORDER BY priority DESC, created_at`, taskIDs)
+		ORDER BY priority DESC, created_at, id`, taskIDs)
 	if err != nil {
 		return nil, err
 	}
