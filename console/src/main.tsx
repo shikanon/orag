@@ -13,4 +13,4 @@ import './evaluation.css'
 import './releases.css'
 import './governance.css'
 
-createRoot(document.getElementById('root')!).render(<StrictMode><AppProviders queryClient={createQueryClient()}><RouterProvider router={createAppRouter()} future={{ v7_startTransition: true }} /></AppProviders></StrictMode>)
+createRoot(document.getElementById('root')!).render(<StrictMode><AppProviders queryClient={createQueryClient()}><RouterProvider router={createAppRouter()} /></AppProviders></StrictMode>)

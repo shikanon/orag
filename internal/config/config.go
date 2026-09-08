@@ -15,20 +15,21 @@ import (
 )
 
 type Config struct {
-	Server        ServerConfig
-	Storage       StorageConfig
-	Auth          AuthConfig
-	Database      DatabaseConfig
-	Qdrant        QdrantConfig
-	Ark           ArkConfig
-	Models        ModelProviderConfig
-	RAG           RAGConfig
-	Ingestion     IngestionConfig
-	Execution     ExecutionConfig
-	ObjectStorage ObjectStorageConfig
-	Observability ObservabilityConfig
-	Maintenance   MaintenanceConfig
-	Tutorial      TutorialConfig
+	Server                    ServerConfig
+	Storage                   StorageConfig
+	Auth                      AuthConfig
+	Database                  DatabaseConfig
+	Qdrant                    QdrantConfig
+	Ark                       ArkConfig
+	Models                    ModelProviderConfig
+	RAG                       RAGConfig
+	Ingestion                 IngestionConfig
+	Execution                 ExecutionConfig
+	ObjectStorage             ObjectStorageConfig
+	Observability             ObservabilityConfig
+	Maintenance               MaintenanceConfig
+	Tutorial                  TutorialConfig
+	optimizerWorkerConfigured bool
 }
 
 type StorageConfig struct {
@@ -145,18 +146,20 @@ type IngestionConfig struct {
 	Docling             DoclingConfig
 }
 
-// ExecutionConfig bounds synchronous API work. A full class is rejected
-// immediately rather than queued in memory; downstream services receive the
-// derived context deadline and must stop on cancellation.
+// ExecutionConfig bounds synchronous API work and configures durable worker
+// ownership for optimizer runs.
 type ExecutionConfig struct {
-	IngestionTimeout      time.Duration
-	IngestionConcurrency  int
-	QueryTimeout          time.Duration
-	QueryConcurrency      int
-	EvaluationTimeout     time.Duration
-	EvaluationConcurrency int
-	ReleaseTimeout        time.Duration
-	ReleaseConcurrency    int
+	IngestionTimeout           time.Duration
+	IngestionConcurrency       int
+	QueryTimeout               time.Duration
+	QueryConcurrency           int
+	EvaluationTimeout          time.Duration
+	EvaluationConcurrency      int
+	ReleaseTimeout             time.Duration
+	ReleaseConcurrency         int
+	OptimizerConcurrency       int
+	OptimizerLeaseDuration     time.Duration
+	OptimizerHeartbeatInterval time.Duration
 }
 
 type RAPTORConfig struct {
@@ -281,6 +284,7 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
+		optimizerWorkerConfigured: true,
 		Server: ServerConfig{
 			Environment:   strings.ToLower(strings.TrimSpace(getenv("ORAG_ENV", "development"))),
 			Host:          getenv("HOST", "0.0.0.0"),
@@ -388,14 +392,17 @@ func Load() (Config, error) {
 			},
 		},
 		Execution: ExecutionConfig{
-			IngestionTimeout:      getenvDuration("EXECUTION_INGESTION_TIMEOUT", 10*time.Minute),
-			IngestionConcurrency:  getenvInt("EXECUTION_INGESTION_CONCURRENCY", 2),
-			QueryTimeout:          getenvDuration("EXECUTION_QUERY_TIMEOUT", 90*time.Second),
-			QueryConcurrency:      getenvInt("EXECUTION_QUERY_CONCURRENCY", 32),
-			EvaluationTimeout:     getenvDuration("EXECUTION_EVALUATION_TIMEOUT", 15*time.Minute),
-			EvaluationConcurrency: getenvInt("EXECUTION_EVALUATION_CONCURRENCY", 2),
-			ReleaseTimeout:        getenvDuration("EXECUTION_RELEASE_TIMEOUT", 30*time.Second),
-			ReleaseConcurrency:    getenvInt("EXECUTION_RELEASE_CONCURRENCY", 4),
+			IngestionTimeout:           getenvDuration("EXECUTION_INGESTION_TIMEOUT", 10*time.Minute),
+			IngestionConcurrency:       getenvInt("EXECUTION_INGESTION_CONCURRENCY", 2),
+			QueryTimeout:               getenvDuration("EXECUTION_QUERY_TIMEOUT", 90*time.Second),
+			QueryConcurrency:           getenvInt("EXECUTION_QUERY_CONCURRENCY", 32),
+			EvaluationTimeout:          getenvDuration("EXECUTION_EVALUATION_TIMEOUT", 15*time.Minute),
+			EvaluationConcurrency:      getenvInt("EXECUTION_EVALUATION_CONCURRENCY", 2),
+			ReleaseTimeout:             getenvDuration("EXECUTION_RELEASE_TIMEOUT", 30*time.Second),
+			ReleaseConcurrency:         getenvInt("EXECUTION_RELEASE_CONCURRENCY", 4),
+			OptimizerConcurrency:       getenvInt("EXECUTION_OPTIMIZER_CONCURRENCY", 1),
+			OptimizerLeaseDuration:     getenvDuration("EXECUTION_OPTIMIZER_LEASE_DURATION", 2*time.Minute),
+			OptimizerHeartbeatInterval: getenvDuration("EXECUTION_OPTIMIZER_HEARTBEAT_INTERVAL", 30*time.Second),
 		},
 		ObjectStorage: ObjectStorageConfig{
 			Provider:        getenv("OBJECT_STORAGE_PROVIDER", "local"),
@@ -560,6 +567,17 @@ func (c Config) Validate() error {
 		if value < 0 {
 			return fmt.Errorf("%s must not be negative", name)
 		}
+	}
+	validateOptimizerWorker := c.optimizerWorkerConfigured || c.Execution.OptimizerConcurrency != 0 ||
+		c.Execution.OptimizerLeaseDuration != 0 || c.Execution.OptimizerHeartbeatInterval != 0
+	if validateOptimizerWorker && c.Execution.OptimizerConcurrency <= 0 {
+		return errors.New("EXECUTION_OPTIMIZER_CONCURRENCY must be positive")
+	}
+	if validateOptimizerWorker && c.Execution.OptimizerLeaseDuration <= 0 {
+		return errors.New("EXECUTION_OPTIMIZER_LEASE_DURATION must be positive")
+	}
+	if validateOptimizerWorker && (c.Execution.OptimizerHeartbeatInterval <= 0 || c.Execution.OptimizerHeartbeatInterval >= c.Execution.OptimizerLeaseDuration) {
+		return errors.New("EXECUTION_OPTIMIZER_HEARTBEAT_INTERVAL must be positive and less than EXECUTION_OPTIMIZER_LEASE_DURATION")
 	}
 	if c.Ingestion.ContextualRetrieval.FailureMode != "fallback" && c.Ingestion.ContextualRetrieval.FailureMode != "fail" {
 		return errors.New("INGEST_CONTEXTUAL_FAILURE_MODE must be fallback or fail")
@@ -825,6 +843,9 @@ func (c Config) RedactedEnv() map[string]string {
 		"EXECUTION_EVALUATION_CONCURRENCY":                  strconv.Itoa(c.Execution.EvaluationConcurrency),
 		"EXECUTION_RELEASE_TIMEOUT":                         c.Execution.ReleaseTimeout.String(),
 		"EXECUTION_RELEASE_CONCURRENCY":                     strconv.Itoa(c.Execution.ReleaseConcurrency),
+		"EXECUTION_OPTIMIZER_CONCURRENCY":                   strconv.Itoa(c.Execution.OptimizerConcurrency),
+		"EXECUTION_OPTIMIZER_LEASE_DURATION":                c.Execution.OptimizerLeaseDuration.String(),
+		"EXECUTION_OPTIMIZER_HEARTBEAT_INTERVAL":            c.Execution.OptimizerHeartbeatInterval.String(),
 		"RERANK_PROVIDER":                                   c.Ark.RerankProvider,
 		"ARK_RERANK_MODEL":                                  c.Ark.RerankModel,
 		"ALIYUN_RERANK_API_KEY":                             redact(c.Ark.RerankAPIKey),

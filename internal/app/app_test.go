@@ -10,6 +10,7 @@ import (
 
 	"github.com/shikanon/orag/internal/config"
 	"github.com/shikanon/orag/internal/kb"
+	"github.com/shikanon/orag/internal/optimizer"
 	"github.com/shikanon/orag/internal/project"
 	"github.com/shikanon/orag/internal/storage/postgres"
 	qdrantstore "github.com/shikanon/orag/internal/storage/qdrant"
@@ -51,6 +52,24 @@ func TestNewWiresProjectServiceForMemoryBackend(t *testing.T) {
 	}
 	if app.APIKeys == nil {
 		t.Fatal("APIKeys service is nil")
+	}
+	if app.Optimizer == nil || app.TaskWorker == nil {
+		t.Fatal("durable optimizer worker wiring is nil")
+	}
+	app.Optimizer.DisableAutoStart = true
+	run, err := app.Optimizer.Submit(context.Background(), optimizer.SubmitRequest{
+		TenantID: "tenant_a",
+		SearchSpace: optimizer.SearchSpace{Retrieval: optimizer.RetrievalSpace{
+			DenseTopK: []int{1},
+		}},
+		Search: optimizer.SearchSpec{Strategy: optimizer.SearchStrategyGrid, MaxCandidates: 1},
+	})
+	if err != nil {
+		t.Fatalf("Optimizer.Submit() error = %v", err)
+	}
+	task, found, err := app.TaskQueue.Get(context.Background(), "tenant_a", run.CurrentTaskID)
+	if err != nil || !found || task.Type != OptimizerTaskType || task.Pool != OptimizerPool {
+		t.Fatalf("durable optimizer task = %#v found=%v error=%v", task, found, err)
 	}
 	if _, err := app.Projects.Create(context.Background(), "tenant_a", project.CreateInput{Name: "Console"}); err != nil {
 		t.Fatal(err)
