@@ -180,3 +180,10 @@ maintenance:
     min_recall_lift: 0.05
     min_answer_quality_lift: 0.03
     max_latency_delta_ms: 300
+
+# Optimizer tasks use a dedicated durable worker pool. Heartbeats must be
+# shorter than the lease so another process can recover abandoned work.
+execution:
+  optimizer_concurrency: 1
+  optimizer_lease_duration: 2m
+  optimizer_heartbeat_interval: 30s
