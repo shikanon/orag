@@ -47,6 +47,11 @@ type retryableErr struct {
 	retryable bool
 }
 
+type cancelledTestErr struct{}
+
+func (cancelledTestErr) Error() string   { return "cancelled" }
+func (cancelledTestErr) Cancelled() bool { return true }
+
 type heartbeatFailureRepository struct {
 	QueueRepository
 	heartbeatErr       error
@@ -601,4 +606,71 @@ func TestWorkerPool_Cancel(t *testing.T) {
 	if got.Status != TaskStatusFailedTerminal && got.Status != TaskStatusFailedRetryable && got.Status != TaskStatusCancelled && got.Status != TaskStatusDeadLetter {
 		t.Errorf("unexpected task status after cancel: %s", got.Status)
 	}
+}
+
+func TestWorkerPoolStopDrainsPoolsByDefault(t *testing.T) {
+	repo := NewMemoryQueueRepository()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	handler := newTestHandler(func(context.Context, Task, ProgressReporter) error {
+		close(started)
+		<-release
+		return nil
+	})
+	wp := NewWorkerPool(repo, slog.Default())
+	wp.RegisterPool(PoolConfig{Name: "default", Concurrency: 1, LeaseDuration: time.Second})
+	wp.RegisterHandler("test-task", handler)
+	task, err := repo.Enqueue(context.Background(), Task{Type: "test-task", Pool: "default", MaxAttempts: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wp.Start(context.Background())
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("task did not start")
+	}
+	stopped := make(chan struct{})
+	go func() {
+		wp.Stop()
+		close(stopped)
+	}()
+	close(release)
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not stop after draining task")
+	}
+	got, ok, err := repo.Get(context.Background(), task.ID)
+	if err != nil || !ok || got.Status != TaskStatusSucceeded {
+		t.Fatalf("task after worker stop = %#v found=%v error=%v", got, ok, err)
+	}
+}
+
+func TestWorkerPoolAcknowledgesHandlerCancellation(t *testing.T) {
+	repo := NewMemoryQueueRepository()
+	handler := newTestHandler(func(context.Context, Task, ProgressReporter) error {
+		return cancelledTestErr{}
+	})
+	wp := NewWorkerPool(repo, slog.Default())
+	wp.RegisterPool(PoolConfig{Name: "default", Concurrency: 1, LeaseDuration: time.Second})
+	wp.RegisterHandler("test-task", handler)
+	task, err := repo.Enqueue(context.Background(), Task{Type: "test-task", Pool: "default", MaxAttempts: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wp.Start(context.Background())
+	defer wp.Stop()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got, ok, getErr := repo.Get(context.Background(), task.ID)
+		if getErr != nil {
+			t.Fatal(getErr)
+		}
+		if ok && got.Status == TaskStatusCancelled {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("handler cancellation was not acknowledged")
 }

@@ -17,6 +17,7 @@ type PoolConfig struct {
 	Concurrency       int
 	LeaseDuration     time.Duration
 	HeartbeatInterval time.Duration
+	CancelOnStop      bool
 }
 
 // WorkerPool manages a collection of worker pools that process tasks from a queue repository.
@@ -30,6 +31,7 @@ type WorkerPool struct {
 	mu       sync.RWMutex
 	running  bool
 	workerID string
+	cancel   context.CancelFunc
 }
 
 // poolWorker manages the scheduler and concurrency for a single pool.
@@ -101,10 +103,12 @@ func (wp *WorkerPool) Start(ctx context.Context) {
 		return
 	}
 	wp.running = true
+	runCtx, cancel := context.WithCancel(ctx)
+	wp.cancel = cancel
 
 	for name, pw := range wp.pools {
 		wp.wg.Add(1)
-		go wp.runScheduler(ctx, name, pw)
+		go wp.runScheduler(runCtx, ctx, name, pw)
 	}
 }
 
@@ -116,6 +120,10 @@ func (wp *WorkerPool) Stop() {
 		return
 	}
 	wp.running = false
+	if wp.cancel != nil {
+		wp.cancel()
+		wp.cancel = nil
+	}
 
 	for _, pw := range wp.pools {
 		close(pw.stopCh)
@@ -125,7 +133,7 @@ func (wp *WorkerPool) Stop() {
 	wp.wg.Wait()
 }
 
-func (wp *WorkerPool) runScheduler(ctx context.Context, poolName string, pw *poolWorker) {
+func (wp *WorkerPool) runScheduler(schedulerCtx, taskCtx context.Context, poolName string, pw *poolWorker) {
 	defer wp.wg.Done()
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -133,23 +141,23 @@ func (wp *WorkerPool) runScheduler(ctx context.Context, poolName string, pw *poo
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-schedulerCtx.Done():
 			return
 		case <-pw.stopCh:
 			return
 		case <-ticker.C:
-			wp.leaseAndDispatch(ctx, poolName, pw)
+			wp.leaseAndDispatch(schedulerCtx, taskCtx, poolName, pw)
 		}
 	}
 }
 
-func (wp *WorkerPool) leaseAndDispatch(ctx context.Context, poolName string, pw *poolWorker) {
+func (wp *WorkerPool) leaseAndDispatch(schedulerCtx, taskCtx context.Context, poolName string, pw *poolWorker) {
 	availableSlots := cap(pw.sem) - len(pw.sem)
 	if availableSlots <= 0 {
 		return
 	}
 
-	leasedTasks, err := wp.repo.Lease(ctx, poolName, wp.workerID, pw.config.LeaseDuration, availableSlots)
+	leasedTasks, err := wp.repo.Lease(schedulerCtx, poolName, wp.workerID, pw.config.LeaseDuration, availableSlots)
 	if err != nil {
 		wp.logger.Error("failed to lease tasks", "pool", poolName, "error", err)
 		return
@@ -164,7 +172,7 @@ func (wp *WorkerPool) leaseAndDispatch(ctx context.Context, poolName string, pw 
 
 		if !ok {
 			wp.logger.Warn("no handler registered for task type", "task_type", task.Type, "task_id", task.ID)
-			wp.repo.Fail(ctx, task.ID, task.LeaseToken(), TaskFailure{
+			wp.repo.Fail(schedulerCtx, task.ID, task.LeaseToken(), TaskFailure{
 				Retryable: false,
 				ErrorCode: "no_handler",
 				Message:   "no handler registered for task type: " + task.Type,
@@ -182,7 +190,11 @@ func (wp *WorkerPool) leaseAndDispatch(ctx context.Context, poolName string, pw 
 		go func(t Task, h Handler) {
 			defer wp.wg.Done()
 			defer func() { <-pw.sem }()
-			wp.executeTask(ctx, t, h, pw)
+			executionCtx := taskCtx
+			if pw.config.CancelOnStop {
+				executionCtx = schedulerCtx
+			}
+			wp.executeTask(executionCtx, t, h, pw)
 		}(task, handler)
 	}
 }
@@ -198,6 +210,7 @@ func (wp *WorkerPool) executeTask(parentCtx context.Context, task Task, handler 
 	// makes cancellation/timeline semantics needlessly ambiguous.
 	if err := wp.repo.Heartbeat(taskCtx, task.ID, token, pw.config.LeaseDuration); err != nil {
 		wp.logger.Error("failed to start task lease", "task_id", task.ID, "error", err)
+		wp.handleCancelledTask(parentCtx, task.ID, token)
 		return
 	}
 
@@ -227,12 +240,22 @@ func (wp *WorkerPool) executeTask(parentCtx context.Context, task Task, handler 
 	<-cancelMonitorDone
 
 	if isCancelled {
-		wp.handleCancelledTask(parentCtx, task.ID, token)
+		wp.handleCancelledTask(context.WithoutCancel(parentCtx), task.ID, token)
 		return
 	}
 
 	if handlerErr != nil {
 		wp.logger.Error("task failed", "task_id", task.ID, "error", handlerErr)
+		if isCancelledError(handlerErr) {
+			if err := wp.repo.Cancel(parentCtx, task.ID); err != nil {
+				wp.logger.Error("failed to request task cancellation", "task_id", task.ID, "error", err)
+				return
+			}
+			if err := wp.repo.MarkCancelled(parentCtx, task.ID, token); err != nil {
+				wp.logger.Error("failed to mark task as cancelled", "task_id", task.ID, "error", err)
+			}
+			return
+		}
 
 		retryable := isRetryableError(handlerErr)
 		failure := TaskFailure{
@@ -315,6 +338,15 @@ func (r *taskProgressReporter) ReportProgress(ctx context.Context, taskID string
 
 type retryableError interface {
 	Retryable() bool
+}
+
+type cancelledError interface {
+	Cancelled() bool
+}
+
+func isCancelledError(err error) bool {
+	var cancelled cancelledError
+	return errors.As(err, &cancelled) && cancelled.Cancelled()
 }
 
 func isRetryableError(err error) bool {

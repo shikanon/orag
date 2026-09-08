@@ -10,6 +10,7 @@ import (
 	"github.com/shikanon/orag/internal/audit"
 	"github.com/shikanon/orag/internal/eval"
 	"github.com/shikanon/orag/internal/ingest"
+	"github.com/shikanon/orag/internal/optimizer"
 	"github.com/shikanon/orag/internal/platform/id"
 	"github.com/shikanon/orag/internal/taskqueue"
 )
@@ -19,7 +20,20 @@ const (
 	IngestionCorePool      = "ingestion_core"
 	EvaluationRunTaskType  = "evaluation.run"
 	EvaluationPool         = "evaluation"
+	OptimizerTaskType      = optimizer.OptimizationTaskType
+	OptimizerPool          = optimizer.OptimizationPool
 )
+
+type optimizerTaskHandler struct {
+	service *optimizer.Service
+}
+
+func (h optimizerTaskHandler) Handle(ctx context.Context, task taskqueue.Task, reporter taskqueue.ProgressReporter) error {
+	if h.service == nil {
+		return fmt.Errorf("optimizer service is unavailable")
+	}
+	return h.service.HandleTask(ctx, task, reporter)
+}
 
 // DocumentImportTaskPayload is intentionally limited to the same data the
 // synchronous import endpoint already accepts. It is an internal payload; the
