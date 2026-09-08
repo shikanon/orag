@@ -98,9 +98,7 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 		}
 
 		switch task.Status {
-		case TaskStatusCancelling:
-			activeResources[resource] = struct{}{}
-		case TaskStatusLeased, TaskStatusRunning:
+		case TaskStatusLeased, TaskStatusRunning, TaskStatusCancelling:
 			if task.LeaseExpiresAt.IsZero() || task.LeaseExpiresAt.After(now) {
 				activeResources[resource] = struct{}{}
 			}
@@ -120,7 +118,7 @@ func (r *MemoryQueueRepository) Lease(_ context.Context, pool, leaseHolder strin
 		switch task.Status {
 		case TaskStatusQueued:
 			readyTasks = append(readyTasks, task)
-		case TaskStatusLeased, TaskStatusRunning:
+		case TaskStatusLeased, TaskStatusRunning, TaskStatusCancelling:
 			if !task.LeaseExpiresAt.IsZero() && !task.LeaseExpiresAt.After(now) {
 				readyTasks = append(readyTasks, task)
 			}
@@ -212,6 +210,19 @@ func (r *MemoryQueueRepository) Heartbeat(_ context.Context, taskID string, toke
 	}
 
 	return nil
+}
+
+// OwnsActiveLease reports whether token still owns an unexpired execution
+// lease. It is used by in-memory durable coordinators to apply the same write
+// fencing as the PostgreSQL lease predicates.
+func (r *MemoryQueueRepository) OwnsActiveLease(_ context.Context, taskID string, token LeaseToken, allowCancelling bool) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	task, ok := r.tasks[taskID]
+	if !ok || !ownsLease(task, token) || task.LeaseExpiresAt.IsZero() || !task.LeaseExpiresAt.After(r.clock.Now()) {
+		return false
+	}
+	return task.Status == TaskStatusLeased || task.Status == TaskStatusRunning || (allowCancelling && task.Status == TaskStatusCancelling)
 }
 
 // Complete marks a task as successfully completed.
