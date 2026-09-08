@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,7 +27,8 @@ const (
 )
 
 type restartCandidateRunner struct {
-	mode string
+	mode  string
+	calls atomic.Int32
 }
 
 type restartOptimizerHandler struct {
@@ -37,8 +39,8 @@ func (h restartOptimizerHandler) Handle(ctx context.Context, task taskqueue.Task
 	return h.service.HandleTask(ctx, task, reporter)
 }
 
-func (r restartCandidateRunner) RunCandidate(ctx context.Context, req optimizer.CandidateRunRequest) (optimizer.CandidateRunResult, error) {
-	if r.mode == "block_second" && req.Candidate.Retrieval.DenseTopK == 2 {
+func (r *restartCandidateRunner) RunCandidate(ctx context.Context, req optimizer.CandidateRunRequest) (optimizer.CandidateRunResult, error) {
+	if r.mode == "block_second" && r.calls.Add(1) == 2 {
 		fmt.Println("CANDIDATE_STARTED")
 		select {
 		case <-ctx.Done():
@@ -78,7 +80,7 @@ func TestOptimizerWorkerHelperProcess(t *testing.T) {
 
 	runRepo := postgres.NewRepository(pool)
 	queueRepo := postgres.NewTaskQueueRepository(pool)
-	service := &optimizer.Service{Repository: runRepo, Runner: restartCandidateRunner{mode: mode}}
+	service := &optimizer.Service{Repository: runRepo, Runner: &restartCandidateRunner{mode: mode}}
 	worker := taskqueue.NewWorkerPool(queueRepo, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	worker.RegisterPool(taskqueue.PoolConfig{Name: optimizer.OptimizationPool, Concurrency: 1, LeaseDuration: time.Second, HeartbeatInterval: 200 * time.Millisecond})
 	worker.RegisterHandler(optimizer.OptimizationTaskType, restartOptimizerHandler{service: service})
@@ -206,7 +208,7 @@ func TestOptimizerSurvivesProcessRestart(t *testing.T) {
 		{name: "running checkpoint", firstMode: "block_second", killMark: "CANDIDATE_STARTED"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			service := &optimizer.Service{Repository: runRepo, Runner: restartCandidateRunner{}}
+			service := &optimizer.Service{Repository: runRepo, Runner: &restartCandidateRunner{}}
 			run, err := service.Submit(ctx, optimizer.SubmitRequest{
 				TenantID:        testTenantID,
 				DatasetID:       dataset.ID,
