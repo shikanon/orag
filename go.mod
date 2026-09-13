@@ -9,8 +9,8 @@ require (
 	github.com/cloudwego/eino v0.9.19
 	github.com/cloudwego/hertz v0.10.6
 	github.com/getkin/kin-openapi v0.149.0
-	github.com/jackc/pgx/v5 v5.10.0
-	github.com/qdrant/go-client v1.19.0
+	github.com/jackc/pgx/v5 v5.11.0
+	github.com/qdrant/go-client v1.19.2
 	github.com/volcengine/ve-tos-golang-sdk/v2 v2.9.10
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.46.0
