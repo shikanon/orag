@@ -6,11 +6,11 @@ toolchain go1.26.6
 
 require (
 	github.com/aliyun/aliyun-oss-go-sdk v3.0.2+incompatible
-	github.com/cloudwego/eino v0.9.19
+	github.com/cloudwego/eino v0.9.21
 	github.com/cloudwego/hertz v0.10.6
 	github.com/getkin/kin-openapi v0.149.0
-	github.com/jackc/pgx/v5 v5.10.0
-	github.com/qdrant/go-client v1.19.0
+	github.com/jackc/pgx/v5 v5.11.0
+	github.com/qdrant/go-client v1.19.2
 	github.com/volcengine/ve-tos-golang-sdk/v2 v2.9.10
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.46.0
@@ -19,7 +19,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/sdk/metric v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
-	google.golang.org/grpc v1.83.2
+	google.golang.org/grpc v1.84.0
 )
 
 require (
