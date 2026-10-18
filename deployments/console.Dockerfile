@@ -5,7 +5,7 @@ RUN npm ci
 COPY console/ ./
 RUN npm run build
 
-FROM nginx:1.31.5-alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3 AS console
+FROM nginx:1.31.7-alpine@sha256:892bb2152464f0c5d8972593a5f5afaf8054552580b699d95f8ff4af08c2d33d AS console
 RUN apk upgrade --no-cache
 ARG VERSION=dev
 ARG COMMIT=unknown
